@@ -1,0 +1,12 @@
+[project]
+name = "k-boat"
+version = "0.1.0"
+description = "Dump your content into a knowledge lake, then sail it with AI agents."
+requires-python = ">=3.13"
+dependencies = [
+    "notebooklm-py[browser]>=0.6.0",
+]
+
+[tool.uv]
+# This project is just an environment, not a distributable package
+package = false
