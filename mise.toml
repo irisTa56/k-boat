@@ -3,6 +3,9 @@ rumdl = "latest"
 
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
+# Where distilled concept notes live (a Basic Memory project root). Defaults to a
+# subdir of the vault; .env overrides it (for K-Boat, a Git-managed directory).
+KBOAT_KNOWLEDGE_PATH = "~/Documents/K-Boat/Knowledge"
 _.file = ".env"
 # Automatically activate the venv (uv is provided by Homebrew)
 _.python.venv = { path = ".venv", create = true }
