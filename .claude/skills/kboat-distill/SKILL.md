@@ -39,7 +39,7 @@ Process each ripe source in this exact order. The order is what makes a crash sa
 2. **Resolve the source id.** Run `.venv/bin/notebooklm --quiet source list --notebook <notebooklm_id> --json`. With 1:1 there is exactly one source; take its id (sanity-check its `url`/`title` against the note). `fulltext` is keyed by source id.
 3. **Extract** (read-only, safe to repeat). On any extraction error, abort this source — do not stamp, do not discard — record the error and continue to the next source.
    - `.venv/bin/notebooklm --quiet source fulltext <source_id> --notebook <notebooklm_id> -f markdown` — the content.
-   - `.venv/bin/notebooklm --quiet history --notebook <notebooklm_id> --json` — the reading-time dialogue.
+   - `.venv/bin/notebooklm --quiet history --notebook <notebooklm_id> --json` — the reading-time dialogue. The dialogue happens through the Gemini UI, which grounds answers in the notebook source but **also draws on web and world knowledge**, citing the sources it used. Keep those citations: a cited claim is source-grounded, an uncited one is external, and the accretion policy treats them differently.
    - `.venv/bin/notebooklm --quiet summary --notebook <notebooklm_id>` — NotebookLM's own summary (text only; no `--json`).
 4. **Review material** (optional, best-effort). `.venv/bin/notebooklm --quiet generate flashcards --wait --json --notebook <notebooklm_id>` and/or `generate quiz`. These are async, so `--wait` is required. On timeout or error, mark them "pending" in the report and continue — do not abort the source.
 5. **Distill into Basic Memory** following the accretion policy below.
@@ -57,7 +57,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
 - **Append first.** Before creating a concept note, `search_notes` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one. The project's embedding model is English (`bge-small`), so semantic recall on Japanese titles is weak — lean on these lexical variations. If a hit clears the bar, add to the existing note instead of creating a duplicate, with `edit_note(operation="insert_after_section", section="## Observations")` (or `"## Relations"`); plain `append` lands past the sections, so use `insert_after_section`. See `memory-curate`.
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper). For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
 - **Cap creates per run.** Set a hard ceiling on new concept notes per run. If hit, stop creating, finish appends, and escalate in the report.
-- **Always record provenance.** Every observation added — to a new or existing concept — is paired with a provenance observation `- [source] <title> — <url>` carrying the source's canonical URL. The source note lives in the vault, a separate root, so a wikilink could not reach it; the URL is root-independent and keeps each autonomous decision traceable. (Relations *between concepts* stay wikilinks; both ends are in this root.)
+- **Ground every claim.** Treat `source fulltext` (and the source-grounded NotebookLM `summary`) as the authority. Tag each distilled observation by grounding: `#grounded` when the source supports it, `#dialogue` when it is external knowledge the conversation brought in (an uncited Gemini answer). Never let a `#dialogue` claim read as if it came from the source.
+- **Double-check dialogue-derived claims.** A `#dialogue` claim is not source-grounded, so before keeping it, try to refute it against the source and your own knowledge. If it survives, accret it tagged `#dialogue`; if it fails or you are uncertain, do not accret it — log it as an uncreated candidate in the report. This keeps the genuinely useful outside knowledge the dialogue surfaced (the reason to chat while reading) while dropping the unverifiable — the safeguard for the lower-grounding Gemini-Flash dialogue.
+- **Always record provenance.** Each contributing source adds, once per concept note, a provenance observation `- [source] <title> — <url>` carrying the source's canonical URL — it records that this source fed the concept, regardless of grounding; the per-claim `#grounded`/`#dialogue` tag records whether the claim came from the source or from external dialogue knowledge. The source note lives in the vault, a separate root, so a wikilink could not reach it; the URL is root-independent and keeps each autonomous decision traceable. (Relations *between concepts* stay wikilinks; both ends are in this root.)
 - **Never auto-merge.** Merging concept notes is destructive and hard to reverse unattended. Log merge candidates in the report for `memory-curate` to handle with a human.
 - **Stay idempotent on replay.** The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use `edit_note` with `insert_after_section`. Before inserting, check the section text and skip a provenance observation whose URL is already present, so a replay after a mid-run crash does not double-write.
 
@@ -67,8 +69,9 @@ One file per run, in the vault. For each distilled source, a decision log:
 
 - `created:` new concept notes.
 - `appended-to:` existing concept notes that grew.
+- `kept from dialogue:` external (`#dialogue`) claims that passed the double-check.
 - `skipped (dup of):` observations dropped as duplicates.
-- `uncreated candidates:` concepts left for the human to promote.
+- `uncreated candidates:` concepts left for the human to promote — including `#dialogue` claims that failed the double-check or were uncertain.
 - `merge candidates:` pairs flagged for `memory-curate`.
 
 Plus the source's `summary` verbatim and any flashcards/quiz (or "pending"), the unread discards (sources whose notebook was discarded without distilling), and an anomalies section (notebook missing, discard failed, extraction errors).
