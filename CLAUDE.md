@@ -37,6 +37,10 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 - There is no automated test suite.
   - Validate changes by running the skills against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
+## Git workflow
+
+- Never push to `main` directly; branch first, then PR. PRs are merged out-of-band, so verify the current branch before pushing — a merge can leave the tree on `main`.
+
 ## Architecture
 
 Three skills, all under `.claude/skills/`:
