@@ -135,7 +135,8 @@ views:
 2. Otherwise write a new `Sources/<sanitized-title>.md`. If that filename is already taken by a note with a different `url`, disambiguate with a short suffix. `reading_url` starts equal to `url`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty.
 3. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
-   - Run `.venv/bin/notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source.
+   - Run `.venv/bin/notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
+   - Confirm NotebookLM actually fetched it: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (adding is async; exit 0 = ready, 1 = failed, 2 = timeout). A site that bot-blocks NotebookLM's fetch fails here, leaving a notebook with no usable content — do not treat such a source as successfully ingested; report it (see kboat-ingest). This can run in a cheap subagent.
    - Write `notebooklm_id` onto the source note and derive `gemini_url` and `notebooklm_url` from it. The returned source id is not stored; it is resolved on demand.
 
 ## Procedure: discard a source's notebook

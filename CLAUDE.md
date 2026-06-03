@@ -55,6 +55,7 @@ Three skills, all under `.claude/skills/`:
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
 - One notebook per source (1:1). The notebook is throwaway; its coordinates (`notebooklm_id`, `gemini_url`, `notebooklm_url`) live on the source note. No notebook notes, no wikilinks, no backlinks.
+- A notebook is only useful if NotebookLM fetched the source: ingest verifies with `source wait` and reports a bot-blocked URL instead of silently treating it as ready. Distillation reads the full text with `source fulltext … -o <file>` (stdout truncates at 2000 chars; `-f markdown` needs an uninstalled package and fails silently under `--quiet`) and treats empty content as a fetch failure.
 - The NotebookLM source id is not stored.
   - It is a per-notebook attribute resolved on demand by matching `url` (then `title`) in `notebooklm source list`.
 - Reading state: `read` and `done` are human checkboxes; `done_date` (when the routine first saw `done`) and `distilled_date` are dates the routine stamps. A 7-day cooldown counts from `done_date`.
