@@ -10,14 +10,19 @@ input=$(cat)
 # Pull out just the Bash tool's `command` value, so a `description` (or any other
 # field) that merely mentions "git push" cannot trigger a false deny. Plain POSIX
 # grep — no jq/python, hence no dependency that could be absent and fail open. The
-# `[^"]*` stops at the first quote, which also harmlessly truncates commands with
-# embedded quotes (e.g. `git commit -m "push"`) before any spurious match.
-cmd=$(printf '%s' "$input" | grep -Eo '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1)
+# value pattern consumes escaped quotes (\") so a command that contains a quoted
+# token before the push (e.g. `cd "/d" && git push`) is captured whole, not
+# truncated. The closing unescaped quote ends the value, so other fields are excluded.
+cmd=$(printf '%s' "$input" | grep -Eo '"command"[[:space:]]*:[[:space:]]*"((\\.)|[^"\\])*"' | head -n 1)
 
 # Match a `git push` invocation in that command: `git`, then zero or more global
 # options (e.g. `-C <dir>`, `-c k=v`, `--git-dir=...`), then the `push` subcommand.
 # Requiring options to start with `-` avoids matching `git status && echo push` or
 # `git commit -m "push"`; the boundaries avoid substrings like `mygit pushy`.
+# Inherent limit (a regex is not a shell parser): a global option whose value
+# contains a space *before* the push token — e.g. `git -c k='a b' push` — slips
+# through. That form is vanishingly rare here; the authoritative gate would be
+# server-side, which this private/free repo cannot use.
 push_re='(^|[^[:alnum:]_./-])git([[:space:]]+-{1,2}[^[:space:]]*([[:space:]]+[^[:space:]-][^[:space:]]*)?)*[[:space:]]+push([^[:alnum:]_-]|$)'
 
 if printf '%s' "$cmd" | grep -Eq "$push_re"; then
