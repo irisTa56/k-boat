@@ -1,11 +1,11 @@
 ---
 name: kboat-distill
-description: Advance read sources through the K-Boat lifecycle and distill ripe ones into the knowledge graph. Use when running the post-reading pass — stamping done dates, discarding notebooks for unread done sources, and distilling sources read at least a week ago into Basic Memory concept notes with a review report. Defers to kboat-notes for the source-note schema and to the Basic Memory skills for the concept-note conventions.
+description: Advance done sources through the K-Boat lifecycle and distill ripe ones into the knowledge graph. Use when running the post-reading pass — stamping done dates, discarding notebooks for shelved sources, and distilling sources opted in with distill at least a week ago into Basic Memory concept notes with a review report. Defers to kboat-notes for the source-note schema and to the Basic Memory skills for the concept-note conventions.
 ---
 
 # K-Boat distillation
 
-The post-reading pass. It moves source notes through their lifecycle and distills the ripe ones — those read and marked `done` at least a week ago — into concept notes that accrete across sources, then discards the throwaway NotebookLM notebook.
+The post-reading pass. It moves source notes through their lifecycle and distills the ripe ones — those marked `done` and `distill` at least a week ago — into concept notes that accrete across sources, then discards the throwaway NotebookLM notebook.
 It runs unattended after kboat-ingest in the daily routine, and can also be run by hand.
 
 Follow kboat-notes for the source-note schema, the lifecycle state machine, and the discard procedure.
@@ -20,19 +20,23 @@ Every Basic Memory call (`search_notes`, `write_note`, `edit_note`) must pass `p
    - If the project exists but the call fails (Basic Memory runtime down), run Phase A but **skip Phase B entirely** and report it. Phase B's only destructive act is discarding notebooks; deferring it to a healthy day loses nothing, since ingest still runs.
 3. Read all `Sources/*.md` frontmatter once to compute the work sets for both phases.
 
-## Phase A: stamp the cooldown clock
+## Phase A: maintain the cooldown clock
 
-For each source with `done` checked and `done_date` empty, stamp `done_date` with today's date.
-This is the only non-destructive phase; it starts the 7-day cooldown that Phase B counts from.
+`done` drives the clock, in both directions:
+
+- For each source with `done` checked and `done_date` empty, stamp `done_date` with today's date — this starts the 7-day cooldown that Phase B counts from.
+- For each source with `done` unchecked and `done_date` set, clear `done_date` — the human pulled it back to the active list (e.g. to read more of a part-read source), so the cooldown is abandoned and Phase B leaves it alone.
+
+This is the only non-destructive phase.
 
 ## Phase B: act after the cooldown
 
-Phase B runs only when Basic Memory is healthy (see preamble). It acts on each source whose cooldown has elapsed (`done == true && done_date <= today - 7 days`), branching on `read`:
+Phase B runs only when Basic Memory is healthy (see preamble). It acts on each source whose cooldown has elapsed (`done == true && done_date <= today - 7 days`), branching on `distill`:
 
-- `read` unchecked → discard the notebook without distilling (see kboat-notes "discard a source's notebook"); record it in the report as an unread discard. Idempotent: if `notebooklm_id` is already empty, skip.
-- `read` checked and `distilled_date` empty → the source is **ripe**: distill it with the ordered steps below.
+- `distill` unchecked → keep it without distilling: discard the notebook (see kboat-notes "discard a source's notebook") and record it in the report as a shelved discard. The note and any PDF stay as a searchable archive entry. Idempotent: if `notebooklm_id` is already empty, skip.
+- `distill` checked and `distilled_date` empty → the source is **ripe**: distill it with the ordered steps below.
 
-The ripe predicate is `done == true && read == true && done_date <= today - 7 days && distilled_date` empty.
+The ripe predicate is `done == true && distill == true && done_date <= today - 7 days && distilled_date` empty.
 Process each ripe source in this exact order. The order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
 1. **Resolve the notebook.** Read `notebooklm_id` from the source note. Run `.venv/bin/notebooklm --quiet list --json`; if the id is absent (the notebook was deleted out of band), record it as an anomaly in the report and skip this source without stamping or discarding. Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled. The source stays ripe and is re-surfaced each run until a human resolves it (e.g. clears the source note); this is the same contract as an extraction error in step 3.
@@ -74,8 +78,8 @@ One file per run, in the vault. For each distilled source, a decision log:
 - `uncreated candidates:` concepts left for the human to promote — including `#dialogue` claims that failed the double-check or were uncertain.
 - `merge candidates:` pairs flagged for `memory-curate`.
 
-Plus the source's `summary` verbatim and any flashcards/quiz (or "pending"), the unread discards (sources whose notebook was discarded without distilling), and an anomalies section (notebook missing, discard failed, extraction errors).
+Plus the source's `summary` verbatim and any flashcards/quiz (or "pending"), the shelved discards (sources whose notebook was discarded without distilling), and an anomalies section (notebook missing, discard failed, extraction errors).
 
 ## Run summary
 
-End the run with counts (`done_date` stamps applied in Phase A; in Phase B: sources distilled, notebooks discarded unread, sources left for the next run by errors), whether the run stopped because the `k-boat-knowledge` project was missing or skipped Phase B for a Basic Memory outage, and every error with the source it affected and the cause.
+End the run with counts (in Phase A: `done_date` stamps applied and `done_date` clears from un-done sources; in Phase B: sources distilled, notebooks discarded as shelved, sources left for the next run by errors), whether the run stopped because the `k-boat-knowledge` project was missing or skipped Phase B for a Basic Memory outage, and every error with the source it affected and the cause.
