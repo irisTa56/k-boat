@@ -44,7 +44,7 @@ Every source has exactly one NotebookLM notebook, created when the source is ing
 The notebook's coordinates (`notebooklm_id`, `gemini_url`, `notebooklm_url`) live on the source note, so the source note is self-contained — there are no notebook notes, no wikilinks between notebooks and sources, and no backlink-based reverse lookup.
 Reading-time questions go to the notebook's `gemini_url`, and because the notebook holds only this one source, the answers are never diluted by unrelated content.
 
-The NotebookLM source id is not stored. It is a per-notebook attribute resolved on demand by matching the source's `url` (then `title`) in `notebooklm source list` (see the discard and distill procedures).
+The NotebookLM source id is not stored. It is a per-notebook attribute resolved on demand by matching the source's `url` (then `title`) in `notebooklm source list` (see the discard and distill procedures). A file-uploaded PDF source has no `url` (it is `null`), so for a PDF the match is by `title` — which is why the PDF upload passes `--title` set to the note's `title`. Because each notebook is 1:1 there is exactly one source either way, so this is really a sanity-check on that single source.
 
 ## Source note (`Sources/*.md`)
 
@@ -53,7 +53,7 @@ Frontmatter only, no body. Fields are ordered for reading — the URLs you open 
 | Property | Meaning |
 | --- | --- |
 | `type` | Always `source`. |
-| `title` | The source title. For a web page it is the page title and matches NotebookLM's title once the source is added; for a PDF it is the human title resolved during ingest (the in-notebook source keeps the uploaded filename, which is fine since the notebook itself is titled with this `title`). |
+| `title` | The source title. For a web page NotebookLM sets it from the page once the source is added; for a PDF it is the human title resolved during ingest and passed to `source add --title` (otherwise an uploaded source would be titled by its filename, which the on-demand source-id resolution could not match). |
 | `reading_link` | Where to read. May hold a URL or an Obsidian internal link. For a web page it starts equal to `url`, then is overwritten with a "Link with Highlight" as reading progresses. For a PDF it is an Obsidian internal link to the vault file, starting as `[[<slug>.pdf]]` and upgraded by hand to a [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) page or highlight link as reading progresses. |
 | `gemini_url` | Gemini chat view of the notebook, used for asking questions while reading. |
 | `read` | Checkbox, set by the human. The source has been read. |
@@ -112,6 +112,7 @@ views:
       - read
       - done
       - formula.title_link
+      - source_type
       - added_date
     sort:
       - property: added_date
@@ -125,6 +126,7 @@ views:
       - read
       - done
       - formula.title_link
+      - source_type
       - added_date
       - done_date
       - distilled_date
@@ -148,18 +150,18 @@ This is the web-page path. For a PDF source, follow "Procedure: ingest a PDF sou
 
 ## Procedure: ingest a PDF source
 
-A PDF source is read inside Obsidian (the vault syncs to every device) and uploaded into its own notebook as a file, so neither Google Drive nor Google Play Books is involved — Play Books has no personal-upload API, and adding Drive buys nothing once Play Books is out. The `url` is still the canonical de-dup key, so this path shares step 1 of "create or update a source note" verbatim and only the later steps differ.
+A PDF source is read inside Obsidian (the vault syncs to every device) and uploaded into its own notebook as a file, so neither Google Drive nor Google Play Books is involved — Play Books has no personal-upload API, and adding Drive buys nothing once Play Books is out. The `url` is still the canonical de-dup key, so step 1 below runs the same de-dup as "create or update a source note"; only the later steps differ.
 
 A source is a PDF when fetching its `url` yields PDF bytes, not HTML — decide this in kboat-ingest before choosing a path (HEAD the URL: `Content-Type: application/pdf`, or a `content-disposition` filename ending `.pdf`; fall back to the first bytes being `%PDF-`). The extension alone is not enough — an arXiv link like `/pdf/2603.08163` has no `.pdf` suffix yet serves a PDF.
 
-1. Compute the slug and de-dup exactly as step 1 of "create or update a source note". The `url` is the queued URL verbatim (the same hash recipe), even when it points straight at the PDF.
-2. Download the PDF to `PDFs/<slug>.pdf`. Verify the saved file is a real PDF (starts with `%PDF-`, non-zero size); a download that returns an HTML error page or truncates is a **download failure** — do not write the note, and let kboat-ingest keep the reminder.
+1. Compute the slug and de-dup exactly as step 1 of "create or update a source note": the `url` is the queued URL verbatim (the same hash recipe), even when it points straight at the PDF. If `Sources/<slug>.md` already exists with a matching `url` and a `notebooklm_id`, it already has its file and notebook — update the note in place and stop, without re-downloading or creating a second notebook (the 1:1 invariant). If the existing note's `url` differs, report the slug collision and stop. Otherwise this is a new source — continue with steps 2–5.
+2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` (e.g. `curl -fsSL --create-dirs -o "<path>" "<url>"`). Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check. This same magic-byte check must still hold immediately before the upload in step 5 — treat download → verify → upload as one uninterrupted sequence. A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the reminder.
 3. Resolve the `title`. Prefer a clean human title over the PDF's internal one: for an arXiv PDF, read the abstract page (`/pdf/<id>` → `/abs/<id>`); otherwise use the PDF's metadata title, then its first-page heading, then the reminder text. Whenever the title falls back to the reminder text, flag it so a human can fix it later (kboat-ingest reports this).
-4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty.
+4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty. This note write is the commit point, exactly as on the web path.
 5. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
-   - Add the PDF as an uploaded file: `.venv/bin/notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`, and read the returned source id.
-   - Confirm NotebookLM extracted the PDF: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (exit 0 = ready, 1 = failed, 2 = timeout), then check `.venv/bin/notebooklm source fulltext <source_id> --notebook <id>` holds the real article text. A direct upload cannot fetch a wall, so the failure mode is **empty or garbled extraction** rather than a login page — a PDF that uploads but extracts to nothing is not ingested. Keep the note, notebook, and file, and report it (kboat-ingest states how). This verification can run in a cheap subagent.
+   - Add the PDF as an uploaded file, titling the source so it can be resolved later (a file upload has no `url` to match on): `.venv/bin/notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>" --notebook <id> --json`, and read the returned source id. Use the absolute vault path and quote it — it contains a space — because `source add` silently ingests a path that does not exist on disk as inline *text* rather than erroring, so a wrong path would upload the path string instead of the PDF.
+   - Confirm NotebookLM extracted the PDF: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (exit 0 = ready, 1 = failed, 2 = timeout), then write the text to a temp file with `.venv/bin/notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile>` and read it. Use `-o`, not stdout, which truncates at 2000 chars and would make a good PDF look empty. A direct upload cannot fetch a wall, so the failure mode is **empty or garbled extraction** rather than a login page — a PDF that uploads but extracts to nothing is not ingested. Keep the note, notebook, and file, and report it (kboat-ingest states how). This verification can run in a cheap subagent.
    - Write `notebooklm_id` onto the source note and derive `gemini_url` and `notebooklm_url` from it. The returned source id is not stored; it is resolved on demand.
 
 ## Procedure: discard a source's notebook
