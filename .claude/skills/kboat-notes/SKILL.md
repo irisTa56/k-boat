@@ -91,9 +91,9 @@ For a ripe source the notebook is discarded last, after `distilled_date` is stam
 
 ## Reading inbox Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with four views over all sources: three to-read inboxes split by `source_type` (web pages and PDFs are read differently — a URL versus Obsidian's PDF++ — plus a catch-all), and a processed view that makes the otherwise-invisible lifecycle states (in flight, distilled, discarded unread) legible from their columns.
-The split is exhaustive on purpose: the Web and PDF inboxes cover the two `source_type` values, and the **Other** inbox (`source_type` neither) catches anything they miss, so no unread source can ever silently fall out of the to-read side. The Other inbox should normally be empty; a row in it flags a source with a missing or unexpected `source_type`. Add a fourth inbox if a new `source_type` value is introduced.
-All views lead with the `read`/`done` checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the Other and processed views keep. Column widths and other cosmetics are per-vault tweaks.
+A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with four views over all sources: three to-read inboxes — an **All** view plus **Web** and **PDF** views — and a processed view that makes the otherwise-invisible lifecycle states (in flight, distilled, discarded unread) legible from their columns.
+The All inbox (`done != true`, no type filter) is the exhaustive one: every unread source appears in it whatever its `source_type`, so nothing can silently fall off the to-read side. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish; the All view, filtering only on `done != true`, has no such blind spot.
+All views lead with the `read`/`done` checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the All and processed views keep. Column widths and other cosmetics are per-vault tweaks.
 
 Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. All views show `formula.title_link` in place of `file.name`.
 
@@ -104,6 +104,20 @@ filters:
   and:
     - type == "source"
 views:
+  - type: table
+    name: Reading Inbox · All
+    filters:
+      and:
+        - done != true
+    order:
+      - read
+      - done
+      - formula.title_link
+      - source_type
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
   - type: table
     name: Reading Inbox · Web
     filters:
@@ -128,22 +142,6 @@ views:
       - read
       - done
       - formula.title_link
-      - added_date
-    sort:
-      - property: added_date
-        direction: DESC
-  - type: table
-    name: Reading Inbox · Other
-    filters:
-      and:
-        - done != true
-        - source_type != "web_page"
-        - source_type != "pdf"
-    order:
-      - read
-      - done
-      - formula.title_link
-      - source_type
       - added_date
     sort:
       - property: added_date
