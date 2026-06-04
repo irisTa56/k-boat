@@ -33,7 +33,6 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 - Markdown quality gate:
   - `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
   - `mise run pre-commit` runs all `qa:*` tasks; the generated git pre-commit hook calls it, so a lint failure blocks commits.
-  - `MD013` (line length) is disabled in `.rumdl.toml`.
 - There is no automated test suite.
   - Validate changes by running the skills against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
@@ -55,11 +54,11 @@ Three skills, all under `.claude/skills/`:
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
 - One notebook per source (1:1). The notebook is throwaway; its coordinates (`notebooklm_id`, `gemini_url`, `notebooklm_url`) live on the source note. No notebook notes, no wikilinks, no backlinks.
-- A notebook is only useful if NotebookLM fetched the source: ingest verifies with `source wait` and reports a bot-blocked URL instead of silently treating it as ready. Distillation reads the full text with `source fulltext … -o <file>` (stdout truncates at 2000 chars; `-f markdown` needs an uninstalled package and fails silently under `--quiet`) and treats empty or wall content (a login / JS / Cloudflare / paywall page fetched instead of the article, judged by reading not keyword-matching) as a fetch failure.
+- A notebook is only useful if NotebookLM fetched the article, not a wall. Ingest verifies the fetch (`source wait` + a content check) and reports a blocked or walled source instead of treating it as ingested; distillation re-checks and treats empty or wall content as a fetch failure. (CLI specifics live in the skills.)
 - The NotebookLM source id is not stored.
   - It is a per-notebook attribute resolved on demand by matching `url` (then `title`) in `notebooklm source list`.
 - Reading state: `read` and `done` are human checkboxes; `done_date` (when the routine first saw `done`) and `distilled_date` are dates the routine stamps. A 7-day cooldown counts from `done_date`.
-  - After the cooldown: `read` → distill then discard the notebook (ripe = `done && read && done_date <= today - 7 days && distilled_date` empty); `done` without `read` → discard the notebook without distilling. Either branch discards the notebook.
+  - After the cooldown: `read` → distill then discard the notebook; `done` without `read` → discard it without distilling. Either branch discards the notebook.
 - Crash-safety invariant: for a ripe source the notebook is discarded **last**, after `distilled_date` is stamped and the review report is written.
 - Provenance from a concept note to its source is an observation carrying the source URL, not a wikilink — the two live in separate roots (vault vs `KBOAT_KNOWLEDGE_PATH`), so a wikilink could not resolve. Concept-to-concept relations stay wikilinks (same root). Each claim is tagged `#grounded` or `#dialogue`: the reading-time chat (Gemini UI) draws on web/world knowledge as well as the source, so distillation verifies the ungrounded `#dialogue` claims before keeping them and never lets them read as source claims.
 - Distillation targets the `k-boat-knowledge` project explicitly (`project="k-boat-knowledge"` on every Basic Memory call); if that project does not exist the routine stops before any destructive step.

@@ -136,7 +136,7 @@ views:
 3. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Run `.venv/bin/notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
-   - Confirm NotebookLM actually fetched it: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (adding is async; exit 0 = ready, 1 = failed, 2 = timeout). A site that bot-blocks NotebookLM's fetch fails here, leaving a notebook with no usable content — do not treat such a source as successfully ingested; report it (see kboat-ingest). This can run in a cheap subagent.
+   - Confirm NotebookLM actually fetched the article: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (adding is async; exit 0 = ready, 1 = failed, 2 = timeout). A **successful fetch** means the source reaches `ready` *and* its text is the real article — not empty, and not a wall (a login / JS-required / Cloudflare / paywall page NotebookLM fetched instead of the content). Judge wall-vs-article by reading, not by keyword: page chrome such as a `Log in` link or a noscript `enable JavaScript` notice alongside the real text is normal. A source that does not fetch successfully is not ingested — report it (see kboat-ingest). This verification can run in a cheap subagent.
    - Write `notebooklm_id` onto the source note and derive `gemini_url` and `notebooklm_url` from it. The returned source id is not stored; it is resolved on demand.
 
 ## Procedure: discard a source's notebook
