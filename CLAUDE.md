@@ -12,7 +12,7 @@ Each piece of content gets its own throwaway NotebookLM notebook (1:1) for readi
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Reviews/` (distillation reports), and `Reading Inbox.base` (the to-read list).
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports), and `Reading Inbox.base` (the to-read list).
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Environment gotchas
@@ -54,7 +54,8 @@ Three skills, all under `.claude/skills/`:
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
 - One notebook per source (1:1). The notebook is throwaway; its coordinates (`notebooklm_id`, `gemini_url`, `notebooklm_url`) live on the source note. No notebook notes, no wikilinks, no backlinks.
-- A notebook is only useful if NotebookLM fetched the article, not a wall. Ingest verifies the fetch (`source wait` + a content check) and reports a blocked or walled source instead of treating it as ingested; distillation re-checks and treats empty or wall content as a fetch failure. (CLI specifics live in the skills.)
+- A source is a web page or a PDF (`source_type`), decided in ingest by HEADing the `url` (an arXiv `/pdf/<id>` link serves a PDF despite the missing `.pdf` suffix). A PDF is downloaded to `PDFs/<slug>.pdf`, read in Obsidian via the [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) plugin, and uploaded into its notebook as a file (`source add --type file --mime-type application/pdf`). No Google Drive or Google Play Books: Play Books has no personal-upload API (only a publisher content-fetcher), so automating it would need a logged-in browser and break the unattended routine, and Drive adds nothing once Play Books is out.
+- A notebook is only useful if NotebookLM fetched the content, not a wall. Ingest verifies the fetch (`source wait` + a content check) and reports a blocked or walled source instead of treating it as ingested; distillation re-checks and treats empty or wall content as a fetch failure. For a PDF the failure mode is empty or garbled extraction rather than a wall, since a direct upload cannot fetch a login page. (CLI specifics live in the skills.)
 - The NotebookLM source id is not stored.
   - It is a per-notebook attribute resolved on demand by matching `url` (then `title`) in `notebooklm source list`.
 - Reading state: `read` and `done` are human checkboxes; `done_date` (when the routine first saw `done`) and `distilled_date` are dates the routine stamps. A 7-day cooldown counts from `done_date`.

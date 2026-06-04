@@ -16,7 +16,8 @@ Each piece of content gets its own throwaway NotebookLM notebook for reading and
 
 The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 
-- `Sources/` — one note per source, tracking its 1:1 notebook and reading state.
+- `Sources/` — one note per source (a web page or a PDF), tracking its 1:1 notebook and reading state.
+- `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
 - `Reviews/` — one report per distillation run, read for memory consolidation.
 - `Reading Inbox.base` — a standalone Base: a to-read view plus a processed view showing each source's lifecycle state.
 
