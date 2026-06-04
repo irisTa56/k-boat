@@ -30,7 +30,8 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — the note schema and conventions: source-note frontmatter, naming, the lifecycle state machine, the reading inbox Base, and where concept notes live.
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state and distilling ripe sources into the knowledge graph. It defers to the Basic Memory skills for the concept-note conventions.
+- [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
 
 The scheduled routine runs `kboat-ingest` then `kboat-distill` daily.
 
-Marking a source `done` hands it to the routine: a week later it is distilled (if `read`) or its notebook is simply discarded (if not `read`). Discarding a notebook is irreversible, so leave `done` unchecked for anything you still want to open in NotebookLM. The 7-day clock starts when the routine first sees `done`, not when you check the box.
+Three checkboxes drive a source. `read` is just read progress. `done` takes it off the to-read inbox. `distill` opts it into the knowledge graph. A week after you mark a source `done`, the routine distils it (if `distill`) or discards its notebook and keeps the note on the searchable "read later" shelf (if not `distill`). Discarding a notebook is irreversible, so leave `done` unchecked for anything you still want to open in NotebookLM; the 7-day clock starts when the routine first sees `done` (and resets if you uncheck it).

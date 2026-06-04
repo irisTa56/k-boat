@@ -42,7 +42,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Architecture
 
-Three skills, all under `.claude/skills/`:
+Four skills, all under `.claude/skills/`:
 
 - `kboat-notes` — the single source of truth for note conventions: the source-note frontmatter schema, naming, the lifecycle state machine, the reading inbox Base, and where concept notes live.
   - Read this skill before touching any note format.
@@ -50,6 +50,8 @@ Three skills, all under `.claude/skills/`:
   - It defers to `kboat-notes` for the schema and file writing.
 - `kboat-distill` — the post-reading pass: advances lifecycle state and distills ripe sources into the knowledge graph.
   - It defers to `kboat-notes` for the source schema and to the Basic Memory skills (`memory-notes`, `memory-ingest`, `memory-curate`) for the concept graph.
+- `kboat-recall` — read-only search over the source notes for a "read later" source matching a question; lexical for now (`title`/`summary`/`topics`).
+  - It defers to `kboat-notes` for the schema.
 
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
@@ -58,12 +60,13 @@ Load-bearing model, spread across the skills, so it is easy to break with a loca
 - A notebook is only useful if NotebookLM fetched the content, not a wall. Ingest verifies the fetch (`source wait` + a content check) and reports a blocked or walled source instead of treating it as ingested; distillation re-checks and treats empty or wall content as a fetch failure. For an uploaded PDF the failure mode is empty or garbled extraction instead. (CLI specifics live in the skills.)
 - The NotebookLM source id is not stored.
   - It is a per-notebook attribute resolved on demand by matching `url` (then `title`) in `notebooklm source list`. A file-uploaded PDF source has `url: null`, so it is matched by `title` (ingest titles the upload to match the note).
-- Reading state: `read` and `done` are human checkboxes; `done_date` (when the routine first saw `done`) and `distilled_date` are dates the routine stamps. A 7-day cooldown counts from `done_date`.
-  - After the cooldown: `read` → distill then discard the notebook; `done` without `read` → discard it without distilling. Either branch discards the notebook.
+- Reading state has three orthogonal human checkboxes: `read` is read progress (informational only), `done` takes a source off the active list (hides it from the inbox immediately), and `distill` opts it into the knowledge graph. The routine stamps `done_date` when it first sees `done` and clears it when `done` is unchecked; `distilled_date` is the terminal stamp. A 7-day cooldown counts from `done_date`.
+  - After the cooldown: `distill` → distill then discard the notebook; `done` without `distill` → discard it without distilling and keep the note (and any PDF) as a searchable "read later" shelf. Either branch discards the notebook. `read` drives neither, so a part-read source can be shelved without lying about `read`.
+- Every source carries a `summary` and `topics`, captured at ingest from the NotebookLM source guide. They are the durable description `kboat-recall` searches once the notebook is gone, and they make the Base browsable.
 - Crash-safety invariant: for a ripe source the notebook is discarded **last**, after `distilled_date` is stamped and the review report is written.
 - Provenance from a concept note to its source is an observation carrying the source URL, not a wikilink — the two live in separate roots (vault vs `KBOAT_KNOWLEDGE_PATH`), so a wikilink could not resolve. Concept-to-concept relations stay wikilinks (same root). Each claim is tagged `#grounded` or `#dialogue`: the reading-time chat (Gemini UI) draws on web/world knowledge as well as the source, so distillation verifies the ungrounded `#dialogue` claims before keeping them and never lets them read as source claims.
 - Distillation targets the `k-boat-knowledge` project explicitly (`project="k-boat-knowledge"` on every Basic Memory call); if that project does not exist the routine stops before any destructive step.
-- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`) with to-read views — an All view over every unread source plus Web and PDF subsets split by `source_type` — and a Processed view that exposes the lifecycle state.
+- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`) with to-read views (an All view over every unread source plus Web and PDF subsets split by `source_type`), a Shelf view of the read-later pile (`done` and `distill != true`), and a Processed view that exposes the lifecycle state. All view filters are plain booleans — never a date-emptiness test, which Obsidian Bases cannot do reliably; the routine and `kboat-recall` test empty dates by reading frontmatter directly instead.
 
 Automation:
 

@@ -48,7 +48,7 @@ The NotebookLM source id is not stored. It is a per-notebook attribute resolved 
 
 ## Source note (`Sources/*.md`)
 
-Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the read/done checkboxes first, then the source metadata, then the dates and notebook coordinates the routine manages.
+Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the read/done/distill checkboxes first, then the source metadata (including `summary` and `topics`), then the dates and notebook coordinates the routine manages.
 
 | Property | Meaning |
 | --- | --- |
@@ -56,12 +56,15 @@ Frontmatter only, no body. Fields are ordered for reading — the URLs you open 
 | `title` | The source title. For a web page NotebookLM sets it from the page once the source is added; for a PDF it is the human title resolved during ingest and passed to `source add --title` (otherwise an uploaded source would be titled by its filename, which the on-demand source-id resolution could not match). |
 | `reading_link` | Where to read. May hold a URL or an Obsidian internal link. For a web page it starts equal to `url`, then is overwritten with a "Link with Highlight" as reading progresses. For a PDF it is an Obsidian internal link to the vault file, starting as `[[<slug>.pdf]]` and upgraded by hand to a [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) page or highlight link as reading progresses. |
 | `gemini_url` | Gemini chat view of the notebook, used for asking questions while reading. |
-| `read` | Checkbox, set by the human. The source has been read. |
-| `done` | Checkbox, set by the human. The source is ready to be processed, whether or not it was read. |
+| `read` | Checkbox, set by the human. Informational only — whether (or how far) you have read it. No routine behaviour depends on it, so a partially-read source you re-shelve keeps `read` checked. |
+| `done` | Checkbox, set by the human. Takes the source off the active to-read list — it leaves the inbox at once. Reversible: unchecking it returns the source to the inbox (and the routine clears `done_date`). |
+| `distill` | Checkbox, set by the human. Opt-in to distil this source into the knowledge graph. Only a `distill` source is distilled when its cooldown ends; the rest are kept as a searchable archive (the "read later" shelf). Set it while the source is in the inbox or, after `done`, in the Shelf view. |
 | `source_type` | `web_page` or `pdf`. |
 | `url` | Original, canonical URL. Immutable. |
+| `summary` | A concise one- or two-sentence summary, captured at ingest from the NotebookLM source guide. Lets a source be recognised in recall results and browsed in the Base after its notebook is gone. |
+| `topics` | A list of topic keywords from the source guide. The main lexical signal for recall search. |
 | `added_date` | Date the source was ingested. |
-| `done_date` | Date, stamped by the routine when it first observes `done`. Empty until then. The clock that ripeness counts from. |
+| `done_date` | Date, stamped by the routine when it first observes `done`; cleared if `done` is later unchecked. Empty until then. The clock that the cooldown counts from. |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
 | `notebooklm_id` | NotebookLM notebook id for this source's 1:1 notebook. Cleared once the notebook is discarded. |
 | `notebooklm_url` | NotebookLM view of the notebook. |
@@ -75,25 +78,30 @@ Derive both from `notebooklm_id`:
 
 ### Lifecycle and state
 
-`read` and `done` are independent checkboxes the human sets; `done_date` and `distilled_date` are dates the routine stamps.
-`done_date` records when the routine first observed `done`, not when the human checked it — a checkbox carries no timestamp — so the cooldown below counts from that first observation, and a stretch where the routine cannot run delays it.
+`read`, `done`, and `distill` are independent checkboxes the human sets; `done_date` and `distilled_date` are dates the routine stamps. The three checkboxes are orthogonal because each carries a distinct axis: `read` is read progress (informational), `done` takes the source off the active list, and `distill` decides whether it enters the knowledge graph. So a part-read source can be shelved (`done`) without touching `read`, and shelved without distilling.
+
+`done` controls inbox visibility directly: a `done` source leaves the inbox at once (the Base filters on `done`, not on `done_date`), and unchecking `done` brings it back. `done_date` records when the routine first observed `done`, not when the human checked it — a checkbox carries no timestamp — so the cooldown below counts from that first observation, and a stretch where the routine cannot run delays it.
+
 The routine (kboat-distill) drives the transitions:
 
-- The human checks `done`. On its next run the routine stamps `done_date` if empty, starting a 7-day cooldown.
-- Once `done_date` is at least 7 days old the routine acts, branching on `read`:
-  - `read` checked → the source is **ripe**: distill it, stamp `distilled_date`, then discard the notebook.
-  - `read` unchecked → it will not be read: discard the notebook without distilling (nothing to distill), leaving `distilled_date` empty.
+- `done` checked, `done_date` empty → the routine stamps `done_date`, starting a 7-day cooldown.
+- `done` unchecked, `done_date` set → the routine clears `done_date`, re-arming the source (back on the active list, cooldown abandoned).
+- Once `done_date` is at least 7 days old (and `done` is still checked) the routine acts, branching on `distill`:
+  - `distill` checked → the source is **ripe**: distill it, stamp `distilled_date`, then discard the notebook.
+  - `distill` unchecked → keep it without distilling: discard the notebook, leaving `distilled_date` empty. The note and (for a PDF) its file stay as a searchable archive entry — the "read later" shelf.
 - Either branch ends by discarding the notebook and clearing `notebooklm_id`.
 
-The ripe predicate is `done == true && read == true && done_date <= today - 7 days && distilled_date` empty.
-Terminal and in-flight states are readable from frontmatter: `distilled_date` set means distilled; `done` with `notebooklm_id` empty and `distilled_date` empty means discarded unread; `done` with `notebooklm_id` still set means in flight — awaiting the cooldown, or ripe and being retried after a recorded error.
+The ripe predicate is `done == true && distill == true && done_date <= today - 7 days && distilled_date` empty.
+The cooldown is the window during which a shelved source still has its notebook, so checking `distill` (in the inbox before `done`, or afterwards in the Shelf view) any time before the cooldown ends is honoured; once the cooldown passes a `distill`-unchecked source has its notebook discarded and distilling it later would need the notebook re-created (see the reactivation procedure).
+Terminal and in-flight states are readable from frontmatter: `distilled_date` set means distilled; `done` with `notebooklm_id` empty and `distilled_date` empty means a shelved (kept, not distilled) source; `done` with `notebooklm_id` still set means in flight — awaiting the cooldown, or ripe and being retried after a recorded error.
 For a ripe source the notebook is discarded last, after `distilled_date` is stamped and the review report is written, so nothing it holds is destroyed before it is recorded.
 
 ## Reading inbox Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with four views over all sources: three to-read inboxes — an **All** view plus **Web** and **PDF** views — and a processed view that makes the otherwise-invisible lifecycle states (in flight, distilled, discarded unread) legible from their columns.
+A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with five views over all sources: three to-read inboxes — an **All** view plus **Web** and **PDF** views — a **Shelf** view of the read-later pile, and a **Processed** view that makes the otherwise-invisible lifecycle states (in flight, distilled, shelved) legible from their columns.
 The All inbox (`done != true`, no type filter) is the exhaustive one: every unread source appears in it whatever its `source_type`, so nothing can silently fall off the to-read side. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish; the All view, filtering only on `done != true`, has no such blind spot.
-All views lead with the `read`/`done` checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the All and processed views keep. Column widths and other cosmetics are per-vault tweaks.
+The Shelf view (`done` and `distill != true`) is the read-later cold storage: sources taken off the active list but not slated for distillation. It carries the `distill` column, so this is where you opt a shelved source into the knowledge graph (checking `distill` moves it out of the Shelf toward distillation); it also carries `summary` for browsing. Both filters are plain booleans, so the Shelf has no Bases empty-property blind spot — and visibility never depends on the routine having stamped a date.
+All views lead with the `read`/`done`/`distill` checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the All, Shelf, and Processed views keep. Column widths and other cosmetics are per-vault tweaks.
 
 Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. All views show `formula.title_link` in place of `file.name`.
 
@@ -112,6 +120,7 @@ views:
     order:
       - read
       - done
+      - distill
       - formula.title_link
       - source_type
       - added_date
@@ -127,6 +136,7 @@ views:
     order:
       - read
       - done
+      - distill
       - formula.title_link
       - added_date
     sort:
@@ -141,7 +151,25 @@ views:
     order:
       - read
       - done
+      - distill
       - formula.title_link
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Shelf
+    filters:
+      and:
+        - done
+        - distill != true
+    order:
+      - read
+      - done
+      - distill
+      - formula.title_link
+      - summary
+      - source_type
       - added_date
     sort:
       - property: added_date
@@ -154,6 +182,7 @@ views:
     order:
       - read
       - done
+      - distill
       - formula.title_link
       - source_type
       - added_date
@@ -170,33 +199,52 @@ views:
 This is the web-page path. For a PDF source, follow "Procedure: ingest a PDF source" below, which shares step 1 (slug and de-dup) but differs in how the source note and notebook are built.
 
 1. Compute the slug from the `url`: `printf '%s' "<url>" | shasum -a 256 | cut -c1-12` (same recipe as Conventions). This is the de-dup key. If `Sources/<slug>.md` already exists, read its `url`: when it matches, this is the same source, so update it in place rather than creating a new note (the title may have changed, but only the `title` property updates; the filename, being the URL hash, never changes), and if it already has a `notebooklm_id` it already has a notebook, so do not create a second one. When the existing note's `url` differs, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
-2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty.
+2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `read`, `done`, and `distill` start unchecked; `summary`, `topics`, `done_date`, and `distilled_date` start empty (step 3 fills `summary`/`topics`).
 3. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Run `.venv/bin/notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
    - Confirm NotebookLM actually fetched the article: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (adding is async; exit 0 = ready, 1 = failed, 2 = timeout). A **successful fetch** means the source reaches `ready` *and* its text is the real article — not empty, and not a wall (a login / JS-required / Cloudflare / paywall page NotebookLM fetched instead of the content). Judge wall-vs-article by reading, not by keyword: page chrome such as a `Log in` link or a noscript `enable JavaScript` notice alongside the real text is normal. A source that does not fetch successfully is not ingested — report it (each caller, kboat-ingest and kboat-distill, states how it handles that). This verification can run in a cheap subagent.
+   - Capture the summary while the notebook still exists (see "Procedure: capture summary and topics") and write `summary` and `topics` onto the note.
    - Write `notebooklm_id` onto the source note and derive `gemini_url` and `notebooklm_url` from it. The returned source id is not stored; it is resolved on demand.
 
 ## Procedure: ingest a PDF source
 
 A PDF source is read inside Obsidian (the vault syncs to every device) and uploaded into its own notebook as a file, so neither Google Drive nor Google Play Books is involved — Play Books has no personal-upload API, and adding Drive buys nothing once Play Books is out. The `url` is still the canonical de-dup key, so step 1 below runs the same de-dup as "create or update a source note"; only the later steps differ.
 
-A source is a PDF when fetching its `url` yields PDF bytes, not HTML — decide this in kboat-ingest before choosing a path (HEAD the URL: `Content-Type: application/pdf`, or a `content-disposition` filename ending `.pdf`; fall back to the first bytes being `%PDF-`). The extension alone is not enough — an arXiv link like `/pdf/2603.08163` has no `.pdf` suffix yet serves a PDF.
+A source is a PDF when fetching its `url` yields PDF bytes, not HTML — decide this in kboat-ingest before choosing a path. Do **not** use HEAD: bot-protected hosts answer HEAD with 403/405, and a plain `curl` (default User-Agent) is served an HTML challenge instead of the file. Fetch with a GET (no `Range` header — a range request can itself trigger a challenge) and a browser `User-Agent` (a current Chrome UA string), then judge by the bytes:
+
+- First bytes `%PDF-` (equivalently `Content-Type: application/pdf`) → **PDF**.
+- HTML, and the URL signals a PDF (a `.pdf` extension or a `/pdf/` path segment — e.g. arXiv `/pdf/<id>` or scispace `/pdf/<slug>.pdf`) → a bot-protection **challenge served instead of the file**. Report it as a blocked PDF and skip; do not ingest the challenge page as a web page.
+- HTML, no PDF signal in the URL → **web page**.
+
+The bytes decide PDF-vs-not; the URL shape only decides blocked-vs-web once the bytes are HTML, so the extension alone never promotes a source to the PDF path (an arXiv `/pdf/<id>` link has no `.pdf` suffix yet serves a PDF, and is caught by the bytes). Strong bot protection (e.g. scispace) blocks `curl` even with a browser UA and answers unreliably; such a source is reported as blocked, not worked around. The browser UA still matters: many hosts gate the file on it and serve it fine once it is set.
 
 1. Compute the slug and de-dup exactly as step 1 of "create or update a source note": the `url` is the queued URL verbatim (the same hash recipe), even when it points straight at the PDF. If `Sources/<slug>.md` already exists with a matching `url` and a `notebooklm_id`, it already has its file and notebook — update the note in place and stop, without re-downloading or creating a second notebook (the 1:1 invariant). If the existing note's `url` differs, report the slug collision and stop. Otherwise this is a new source — continue with steps 2–5.
-2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` (e.g. `curl -fsSL --create-dirs -o "<path>" "<url>"`). Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check. This same magic-byte check must still hold immediately before the upload in step 5 — treat download → verify → upload as one uninterrupted sequence. A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the reminder.
+2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client. Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check. This same magic-byte check must still hold immediately before the upload in step 5 — treat download → verify → upload as one uninterrupted sequence. A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the reminder.
 3. Resolve the `title`. Prefer a clean human title over the PDF's internal one: for an arXiv PDF, read the abstract page (`/pdf/<id>` → `/abs/<id>`); otherwise use the PDF's metadata title, then its first-page heading, then the reminder text. Whenever the title falls back to the reminder text, flag it so a human can fix it later (kboat-ingest reports this).
-4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty. This note write is the commit point, exactly as on the web path.
+4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read`, `done`, and `distill` start unchecked; `summary`, `topics`, `done_date`, and `distilled_date` start empty (step 5 fills `summary`/`topics`). This note write is the commit point, exactly as on the web path.
 5. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Add the PDF as an uploaded file, titling the source so it can be resolved later (a file upload has no `url` to match on): `.venv/bin/notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>" --notebook <id> --json`, and read the returned source id. Use the absolute vault path and quote it — it contains a space — because `source add` silently ingests a path that does not exist on disk as inline *text* rather than erroring, so a wrong path would upload the path string instead of the PDF.
    - Confirm NotebookLM extracted the PDF: `.venv/bin/notebooklm source wait <source_id> --notebook <id>` (exit 0 = ready, 1 = failed, 2 = timeout), then write the text to a temp file with `.venv/bin/notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile>` and read it. Use `-o`, not stdout, which truncates at 2000 chars and would make a good PDF look empty. A direct upload cannot fetch a wall, so the failure mode is **empty or garbled extraction** rather than a login page — a PDF that uploads but extracts to nothing is not ingested. Keep the note, notebook, and file, and report it (kboat-ingest states how). This verification can run in a cheap subagent.
+   - Capture the summary (see "Procedure: capture summary and topics") and write `summary` and `topics` onto the note.
    - Write `notebooklm_id` onto the source note and derive `gemini_url` and `notebooklm_url` from it. The returned source id is not stored; it is resolved on demand.
+
+## Procedure: capture summary and topics
+
+Every source — web or PDF — gets a `summary` and `topics`, captured at ingest while its notebook still exists. They are the durable, searchable description the recall skill leans on once the notebook is discarded, and they make the Base browsable. Run this after the source is `ready` (the fetch/extraction verification above passed):
+
+1. `.venv/bin/notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags). The guide follows the notebook's language.
+2. Write `topics` = the `.keywords` list, and `summary` = a concise one- or two-sentence summary (trim `.summary` to its lead if it runs long). If the guide call fails, leave both empty and report it; ingest continues (recall falls back to `title`).
+
+## Procedure: reactivate a shelved source's notebook
+
+A shelved source (kept, not distilled) has no notebook — but its note and, for a PDF, its `PDFs/<slug>.pdf` remain. Reading needs no notebook (open `reading_link` in Obsidian); only AI dialogue or distillation does. To get a notebook back, re-run the create-and-add step of the matching ingest procedure on the stored source: `create`, then `source add "<url>"` (web) or `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` (PDF), verify, and write the fresh `notebooklm_id`/`gemini_url`/`notebooklm_url` back. To then distil it, check `distill` and let the routine run.
 
 ## Procedure: discard a source's notebook
 
 This deletes the source's 1:1 NotebookLM notebook and clears its coordinates. The `Sources/*.md` note is always kept, and so is a PDF source's `PDFs/<slug>.pdf` — it is the reading copy and stays after the notebook is gone.
-Used when a source is dealt with but not read (`done` without `read`), or as the final step of distillation.
+Used when a source is shelved (`done` without `distill`), or as the final step of distillation.
 
 1. Read `notebooklm_id` from the source note. If empty, the notebook is already gone — nothing to do.
 2. Run `.venv/bin/notebooklm delete --notebook <notebooklm_id> -y`.
