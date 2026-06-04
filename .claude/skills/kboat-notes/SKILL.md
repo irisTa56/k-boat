@@ -35,7 +35,7 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 
 - Property keys and enum values use `snake_case`.
 - Date-valued properties carry a `_date` suffix (`added_date`, `done_date`, `distilled_date`) and use `YYYY-MM-DD`.
-- Derive a filename from the title by replacing each character Obsidian disallows in note names — `/ \ : * ? " < > |` — with `-`. Keep the exact title in the `title` property.
+- Source notes are named by a URL hash, not by the title. The filename is the first 12 hex characters of the SHA-256 of the `url` value, hashed verbatim with no normalization (`printf '%s' "<url>" | shasum -a 256 | cut -c1-12`), e.g. `Sources/a1b2c3d4e5f6.md`. Use `printf '%s'`, not `echo`: a trailing newline would change every digest. `shasum` is the macOS Perl tool, not `sha256sum`. Because `url` is immutable the hash is stable, so the file is never renamed, and the human-readable title lives only in the `title` property, surfaced by the Base. Two consequences the create procedure handles: the verbatim hash maps URL variants of one article (trailing slash, tracking params, fragment) to different files, and 48 bits is collision-resistant but not collision-free — so it de-dups by reading the existing note's `url`, never by filename alone. (Other notes keep their date names: `Reviews/YYYY-MM-DD.md`.)
 
 ## One notebook per source (1:1)
 
@@ -93,7 +93,11 @@ For a ripe source the notebook is discarded last, after `distilled_date` is stam
 A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with two views over all sources: the to-read inbox, and a processed view that makes the otherwise-invisible lifecycle states (in flight, distilled, discarded unread) legible from their columns.
 Both views lead with the `read`/`done` checkboxes and sort by `added_date`. Column widths and other cosmetics are per-vault tweaks.
 
+Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. Both views show `formula.title_link` in place of `file.name`.
+
 ```yaml
+formulas:
+  title_link: "file.asLink(note.title)"
 filters:
   and:
     - type == "source"
@@ -106,7 +110,7 @@ views:
     order:
       - read
       - done
-      - file.name
+      - formula.title_link
       - added_date
     sort:
       - property: added_date
@@ -119,7 +123,7 @@ views:
     order:
       - read
       - done
-      - file.name
+      - formula.title_link
       - added_date
       - done_date
       - distilled_date
@@ -131,8 +135,8 @@ views:
 
 ## Procedure: create or update a source note
 
-1. De-duplicate by `url`: scan existing `Sources/*.md` frontmatter for a note with this `url`. If one exists, update it in place rather than creating a new note; if its title changed, rename the file to the new sanitized title. If it already has a `notebooklm_id`, it already has a notebook — do not create a second one.
-2. Otherwise write a new `Sources/<sanitized-title>.md`. If that filename is already taken by a note with a different `url`, disambiguate with a short suffix. `reading_url` starts equal to `url`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty.
+1. Compute the slug from the `url`: `printf '%s' "<url>" | shasum -a 256 | cut -c1-12` (same recipe as Conventions). This is the de-dup key. If `Sources/<slug>.md` already exists, read its `url`: when it matches, this is the same source, so update it in place rather than creating a new note (the title may have changed, but only the `title` property updates; the filename, being the URL hash, never changes), and if it already has a `notebooklm_id` it already has a notebook, so do not create a second one. When the existing note's `url` differs, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
+2. Otherwise write a new `Sources/<slug>.md`. `reading_url` starts equal to `url`; `read` and `done` start unchecked; `done_date` and `distilled_date` start empty.
 3. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Run `.venv/bin/notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
