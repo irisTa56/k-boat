@@ -79,7 +79,7 @@ Keep schema and automation detail in the skills, not duplicated in README.
 - Naming:
   - Property keys and enum values are `snake_case`.
   - Dates are `YYYY-MM-DD`.
-  - Filenames replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
+  - Source notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in kboat-notes); the readable title lives in the `title` property and is shown via the Base's `title_link` formula. Other note names derived from text replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
 
 ## Keep this file current
 
