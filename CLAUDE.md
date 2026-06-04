@@ -63,7 +63,7 @@ Load-bearing model, spread across the skills, so it is easy to break with a loca
 - Crash-safety invariant: for a ripe source the notebook is discarded **last**, after `distilled_date` is stamped and the review report is written.
 - Provenance from a concept note to its source is an observation carrying the source URL, not a wikilink — the two live in separate roots (vault vs `KBOAT_KNOWLEDGE_PATH`), so a wikilink could not resolve. Concept-to-concept relations stay wikilinks (same root). Each claim is tagged `#grounded` or `#dialogue`: the reading-time chat (Gemini UI) draws on web/world knowledge as well as the source, so distillation verifies the ungrounded `#dialogue` claims before keeping them and never lets them read as source claims.
 - Distillation targets the `k-boat-knowledge` project explicitly (`project="k-boat-knowledge"` on every Basic Memory call); if that project does not exist the routine stops before any destructive step.
-- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`) with a Reading Inbox view (`done != true`) and a Processed view (`done`) that exposes the lifecycle state.
+- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`) with two to-read views (`done != true`) split by `source_type` (web vs PDF, since they are read differently) and a Processed view (`done`) that exposes the lifecycle state.
 
 Automation:
 

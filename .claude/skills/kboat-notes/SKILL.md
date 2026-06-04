@@ -91,10 +91,10 @@ For a ripe source the notebook is discarded last, after `distilled_date` is stam
 
 ## Reading inbox Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with two views over all sources: the to-read inbox, and a processed view that makes the otherwise-invisible lifecycle states (in flight, distilled, discarded unread) legible from their columns.
-Both views lead with the `read`/`done` checkboxes and sort by `added_date`. Column widths and other cosmetics are per-vault tweaks.
+A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with three views over all sources: two to-read inboxes split by `source_type` (web pages and PDFs are read differently — a URL versus Obsidian's PDF++), and a processed view that makes the otherwise-invisible lifecycle states (in flight, distilled, discarded unread) legible from their columns.
+All views lead with the `read`/`done` checkboxes and sort by `added_date`. The split inboxes are each single-type, so they omit the `source_type` column the processed view keeps. Column widths and other cosmetics are per-vault tweaks.
 
-Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. Both views show `formula.title_link` in place of `file.name`.
+Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. All views show `formula.title_link` in place of `file.name`.
 
 ```yaml
 formulas:
@@ -104,15 +104,29 @@ filters:
     - type == "source"
 views:
   - type: table
-    name: Reading Inbox
+    name: Reading Inbox · Web
     filters:
       and:
         - done != true
+        - source_type == "web_page"
     order:
       - read
       - done
       - formula.title_link
-      - source_type
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Reading Inbox · PDF
+    filters:
+      and:
+        - done != true
+        - source_type == "pdf"
+    order:
+      - read
+      - done
+      - formula.title_link
       - added_date
     sort:
       - property: added_date
