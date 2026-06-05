@@ -37,3 +37,21 @@ depends = ["qa:*"]
 [tasks."qa:md"]
 description = "Lint markdown files"
 run = "rumdl check"
+
+[tasks."fmt:py"]
+description = "Autofix Python lint and formatting"
+dir = "{{config_root}}/kboat-lifecycle"
+run = """
+uv run ruff check --fix
+uv run ruff format
+"""
+
+[tasks."qa:py:kboat-lifecycle"]
+description = "Lint, type-check, and test the kboat-lifecycle package"
+dir = "{{config_root}}/kboat-lifecycle"
+run = """
+uv run ruff check
+uv run ruff format --check
+uv run ty check
+uv run pytest
+"""

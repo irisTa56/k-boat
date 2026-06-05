@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 K-Boat is not an application.
-It is a Claude Code skill package plus a thin Python environment (a uv venv holding `notebooklm-py[browser]`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
+It is a Claude Code skill package plus a thin Python environment (a uv workspace whose root holds `notebooklm-py[browser]`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
 The skills in `.claude/skills/` are the product; most "code" is prose that an agent executes.
+The exception is the deterministic, purely-mechanical core of the routine, which is extracted into a tested Python package so the model neither re-derives it nor pays tokens for it — currently just `kboat-lifecycle` (the distillation state machine; see Architecture).
 
 Each piece of content gets its own throwaway NotebookLM notebook (1:1) for reading and dialogue. A week after a source is filed for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless the source is also kept).
 
@@ -30,11 +31,11 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 - NotebookLM auth:
   - `mise run nblm:login` — authenticate once.
   - `mise run nblm:auth:check` — verify auth with a network test.
-- Markdown quality gate:
-  - `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
-  - `mise run pre-commit` runs all `qa:*` tasks; the generated git pre-commit hook calls it, so a lint failure blocks commits.
-- There is no automated test suite.
-  - Validate changes by running the skills against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
+- Quality gates (a `qa:*` task each; `mise run pre-commit` runs them all and the generated git pre-commit hook calls it, so a failure blocks commits):
+  - Markdown: `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
+  - Python: `mise run qa:py:kboat-lifecycle` runs ruff (lint + format check), `ty`, and pytest for the package; the `pre-commit` task's `qa:*` glob picks it up. `mise run fmt:py` autofixes.
+- The Python packages are tested (pytest); the prose skills are not.
+  - Validate skill changes by running them against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
 ## Git workflow
 
@@ -54,6 +55,11 @@ Five skills, all under `.claude/skills/`:
   - It defers to `kboat-notes` for the schema.
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
   - It defers to `kboat-notes` for the rescue transitions.
+
+One deterministic helper package, a uv workspace member under `kboat-lifecycle/` (module `kboat_lifecycle`, console script `.venv/bin/kboat-lifecycle`):
+
+- It implements the distillation lifecycle state machine — the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous work sets as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
+- `kboat-notes` is the **spec** for these predicates; this package is an implementation of it. Change the spec there first, then the package and its tests. The package is the place to grow as more mechanical steps are extracted from the skills.
 
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
