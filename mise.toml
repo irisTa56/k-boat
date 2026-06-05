@@ -38,17 +38,47 @@ depends = ["qa:*"]
 description = "Lint markdown files"
 run = "rumdl check"
 
+# Python format/QA: one task per package, plus a wildcard aggregator each.
+# `pre-commit` (depends = ["qa:*"]) picks up every qa:py:<pkg> directly; `qa:py`
+# is the manual all-packages shortcut.
+
 [tasks."fmt:py"]
-description = "Autofix Python lint and formatting"
+description = "Autofix Python lint and formatting for all packages"
+depends = ["fmt:py:*"]
+
+[tasks."fmt:py:kboat-lifecycle"]
+description = "Autofix lint and formatting for the kboat-lifecycle package"
 dir = "{{config_root}}/kboat-lifecycle"
 run = """
 uv run ruff check --fix
 uv run ruff format
 """
 
+[tasks."fmt:py:kboat-repos"]
+description = "Autofix lint and formatting for the kboat-repos package"
+dir = "{{config_root}}/kboat-repos"
+run = """
+uv run ruff check --fix
+uv run ruff format
+"""
+
+[tasks."qa:py"]
+description = "Lint, type-check, and test all Python packages"
+depends = ["qa:py:*"]
+
 [tasks."qa:py:kboat-lifecycle"]
 description = "Lint, type-check, and test the kboat-lifecycle package"
 dir = "{{config_root}}/kboat-lifecycle"
+run = """
+uv run ruff check
+uv run ruff format --check
+uv run ty check
+uv run pytest
+"""
+
+[tasks."qa:py:kboat-repos"]
+description = "Lint, type-check, and test the kboat-repos package"
+dir = "{{config_root}}/kboat-repos"
 run = """
 uv run ruff check
 uv run ruff format --check

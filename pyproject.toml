@@ -13,7 +13,7 @@ dependencies = [
 package = false
 
 [tool.uv.workspace]
-members = ["kboat-lifecycle"]
+members = ["kboat-lifecycle", "kboat-repos"]
 
 [dependency-groups]
 dev = [
@@ -31,4 +31,4 @@ extend-select = ["I", "UP", "B", "SIM", "RUF"]
 ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["kboat_lifecycle"]
+known-first-party = ["kboat_lifecycle", "kboat_repos"]

@@ -1,6 +1,6 @@
 ---
 name: kboat-notes
-description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note or a Kindle note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox or Kindle Base, or where distilled concept notes live. This is the single source of truth for K-Boat note management; kboat-ingest, kboat-distill, and kboat-kindle defer to it.
+description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, a Kindle note, or a GitHub repo note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox, Kindle, or Repos Base, or where distilled concept notes live. This is the single source of truth for K-Boat note management; kboat-ingest, kboat-distill, kboat-kindle, and kboat-repos defer to it.
 ---
 
 # K-Boat note conventions
@@ -9,7 +9,12 @@ K-Boat reads content through Google NotebookLM and matures what it learns into a
 Each piece of content gets one NotebookLM notebook all to itself (1:1), plus one source note in the Obsidian vault that tracks it.
 The notebook is a throwaway reading-and-dialogue workspace; the durable record is the source note and, after distillation, the concept notes.
 
-Most content is a **source** read through NotebookLM as above. A **Kindle book** is the exception: it is read on a Kindle, has no notebook and no fetched URL, and is tracked by a `type: kindle` note in `Kindles/` that distillation draws on from highlights captured in the note body. Where this skill says "source" it means a `Sources/*.md` note; the Kindle note has its own section ("Kindle note") and procedure below.
+Most content is a **source** read through NotebookLM as above. Two parallel kinds are exceptions, each with no notebook:
+
+- A **Kindle book** is read on a Kindle, has no fetched URL, and is tracked by a `type: kindle` note in `Kindles/` that distillation draws on from highlights captured in the note body.
+- A **GitHub repository** is a tagged, searchable catalogue entry — a `type: repo` note in `Repos/` carrying GitHub metadata plus a judged role/domain/summary. It is never read through NotebookLM and never distilled into the knowledge graph; it is a bookmark you can browse and search. See "Repo note".
+
+Where this skill says "source" it means a `Sources/*.md` note; the Kindle and repo kinds have their own sections ("Kindle note", "Repo note") and procedures below.
 
 ## Environment
 
@@ -31,6 +36,8 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Reading Inbox.base` — a top-level standalone Base listing sources still to read (see below).
 - `Kindles/` — one `type: kindle` note per Kindle book, named by ASIN. No notebook; read on a Kindle and distilled from highlights pasted into the note body. See "Kindle note".
 - `Kindles.base` — a top-level standalone Base listing Kindle books (see "Kindle note").
+- `Repos/` — one `type: repo` note per GitHub repository, named by a URL hash. No notebook; a metadata catalogue entry, not distilled. See "Repo note".
+- `Repos.base` — a top-level standalone Base listing GitHub repositories (see "Repo note").
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 
@@ -190,6 +197,121 @@ views:
 ```
 
 Column widths and other cosmetics are per-vault tweaks (the live `Kindles.base` carries `columnSize` not shown here), as with the reading inbox Base.
+
+## Repo note (`Repos/*.md`)
+
+A GitHub repository read about, not read through NotebookLM: a tagged, searchable bookmark.
+Like a Kindle book it is a parallel kind with no notebook, but simpler still — it is **never distilled** into the knowledge graph (it is a catalogue, not a concept), so it has no disposition, no cooldown, and nothing destructive to gate.
+Its only lifecycle is: created when its link is ingested from the `K-Boat Queue`, then its GitHub metadata refreshed periodically.
+
+A repo note is frontmatter plus a single `## Notes` body section — the one part a human edits (free-form thoughts), preserved across every refresh. The deterministic mechanics (URL parsing, the slug, `status`, the `gh` fetch, the full-catalogue refresh) live in the `kboat-repos` package; the judgement (role, domain, summary) is done at ingest by a cheap subagent driven by the `kboat-repos` skill.
+
+Fields are ordered for reading — the links you open and the `read` checkbox first, then the GitHub metadata, then the judged classification and derived `status`, then the routine-managed dates.
+
+| Property | Meaning |
+| --- | --- |
+| `type` | Always `repo`. |
+| `title` | `owner/repo` (e.g. `a2aproject/A2A`), the **`gh`-resolved** canonical owner/repo. The file is hash-named, so the Base shows this via a `title_link` formula. |
+| `url` | Canonical repository URL `https://github.com/<owner>/<repo>`, owner/repo as `gh` resolves them. The de-dup key. Unlike a source URL it is **not immutable**: a repo can be renamed/transferred, and refresh adopts the new canonical URL (and renames the file). |
+| `homepage` | The project's homepage, if any (GitHub's `homepageUrl`). May be empty. |
+| `read` | Checkbox, set by the human. Informational only (have you looked at it); drives nothing, exactly as for a source or Kindle note. |
+| `description` | GitHub's repository description. |
+| `language` | YAML list of the significant languages, byte-share descending: each language at ≥10% of the repo's bytes, plus the primary language always. Glue files (Makefile, Dockerfile) drop out; a Python+C++ project keeps both. Computed by the `kboat-repos` package. |
+| `topics` | YAML list of GitHub topics. The open keyword field and the main lexical signal for search; there is deliberately no separate `tags` field (it would duplicate `topics` + `language` + `summary`). |
+| `stars` | Star count (integer). |
+| `archived` | Boolean — GitHub's archived flag. |
+| `created_at` | Repository creation date `YYYY-MM-DD`. |
+| `last_commit` | Last push date `YYYY-MM-DD` (GitHub's `pushedAt`). |
+| `license` | License id (e.g. `apache-2.0`), or empty. |
+| `role` | Closed enum, judged by the subagent: `library` / `framework` / `cli-tool` / `application` / `recipe` / `sample`. |
+| `domain` | YAML list from the controlled 14-word vocabulary below, judged by the subagent. The coarse browse axis. |
+| `summary` | A one- or two-sentence summary (Japanese), judged by the subagent. The durable, searchable description, in frontmatter so the Base is browsable and a future recall can read it. |
+| `status` | Derived from `last_commit` by the `kboat-repos` package: `recent` (≤60d) / `active` (≤180d) / `slow` (≤730d) / `dormant` (>730d) / `archived` (flag set) / `unknown` (no push date). |
+| `added_date` | Date the note was created. |
+| `refreshed_date` | Date the GitHub metadata was last refreshed (`kboat-repos refresh`). |
+
+There is deliberately no `tags` field (unlike a source or Kindle note): it would only duplicate `topics` + `language` + `summary`, so the open keyword signal is `topics` alone.
+
+Lists (`language`, `topics`, `domain`) are written **inline** (flow style, `topics: [a, b, c]`) so every top-level field is a single line — which is what lets `refresh` rewrite a field by replacing its one line and leave the judgement layer and body untouched.
+
+### Naming and de-dup
+
+A repo's identity is its `owner/repo`, which GitHub keeps unique. Queued links vary (a `.git` suffix, a trailing slash, a deep link into `/tree`, `/blob`, `/issues`), and GitHub 301-redirects renamed/transferred/wrong-case URLs — so the **authoritative** identity is the one `gh` resolves, not the queued text. `gather`/`refresh` re-key off `gh`'s `owner.login`/`name`. Then:
+
+1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
+2. Slug = first 12 hex of its SHA-256, same recipe as a source: `printf '%s' "<canonical-url>" | shasum -a 256 | cut -c1-12`. The file is `Repos/<slug>.md`.
+
+This is exactly `kboat_repos.identity.canonical_slug` plus `gather`'s resolution step (the package is the implementation, this is the spec). Resolving via `gh` makes de-dup case-insensitive (two casings of one repo resolve to one slug) and lets refresh follow renames. De-dup like a source: if `Repos/<slug>.md` exists, read its `url`; a match means the same repo (update in place, preserving the `## Notes` body), a mismatch is a slug collision (stop and report). Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and avoids the join ambiguity of replacing `/` with `-` (`a-b/c` vs `a/b-c`).
+
+### Classification vocabulary
+
+The subagent judges three fields; prefer existing values and keep the vocabulary small.
+
+- `role` — the closed 6-value enum above. Pick exactly one.
+- `domain` — a controlled **14-word** vocabulary (kebab-case), typically 1–3 per repo. Add a new value only when none fits; the point of a coarse vocabulary is a clean browse axis, so resist one-off domains (the fine detail belongs in `topics`/`summary`).
+
+  ```text
+  ai-agents, ai-infrastructure, ml, devtools, web-development,
+  infrastructure, data, distributed-systems, security, robotics,
+  embedded-iot, geospatial, media, general
+  ```
+
+  `general` is the fallback when nothing else fits. `embedded-iot` and `media` are umbrellas (embedded/iot/home-automation; graphics/audio/game-dev). Fold the obvious neighbours rather than inventing: storage/search → `data`; messaging/networking/blockchain → `distributed-systems`; cloud/observability → `infrastructure`; api/api-gateway/microservices → `web-development`; code-intelligence → `devtools`; osint → `security`; transportation → `geospatial`.
+- `summary` — one or two plain Japanese sentences saying what the project is and who it is for. No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is.
+
+### Lifecycle and state
+
+There is nothing destructive to gate, so the state is minimal:
+
+- Created when `kboat-ingest` sees the repo's link in the queue and routes it here (the `kboat-repos` skill fetches metadata, the subagent classifies, `kboat-repos write` writes the note, the reminder is deleted). The note is the durable record; the reminder is only a queue.
+- `read` — informational, set by the human; drives nothing.
+- `refreshed_date` advances each time `kboat-repos refresh` re-fetches the GitHub metadata and recomputes `status`. Refresh **preserves** the judged layer (`role`/`domain`/`summary`) and the `## Notes` body.
+- **Renames/transfers/case are adopted automatically.** When `gh` resolves a different canonical `owner/repo` than the note holds, refresh updates `url`/`title` and renames the file to the new canonical slug (carrying the judgement layer and body across). This keeps every note keyed off the live repo and is why the catalogue does not accumulate stale-name notes. The one exception is a slug **collision** — when the new canonical slug is already taken by another note — which refresh reports (`rename_collisions`) and leaves for a human to merge, refreshing metadata in place meanwhile. A repo `gh` cannot fetch at all (deleted, private) is reported under `failed`; the note is never deleted by the routine.
+
+### Repo Base
+
+A standalone Base at the vault root, `Repos.base`, over `type == "repo"`, with an **All** catalogue plus focused **By role** / **By domain** style views. Titles show through a `title_link` formula because the file is hash-named, and a `url_link` formula makes the GitHub URL clickable. Every filter is a plain boolean or an `==` over an always-present property (`role`, `status`, `archived`) — never a date-emptiness test, the same rule the reading inbox follows.
+
+```yaml
+filters:
+  and:
+    - type == "repo"
+formulas:
+  title_link: file.asLink(note.title)
+  url_link: link(url)
+views:
+  - type: table
+    name: Repos · All
+    order:
+      - read
+      - formula.title_link
+      - role
+      - language
+      - domain
+      - status
+      - stars
+      - last_commit
+      - added_date
+    sort:
+      - property: stars
+        direction: DESC
+  - type: table
+    name: Active
+    filters:
+      and:
+        - status == "recent"
+    order:
+      - formula.title_link
+      - role
+      - domain
+      - stars
+      - last_commit
+    sort:
+      - property: last_commit
+        direction: DESC
+```
+
+Column widths and other cosmetics are per-vault tweaks, as with the other Bases.
 
 ## Reading inbox Base
 
@@ -413,6 +535,20 @@ The browser mechanics — extracting the metadata from the Amazon product page t
 1. Resolve the ASIN. From a Kindle reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key.
 2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete. The filename, being the ASIN, never changes.
 3. Otherwise write a new `Kindles/<ASIN>.md` with `type: kindle` and the fields from "Kindle note": `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `read` and `distill` start `false`; `distilled_date` starts empty. The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads.
+
+## Procedure: create or update a repo note
+
+The mechanics — fetching GitHub metadata and judging the classification — belong to the `kboat-repos` skill, which defers here for the schema and these transitions, the same split as source ingest and Kindle ingest. The note **write itself is owned by the `kboat-repos` package** (`kboat-repos write`), so frontmatter order, YAML quoting (a `description` with a colon must not break the note), de-dup, and `## Notes` body preservation are guaranteed rather than hand-assembled:
+
+1. `gather` resolves the canonical owner/repo via `gh` and returns `slug`/`url`/`title` plus the ready-to-write `fields`. The subagent adds `role`/`domain`/`summary` to that record.
+2. Pipe the augmented record to `.venv/bin/kboat-repos write`. It de-dups by slug (a differing `url` at the same slug is a collision → it returns `status: collision`, written nowhere), preserves an existing note's `## Notes` body, `read`, and original `added_date` on update, stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
+
+## Procedure: refresh repo metadata
+
+Drain ingestion snapshots a repo once; this keeps the GitHub-derived fields fresh. It is mechanical and runs over the whole catalogue, so the `kboat-repos` package does it directly:
+
+1. Run `.venv/bin/kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`). For every `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched. When `gh` resolves a new canonical `owner/repo`, it adopts the rename (updates `url`/`title`, renames the file to the new slug).
+2. It prints a JSON report. The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked by an existing note — a human merges), and `failed` (repos `gh` could not fetch) — the routine never deletes a note.
 
 ## Concept notes (`KBOAT_KNOWLEDGE_PATH`)
 

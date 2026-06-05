@@ -7,13 +7,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 K-Boat is not an application.
 It is a Claude Code skill package plus a thin Python environment (a uv workspace whose root holds `notebooklm-py[browser]`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
 The skills in `.claude/skills/` are the product; most "code" is prose that an agent executes.
-The exception is the deterministic, purely-mechanical core of the routine, which is extracted into a tested Python package so the model neither re-derives it nor pays tokens for it — currently just `kboat-lifecycle` (the distillation state machine; see Architecture).
+The exception is the deterministic, purely-mechanical core of the routine, which is extracted into tested Python packages so the model neither re-derives it nor pays tokens for it — `kboat-lifecycle` (the distillation state machine) and `kboat-repos` (the GitHub-repo catalogue helper); see Architecture.
 
 Each piece of content gets its own throwaway NotebookLM notebook (1:1) for reading and dialogue. A week after a source is filed for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless the source is also kept).
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports), `Reading Inbox.base` (the to-read list), and `Kindles.base` (the Kindle catalogue).
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports), `Reading Inbox.base` (the to-read list), `Kindles.base` (the Kindle catalogue), and `Repos.base` (the repo catalogue).
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Environment gotchas
@@ -21,7 +21,8 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 - The NotebookLM CLI is at `.venv/bin/notebooklm`.
   - Invoke it by that path; the bare `notebooklm` fails because the mise shim is not configured.
 - Reminders are read with the `rem` CLI (macOS Reminders).
-  - The ingest queue is the `K-Boat Queue` list.
+  - The ingest queue is the `K-Boat Queue` list. A GitHub repo URL in it is routed to the repo catalogue, not the source path.
+- GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
 - Distillation writes to a Basic Memory project (`k-boat-knowledge`) rooted at `KBOAT_KNOWLEDGE_PATH`, via its MCP tools.
   - Basic Memory is a soft dependency: the concept notes are plain Markdown, so it is only the search/query layer. If it is down, distillation defers (it must not extract and then discard a notebook with nowhere to write).
 
@@ -33,7 +34,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
   - `mise run nblm:auth:check` — verify auth with a network test.
 - Quality gates (a `qa:*` task each; `mise run pre-commit` runs them all and the generated git pre-commit hook calls it, so a failure blocks commits):
   - Markdown: `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
-  - Python: `mise run qa:py:kboat-lifecycle` runs ruff (lint + format check), `ty`, and pytest for the package; the `pre-commit` task's `qa:*` glob picks it up. `mise run fmt:py` autofixes.
+  - Python: `mise run qa:py` runs ruff (lint + format check), `ty`, and pytest for every package (a wildcard over `qa:py:*`); `mise run qa:py:<pkg>` runs one. The `pre-commit` task's `qa:*` glob picks up each `qa:py:<pkg>` directly. `mise run fmt:py` autofixes all packages (wildcard over `fmt:py:*`); `mise run fmt:py:<pkg>` autofixes one.
 - The Python packages are tested (pytest); the prose skills are not.
   - Validate skill changes by running them against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
@@ -43,12 +44,14 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Architecture
 
-Six skills, all under `.claude/skills/`:
+Seven skills, all under `.claude/skills/`:
 
-- `kboat-notes` — the single source of truth for note conventions: the source-note and Kindle-note frontmatter schemas, naming, the lifecycle state machines, the reading inbox and Kindle Bases, and where concept notes live.
+- `kboat-notes` — the single source of truth for note conventions: the source-, Kindle-, and repo-note frontmatter schemas, naming, the lifecycle state machines, the reading inbox, Kindle, and Repos Bases, and where concept notes live.
   - Read this skill before touching any note format.
-- `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook.
+- `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos` instead.
   - It defers to `kboat-notes` for the schema and file writing.
+- `kboat-repos` — non-interactive: catalogues a GitHub repository (`type: repo`) — fetches metadata via `gh`, judges role/domain/summary with a cheap subagent — and refreshes the catalogue's metadata.
+  - It defers to `kboat-notes` for the repo schema and to the `kboat-repos` package for the deterministic fetch/refresh.
 - `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome (Claude in Chrome), into an ASIN-named `Kindles/` note.
   - It defers to `kboat-notes` for the Kindle schema and create transitions.
 - `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
@@ -58,10 +61,10 @@ Six skills, all under `.claude/skills/`:
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
   - It defers to `kboat-notes` for the rescue transitions.
 
-One deterministic helper package, a uv workspace member under `kboat-lifecycle/` (module `kboat_lifecycle`, console script `.venv/bin/kboat-lifecycle`):
+Two deterministic helper packages, uv workspace members, each implementing a mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the package and its tests):
 
-- It implements the distillation lifecycle state machine — the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous source work sets plus the ripe Kindle set (`kindles.ripe`; `distill && distilled_date` empty, no cooldown, no on-disk writes) as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
-- `kboat-notes` is the **spec** for these predicates; this package is an implementation of it. Change the spec there first, then the package and its tests. The package is the place to grow as more mechanical steps are extracted from the skills.
+- `kboat-lifecycle/` (module `kboat_lifecycle`, console script `.venv/bin/kboat-lifecycle`) — the distillation lifecycle state machine, the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous source work sets plus the ripe Kindle set (`kindles.ripe`; `distill && distilled_date` empty, no cooldown, no on-disk writes) as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
+- `kboat-repos/` (module `kboat_repos`, console script `.venv/bin/kboat-repos`) — the repo catalogue's mechanics, three subcommands: `gather <url>` (resolve canonical owner/repo via `gh`, `gh` metadata + README excerpt → JSON, for the skill to classify), `write` (assemble and write `Repos/<slug>.md` from a gather record + classification on stdin — order, YAML quoting, de-dup, body preservation), and `refresh` (re-fetch every `Repos/*.md`'s GitHub-derived frontmatter + recompute `status`, preserving the judged role/domain/summary and the `## Notes` body, adopting renames, reporting collisions/failures). All shell out to `gh`; no LLM call lives here.
 
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
@@ -77,11 +80,12 @@ Load-bearing model, spread across the skills, so it is easy to break with a loca
 - Provenance from a concept note to its source is an observation carrying the source URL, not a wikilink — the two live in separate roots (vault vs `KBOAT_KNOWLEDGE_PATH`), so a wikilink could not resolve. Concept-to-concept relations stay wikilinks (same root). Each claim is tagged `#grounded` or `#dialogue`: the reading-time chat (Gemini UI) draws on web/world knowledge as well as the source, so distillation verifies the ungrounded `#dialogue` claims before keeping them and never lets them read as source claims.
 - Distillation targets the `k-boat-knowledge` project explicitly (`project="k-boat-knowledge"` on every Basic Memory call); if that project does not exist the routine stops before any destructive step.
 - A Kindle book (`type: kindle`) is a parallel, simpler kind, not a source: ASIN-keyed (`Kindles/<ASIN>.md`), read on a Kindle so it has no notebook and no fetched URL, and distilled from highlights pasted into the **note body** (not from a notebook). Its lifecycle has nothing destructive to gate, so no cooldown and no `keep`/`dismiss`/`blocked` — only `read` (informational), `distill` (opt-in), and the terminal `distilled_date`. Provenance to a Kindle book is `ASIN:<asin>`, not a URL. `kboat-kindle` ingests; `kboat-distill` Phase C distils.
-- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`): to-read views (All, plus Web/PDF subsets), a Holding view of every filed source (read-later shelf, cooldown window, and terminal states, told apart by the disposition columns), an Ambiguous view of contradictory dispositions, and a DLQ of unfetched sources. Kindle books have their own `Kindles.base` (All catalogue + To-distill). Every filter is a plain boolean (`distill`/`keep`/`dismiss`/`blocked`) or `source_type ==`, never a `!=` over a maybe-missing property nor a date-emptiness test (Obsidian Bases can't do those reliably) — which is why `distill`/`keep`/`dismiss`/`blocked` are written on every source, and the routine and `kboat-recall` test empty dates by reading frontmatter directly.
+- A GitHub repository (`type: repo`) is another parallel kind, simpler still: URL-hash-named (`Repos/<slug>.md`, slug = hash of the canonical `https://github.com/<owner>/<repo>`), no notebook, and **never distilled** — a tagged, searchable catalogue, not a concept. So it has no disposition, no cooldown, nothing destructive; its only lifecycle is created-at-ingest then metadata refreshed. Identity is the **`gh`-resolved** canonical owner/repo (not the queued text), so de-dup is case-insensitive and the `url` is not immutable like a source's: refresh adopts a rename/transfer/case-change, updating `url`/`title` and renaming the file. The agent judges only `role` (closed enum), `domain` (controlled 14-word vocabulary), and `summary` (a cheap subagent, no API); GitHub fields, `status`, and the note write itself (`kboat-repos write` — order, YAML quoting, de-dup, body preservation) are mechanical (the `kboat-repos` package). The open keyword field is `topics` (no `tags`). `kboat-ingest` routes the URL, `kboat-repos` catalogues and refreshes.
+- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`): to-read views (All, plus Web/PDF subsets), a Holding view of every filed source (read-later shelf, cooldown window, and terminal states, told apart by the disposition columns), an Ambiguous view of contradictory dispositions, and a DLQ of unfetched sources. Kindle books have their own `Kindles.base` (All catalogue + To-distill); repos have `Repos.base` (All catalogue + Active). Every filter is a plain boolean (`distill`/`keep`/`dismiss`/`blocked`) or `source_type ==`, never a `!=` over a maybe-missing property nor a date-emptiness test (Obsidian Bases can't do those reliably) — which is why `distill`/`keep`/`dismiss`/`blocked` are written on every source, and the routine and `kboat-recall` test empty dates by reading frontmatter directly.
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest` then `kboat-distill`, in that order, under a single auth refresh. The task name is cadence-agnostic; the schedule is configured separately and may change.
+- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`.venv/bin/kboat-repos refresh`), then `kboat-distill`, in that order, under a single auth refresh. The task name is cadence-agnostic; the schedule is configured separately and may change.
 - It must be local — not a cloud Routine or Cowork — because the queue (macOS Reminders), the NotebookLM auth cookies, the iCloud vault, and the Basic Memory store are all local-only.
 - The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
 
@@ -94,7 +98,7 @@ Keep schema and automation detail in the skills, not duplicated in README.
 - Naming:
   - Property keys and enum values are `snake_case`.
   - Dates are `YYYY-MM-DD`.
-  - Source notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in kboat-notes); Kindle notes by their ASIN. Both keep the readable title in the `title` property, shown via the Base's `title_link` formula. Other note names derived from text replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
+  - Source and repo notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in kboat-notes — repos hash the canonical `https://github.com/<owner>/<repo>` with owner/repo as `gh` resolves them, so a rename re-slugs the note); Kindle notes by their ASIN. All keep the readable title in the `title` property, shown via the Base's `title_link` formula. Other note names derived from text replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
 
 ## Keep this file current
 
