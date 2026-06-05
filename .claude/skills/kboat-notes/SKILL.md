@@ -35,7 +35,7 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 ## Conventions
 
 - Property keys and enum values use `snake_case`.
-- Date-valued properties carry a `_date` suffix (`added_date`, `done_date`, `distilled_date`) and use `YYYY-MM-DD`.
+- Date-valued properties carry a `_date` suffix (`added_date`, `filed_date`, `distilled_date`) and use `YYYY-MM-DD`.
 - Source notes are named by a URL hash, not by the title. The filename is the first 12 hex characters of the SHA-256 of the `url` value, hashed verbatim with no normalization (`printf '%s' "<url>" | shasum -a 256 | cut -c1-12`), e.g. `Sources/a1b2c3d4e5f6.md`. Use `printf '%s'`, not `echo`: a trailing newline would change every digest. `shasum` is the macOS Perl tool, not `sha256sum`. Because `url` is immutable the hash is stable, so the file is never renamed, and the human-readable title lives only in the `title` property, surfaced by the Base. Two consequences the create procedure handles: the verbatim hash maps URL variants of one article (trailing slash, tracking params, fragment) to different files, and 48 bits is collision-resistant but not collision-free — so it de-dups by reading the existing note's `url`, never by filename alone. (Other notes keep their date names: `Reviews/YYYY-MM-DD.md`.)
 
 ## One notebook per source (1:1)
@@ -48,7 +48,7 @@ The NotebookLM source id is not stored. It is a per-notebook attribute resolved 
 
 ## Source note (`Sources/*.md`)
 
-Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the read/done/distill checkboxes first, then the source metadata (including `summary` and `topics`), then the routine-managed dates and the `blocked` flag, and finally the notebook coordinates.
+Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the `read`/`distill`/`keep`/`dismiss` checkboxes first, then the source metadata (including `summary` and `topics`), then the routine-managed dates and the `blocked` flag, and finally the notebook coordinates.
 
 | Property | Meaning |
 | --- | --- |
@@ -56,15 +56,16 @@ Frontmatter only, no body. Fields are ordered for reading — the URLs you open 
 | `title` | The source title. For a web page NotebookLM sets it from the page once the source is added; for a PDF it is the human title resolved during ingest and passed to `source add --title` (otherwise an uploaded source would be titled by its filename, which the on-demand source-id resolution could not match). |
 | `reading_link` | Where to read. May hold a URL or an Obsidian internal link. For a web page it starts equal to `url`, then is overwritten with a "Link with Highlight" as reading progresses. For a PDF it is an Obsidian internal link to the vault file, starting as `[[<slug>.pdf]]` and upgraded by hand to a [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) page or highlight link as reading progresses. |
 | `gemini_url` | Gemini chat view of the notebook, used for asking questions while reading. |
-| `read` | Checkbox, set by the human. Informational only — whether (or how far) you have read it. No routine behaviour depends on it, so a partially-read source you re-shelve keeps `read` checked. |
-| `done` | Checkbox, set by the human. Takes the source off the active to-read list — it leaves the inbox at once. Reversible: unchecking it returns the source to the inbox (and the routine clears `done_date`). |
-| `distill` | Checkbox, set by the human. Opt-in to distil this source into the knowledge graph. Only a `distill` source is distilled when its cooldown ends; the rest are kept as a searchable archive (the "read later" shelf). Set it while the source is in the inbox or, after `done`, in the Shelf view. |
+| `read` | Checkbox, set by the human. Informational only — whether (or how far) you have read it. No routine behaviour depends on it, so a partially-read source you keep stays honestly marked. |
+| `distill` | Checkbox (a disposition), set by the human. Opt-in to distil this source into the knowledge graph. Like any disposition, checking it takes the source off the active inbox at once; the distillation itself runs after the cooldown. Composes with `keep`: `distill` alone distils then discards the notebook, `distill` + `keep` distils but retains it. |
+| `keep` | Checkbox (a disposition), set by the human. Keep this source as a searchable "read later" entry and **retain its notebook**, so the reading-time dialogue survives. Checking it takes the source off the active inbox at once. Orthogonal to `distill` (they compose) but mutually exclusive with `dismiss`. Recall searches `keep` sources. |
+| `dismiss` | Checkbox (a disposition), set by the human. Abandon this source: take it off the inbox, discard its notebook after the cooldown, and exclude it from recall. The note (and any PDF) stays as a de-dup tombstone. Mutually exclusive with `keep`/`distill` — combining them is the ambiguous state the routine refuses to process. |
 | `source_type` | `web_page` or `pdf`. |
 | `url` | Original, canonical URL. Immutable. |
 | `summary` | A concise one- or two-sentence summary, captured at ingest from the NotebookLM source guide. Lets a source be recognised in recall results and browsed in the Base after its notebook is gone. |
 | `topics` | A list of topic keywords from the source guide. The main lexical signal for recall search. |
 | `added_date` | Date the source was ingested. |
-| `done_date` | Date, stamped by the routine when it first observes `done`; cleared if `done` is later unchecked. Empty until then. The clock that the cooldown counts from. |
+| `filed_date` | Date, stamped by the routine when it first observes any disposition (`distill`/`keep`/`dismiss`); cleared if every disposition is later unchecked. Empty until then. The clock that the cooldown counts from. |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
 | `blocked` | Boolean, default `false`, managed by the routine — not the human. Set `true` when ingest could not **fetch** the content (a bot-blocked PDF or a walled page); the note then sits in the DLQ with `notebooklm_id` empty until `kboat-rescue` pulls it through the real browser and clears it. (A PDF that fetched fine but extracted to nothing is not `blocked` — its file is readable; see the PDF procedure.) Always present (like `distill`) so the boolean Base filters never hit a missing property. |
 | `notebooklm_id` | NotebookLM notebook id for this source's 1:1 notebook. Cleared once the notebook is discarded. |
@@ -79,36 +80,41 @@ Derive both from `notebooklm_id`:
 
 ### Lifecycle and state
 
-`read`, `done`, and `distill` are independent checkboxes the human sets; `done_date` and `distilled_date` are dates the routine stamps. The three checkboxes are orthogonal because each carries a distinct axis: `read` is read progress (informational), `done` takes the source off the active list, and `distill` decides whether it enters the knowledge graph. So a part-read source can be shelved (`done`) without touching `read`, and shelved without distilling.
+`read` is an independent, informational checkbox (read progress) that drives no routine behaviour. The three **dispositions** — `distill`, `keep`, `dismiss` — are what the human sets to finish with a source; `filed_date` and `distilled_date` are dates the routine stamps. The dispositions share one effect — the source leaves the active inbox the moment any of them is checked (the Base filters on them, not on a date) — and otherwise mean different things: `distill` enters the knowledge graph, `keep` retains the source as a searchable archive with its notebook intact, `dismiss` abandons it. `keep` composes with `distill`; `dismiss` is exclusive of both. Because `read` is orthogonal, a part-read source can be kept or distilled without touching `read`.
 
-`done` controls inbox visibility directly: a `done` source leaves the inbox at once (the Base filters on `done`, not on `done_date`), and unchecking `done` brings it back. `done_date` records when the routine first observed `done`, not when the human checked it — a checkbox carries no timestamp — so the cooldown below counts from that first observation, and a stretch where the routine cannot run delays it.
+`filed_date` records when the routine first observed a disposition, not when the human checked it — a checkbox carries no timestamp — so the cooldown below counts from that first observation, and a stretch where the routine cannot run delays it. Unchecking every disposition clears `filed_date` and returns the source to the inbox.
 
 The routine (kboat-distill) drives the transitions:
 
-- `done` checked, `done_date` empty → the routine stamps `done_date`, starting a 7-day cooldown.
-- `done` unchecked, `done_date` set → the routine clears `done_date`, re-arming the source (back on the active list, cooldown abandoned).
-- Once `done_date` is at least 7 days old (and `done` is still checked) the routine acts, branching on `distill`:
-  - `distill` checked → the source is **ripe**: distill it, stamp `distilled_date`, then discard the notebook.
-  - `distill` unchecked → keep it without distilling: discard the notebook, leaving `distilled_date` empty. The note and (for a PDF) its file stay as a searchable archive entry — the "read later" shelf.
-- Either branch ends by discarding the notebook and clearing `notebooklm_id`.
+- Any disposition checked, `filed_date` empty → the routine stamps `filed_date`, starting a 7-day cooldown.
+- Every disposition unchecked, `filed_date` set → the routine clears `filed_date`, re-arming the source (back on the active list, cooldown abandoned).
+- **Ambiguous** (`dismiss` together with `keep` or `distill`) → never processed. "Keep" and "discard" contradict, so the routine never guesses: it does nothing destructive and **reports it on every run, not gated by the cooldown** (ambiguity is non-destructive to detect, so there is no reason to wait). The human resolves it; it shows in the Ambiguous Base view. This check takes precedence over the cooldown branches below.
+- Once `filed_date` is at least 7 days old and the source is unambiguous, the routine acts, branching on the disposition:
+  - `distill` (and not `dismiss`) → the source is **ripe**: distil it, stamp `distilled_date`, write the report, then discard the notebook — **unless `keep` is also set**, in which case the notebook is retained.
+  - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty. The note and any PDF stay as a de-dup tombstone, excluded from recall.
+  - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry. `keep` alone has no deferred action — it is a stable state from the moment it is checked.
 
-The ripe predicate is `done == true && distill == true && done_date <= today - 7 days && distilled_date` empty.
-The cooldown is the window during which a shelved source still has its notebook. Set `distill` before checking `done` (while it is still in the inbox) or, once `done` hides it from the inbox, any time during the cooldown in the Shelf view — either way it is honoured. Once the cooldown passes a `distill`-unchecked source has its notebook discarded, and distilling it later needs the notebook re-created (see the reactivation procedure).
-Terminal and in-flight states are readable from frontmatter: `distilled_date` set means distilled; `done` with `notebooklm_id` empty and `distilled_date` empty means a shelved source (`distill` unchecked, not distilled); `done` with `notebooklm_id` still set means in flight — awaiting the cooldown, or ripe and being retried after a recorded error.
-For a ripe source the notebook is discarded last, after `distilled_date` is stamped and the review report is written, so nothing it holds is destroyed before it is recorded.
+The ripe predicate is `distill && !dismiss && !blocked && filed_date <= today - 7 days && distilled_date` empty.
+The dismiss predicate is `dismiss && !keep && !distill && !blocked && filed_date <= today - 7 days`.
+The cooldown gates only the destructive actions (`distill`, `dismiss`); during it you can still change the disposition — flip `dismiss` → `keep`, or add `distill` — in the Holding view. `filed_date` is the *first*-filed time, so adding `distill` to a source kept long ago distils it on the next run (its cooldown has already elapsed) rather than waiting a fresh week.
+States are readable from the disposition flags plus the dates: `distilled_date` set → distilled; `keep` set with `notebooklm_id` present → a retained "read later" source; `dismiss` set with `notebooklm_id` empty → an abandoned tombstone; a `distill` or `dismiss` source with `distilled_date` empty and `notebooklm_id` present → in flight (awaiting the cooldown, or — for `distill` — ripe and retried after a recorded error).
+For a ripe source the notebook is discarded last (when it is discarded at all — not under `keep`), after `distilled_date` is stamped and the review report is written, so nothing it holds is destroyed before it is recorded.
 
 ### The DLQ (blocked sources)
 
 A source whose content ingest could not get is not dropped. Ingest writes the note with `blocked: true`, keeps its `url` (so the URL-hash slug, identity, and provenance survive), leaves `notebooklm_id` empty, and removes the reminder — the note becomes a durable Dead Letter Queue entry instead of a reminder that silently re-fails every run. The inbox views exclude `blocked` sources (`blocked != true`), so the to-read list shows only readable items; the DLQ Base view (`blocked == true`) lists them with their slug to copy. `kboat-rescue` then supplies the content (usually by driving the real browser through the wall) keyed by that slug, and clears `blocked` — after which the source behaves like any freshly-ingested one, URL intact. See "Procedure: record a blocked source (DLQ)" and "Procedure: rescue a blocked source".
 
+`blocked` takes precedence over the dispositions: a blocked source is a DLQ entry with no notebook, so any `distill`/`keep`/`dismiss` checked on it is **inert** until rescue clears `blocked`. The routine excludes `blocked` from both phases (hence the `!blocked` term in the ripe and dismiss predicates), and every non-DLQ Base view filters `blocked != true` — so a blocked source's only home is the DLQ view, never the inbox, Holding, or Ambiguous, whatever its disposition flags say.
+
 ## Reading inbox Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, replaces the old per-notebook dashboards with six views over all sources: three to-read inboxes — an **All** view plus **Web** and **PDF** views — a **Shelf** view of the read-later pile, a **DLQ** view of sources that could not be fetched, and a **Processed** view that makes the otherwise-invisible lifecycle states (in flight, distilled, shelved) legible from their columns.
-The to-read inboxes filter `done != true && blocked != true` — readable, unprocessed sources only (a blocked source has no content to read, so it belongs in the DLQ, not the inbox). The All inbox adds no type filter, so it is exhaustive over that set: every readable unread source appears whatever its `source_type`, so nothing silently falls off the to-read side. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish.
-The Shelf view (`done` and `distill != true`) is the read-later cold storage: sources taken off the active list but not slated for distillation. It carries the `distill` column, so this is where you opt a shelved source into the knowledge graph (checking `distill` moves it out of the Shelf toward distillation); it also carries `summary` for browsing.
-The DLQ view (`blocked`) lists the sources ingest could not fetch, with their `file.name` (the URL-hash slug) as the first column so it is easy to copy into `kboat-rescue`, plus the `url` and the failure is implied by their presence here. Rescuing one clears `blocked`, moving it out of the DLQ.
-Every Base filter is a plain boolean (`done`, `distill`, `blocked`) or an `==` over `source_type` — never a `!=` over a property that might be missing, and never a date-emptiness test. This holds only because `distill` and `blocked` are written on every source at creation; the create-time invariant, not the booleanness alone, is what keeps the Shelf and the inboxes complete (a `!=` over a *missing* property would silently drop the note). Visibility never depends on the routine having stamped a date.
-The to-read and Processed views lead with the `read`/`done`/`distill` checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the All, Shelf, and Processed views keep. Column widths and other cosmetics are per-vault tweaks.
+A single standalone Base at the vault root, `Reading Inbox.base`, gives six views over all sources: three to-read inboxes — an **All** view plus **Web** and **PDF** views — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources that could not be fetched.
+The to-read inboxes filter `distill != true && keep != true && dismiss != true && blocked != true` — readable, undispositioned sources only (a blocked source has no content to read, so it belongs in the DLQ, not the inbox). The All inbox adds no type filter, so it is exhaustive over that set: every readable, undispositioned source appears whatever its `source_type`. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish.
+The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `read`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
+The Ambiguous view (`dismiss && (keep || distill)`, and `blocked != true`) lists the contradictory sources the routine refuses to process, so they can be fixed. It is kept separate from Holding because it is an error state, not a resting one; like every non-DLQ view it excludes `blocked`, so a blocked source never leaks out of the DLQ.
+The DLQ view (`blocked`) lists the sources ingest could not fetch, with their `file.name` (the URL-hash slug) as the first column so it is easy to copy into `kboat-rescue`, plus the `url`; the failure is implied by their presence here. Rescuing one clears `blocked`, moving it out of the DLQ.
+Every Base filter is a plain boolean (`distill`, `keep`, `dismiss`, `blocked`) or an `==`/`!=` over an always-present property (`source_type` and the disposition booleans) — never a `!=` over a property that might be missing, and never a date-emptiness test. This holds only because `distill`, `keep`, `dismiss`, and `blocked` are written on every source at creation; the create-time invariant, not the booleanness alone, is what keeps the views complete (a `!=` over a *missing* property would silently drop the note). Visibility never depends on the routine having stamped a date.
+The to-read and Holding views lead with the disposition checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the All and Holding views keep. Column widths and other cosmetics are per-vault tweaks.
 
 Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. All views show `formula.title_link` in place of `file.name`.
 
@@ -123,12 +129,15 @@ views:
     name: Reading Inbox · All
     filters:
       and:
-        - done != true
+        - distill != true
+        - keep != true
+        - dismiss != true
         - blocked != true
     order:
       - read
-      - done
       - distill
+      - keep
+      - dismiss
       - formula.title_link
       - source_type
       - added_date
@@ -139,13 +148,16 @@ views:
     name: Reading Inbox · Web
     filters:
       and:
-        - done != true
+        - distill != true
+        - keep != true
+        - dismiss != true
         - blocked != true
         - source_type == "web_page"
     order:
       - read
-      - done
       - distill
+      - keep
+      - dismiss
       - formula.title_link
       - added_date
     sort:
@@ -155,31 +167,61 @@ views:
     name: Reading Inbox · PDF
     filters:
       and:
-        - done != true
+        - distill != true
+        - keep != true
+        - dismiss != true
         - blocked != true
         - source_type == "pdf"
     order:
       - read
-      - done
       - distill
+      - keep
+      - dismiss
       - formula.title_link
       - added_date
     sort:
       - property: added_date
         direction: DESC
   - type: table
-    name: Shelf
+    name: Holding
     filters:
       and:
-        - done
-        - distill != true
+        - blocked != true
+        - or:
+            - distill
+            - keep
+            - dismiss
     order:
       - read
-      - done
       - distill
+      - keep
+      - dismiss
       - formula.title_link
       - summary
       - source_type
+      - added_date
+      - filed_date
+      - distilled_date
+      - notebooklm_id
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Ambiguous
+    filters:
+      and:
+        - blocked != true
+        - dismiss
+        - or:
+            - keep
+            - distill
+    order:
+      - distill
+      - keep
+      - dismiss
+      - formula.title_link
+      - source_type
+      - url
       - added_date
     sort:
       - property: added_date
@@ -198,24 +240,6 @@ views:
     sort:
       - property: added_date
         direction: DESC
-  - type: table
-    name: Processed
-    filters:
-      and:
-        - done
-    order:
-      - read
-      - done
-      - distill
-      - formula.title_link
-      - source_type
-      - added_date
-      - done_date
-      - distilled_date
-      - notebooklm_id
-    sort:
-      - property: added_date
-        direction: DESC
 ```
 
 ## Procedure: create or update a source note
@@ -223,7 +247,7 @@ views:
 This is the web-page path. For a PDF source, follow "Procedure: ingest a PDF source" below, which shares step 1 (slug and de-dup) but differs in how the source note and notebook are built.
 
 1. Compute the slug from the `url`: `printf '%s' "<url>" | shasum -a 256 | cut -c1-12` (same recipe as Conventions). This is the de-dup key. If `Sources/<slug>.md` already exists, read its `url`: when it matches, this is the same source, so update it in place rather than creating a new note (the title may have changed, but only the `title` property updates; the filename, being the URL hash, never changes), and if it already has a `notebooklm_id` it already has a notebook, so do not create a second one. A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-fetch or create a notebook for it; treat the item as already recorded (the caller deletes the reminder and reports "already in the DLQ"). When the existing note's `url` differs, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
-2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `read`, `done`, `distill`, and `blocked` start `false`; `summary`, `topics`, `done_date`, and `distilled_date` start empty (step 3 fills `summary`/`topics`).
+2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `read`, `distill`, `keep`, `dismiss`, and `blocked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 3 fills `summary`/`topics`).
 3. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Run `.venv/bin/notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
@@ -246,7 +270,7 @@ The bytes decide PDF-vs-not; the URL shape only decides blocked-vs-web once the 
 1. Compute the slug and de-dup exactly as step 1 of "create or update a source note": the `url` is the queued URL verbatim (the same hash recipe), even when it points straight at the PDF. If `Sources/<slug>.md` already exists with a matching `url` and a `notebooklm_id`, it already has its file and notebook — update the note in place and stop, without re-downloading or creating a second notebook (the 1:1 invariant). A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-download or create a notebook; treat the item as already recorded (the caller deletes the reminder and reports "already in the DLQ"). If the existing note's `url` differs, report the slug collision and stop. Otherwise this is a new source — continue with steps 2–5.
 2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client. Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check. This same magic-byte check must still hold immediately before the upload in step 5 — treat download → verify → upload as one uninterrupted sequence. A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the reminder.
 3. Resolve the `title`. Prefer a clean human title over the PDF's internal one: for an arXiv PDF, read the abstract page (`/pdf/<id>` → `/abs/<id>`); otherwise use the PDF's metadata title, then its first-page heading, then the reminder text. Whenever the title falls back to the reminder text, flag it so a human can fix it later (kboat-ingest reports this).
-4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read`, `done`, `distill`, and `blocked` start `false`; `summary`, `topics`, `done_date`, and `distilled_date` start empty (step 5 fills `summary`/`topics`). This note write is the commit point, exactly as on the web path.
+4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read`, `distill`, `keep`, `dismiss`, and `blocked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 5 fills `summary`/`topics`). This note write is the commit point, exactly as on the web path.
 5. Create the 1:1 notebook and record its coordinates:
    - Run `.venv/bin/notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Add the PDF as an uploaded file, titling the source so it can be resolved later (a file upload has no `url` to match on): `.venv/bin/notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>" --notebook <id> --json`, and read the returned source id. Use the absolute vault path and quote it — it contains a space — because `source add` silently ingests a path that does not exist on disk as inline *text* rather than erroring, so a wrong path would upload the path string instead of the PDF.
@@ -261,17 +285,19 @@ Every source — web or PDF — gets a `summary` and `topics`, captured at inges
 1. `.venv/bin/notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags). The guide follows the notebook's language.
 2. Write `topics` = the `.keywords` list, and `summary` = a concise one- or two-sentence summary (trim `.summary` to its lead if it runs long). If the guide call fails, leave both empty and report it; ingest continues (recall falls back to `title`).
 
-## Procedure: reactivate a shelved source's notebook
+## Procedure: reactivate a discarded source's notebook
 
-A shelved source (kept, not distilled) has no notebook — but its note and, for a PDF, its `PDFs/<slug>.pdf` remain. Reading needs no notebook (open `reading_link` in Obsidian); only AI dialogue or distillation does. To get a notebook back, re-run the create-and-add step of the matching ingest procedure on the stored source: `create`, then `source add "<url>"` (web) or `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` (PDF), verify, and write the fresh `notebooklm_id`/`gemini_url`/`notebooklm_url` back.
+A `keep` source keeps its notebook, so reading, dialogue, and distillation need no reactivation there — just adjust the disposition. Reactivation is only for a source whose notebook was already discarded: a `distill`-only source after distillation, or a `dismiss`ed one. Its note and, for a PDF, its `PDFs/<slug>.pdf` remain; reading needs no notebook (open `reading_link` in Obsidian), only AI dialogue or re-distillation does. Do it in this order, so the source is never in a dangerous intermediate state:
 
-**Clear `done_date` as part of reactivation.** A shelved source's `done_date` is already past the cooldown, so without this the next routine run would re-enter Phase B's shelved branch and discard the notebook you just re-created — before you have a chance to check `distill`. Clearing `done_date` re-arms the cooldown (the routine re-stamps it on the next run, since `done` is still checked), giving a fresh window in the Shelf to set `distill`. With `distill` checked it then distils a week later, like any other source; left unchecked it returns to the shelf.
+1. **Reset the state first — before re-creating the notebook.** Clear the disposition that discarded the notebook (`dismiss`, or the spent `distill`), clear `filed_date`, and — for a re-distillation — clear `distilled_date` (which otherwise keeps the source out of the ripe set). Order matters: if the notebook were re-created while a stale destructive disposition and an already-elapsed `filed_date` still stood, the next routine run could discard the fresh notebook before you finished. With the disposition cleared the source is momentarily back in the inbox, which is harmless.
+2. **Re-create the notebook.** Re-run the create-and-add step of the matching ingest procedure on the stored source: `create`, then `source add "<url>"` (web) or `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` (PDF), verify, and write the fresh `notebooklm_id`/`gemini_url`/`notebooklm_url` back.
+3. **Choose the new disposition.** `keep` to hold the notebook going forward, or `distill` (optionally `distill` + `keep`) to re-distil. The routine re-stamps `filed_date`, so the cooldown counts fresh.
 
 ## Procedure: record a blocked source (DLQ)
 
 The DLQ is for sources whose content could not be **fetched** — a bot-blocked PDF (detection returned HTML for a `.pdf` URL) or a web page NotebookLM fetched as a wall — where pulling it through a real browser (`kboat-rescue`) is the fix. (An uploaded PDF that extracts to nothing is *not* a DLQ case: its file is fine and readable, the notebook is just unusable — re-fetching the same file would re-fail, so it is reported, not blocked; see the PDF procedure.) Ingest does not drop a fetch-blocked source; it parks it in the DLQ:
 
-1. Ensure `Sources/<slug>.md` exists (slug = the url-hash, as in step 1 of the create procedure). If a note was already written before the failure (the web path writes it before verifying), update it; otherwise create it now with `source_type`, `url` = the queued URL, `read`/`done`/`distill` = `false`, `summary`/`topics` empty. Set `reading_link` = `url`, so a click goes to the original where the human can clear the wall themselves.
+1. Ensure `Sources/<slug>.md` exists (slug = the url-hash, as in step 1 of the create procedure). If a note was already written before the failure (the web path writes it before verifying), update it; otherwise create it now with `source_type`, `url` = the queued URL, `read`/`distill`/`keep`/`dismiss` = `false`, `summary`/`topics` empty. Set `reading_link` = `url`, so a click goes to the original where the human can clear the wall themselves.
 2. Set `blocked: true`. Discard any contentless notebook that was created (a walled web fetch) per "discard a source's notebook", leaving `notebooklm_id` empty — rescue creates a fresh one. A fetch-blocked source has no local file (the fetch never produced one).
 3. The note now sits in the DLQ Base view, identified by its slug. kboat-ingest deletes the reminder — the durable note has replaced it. `kboat-rescue` later supplies the content and clears `blocked`.
 
@@ -289,7 +315,7 @@ Driven by the `kboat-rescue` skill (interactive). Given a DLQ source by its slug
 ## Procedure: discard a source's notebook
 
 This deletes the source's 1:1 NotebookLM notebook and clears its coordinates. The `Sources/*.md` note is always kept, and so is a PDF source's `PDFs/<slug>.pdf` — it is the reading copy and stays after the notebook is gone.
-Used when a source is shelved (`done` without `distill`), or as the final step of distillation.
+Used when a source is `dismiss`ed, or as the final step of distilling a source that is not also `keep`.
 
 1. Read `notebooklm_id` from the source note. If empty, the notebook is already gone — nothing to do.
 2. Run `.venv/bin/notebooklm delete --notebook <notebooklm_id> -y`.

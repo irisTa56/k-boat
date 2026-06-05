@@ -3,7 +3,7 @@
 Dump your content into a knowledge lake, then sail it with AI agents.
 
 K-Boat reads content through [NotebookLM](https://notebooklm.google.com/) and matures what it learns into a knowledge base.
-Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue; a week after you mark it done, K-Boat distills it into concept notes that accrete across sources, then discards the notebook.
+Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
 
 ## Setup
 
@@ -19,7 +19,7 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Sources/` — one note per source (a web page or a PDF), tracking its 1:1 notebook and reading state.
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
 - `Reviews/` — one report per distillation run, read for memory consolidation.
-- `Reading Inbox.base` — a standalone Base: to-read views (all unread, plus web and PDF subsets), a Shelf view of the read-later pile, and a processed view showing each source's lifecycle state.
+- `Reading Inbox.base` — a standalone Base: to-read views (all unread, plus web and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
 
@@ -37,4 +37,10 @@ The scheduled routine runs `kboat-ingest` then `kboat-distill` daily.
 
 A source ingest cannot fetch — a PDF behind a CAPTCHA wall, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing. Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA once) and finishes the ingest, keeping the original URL.
 
-Three checkboxes drive a source. `read` is just read progress. `done` takes it off the to-read inbox. `distill` opts it into the knowledge graph. A week after you mark a source `done`, the routine distils it (if `distill`) or discards its notebook and keeps the note on the searchable "read later" shelf (if not `distill`). Discarding a notebook is irreversible, so leave `done` unchecked for anything you still want to open in NotebookLM; the 7-day clock starts when the routine first sees `done` (and resets if you uncheck it).
+One progress checkbox plus three dispositions drive a source. `read` is just read progress. Checking any disposition takes the source off the to-read inbox at once:
+
+- `distill` — distil it into the knowledge graph (a week later), then discard the notebook.
+- `keep` — hold it on the searchable "read later" shelf, keeping its notebook for re-reading. Combine with `distill` to distil *and* keep the notebook.
+- `dismiss` — throw it away: discard the notebook and drop it from recall.
+
+The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
