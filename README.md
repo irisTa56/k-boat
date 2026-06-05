@@ -4,7 +4,7 @@ Dump your content into a knowledge lake, then sail it with AI agents.
 
 K-Boat reads content through [NotebookLM](https://notebooklm.google.com/) and matures what it learns into a knowledge base.
 Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
-Books you read on **Kindle** are the exception: they have no notebook, are catalogued by ASIN in `Kindles/`, and are distilled from the highlights you paste into the note body.
+Two kinds are exceptions, each with no notebook. Books you read on **Kindle** are catalogued by ASIN in `Kindles/` and distilled from the highlights you paste into the note body. **GitHub repositories** are catalogued in `Repos/` — a tagged, searchable bookmark with GitHub metadata and a judged role/domain/summary, never distilled.
 
 ## Setup
 
@@ -19,10 +19,12 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 
 - `Sources/` — one note per source (a web page or a PDF), tracking its 1:1 notebook and reading state.
 - `Kindles/` — one note per Kindle book, named by ASIN; no notebook, with reading highlights in the body.
+- `Repos/` — one note per GitHub repository, named by a URL hash; no notebook, a metadata catalogue entry.
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
 - `Reviews/` — one report per distillation run, read for memory consolidation.
 - `Reading Inbox.base` — a standalone Base: to-read views (all unread, plus web and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
 - `Kindles.base` — a standalone Base over the Kindle books: an All catalogue and a To-distill view.
+- `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
 
@@ -30,16 +32,17 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as
 
 The detailed conventions and procedures live in skills, so they are documented once and reused by every entry point.
 
-- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — the note schema and conventions: source-note and Kindle-note frontmatter, naming, the lifecycle state machines, the reading inbox and Kindle Bases, and where concept notes live.
-- [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook.
+- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — the note schema and conventions: source-, Kindle-, and repo-note frontmatter, naming, the lifecycle state machines, the reading inbox, Kindle, and Repos Bases, and where concept notes live.
+- [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
+- [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph. It defers to the Basic Memory skills for the concept-note conventions.
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — finish a source that could not be fetched (a bot-protected PDF in the DLQ) by pulling it through your real browser.
 
-The mechanical core of the distill pass — the cooldown clock and the work-set predicates (for sources and Kindle books) — lives in a small tested Python package, [`kboat-lifecycle`](kboat-lifecycle/), rather than in prose, so the routine is cheaper and the logic is unit-tested. Its quality gate (ruff, `ty`, pytest) runs in pre-commit via `mise run qa:py:kboat-lifecycle` (`mise run fmt:py` autofixes).
+The mechanical cores live in small tested Python packages rather than in prose, so the routine is cheaper and the logic is unit-tested: [`kboat-lifecycle`](kboat-lifecycle/) (the distill pass's cooldown clock and work-set predicates) and [`kboat-repos`](kboat-repos/) (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically). Both have a quality gate (ruff, `ty`, pytest) in pre-commit; run them with `mise run qa:py` (all packages) or `mise run qa:py:<pkg>` (one), and autofix with `mise run fmt:py` / `mise run fmt:py:<pkg>`.
 
-The scheduled routine runs `kboat-ingest` then `kboat-distill` daily.
+The scheduled routine runs `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill` daily.
 
 A source ingest cannot fetch — a PDF behind a CAPTCHA wall, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing. Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA once) and finishes the ingest, keeping the original URL.
 
@@ -52,3 +55,5 @@ One progress checkbox plus three dispositions drive a source. `read` is just rea
 The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
 
 Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — just `read` and `distill`. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
+
+GitHub repos are simpler still — a catalogue, never distilled. Drop a `github.com/<owner>/<repo>` link into the `K-Boat Queue` (or hand one to `kboat-repos` directly); ingest fetches its metadata, a cheap subagent tags it with a `role`, a `domain` (from a small controlled vocabulary), and a short `summary`, and it lands in `Repos/`, browsable and searchable in `Repos.base`. The daily routine's `kboat-repos refresh` keeps each repo's stars, last-commit, and `status` current while leaving your tags and the `## Notes` body untouched.

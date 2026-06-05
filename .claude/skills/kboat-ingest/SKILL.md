@@ -16,6 +16,10 @@ Follow the kboat-notes skill for the note schema, naming, and file writing.
 
 ## Per-item procedure
 
+**Route by kind first.** If the URL is a GitHub repository URL (`https://github.com/<owner>/<repo>`, including deep links into `/tree`, `/blob`, `/issues` and a `.git` suffix — but not a bare profile `github.com/<owner>` or a reserved route like `/orgs/...`), it is a **repo**, not a source: hand it to the `kboat-repos` skill (create-or-update a repo note via the `kboat-repos` package's `gather` plus a cheap classifying subagent, per kboat-notes "Procedure: create or update a repo note"), then delete the reminder once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below). A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it. A non-repo GitHub URL (a bare profile, a gist, a reserved route) falls through to the source path below.
+
+For every other URL, follow the source path:
+
 1. Decide the path, then gather signal. GET the URL with a browser User-Agent and sniff the bytes (not HEAD; see kboat-notes "Procedure: ingest a PDF source" for why and the exact rule): `%PDF-` ⇒ **PDF**; HTML where the URL's last path segment ends in `.pdf` ⇒ **blocked PDF** (a bot-protection challenge) → record it in the DLQ (kboat-notes "Procedure: record a blocked source"), to be rescued later; HTML otherwise ⇒ **web page**. The extension never promotes to the PDF path — the bytes do (an arXiv `/pdf/<id>` link serves a real PDF); a bare `/pdf/` path segment is not a blocked-PDF signal.
    - **Web page**: fetch the page with a cheap subagent to extract a richer title than the reminder gives. The fetches run in parallel. If the fetch fails (bot protection, HTTP 4xx/5xx, timeout), record the error and fall back to the reminder title. (The durable `summary`/`topics` come later from the source guide, per kboat-notes, not this fetch.)
    - **PDF**: follow kboat-notes "Procedure: ingest a PDF source" instead of steps 2–3 below. The title comes from the abstract page (arXiv) or the PDF itself, not an HTML fetch; downloading the file, de-duplicating, and creating the notebook are all part of that procedure. The same commit-point rule holds — the source-note write is the commit point — and step 4 below still deletes the reminder only after that note exists.
@@ -50,5 +54,5 @@ Collect, per item, at least:
 
 End the run with a summary covering:
 
-- Counts: items drained, notebooks created, sources left without a notebook, **sources sent to the DLQ** (blocked PDF or walled web page — awaiting `kboat-rescue`), PDFs ingested with empty/garbled extraction (readable file, unusable notebook), and sources left with empty `summary`/`topics`. For PDFs also count: transient download failures (reminder kept) and titles that fell back to the reminder text.
+- Counts: items drained, **GitHub repos catalogued** (routed to `Repos/`), notebooks created, sources left without a notebook, **sources sent to the DLQ** (blocked PDF or walled web page — awaiting `kboat-rescue`), PDFs ingested with empty/garbled extraction (readable file, unusable notebook), and sources left with empty `summary`/`topics`. For PDFs also count: transient download failures (reminder kept) and titles that fell back to the reminder text.
 - Errors: each collected error with the item it affected and the cause (e.g. bot-blocked PDF → DLQ, walled web page → DLQ, undecidable type, transient PDF download failure, rate-limited `create`/`source add`, source-guide failure, note write failure, slug collision).
