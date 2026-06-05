@@ -3,6 +3,11 @@
 Reads every `Sources/*.md` note in the vault, maintains the cooldown clock
 (Phase A — stamps/clears `filed_date` on disk unless `--dry-run`), and prints
 the resulting plan as JSON on stdout for the `kboat-distill` routine to act on.
+
+It also scans `Kindles/*.md` (if present) and emits the ripe Kindle set under
+`kindles.ripe`. Kindle notes have no cooldown and no notebook, so the tool makes
+no on-disk writes for them — it only selects which are ripe (`distill` &&
+`distilled_date` empty).
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from .lifecycle import Source, compute_plan
+from .lifecycle import Kindle, Source, compute_plan, select_ripe_kindles
 from .notes import FrontmatterError, parse_frontmatter, set_filed_date
 
 
@@ -34,6 +39,15 @@ def _source_json(s: Source) -> dict[str, object]:
     }
 
 
+def _kindle_json(k: Kindle) -> dict[str, object]:
+    return {
+        "slug": k.slug,  # the bare ASIN — kboat-distill writes it as the ASIN:<asin> provenance value
+        "path": k.path,
+        "title": k.title,
+        "distilled_date": k.distilled_date,
+    }
+
+
 def _load_sources(sources_dir: Path, vault: Path) -> tuple[list[Source], list[dict[str, str]]]:
     sources: list[Source] = []
     anomalies: list[dict[str, str]] = []
@@ -49,6 +63,27 @@ def _load_sources(sources_dir: Path, vault: Path) -> tuple[list[Source], list[di
             continue
         sources.append(Source.from_frontmatter(path.stem, rel, fm))
     return sources, anomalies
+
+
+def _load_kindles(kindles_dir: Path, vault: Path) -> tuple[list[Kindle], list[dict[str, str]]]:
+    """Scan `Kindles/*.md`. The directory is optional — an absent one yields no
+    Kindle notes and no anomalies (a vault may have only sources)."""
+    kindles: list[Kindle] = []
+    anomalies: list[dict[str, str]] = []
+    if not kindles_dir.is_dir():
+        return kindles, anomalies
+    for path in sorted(kindles_dir.glob("*.md")):
+        rel = path.relative_to(vault).as_posix()
+        try:
+            fm = parse_frontmatter(path.read_text(encoding="utf-8"))
+        except (FrontmatterError, OSError) as exc:
+            anomalies.append({"path": rel, "error": str(exc)})
+            continue
+        if fm.get("type") != "kindle":
+            anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'kindle'"})
+            continue
+        kindles.append(Kindle.from_frontmatter(path.stem, rel, fm))
+    return kindles, anomalies
 
 
 def _apply_phase_a(
@@ -107,10 +142,21 @@ def main(argv: list[str] | None = None) -> int:
     sources, anomalies = _load_sources(sources_dir, vault)
     plan = compute_plan(sources, today)
 
+    # Kindle notes (Kindles/ is optional). No on-disk writes — Kindle has no
+    # cooldown clock — only ripe selection.
+    kindles, kindle_anomalies = _load_kindles(vault / "Kindles", vault)
+    anomalies += kindle_anomalies
+    ripe_kindles = select_ripe_kindles(kindles)
+
     if not args.dry_run:
         anomalies += _apply_phase_a(
             plan.phase_a_stamp, plan.phase_a_clear, today.isoformat(), vault
         )
+
+    counts = dict(plan.counts)
+    counts["kindles_total"] = len(kindles)
+    counts["kindles_ripe"] = len(ripe_kindles)
+    counts["kindles_already_distilled"] = sum(1 for k in kindles if k.distilled_date is not None)
 
     output = {
         "today": plan.today,
@@ -125,7 +171,10 @@ def main(argv: list[str] | None = None) -> int:
             "ripe": [_source_json(s) for s in plan.ripe],
             "dismiss_discard": [_source_json(s) for s in plan.dismiss_discard],
         },
-        "counts": plan.counts,
+        "kindles": {
+            "ripe": [_kindle_json(k) for k in ripe_kindles],
+        },
+        "counts": counts,
         "anomalies": anomalies,
     }
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)

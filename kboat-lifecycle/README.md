@@ -24,8 +24,13 @@ kboat-lifecycle [--vault PATH] [--today YYYY-MM-DD] [--dry-run]
   sources and clears it where every disposition was unchecked. `--dry-run` skips
   these writes.
 - **Prints JSON** on stdout: `phase_a.stamped`/`cleared`, `ambiguous`,
-  `phase_b.ripe`, `phase_b.dismiss_discard`, plus `counts` and `anomalies`.
+  `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and
+  `anomalies`.
 - Blocked (DLQ) sources are excluded from both phases.
+- **Kindle notes** (`Kindles/*.md`, optional directory) have a far simpler
+  lifecycle — no notebook, so no cooldown and no keep/dismiss/blocked. The tool
+  makes no on-disk writes for them; it only emits the ripe set (`distill` &&
+  `distilled_date` empty) under `kindles.ripe`, plus `kindles_*` counts.
 
 ## Development
 

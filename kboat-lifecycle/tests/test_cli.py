@@ -49,6 +49,36 @@ def write_note(
     )
 
 
+KINDLE_TEMPLATE = """\
+---
+type: kindle
+title: {title}
+reading_link: https://read.amazon.co.jp/?asin={slug}
+author:
+  - Someone
+store_link: https://www.amazon.co.jp/dp/{slug}
+distill: {distill}
+distilled_date:{distilled_suffix}
+added_date: 2026-06-01
+---
+
+{body}
+"""
+
+
+def write_kindle(kindles: Path, slug: str, *, distill=False, distilled_date=None, body="highlight"):
+    (kindles / f"{slug}.md").write_text(
+        KINDLE_TEMPLATE.format(
+            title=slug,
+            slug=slug,
+            distill=str(distill).lower(),
+            distilled_suffix=f" {distilled_date}" if distilled_date else "",
+            body=body,
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def vault(tmp_path: Path) -> Path:
     (tmp_path / "Sources").mkdir()
@@ -120,6 +150,48 @@ def test_non_source_note_is_an_anomaly(vault: Path, capsys):
     out = run(vault, capsys)
     assert len(out["anomalies"]) == 1
     assert out["anomalies"][0]["path"] == "Sources/weird.md"
+
+
+def test_missing_kindles_dir_is_empty(vault: Path, capsys):
+    # Kindles/ is optional — a sources-only vault must not error.
+    out = run(vault, capsys)
+    assert out["kindles"]["ripe"] == []
+    assert out["counts"]["kindles_total"] == 0
+
+
+def test_kindle_ripe_selection(vault: Path, capsys):
+    kindles = vault / "Kindles"
+    kindles.mkdir()
+    write_kindle(kindles, "B001RIPE", distill=True)
+    write_kindle(kindles, "B002IDLE")  # distill unchecked
+    write_kindle(kindles, "B003DONE", distill=True, distilled_date="2026-06-10")
+    out = run(vault, capsys)
+
+    assert [k["slug"] for k in out["kindles"]["ripe"]] == ["B001RIPE"]
+    # Pin the entry's key set: the JSON shape is the contract kboat-distill Phase C
+    # consumes, so drift (e.g. resurrecting the dropped isbn/asin) must fail here.
+    assert set(out["kindles"]["ripe"][0]) == {"slug", "path", "title", "distilled_date"}
+    assert out["counts"]["kindles_total"] == 3
+    assert out["counts"]["kindles_ripe"] == 1
+    assert out["counts"]["kindles_already_distilled"] == 1
+
+
+def test_kindle_no_disk_writes(vault: Path, capsys):
+    # Kindle has no cooldown clock; the tool must never rewrite a Kindle note.
+    kindles = vault / "Kindles"
+    kindles.mkdir()
+    write_kindle(kindles, "B001RIPE", distill=True)
+    before = (kindles / "B001RIPE.md").read_text()
+    run(vault, capsys)
+    assert (kindles / "B001RIPE.md").read_text() == before
+
+
+def test_non_kindle_note_is_an_anomaly(vault: Path, capsys):
+    kindles = vault / "Kindles"
+    kindles.mkdir()
+    (kindles / "weird.md").write_text("---\ntype: source\n---\n", encoding="utf-8")
+    out = run(vault, capsys)
+    assert any(a["path"] == "Kindles/weird.md" for a in out["anomalies"])
 
 
 def test_missing_vault_errors(tmp_path: Path):

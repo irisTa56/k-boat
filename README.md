@@ -4,6 +4,7 @@ Dump your content into a knowledge lake, then sail it with AI agents.
 
 K-Boat reads content through [NotebookLM](https://notebooklm.google.com/) and matures what it learns into a knowledge base.
 Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
+Books you read on **Kindle** are the exception: they have no notebook, are catalogued by ASIN in `Kindles/`, and are distilled from the highlights you paste into the note body.
 
 ## Setup
 
@@ -17,9 +18,11 @@ Each piece of content gets its own throwaway NotebookLM notebook for reading and
 The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 
 - `Sources/` — one note per source (a web page or a PDF), tracking its 1:1 notebook and reading state.
+- `Kindles/` — one note per Kindle book, named by ASIN; no notebook, with reading highlights in the body.
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
 - `Reviews/` — one report per distillation run, read for memory consolidation.
 - `Reading Inbox.base` — a standalone Base: to-read views (all unread, plus web and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
+- `Kindles.base` — a standalone Base over the Kindle books: an All catalogue and a To-distill view.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
 
@@ -27,13 +30,14 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as
 
 The detailed conventions and procedures live in skills, so they are documented once and reused by every entry point.
 
-- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — the note schema and conventions: source-note frontmatter, naming, the lifecycle state machine, the reading inbox Base, and where concept notes live.
+- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — the note schema and conventions: source-note and Kindle-note frontmatter, naming, the lifecycle state machines, the reading inbox and Kindle Bases, and where concept notes live.
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook.
-- [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state and distilling ripe sources into the knowledge graph. It defers to the Basic Memory skills for the concept-note conventions.
+- [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
+- [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph. It defers to the Basic Memory skills for the concept-note conventions.
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — finish a source that could not be fetched (a bot-protected PDF in the DLQ) by pulling it through your real browser.
 
-The mechanical core of the distill pass — the cooldown clock and the work-set predicates — lives in a small tested Python package, [`kboat-lifecycle`](kboat-lifecycle/), rather than in prose, so the routine is cheaper and the logic is unit-tested. Its quality gate (ruff, `ty`, pytest) runs in pre-commit via `mise run qa:py:kboat-lifecycle` (`mise run fmt:py` autofixes).
+The mechanical core of the distill pass — the cooldown clock and the work-set predicates (for sources and Kindle books) — lives in a small tested Python package, [`kboat-lifecycle`](kboat-lifecycle/), rather than in prose, so the routine is cheaper and the logic is unit-tested. Its quality gate (ruff, `ty`, pytest) runs in pre-commit via `mise run qa:py:kboat-lifecycle` (`mise run fmt:py` autofixes).
 
 The scheduled routine runs `kboat-ingest` then `kboat-distill` daily.
 
@@ -46,3 +50,5 @@ One progress checkbox plus three dispositions drive a source. `read` is just rea
 - `dismiss` — throw it away: discard the notebook and drop it from recall.
 
 The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
+
+Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — just `read` and `distill`. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.

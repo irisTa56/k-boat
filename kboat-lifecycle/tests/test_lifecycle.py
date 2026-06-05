@@ -2,7 +2,14 @@
 
 from datetime import date
 
-from kboat_lifecycle.lifecycle import COOLDOWN_DAYS, Source, compute_plan, cooldown_elapsed
+from kboat_lifecycle.lifecycle import (
+    COOLDOWN_DAYS,
+    Kindle,
+    Source,
+    compute_plan,
+    cooldown_elapsed,
+    select_ripe_kindles,
+)
 
 TODAY = date(2026, 6, 15)
 RIPE_FILED = "2026-06-08"  # exactly COOLDOWN_DAYS old → elapsed
@@ -159,6 +166,35 @@ class TestPhaseBKeep:
         assert plan.ripe == []
         assert plan.dismiss_discard == []
         assert plan.counts["keep_noop"] == 1
+
+
+def make_kindle(slug: str, **over: object) -> Kindle:
+    base: dict[str, object] = {
+        "slug": slug,
+        "path": f"Kindles/{slug}.md",
+        "title": slug,
+        "distill": False,
+        "distilled_date": None,
+    }
+    base.update(over)
+    return Kindle(**base)  # type: ignore[arg-type]
+
+
+class TestKindle:
+    def test_distill_unchecked_not_ripe(self):
+        assert select_ripe_kindles([make_kindle("a")]) == []
+
+    def test_distill_checked_and_undistilled_is_ripe(self):
+        ripe = select_ripe_kindles([make_kindle("a", distill=True)])
+        assert [k.slug for k in ripe] == ["a"]
+
+    def test_already_distilled_not_ripe(self):
+        kindles = [make_kindle("a", distill=True, distilled_date="2026-06-10")]
+        assert select_ripe_kindles(kindles) == []
+
+    def test_no_cooldown_unlike_source(self):
+        # A source filed today is not ripe; a Kindle marked distill is ripe at once.
+        assert make_kindle("a", distill=True).is_ripe is True
 
 
 class TestCounts:

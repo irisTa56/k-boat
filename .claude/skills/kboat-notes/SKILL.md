@@ -1,6 +1,6 @@
 ---
 name: kboat-notes
-description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox Base, or where distilled concept notes live. This is the single source of truth for K-Boat note management; kboat-ingest and kboat-distill defer to it.
+description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note or a Kindle note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox or Kindle Base, or where distilled concept notes live. This is the single source of truth for K-Boat note management; kboat-ingest, kboat-distill, and kboat-kindle defer to it.
 ---
 
 # K-Boat note conventions
@@ -8,6 +8,8 @@ description: Conventions for creating and updating K-Boat notes. Use when creati
 K-Boat reads content through Google NotebookLM and matures what it learns into a knowledge base.
 Each piece of content gets one NotebookLM notebook all to itself (1:1), plus one source note in the Obsidian vault that tracks it.
 The notebook is a throwaway reading-and-dialogue workspace; the durable record is the source note and, after distillation, the concept notes.
+
+Most content is a **source** read through NotebookLM as above. A **Kindle book** is the exception: it is read on a Kindle, has no notebook and no fetched URL, and is tracked by a `type: kindle` note in `Kindles/` that distillation draws on from highlights captured in the note body. Where this skill says "source" it means a `Sources/*.md` note; the Kindle note has its own section ("Kindle note") and procedure below.
 
 ## Environment
 
@@ -25,8 +27,10 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 
 - `Sources/` — one note per source. Each tracks one piece of content and its 1:1 notebook.
 - `PDFs/` — the downloaded file for each PDF source, named `<slug>.pdf` by the same URL-hash slug as its note. Only PDF sources have one; web-page sources do not. It is the reading copy (opened in Obsidian) and the file uploaded to NotebookLM.
-- `Reviews/` — one `YYYY-MM-DD.md` per distillation run, the review report read for memory consolidation.
+- `Reviews/` — one `YYYY-MM-DD.md` per distillation run, the review report read for memory consolidation. Covers both source and Kindle distillation.
 - `Reading Inbox.base` — a top-level standalone Base listing sources still to read (see below).
+- `Kindles/` — one `type: kindle` note per Kindle book, named by ASIN. No notebook; read on a Kindle and distilled from highlights pasted into the note body. See "Kindle note".
+- `Kindles.base` — a top-level standalone Base listing Kindle books (see "Kindle note").
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 
@@ -107,6 +111,85 @@ This state machine is purely mechanical — boolean and date predicates over fro
 A source whose content ingest could not get is not dropped. Ingest writes the note with `blocked: true`, keeps its `url` (so the URL-hash slug, identity, and provenance survive), leaves `notebooklm_id` empty, and removes the reminder — the note becomes a durable Dead Letter Queue entry instead of a reminder that silently re-fails every run. The inbox views exclude `blocked` sources (`blocked != true`), so the to-read list shows only readable items; the DLQ Base view (`blocked == true`) lists them with their slug to copy. `kboat-rescue` then supplies the content (usually by driving the real browser through the wall) keyed by that slug, and clears `blocked` — after which the source behaves like any freshly-ingested one, URL intact. See "Procedure: record a blocked source (DLQ)" and "Procedure: rescue a blocked source".
 
 `blocked` takes precedence over the dispositions: a blocked source is a DLQ entry with no notebook, so any `distill`/`keep`/`dismiss` checked on it is **inert** until rescue clears `blocked`. The routine excludes `blocked` from both phases (hence the `!blocked` term in the ripe and dismiss predicates), and every non-DLQ Base view filters `blocked != true` — so a blocked source's only home is the DLQ view, never the inbox, Holding, or Ambiguous, whatever its disposition flags say.
+
+## Kindle note (`Kindles/*.md`)
+
+A Kindle book read on a Kindle device or app. Unlike a source it has no NotebookLM notebook, no fetched URL, and nothing to discard — it is a permanent catalogue entry whose **body** holds the reading highlights that distillation later draws on. So a Kindle note is frontmatter plus a free-form body (the highlights/notes); the body starts empty and is filled by hand or with the `organize-reading-note` skill.
+
+Identity is the Amazon **ASIN**, taken from the Kindle reader URL `https://read.amazon.co.jp/?asin=<ASIN>`. The note is named `Kindles/<ASIN>.md` — the ASIN is the stable id, so (as with a source's URL hash) the file is never renamed and the readable title lives in the `title` property, surfaced by the Base via a `title_link` formula. De-dup is by the ASIN filename: if `Kindles/<ASIN>.md` exists it is the same book.
+
+Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `read`/`distill` checkboxes and the routine-managed dates.
+
+| Property | Meaning |
+| --- | --- |
+| `type` | Always `kindle`. |
+| `title` | The book title. |
+| `reading_link` | The Kindle reader URL (`https://read.amazon.co.jp/?asin=<ASIN>`), placed directly under `title`. Same role as a source's `reading_link`: where to open it. |
+| `author` | YAML list of author names. Take the byline (`by … (Author)`), which can differ from the "Follow the author" widget. |
+| `store_link` | The Amazon **product-page link** (`https://www.amazon.co.jp/dp/<ASIN>`) — a clickable store link. The bare ASIN itself is not stored as a value: it is the note's filename (`Kindles/<ASIN>.md`), which is the identity/de-dup key. |
+| `published` | Publication date as a string at whatever precision is available (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); never zero-padded to fake finer precision. |
+| `publisher` | Publisher, if available. |
+| `read` | Checkbox, set by the human. Informational only (read progress); drives nothing. |
+| `distill` | Checkbox, set by the human. Opt-in to distil this book into the knowledge graph (from the body). |
+| `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
+| `added_date` | Date the note was created. |
+| `tags` | `kindle`. |
+
+There is deliberately no `isbn` field: a Kindle product page shows the ASIN, not an ISBN, so it would be empty for almost every Kindle title.
+
+### Lifecycle and state
+
+Simpler than a source's, because there is no notebook to retain or discard and so nothing destructive to gate: no cooldown, and no `keep`/`dismiss`/`blocked`. A Kindle note is created, optionally read, optionally marked `distill`, and once distilled carries `distilled_date`. The note is never deleted — it is a permanent catalogue and de-dup record.
+
+- `read` — informational, exactly as for a source.
+- `distill` checked and `distilled_date` empty → **ripe**: the routine distils the note body and stamps `distilled_date`. Unlike a source there is no 7-day cooldown — a Kindle book is distilled on the next run after `distill` is checked.
+- `distilled_date` set → distilled; a further run is a no-op. Re-distilling requires the human to clear `distilled_date` first.
+
+The ripe predicate is `distill && distilled_date` empty. The deterministic tool `.venv/bin/kboat-lifecycle` evaluates it (alongside the source predicates) and emits the ripe Kindle set as JSON; this skill is the spec, the tool an implementation of it.
+
+Distillation reads the **note body** (the highlights/notes). A ripe book whose body has no extractable text — empty, or only image embeds / whitespace — cannot be distilled: the routine reports it and leaves `distilled_date` empty so it re-surfaces once the body is filled. Provenance from a concept note back to a Kindle book is an observation carrying the ASIN — `- [source] <title> — ASIN:<asin>`, where `<asin>` is the note's filename (the bare ASIN). The vault and knowledge roots differ, so a wikilink could not resolve; the ASIN is stable and root-independent.
+
+### Kindle Base
+
+A standalone Base at the vault root, `Kindles.base`, over `type == "kindle"`, with two views: an **All** catalogue and a **To distill** view (`distill == true`). The To-distill view carries a `distilled_date` column so a distilled book (date set) can be told from a still-ripe one (date empty) — the filter cannot test date-emptiness, so the column carries that signal, as the source Holding view does; the All catalogue omits it. Titles show through a `title_link` formula (`file.asLink(note.title)`) because the file is named by ASIN.
+
+```yaml
+filters:
+  and:
+    - type == "kindle"
+formulas:
+  title_link: file.asLink(note.title)
+views:
+  - type: table
+    name: Kindles · All
+    order:
+      - read
+      - distill
+      - formula.title_link
+      - author
+      - published
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: To distill
+    filters:
+      and:
+        - distill
+    order:
+      - read
+      - distill
+      - formula.title_link
+      - author
+      - distilled_date
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+```
+
+Column widths and other cosmetics are per-vault tweaks (the live `Kindles.base` carries `columnSize` not shown here), as with the reading inbox Base.
 
 ## Reading inbox Base
 
@@ -322,6 +405,14 @@ Used when a source is `dismiss`ed, or as the final step of distilling a source t
 1. Read `notebooklm_id` from the source note. If empty, the notebook is already gone — nothing to do.
 2. Run `.venv/bin/notebooklm delete --notebook <notebooklm_id> -y`.
 3. Clear `notebooklm_id`, `gemini_url`, and `notebooklm_url` on the source note.
+
+## Procedure: create or update a Kindle note
+
+The browser mechanics — extracting the metadata from the Amazon product page through the user's logged-in Chrome — belong to the `kboat-kindle` skill, which defers here for the schema and these transitions. This is the same split as source ingest (`kboat-ingest`) and rescue (`kboat-rescue`): the mechanics live in the action skill, the schema and state in this one.
+
+1. Resolve the ASIN. From a Kindle reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key.
+2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete. The filename, being the ASIN, never changes.
+3. Otherwise write a new `Kindles/<ASIN>.md` with `type: kindle` and the fields from "Kindle note": `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `read` and `distill` start `false`; `distilled_date` starts empty. The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads.
 
 ## Concept notes (`KBOAT_KNOWLEDGE_PATH`)
 

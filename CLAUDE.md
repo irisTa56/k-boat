@@ -13,7 +13,7 @@ Each piece of content gets its own throwaway NotebookLM notebook (1:1) for readi
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports), and `Reading Inbox.base` (the to-read list).
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports), `Reading Inbox.base` (the to-read list), and `Kindles.base` (the Kindle catalogue).
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Environment gotchas
@@ -43,14 +43,16 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Architecture
 
-Five skills, all under `.claude/skills/`:
+Six skills, all under `.claude/skills/`:
 
-- `kboat-notes` — the single source of truth for note conventions: the source-note frontmatter schema, naming, the lifecycle state machine, the reading inbox Base, and where concept notes live.
+- `kboat-notes` — the single source of truth for note conventions: the source-note and Kindle-note frontmatter schemas, naming, the lifecycle state machines, the reading inbox and Kindle Bases, and where concept notes live.
   - Read this skill before touching any note format.
 - `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook.
   - It defers to `kboat-notes` for the schema and file writing.
-- `kboat-distill` — the post-reading pass: advances lifecycle state and distills ripe sources into the knowledge graph.
-  - It defers to `kboat-notes` for the source schema and to the Basic Memory skills (`memory-notes`, `memory-ingest`, `memory-curate`) for the concept graph.
+- `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome (Claude in Chrome), into an ASIN-named `Kindles/` note.
+  - It defers to `kboat-notes` for the Kindle schema and create transitions.
+- `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
+  - It defers to `kboat-notes` for the schemas and to the Basic Memory skills (`memory-notes`, `memory-ingest`, `memory-curate`) for the concept graph.
 - `kboat-recall` — read-only search over the source notes for a "read later" source matching a question; lexical for now (`title`/`summary`/`topics`).
   - It defers to `kboat-notes` for the schema.
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
@@ -58,7 +60,7 @@ Five skills, all under `.claude/skills/`:
 
 One deterministic helper package, a uv workspace member under `kboat-lifecycle/` (module `kboat_lifecycle`, console script `.venv/bin/kboat-lifecycle`):
 
-- It implements the distillation lifecycle state machine — the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous work sets as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
+- It implements the distillation lifecycle state machine — the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous source work sets plus the ripe Kindle set (`kindles.ripe`; `distill && distilled_date` empty, no cooldown, no on-disk writes) as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
 - `kboat-notes` is the **spec** for these predicates; this package is an implementation of it. Change the spec there first, then the package and its tests. The package is the place to grow as more mechanical steps are extracted from the skills.
 
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
@@ -74,7 +76,8 @@ Load-bearing model, spread across the skills, so it is easy to break with a loca
 - Crash-safety invariant: for a ripe source the notebook is discarded **last** (when discarded at all — a `keep` source retains it), after `distilled_date` is stamped and the review report is written.
 - Provenance from a concept note to its source is an observation carrying the source URL, not a wikilink — the two live in separate roots (vault vs `KBOAT_KNOWLEDGE_PATH`), so a wikilink could not resolve. Concept-to-concept relations stay wikilinks (same root). Each claim is tagged `#grounded` or `#dialogue`: the reading-time chat (Gemini UI) draws on web/world knowledge as well as the source, so distillation verifies the ungrounded `#dialogue` claims before keeping them and never lets them read as source claims.
 - Distillation targets the `k-boat-knowledge` project explicitly (`project="k-boat-knowledge"` on every Basic Memory call); if that project does not exist the routine stops before any destructive step.
-- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`): to-read views (All, plus Web/PDF subsets), a Holding view of every filed source (read-later shelf, cooldown window, and terminal states, told apart by the disposition columns), an Ambiguous view of contradictory dispositions, and a DLQ of unfetched sources. Every filter is a plain boolean (`distill`/`keep`/`dismiss`/`blocked`) or `source_type ==`, never a `!=` over a maybe-missing property nor a date-emptiness test (Obsidian Bases can't do those reliably) — which is why `distill`/`keep`/`dismiss`/`blocked` are written on every source, and the routine and `kboat-recall` test empty dates by reading frontmatter directly.
+- A Kindle book (`type: kindle`) is a parallel, simpler kind, not a source: ASIN-keyed (`Kindles/<ASIN>.md`), read on a Kindle so it has no notebook and no fetched URL, and distilled from highlights pasted into the **note body** (not from a notebook). Its lifecycle has nothing destructive to gate, so no cooldown and no `keep`/`dismiss`/`blocked` — only `read` (informational), `distill` (opt-in), and the terminal `distilled_date`. Provenance to a Kindle book is `ASIN:<asin>`, not a URL. `kboat-kindle` ingests; `kboat-distill` Phase C distils.
+- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`): to-read views (All, plus Web/PDF subsets), a Holding view of every filed source (read-later shelf, cooldown window, and terminal states, told apart by the disposition columns), an Ambiguous view of contradictory dispositions, and a DLQ of unfetched sources. Kindle books have their own `Kindles.base` (All catalogue + To-distill). Every filter is a plain boolean (`distill`/`keep`/`dismiss`/`blocked`) or `source_type ==`, never a `!=` over a maybe-missing property nor a date-emptiness test (Obsidian Bases can't do those reliably) — which is why `distill`/`keep`/`dismiss`/`blocked` are written on every source, and the routine and `kboat-recall` test empty dates by reading frontmatter directly.
 
 Automation:
 
@@ -91,7 +94,7 @@ Keep schema and automation detail in the skills, not duplicated in README.
 - Naming:
   - Property keys and enum values are `snake_case`.
   - Dates are `YYYY-MM-DD`.
-  - Source notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in kboat-notes); the readable title lives in the `title` property and is shown via the Base's `title_link` formula. Other note names derived from text replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
+  - Source notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in kboat-notes); Kindle notes by their ASIN. Both keep the readable title in the `title` property, shown via the Base's `title_link` formula. Other note names derived from text replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
 
 ## Keep this file current
 
