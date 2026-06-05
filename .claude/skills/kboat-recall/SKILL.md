@@ -13,7 +13,7 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. This 
 ## Scope
 
 - **Default: the shelf.** Search sources with `done == true && distill != true` (the read-later cold storage). These are the ones the user parked to read later.
-- **Widen on request.** If the user asks to search everything (or the shelf yields nothing), include all `Sources/*.md` — active inbox items, in-flight, and distilled — not just the shelf.
+- **Widen on request.** If the user asks to search everything (or the shelf yields nothing), include all `Sources/*.md` — active inbox items, in-flight, and distilled — not just the shelf. **Exclude `blocked` (DLQ) sources from every scope**: they have no fetched content, empty `summary`/`topics`, and a `reading_link` that ingest already failed to open, so surfacing one as a readable result would mislead. If a query clearly matches a blocked source by `title`/`url`, mention it separately as "in the DLQ — run `kboat-rescue` first", not as a readable hit.
 - Filter in this skill by reading each note's frontmatter, not through the Base: the Base cannot reliably test empty dates, but here you read the values directly.
 
 ## Procedure

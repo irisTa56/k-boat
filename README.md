@@ -31,7 +31,10 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state and distilling ripe sources into the knowledge graph. It defers to the Basic Memory skills for the concept-note conventions.
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
+- [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — finish a source that could not be fetched (a bot-protected PDF in the DLQ) by pulling it through your real browser.
 
 The scheduled routine runs `kboat-ingest` then `kboat-distill` daily.
+
+A source ingest cannot fetch — a PDF behind a CAPTCHA wall, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing. Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA once) and finishes the ingest, keeping the original URL.
 
 Three checkboxes drive a source. `read` is just read progress. `done` takes it off the to-read inbox. `distill` opts it into the knowledge graph. A week after you mark a source `done`, the routine distils it (if `distill`) or discards its notebook and keeps the note on the searchable "read later" shelf (if not `distill`). Discarding a notebook is irreversible, so leave `done` unchecked for anything you still want to open in NotebookLM; the 7-day clock starts when the routine first sees `done` (and resets if you uncheck it).
