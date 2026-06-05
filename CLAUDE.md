@@ -42,7 +42,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Architecture
 
-Four skills, all under `.claude/skills/`:
+Five skills, all under `.claude/skills/`:
 
 - `kboat-notes` — the single source of truth for note conventions: the source-note frontmatter schema, naming, the lifecycle state machine, the reading inbox Base, and where concept notes live.
   - Read this skill before touching any note format.
@@ -52,12 +52,15 @@ Four skills, all under `.claude/skills/`:
   - It defers to `kboat-notes` for the source schema and to the Basic Memory skills (`memory-notes`, `memory-ingest`, `memory-curate`) for the concept graph.
 - `kboat-recall` — read-only search over the source notes for a "read later" source matching a question; lexical for now (`title`/`summary`/`topics`).
   - It defers to `kboat-notes` for the schema.
+- `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by fetching the bot-protected/walled PDF through the user's real Chrome (Claude in Chrome; the human solves any CAPTCHA), keeping the `url`.
+  - It defers to `kboat-notes` for the rescue transitions.
 
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
 - One notebook per source (1:1). The notebook is throwaway; its coordinates (`notebooklm_id`, `gemini_url`, `notebooklm_url`) live on the source note. No notebook notes, no wikilinks, no backlinks.
 - A source is a web page or a PDF (`source_type`). A PDF is uploaded into its notebook as a file rather than fetched from a URL, stored at `PDFs/<slug>.pdf`, and read in Obsidian via the PDF++ plugin. Deliberately no Google Drive or Google Play Books: Play Books has no personal-upload API, so automating it would need a logged-in browser and break the unattended routine, and Drive adds nothing without it.
-- A notebook is only useful if NotebookLM fetched the content, not a wall. Ingest verifies the fetch (`source wait` + a content check) and reports a blocked or walled source instead of treating it as ingested; distillation re-checks and treats empty or wall content as a fetch failure. For an uploaded PDF the failure mode is empty or garbled extraction instead. (CLI specifics live in the skills.)
+- A notebook is only useful if NotebookLM fetched the content, not a wall. Ingest verifies the fetch (`source wait` + a content check); a source it cannot fetch — a bot-blocked PDF, a walled page, an empty/garbled extraction — is not dropped but parked in the **DLQ** (`blocked: true`, `url` kept, reminder deleted) for `kboat-rescue`. For an uploaded PDF the failure mode is empty or garbled extraction instead of a wall. (CLI specifics live in the skills.)
+- The DLQ makes fetch failures explicit instead of silently re-failing reminders: a `blocked` source is a durable note (URL-hash slug, `url` retained) shown in the DLQ Base view; `kboat-rescue` supplies the content through the real browser and clears `blocked`, so identity and provenance survive. CAPTCHA walls (e.g. AWS WAF) cannot be passed unattended, which is why rescue is interactive — the human solves the challenge once in their own Chrome.
 - The NotebookLM source id is not stored.
   - It is a per-notebook attribute resolved on demand by matching `url` (then `title`) in `notebooklm source list`. A file-uploaded PDF source has `url: null`, so it is matched by `title` (ingest titles the upload to match the note).
 - Reading state has three orthogonal human checkboxes: `read` is read progress (informational only), `done` takes a source off the active list (hides it from the inbox immediately), and `distill` opts it into the knowledge graph. The routine stamps `done_date` when it first sees `done` and clears it when `done` is unchecked; `distilled_date` is the terminal stamp. A 7-day cooldown counts from `done_date`.
@@ -66,7 +69,7 @@ Load-bearing model, spread across the skills, so it is easy to break with a loca
 - Crash-safety invariant: for a ripe source the notebook is discarded **last**, after `distilled_date` is stamped and the review report is written.
 - Provenance from a concept note to its source is an observation carrying the source URL, not a wikilink — the two live in separate roots (vault vs `KBOAT_KNOWLEDGE_PATH`), so a wikilink could not resolve. Concept-to-concept relations stay wikilinks (same root). Each claim is tagged `#grounded` or `#dialogue`: the reading-time chat (Gemini UI) draws on web/world knowledge as well as the source, so distillation verifies the ungrounded `#dialogue` claims before keeping them and never lets them read as source claims.
 - Distillation targets the `k-boat-knowledge` project explicitly (`project="k-boat-knowledge"` on every Basic Memory call); if that project does not exist the routine stops before any destructive step.
-- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`) with to-read views (an All view over every unread source plus Web and PDF subsets split by `source_type`), a Shelf view of the read-later pile (`done` and `distill != true`), and a Processed view that exposes the lifecycle state. All view filters are plain booleans — never a date-emptiness test, which Obsidian Bases cannot do reliably; the routine and `kboat-recall` test empty dates by reading frontmatter directly instead.
+- The reading inbox is one vault-wide standalone Base (`Reading Inbox.base`) with to-read views (an All view plus Web and PDF subsets, all `done != true && blocked != true`), a Shelf view of the read-later pile (`done` and `distill != true`), a DLQ view of unfetched sources (`blocked`), and a Processed view that exposes the lifecycle state. All view filters are plain booleans (`done`/`distill`/`blocked`) or `source_type ==` — never a `!=` over a possibly-missing property nor a date-emptiness test, which Obsidian Bases cannot do reliably; this works because `distill` and `blocked` are written on every source at creation, and the routine and `kboat-recall` test empty dates by reading frontmatter directly.
 
 Automation:
 
