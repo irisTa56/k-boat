@@ -9,6 +9,11 @@ state"):
 - ambiguous   = dismiss && (keep || distill)   (never processed; reported every run)
 
 Blocked (DLQ) sources are excluded from both phases entirely.
+
+Kindle notes have a far simpler lifecycle (see `kboat-notes` "Kindle note"):
+no notebook, so nothing destructive to gate, hence no cooldown and no
+keep/dismiss/blocked. The only predicate is the ripe one — `distill &&
+distilled_date` empty — handled by `select_ripe_kindles`, with no on-disk writes.
 """
 
 from __future__ import annotations
@@ -164,3 +169,37 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
         "awaiting_cooldown": awaiting_cooldown,
     }
     return plan
+
+
+@dataclass(frozen=True)
+class Kindle:
+    slug: str  # the bare ASIN; the note's filename stem and identity key
+    path: str
+    title: str | None
+    distill: bool
+    distilled_date: str | None
+
+    @classmethod
+    def from_frontmatter(cls, slug: str, path: str, fm: dict[str, Scalar]) -> Kindle:
+        def text(key: str) -> str | None:
+            value = fm.get(key)
+            return value if isinstance(value, str) else None
+
+        return cls(
+            slug=slug,
+            path=path,
+            title=text("title"),
+            distill=fm.get("distill") is True,
+            distilled_date=text("distilled_date"),
+        )
+
+    @property
+    def is_ripe(self) -> bool:
+        """Marked `distill` and not yet distilled. No cooldown — unlike a source,
+        a Kindle book has no notebook to discard, so nothing destructive to gate.
+        """
+        return self.distill and self.distilled_date is None
+
+
+def select_ripe_kindles(kindles: list[Kindle]) -> list[Kindle]:
+    return [k for k in kindles if k.is_ripe]
