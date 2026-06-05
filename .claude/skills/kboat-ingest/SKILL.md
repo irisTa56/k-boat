@@ -40,7 +40,8 @@ Collect, per item, at least:
 - Title fell back to the reminder text (the abstract page and the PDF's own metadata/first page all failed). The note is still created — flag it so a human can fix the title.
 - Source guide failed (rate limit, error), so `summary`/`topics` are left empty. The note is still created; report it so a later pass or a human can fill them (recall falls back to `title`).
 - `.venv/bin/notebooklm create` / `source add` failures (rate limit, auth). The source note is kept without a `notebooklm_id`; report it so a later pass or a human can give it a notebook.
-- Sources that did not fetch successfully → the DLQ. For a web page: not `ready`, or a wall fetched instead of the article. For a PDF: the upload extracted to empty/garbled text (see kboat-notes). Record them as `blocked` (note kept, walled notebook discarded, any good PDF file kept) so `kboat-rescue` can supply real content.
+- Web page that did not fetch successfully (not `ready`, or a wall fetched instead of the article) → the DLQ. Record it as `blocked` (note kept, walled notebook discarded) so `kboat-rescue` can supply real content.
+- PDF that uploaded but extracted to empty/garbled text → **not** the DLQ (see kboat-notes): the file is readable, only the notebook text is unusable, and rescue's re-fetch can't fix it. Keep the note, file, and notebook (`blocked` stays `false`) and report it so a human can supply a text-bearing copy.
 - Source-note write failures. The reminder is kept (see Safety).
 - Slug collisions: an existing `Sources/<slug>.md` holds a different `url` than the item being ingested (see kboat-notes de-dup). Stop that item without overwriting, keep its reminder, and report it; this is deterministic, so it needs a human to resolve rather than a retry.
 - A failed `.venv/bin/notebooklm auth refresh` at the start. If auth is unusable, stop and report rather than processing the queue.
@@ -49,5 +50,5 @@ Collect, per item, at least:
 
 End the run with a summary covering:
 
-- Counts: items drained, notebooks created, sources left without a notebook, **sources sent to the DLQ** (blocked PDF, walled web page, or empty/garbled PDF extraction — awaiting `kboat-rescue`), and sources left with empty `summary`/`topics`. For PDFs also count: transient download failures (reminder kept) and titles that fell back to the reminder text.
+- Counts: items drained, notebooks created, sources left without a notebook, **sources sent to the DLQ** (blocked PDF or walled web page — awaiting `kboat-rescue`), PDFs ingested with empty/garbled extraction (readable file, unusable notebook), and sources left with empty `summary`/`topics`. For PDFs also count: transient download failures (reminder kept) and titles that fell back to the reminder text.
 - Errors: each collected error with the item it affected and the cause (e.g. bot-blocked PDF → DLQ, walled web page → DLQ, undecidable type, transient PDF download failure, rate-limited `create`/`source add`, source-guide failure, note write failure, slug collision).

@@ -18,7 +18,7 @@ Every Basic Memory call (`search_notes`, `write_note`, `edit_note`) must pass `p
 2. Probe Basic Memory once with `search_notes(project="k-boat-knowledge", …)`.
    - If the `k-boat-knowledge` project does not exist, the knowledge layer is not set up: **STOP the whole run** and report (create the project first; see README). Phase B's notebook discards are destructive, so do not run them before the durable store exists.
    - If the project exists but the call fails (Basic Memory runtime down), run Phase A but **skip Phase B entirely** and report it. Phase B's only destructive act is discarding notebooks; deferring it to a healthy day loses nothing, since ingest still runs.
-3. Read all `Sources/*.md` frontmatter once to compute the work sets for both phases.
+3. Read all `Sources/*.md` frontmatter once to compute the work sets for both phases. Exclude `blocked` sources from both phases: a blocked source is a DLQ entry with no notebook (awaiting `kboat-rescue`), so it has nothing to distill or discard — skip it even if a human checked `done` on it by mistake, rather than stamping `done_date` or hitting the missing-notebook anomaly in Phase B.
 
 ## Phase A: maintain the cooldown clock
 
