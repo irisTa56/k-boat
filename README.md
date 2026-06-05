@@ -33,6 +33,8 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — finish a source that could not be fetched (a bot-protected PDF in the DLQ) by pulling it through your real browser.
 
+The mechanical core of the distill pass — the cooldown clock and the work-set predicates — lives in a small tested Python package, [`kboat-lifecycle`](kboat-lifecycle/), rather than in prose, so the routine is cheaper and the logic is unit-tested. Its quality gate (ruff, `ty`, pytest) runs in pre-commit via `mise run qa:py:kboat-lifecycle` (`mise run fmt:py` autofixes).
+
 The scheduled routine runs `kboat-ingest` then `kboat-distill` daily.
 
 A source ingest cannot fetch — a PDF behind a CAPTCHA wall, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing. Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA once) and finishes the ingest, keeping the original URL.
