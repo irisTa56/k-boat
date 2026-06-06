@@ -12,13 +12,12 @@ KBOAT_KNOWLEDGE_PATH = "~/Documents/K-Boat/Knowledge"
 _.file = ".env"
 _.python.venv = { path = ".venv", create = true }
 
-[tasks.setup]
-description = "Sync dependencies from pyproject.toml and install Chromium"
-run = [
-  "uv sync",
-  "playwright install chromium",
-  "mise generate git-pre-commit --write --task=pre-commit",
-]
+[hooks]
+postinstall = """
+uv sync
+playwright install chromium
+mise generate git-pre-commit --write --task=pre-commit
+"""
 
 [tasks."fmt:md"]
 description = "Format markdown files"

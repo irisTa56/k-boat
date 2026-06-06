@@ -8,7 +8,7 @@ Two kinds are exceptions, each with no notebook. Books you read on **Kindle** ar
 
 ## Setup
 
-- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise run setup` to sync the venv and install Chromium.
+- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; a postinstall hook syncs the venv and installs Chromium.
 - The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed in the project venv. Authenticate once with `mise run nblm:login`. To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts the venv on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
 - `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
 - Distilled knowledge is a [Basic Memory](https://github.com/basicmachines-co/basic-memory) project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
