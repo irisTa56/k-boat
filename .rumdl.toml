@@ -1,0 +1,4 @@
+[global]
+# MD013 (line length) conflicts with the repo convention of one sentence
+# per line in markdown prose (see CLAUDE.md "Writing conventions").
+disable = ["MD013"]
