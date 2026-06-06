@@ -1,6 +1,6 @@
 # Feed Filter
 
-A simplified, Claude-Code-native reimplementation of [`loose-feeds`](../loose-feeds).
+A simplified, Claude-Code-native reimplementation of the sibling project `loose-feeds` (a local checkout at `../loose-feeds`, not a public repo).
 
 A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against a prompt using cheap subagents, and pushes the survivors into the macOS Reminders list **`Filtered Feeds`** via the [`rem`](https://github.com/BRO3886/rem) CLI.
 

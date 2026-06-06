@@ -49,8 +49,8 @@ description = "Check Python formatting"
 run = "uv run ruff format --check ."
 
 [tasks."qa:py:type"]
-description = "Type-check Python sources"
-run = "uv run ty check src"
+description = "Type-check Python sources and tests"
+run = "uv run ty check src tests"
 
 [tasks."qa:py:test"]
 description = "Run Python unit tests"

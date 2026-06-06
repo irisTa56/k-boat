@@ -57,9 +57,10 @@ branch = true
 [tool.coverage.report]
 exclude_also = [
     "if TYPE_CHECKING:",
-    "raise NotImplementedError",
     "\\.\\.\\.",
-    # The entrypoint guard and not-yet-implemented dispatch arms (marked
-    # `# pragma: no cover`) must not force coverage-padding against stubs.
+    # The entrypoint guard is unreachable under pytest. Not-yet-implemented
+    # dispatch arms use an explicit `# pragma: no cover` at the call site —
+    # deliberately NOT a blanket `raise NotImplementedError` exclude, so a
+    # stub accidentally shipped without a pragma still dents coverage.
     "if __name__ == \"__main__\":",
 ]
