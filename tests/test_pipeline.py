@@ -147,9 +147,8 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def browser_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Cold browser singleton + tmp state path for each browser-path test."""
-    monkeypatch.setenv("FEED_FILTER_BROWSER_STATE", str(tmp_path / "state.json"))
+def browser_env() -> Iterator[None]:
+    """Cold browser singleton for each browser-path test."""
     browser._bundle = None
     yield
     browser._bundle = None

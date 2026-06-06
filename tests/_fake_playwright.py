@@ -10,8 +10,8 @@ under coverage with no ``# pragma: no cover`` glue.
 A test builds a ``FakeContext`` describing one navigation outcome (rendered HTML,
 a response with status/url/body, or an error to raise) and passes it to
 ``install_fake_playwright``; the returned handles expose what the assertions need
-(``browser.new_context_kwargs`` for the UA strip, ``context.storage_state_calls``
-and ``chromium.launch_count`` / ``playwright.stopped`` for the lifecycle).
+(``browser.new_context_kwargs`` for the UA strip, ``chromium.launch_count`` /
+``browser.closed`` / ``playwright.stopped`` for the lifecycle).
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from __future__ import annotations
 import importlib.machinery
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -79,8 +78,7 @@ class FakeContext:
 
     ``response`` may be a ``FakeResponse`` or ``None`` (same-document nav). Set
     ``goto_error`` / ``content_error`` to simulate a navigation/timeout or a
-    ``content()`` failure. ``storage_state(path=...)`` records the call and writes
-    a stub file so the next boot's ``state_path.exists()`` check would see it.
+    ``content()`` failure.
     """
 
     def __init__(
@@ -96,18 +94,12 @@ class FakeContext:
         self.goto_error = goto_error
         self.content_error = content_error
         self.goto_calls: list[SimpleNamespace] = []
-        self.storage_state_calls: list[str] = []
         self.pages: list[FakePage] = []
 
     def new_page(self) -> FakePage:
         page = FakePage(self)
         self.pages.append(page)
         return page
-
-    def storage_state(self, *, path: str) -> dict[str, Any]:
-        self.storage_state_calls.append(path)
-        Path(path).write_text('{"cookies": []}', encoding="utf-8")
-        return {"cookies": []}
 
 
 class FakeBrowser:

@@ -27,9 +27,8 @@ from feed_filter.browser import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Start each test with a cold singleton and a tmp browser-state path."""
-    monkeypatch.setenv("FEED_FILTER_BROWSER_STATE", str(tmp_path / "state.json"))
+def _reset_bundle() -> Iterator[None]:
+    """Start (and leave) each test with a cold module-global singleton."""
     browser._bundle = None
     yield
     browser._bundle = None
@@ -166,18 +165,13 @@ def test_lazy_singleton_launches_once(monkeypatch: pytest.MonkeyPatch) -> None:
     assert handles.chromium.launch_count == 1  # one Chromium for the whole process
 
 
-def test_close_browser_persists_state_and_tears_down(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_close_browser_tears_down(monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = FakeContext(html="<html/>", response=FakeResponse(status=200))
     handles = install_fake_playwright(monkeypatch, context=ctx)
 
     get_browser()
     close_browser()
 
-    state_file = tmp_path / "state.json"
-    assert ctx.storage_state_calls == [str(state_file)]  # cookies persisted (REQ-004)
-    assert state_file.exists()  # written to disk for the next boot
     assert handles.browser.closed is True
     assert handles.playwright.stopped is True
     # The slot is cleared, so a second close is a no-op and the next get relaunches.
@@ -190,30 +184,19 @@ def test_close_browser_is_noop_when_never_launched() -> None:
     close_browser()
 
 
-# --- storage-state cold/warm boot -----------------------------------------
+# --- cold context (no storage-state persistence) --------------------------
 
 
-def test_cold_boot_passes_no_storage_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    # No state file on a clean machine → storage_state=None (Playwright raises on a
-    # missing path); the file appears only after the first close writes cookies (F4).
+def test_context_is_cold_no_storage_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Each process starts cold: new_context is called with no storage_state, so no
+    # persisted Cloudflare cookie is ever replayed (which would re-trigger the
+    # managed challenge on the headless session — validated 5/5 cold vs 1/5 warm).
     ctx = FakeContext(html="<html/>", response=FakeResponse(status=200))
     handles = install_fake_playwright(monkeypatch, context=ctx)
 
     get_browser()
     assert handles.browser.new_context_kwargs is not None
-    assert handles.browser.new_context_kwargs["storage_state"] is None
-
-
-def test_warm_boot_loads_existing_storage_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    state_file = tmp_path / "state.json"
-    state_file.write_text('{"cookies": []}', encoding="utf-8")
-    ctx = FakeContext(html="<html/>", response=FakeResponse(status=200))
-    handles = install_fake_playwright(monkeypatch, context=ctx)
-
-    get_browser()
-    assert handles.browser.new_context_kwargs["storage_state"] == str(state_file)
+    assert "storage_state" not in handles.browser.new_context_kwargs
 
 
 # --- UA strip (REQ-005) ---------------------------------------------------

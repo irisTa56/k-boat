@@ -3,10 +3,6 @@ feed-filter.db
 feed-filter.db-wal
 feed-filter.db-shm
 
-# Persisted Playwright storage-state (anti-bot / clearance cookies, SEC-002).
-# Local state, never committed — same class as feed-filter.db / sites.toml.
-feed-filter-browser-state.json
-
 # Python
 .venv/
 __pycache__/

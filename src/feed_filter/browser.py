@@ -30,7 +30,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from feed_filter.config import browser_state_path
 from feed_filter.sites import SiteConfig, load_sites
 
 if TYPE_CHECKING:
@@ -80,19 +79,21 @@ class BrowserFetchError(RuntimeError):
 
 @dataclass
 class BrowserBundle:
-    """The live Playwright instance, Chromium browser, and persistent context.
+    """The live Playwright instance, Chromium browser, and fresh context.
 
     A single instance per CLI process (REQ-003), owned by the module-global
-    singleton below and torn down by ``close_browser``. The single context is what
-    lets clearance cookies persist to one ``storage_state`` file across runs
-    (REQ-004); ``storage_state_path`` is captured here so ``close_browser`` writes
-    back to the same file ``get_browser`` loaded from.
+    singleton below and torn down by ``close_browser``. The context is **not**
+    persisted: each process starts cold (no ``storage_state``). Validation against
+    a Cloudflare managed-challenge site (Lab BRAINS) showed that replaying a
+    persisted ``cf_clearance`` / ``__cf_bm`` cookie makes Cloudflare re-challenge
+    the headless session (1/5 success), whereas a clean first-visitor context with
+    only the UA strip passes reliably (5/5) — so the original cookie-persistence
+    design (REQ-004) is dropped as net-negative for this anti-bot class.
     """
 
     playwright: Playwright
     browser: Browser
     context: BrowserContext
-    storage_state_path: Path
 
 
 # Lazy singleton (REQ-003). No lock: the CLI is single-threaded (CON-001), so the
@@ -135,10 +136,10 @@ def get_browser() -> BrowserBundle:
     """Return the process-wide browser bundle, launching Chromium on first call.
 
     Lazy (REQ-003): the ``playwright`` import and Chromium launch happen only here,
-    so a run with no ``requires_browser`` site pays nothing. The persisted
-    ``storage_state`` is loaded if the file exists; on a clean machine it is absent,
-    so ``storage_state=None`` is passed — Playwright raises on a missing path, and
-    the file only appears after the first ``close_browser`` writes cookies (F4).
+    so a run with no ``requires_browser`` site pays nothing. The context is created
+    **cold** — no ``storage_state`` is loaded — because a clean first-visitor
+    context with only the UA strip is what reliably passes Cloudflare's managed
+    challenge (see ``BrowserBundle``); each CLI process therefore starts fresh.
     """
     global _bundle
     if _bundle is not None:
@@ -149,39 +150,28 @@ def get_browser() -> BrowserBundle:
     # gate / add-site check has confirmed the extra is installed (REQ-006).
     from playwright.sync_api import sync_playwright
 
-    state_path = browser_state_path()
     playwright = sync_playwright().start()
     browser = playwright.chromium.launch()
-    context = browser.new_context(
-        user_agent=_desktop_user_agent(browser.version),
-        storage_state=str(state_path) if state_path.exists() else None,
-    )
-    _bundle = BrowserBundle(
-        playwright=playwright,
-        browser=browser,
-        context=context,
-        storage_state_path=state_path,
-    )
+    context = browser.new_context(user_agent=_desktop_user_agent(browser.version))
+    _bundle = BrowserBundle(playwright=playwright, browser=browser, context=context)
     return _bundle
 
 
 def close_browser() -> None:
-    """Persist cookies and tear down the browser; a no-op if none was launched (REQ-003).
+    """Tear down the browser; a no-op if none was launched (REQ-003).
 
     Idempotent: the slot is cleared first, so a re-entrant or double call (e.g. a
     ``finally`` plus a shutdown hook) short-circuits. Each step is best-effort —
     this runs from a ``try/finally`` teardown where raising would mask the command's
     real outcome, and the common real failure (the Playwright driver dying on the
-    same signal we got) leaves the resources already released. A failed cookie write
-    only costs the next run a re-challenge, never the run in progress.
+    same signal we got) leaves the resources already released. No cookies are
+    persisted (cold context, see ``BrowserBundle``), so there is nothing to write.
     """
     global _bundle
     bundle = _bundle
     if bundle is None:
         return
     _bundle = None
-    with contextlib.suppress(Exception):
-        bundle.context.storage_state(path=str(bundle.storage_state_path))
     with contextlib.suppress(Exception):
         bundle.browser.close()
     with contextlib.suppress(Exception):

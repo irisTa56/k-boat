@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -238,9 +239,10 @@ Z = ("Z", "https://js.example.com/z")
 
 
 @pytest.fixture
-def browser_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Cold browser singleton + tmp storage-state for the browser-path tests."""
-    monkeypatch.setenv("FEED_FILTER_BROWSER_STATE", str(tmp_path / "browser-state.json"))
+def browser_env() -> Iterator[None]:
+    """Cold browser singleton for the browser-path tests (reset before and after)."""
+    browser._bundle = None
+    yield
     browser._bundle = None
 
 
