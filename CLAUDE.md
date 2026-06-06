@@ -12,7 +12,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 - The routine MUST run locally (CON-001). `rem` writes the local Reminders.app, so cloud routines cannot be used; the Mac must be awake and the Claude runtime idle at fire time.
 - The `Filtered Feeds` Reminders list must already exist (user-created). The wrapper never auto-creates lists.
-- Mutable state is `feed-filter.db` (gitignored); `sites.toml` and `selection.md` are version-controlled config.
+- `feed-filter.db` (seen-store) and `sites.toml` (the personal subscription list — contains personal data) are **gitignored local state**; never commit them. Only `selection.md` is version-controlled config.
 
 ## Commands
 

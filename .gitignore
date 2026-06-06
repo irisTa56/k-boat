@@ -18,3 +18,6 @@ __pycache__/
 # mise resolves external QA tools at `latest`; we deliberately do not pin them
 # (see RISK-004). Ignore any locally-generated lockfile so it is not committed.
 mise.lock
+
+# Personal subscription list — local state, never committed.
+sites.toml
