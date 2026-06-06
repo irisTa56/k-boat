@@ -1,0 +1,20 @@
+# Mutable runtime state (the seen-store); config lives in version control.
+feed-filter.db
+feed-filter.db-wal
+feed-filter.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.ty_cache/
+
+# Local env / tool caches
+.env
+.rumdl_cache/
+
+# mise resolves external QA tools at `latest`; we deliberately do not pin them
+# (see RISK-004). Ignore any locally-generated lockfile so it is not committed.
+mise.lock
