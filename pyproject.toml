@@ -10,6 +10,13 @@ dependencies = [
     "tomlkit",
 ]
 
+[project.optional-dependencies]
+# Opt-in browser ingestion path for JS-rendered / anti-bot sites (CON-002).
+# Not installed by default: the httpx-readable sites pay nothing. Enable with
+#   uv sync --extra browser && uv run playwright install chromium
+# (the second step pulls a ~200 MB Chromium binary, not managed by uv).
+browser = ["playwright"]
+
 [project.scripts]
 feed-filter = "feed_filter.__main__:main"
 
@@ -28,6 +35,10 @@ dev = [
     # Bounded range, not a floor-only pin: `ty` is pre-1.0 and may shift
     # behavior across 0.0.x releases, so cap below 0.1 (RISK-004).
     "ty>=0.0.34,<0.1",
+    # Dev-only so `ty` can resolve `playwright.sync_api` types and the test fake
+    # has a parent package to shadow. The runtime install is the optional
+    # `browser` extra plus `playwright install chromium` (not part of `uv sync`).
+    "playwright",
 ]
 
 [tool.ruff]
@@ -38,7 +49,10 @@ target-version = "py313"
 extend-select = ["I", "UP", "B", "SIM", "N"]
 
 [tool.ty.environment]
-root = ["src"]
+# ``tests`` is a root so cross-test-module imports (e.g. ``import _fake_playwright``)
+# resolve the same way pytest's prepend import mode resolves them at runtime — the
+# test dir is on ``sys.path``, so sibling helpers import by bare name.
+root = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
