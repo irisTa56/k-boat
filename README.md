@@ -23,9 +23,13 @@ See [plan/feature-feed-filter-1.md](plan/feature-feed-filter-1.md) for the full 
 
 ```sh
 mise install          # install tools + generate the git pre-commit hook
+cp prompts/selection.example.md prompts/selection.md   # then edit your keep/drop criteria
 mise run pre-commit   # run the full QA gate (Python + markdown + secrets)
 mise run qa:py:test   # run the Python test suite
 ```
+
+`prompts/selection.md` is your local (gitignored) keep/drop criteria; the routine reads it every run.
+Register sites with the `feed-filter-add-site` skill (they land in the gitignored `sites.toml`).
 
 ## Usage
 

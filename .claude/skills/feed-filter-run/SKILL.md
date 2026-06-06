@@ -16,7 +16,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 - The **`Filtered Feeds`** Reminders list must already exist (user-created); the wrapper never creates lists, and a missing/renamed list makes `remind` exit non-zero (CON-004). If reminds fail this way, stop and report — do not keep judging entries you cannot deliver. The list holds **only pages** (article reminders, including error/wall ones whose note explains the issue); operational notices go to the push summary, never into the list.
 - `rem` must be on `PATH` (Homebrew, DEP-007). A scheduled routine often starts with a PATH lacking `/opt/homebrew/bin`; ensure it is present (an absent `rem` surfaces as a non-zero `remind` exit, not a silent drop).
-- Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent. Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
+- Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent. This file is gitignored local config; if it is absent (a fresh checkout), stop and report that it must be created by copying `prompts/selection.example.md` to `prompts/selection.md` — do not judge with no criteria. Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
 
 ## Procedure
 

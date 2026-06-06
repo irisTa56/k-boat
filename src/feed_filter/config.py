@@ -1,8 +1,8 @@
 """Static configuration: constants, repo-relative paths, and env overrides.
 
 Paths resolve at call time (not import time) so tests and the scheduled routine
-can redirect state via ``FEED_FILTER_DB`` / ``FEED_FILTER_SITES`` without
-reimporting the module.
+can redirect state via ``FEED_FILTER_DB`` / ``FEED_FILTER_SITES`` /
+``FEED_FILTER_SELECTION`` without reimporting the module.
 """
 
 from __future__ import annotations

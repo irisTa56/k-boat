@@ -41,7 +41,7 @@ class SiteConfig:
     feed_url: str | None = None
     index_url: str | None = None
     article_url_pattern: str | None = None
-    # Optional per-site selection override; falls back to the global selection.md.
+    # Optional per-site selection override; falls back to the global prompts/selection.md.
     selection: str | None = None
     # Opt-in browser (Playwright) gather path for JS-rendered / anti-bot sites
     # (REQ-001). Default false → the unchanged httpx path. Not a string optional,
