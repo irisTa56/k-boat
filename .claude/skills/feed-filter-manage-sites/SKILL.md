@@ -1,0 +1,36 @@
+---
+name: feed-filter-manage-sites
+description: Pause or resume a feed-filter site (disable/enable) and show which sites are currently paused vs active. Use when the user wants to disable/pause/stop a site, enable/resume one, or check the on/off status of registered sites — e.g. after a recurring site error surfaces in a run's push notification.
+---
+
+# Manage feed-filter sites (pause / resume / status)
+
+Turn an individual site's gathering off or on without losing it, and report which sites are currently paused.
+This is the ad-hoc, user-driven half of site management — registration lives in the `feed-filter-add-site` skill, the periodic run in `feed-filter-run`.
+
+Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
+Each subcommand emits one JSON document on stdout and exits non-zero on failure — parse the JSON and read the exit code.
+
+## See what's paused
+
+Run `feed-filter list-sites`: it returns every site with an `enabled` field.
+Report the sites with `enabled: false` as paused and the rest as active — e.g. "2 paused (Lab BRAINS, Foo Blog), 68 active".
+This is the only place the on/off status lives; there is no separate state to consult.
+
+## Pause a site
+
+`feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`.
+The run then skips it entirely — no fetch, no error, no push — while its `[[site]]` config and its seen-store stay intact.
+Use this when a site is chronically failing (a recurring error named in the run's push), temporarily noisy, or simply unwanted for now.
+Prefer it over deleting the `[[site]]` block by hand: deleting loses the seen-store and re-runs discovery on re-add, whereas pause/resume is reversible and cheap.
+
+## Resume a site
+
+`feed-filter enable-site --site-id <id>` → `{site_id, enabled: true}`.
+Gathering resumes; because the seen-store was preserved, only entries that appear *after* re-enabling are reminded — no back-catalog flood.
+
+## Finding the id
+
+The user usually names a site by its title or URL, not its `id`.
+Run `feed-filter list-sites`, match the user's reference against each site's `name` / `feed_url` / `index_url`, and use that site's `id`.
+A non-zero exit from `disable-site` / `enable-site` means the id was not found — re-check it against `list-sites`.
