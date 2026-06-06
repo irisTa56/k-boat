@@ -33,6 +33,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
   - `mise run nblm:auth:check` — verify auth with a network test.
 - Quality gates (a `qa:*` task each; `mise run pre-commit` runs them all and the generated git pre-commit hook calls it, so a failure blocks commits):
   - Markdown: `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
+  - Secrets: `mise run qa:secrets` scans staged changes with `gitleaks`.
   - Python: `mise run qa:py` runs ruff (lint + format check), `ty`, and pytest for every package (a wildcard over `qa:py:*`); `mise run qa:py:<pkg>` runs one. The `pre-commit` task's `qa:*` glob picks up each `qa:py:<pkg>` directly. `mise run fmt:py` autofixes all packages (wildcard over `fmt:py:*`); `mise run fmt:py:<pkg>` autofixes one.
 - The Python packages are tested (pytest); the prose skills are not.
   - Validate skill changes by running them against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.

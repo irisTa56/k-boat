@@ -1,6 +1,8 @@
 [tools]
+gitleaks = "latest"
 lychee = "latest"
 rumdl = "latest"
+uv = "latest"
 
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
@@ -42,6 +44,10 @@ depends = ["qa:*"]
 [tasks."qa:md"]
 description = "Lint markdown files"
 run = "rumdl check"
+
+[tasks."qa:secrets"]
+description = "Scan staged changes for secrets"
+run = "gitleaks git --staged -v"
 
 # Python format/QA: one task per package, plus a wildcard aggregator each.
 # `pre-commit` (depends = ["qa:*"]) picks up every qa:py:<pkg> directly; `qa:py`
