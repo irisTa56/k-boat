@@ -6,9 +6,15 @@ uv = "latest"
 
 [env]
 _.file = ".env"
+# Activate the project venv: `mise env` / shells put `.venv/bin` on PATH, so the
+# `feed-filter` entry point is callable bare (the scheduled routine relies on this).
+_.python.venv = { path = ".venv", create = true }
 
 [hooks]
-postinstall = "mise generate git-pre-commit --write --task=pre-commit"
+postinstall = """
+uv sync
+mise generate git-pre-commit --write --task=pre-commit
+"""
 
 [tasks."fmt:md"]
 description = "Format markdown files"

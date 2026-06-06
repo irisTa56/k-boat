@@ -17,7 +17,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 ## Commands
 
-- `mise install` — install tools and generate the git pre-commit hook.
+- `mise install` — install tools, sync the venv (`uv sync`), and generate the git pre-commit hook. `eval "$(mise env)"` then loads `.env` and puts `.venv/bin` on PATH, so `feed-filter` is callable bare (the scheduled routine bootstraps env this way).
 - `mise run pre-commit` — full QA gate (`qa:*`): ruff lint+format, `ty`, pytest (coverage ≥80%), rumdl, gitleaks. Merge gate for every phase.
 - `mise run qa:py:test` — Python tests only. `mise run check:links` — lychee link check (network, not in pre-commit).
 
