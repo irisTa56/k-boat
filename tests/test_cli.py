@@ -380,6 +380,45 @@ def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
         assert count(conn) == 0
 
 
+def test_heal_site_alert_failure_leaves_pattern_committed(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Case (b) of the run skill's heal failure path: report/rem fails AFTER the
+    # config write. Because report runs last (config-last, REQ-006), a failed
+    # alert must NOT roll back the heal — the pattern is already fixed and the
+    # back-catalog snapshotted, only the advisory alert was lost. The run skill
+    # tells the model not to retry such a heal, which is sound only if this holds.
+    _no_client(monkeypatch)
+    new_pattern = r"^/posts/[^/]+/?$"
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.com/blog",
+            article_url_pattern=r"^/old/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(
+        cli, "fetch_entries", lambda *a, **k: [_entry("https://e.com/posts/a", kind="scrape")]
+    )
+
+    def boom(message: str, **_k: object) -> str:
+        raise ReminderError(["rem", "add"], 1, "list not found")
+
+    monkeypatch.setattr(cli, "report", boom)
+
+    rc = cli.main(["heal-site", "--site-id", "s1", "--pattern", new_pattern])
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
+    # The heal committed despite the failed alert: pattern rewritten in config...
+    assert load_sites(sites_path())[0].article_url_pattern == new_pattern
+    # ...and the back-catalog already snapshotted (the flood guard is in place).
+    with contextlib.closing(open_db(db_path())) as conn:
+        rows = {r[0] for r in conn.execute("SELECT canonical_url FROM seen")}
+    assert rows == {"https://e.com/posts/a"}
+
+
 def test_heal_site_rejects_feed_site(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

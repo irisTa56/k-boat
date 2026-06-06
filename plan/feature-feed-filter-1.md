@@ -4,13 +4,13 @@ version: 1.1
 date_created: 2026-06-06
 last_updated: 2026-06-06
 owner: irisTa56
-status: 'Planned'
+status: 'Completed'
 tags: [feature, architecture, migration]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-green)
 
 feed-filter is a simplified reimplementation of the sibling project `loose-feeds` (`../loose-feeds`).
 It is the *upstream* of the existing `k-boat` pipeline: a **local** Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against a prompt using cheap subagents, and pushes the survivors into the macOS Reminders list **`Filtered Feeds`** via the `rem` CLI.
@@ -137,11 +137,11 @@ The design splits responsibilities deterministically: **plain Python** owns ever
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-034 | `.claude/skills/feed-filter-add-site/SKILL.md`: main-model flow (GUD-004) — run `feed-filter discover <url>`; if `rejection` is set, relay its actionable message (`needs_js` → site unsupported; `no_article_clusters` → point at the article-listing page) instead of proceeding; on transport error (non-zero exit) report and stop. Otherwise: prefer a feed candidate, else inspect candidates' `sample_urls` and pick the real article cluster (subagent optional); run `feed-filter add-site …` (which snapshots seen before writing config, REQ-002); confirm the snapshot occurred. | | |
-| TASK-035 | `.claude/skills/feed-filter-run/SKILL.md`: routine body — run `feed-filter new-entries`; for each entry dispatch a **haiku** subagent with `selection.md` returning `{keep, title, summary, reason}` — two-stage (title+summary first, `WebFetch` only when ambiguous) for `kind=="feed"`, straight full `WebFetch` for `kind=="scrape"` (no metadata; the returned `title` is authoritative for the reminder, REQ-005). For keeps run `feed-filter remind --site-id … --url … --title … --notes …` (reminds and records seen atomically — do NOT call `mark-seen` separately, REQ-009); for drops `feed-filter mark-seen --site-id … --url … --title …` (records kept=0); on subagent/fetch error call `feed-filter remind` with the title-or-URL fallback (REQ-007). For each site flagged `zero_links`, dispatch a subagent to re-pick the cluster from `feed-filter discover`, then `feed-filter heal-site --site-id … --pattern …`; surface any `error` flag in the summary. Emit a run summary. State cost controls explicitly (GUD-003, CON-005). | | |
-| TASK-036 | Create `selection.md`: a template selection-criteria prompt (keep/drop heuristics, examples) with a note that per-site overrides live in `sites.toml`. Confirm content scope with the user before finalizing wording. | | |
-| TASK-037 | README: registration, manual run, and `create_scheduled_task` cron guidance (off-:00 minute, local execution, 7-day note); document CON-001 and the failure/self-heal behavior. Update `CLAUDE.md` Architecture/Commands/Gotchas to final state (GUD per CLAUDE.md "keep current"). | | |
-| TASK-038 | Add `tests/test_cli_integration.py`: end-to-end CLI smoke over a tmp sites.toml + tmp DB with mocked fetch — `add-site` (snapshot-before-config) → `new-entries` returns only post-snapshot items → `remind` (creates reminder via fake `rem` runner AND records seen in one call) → `new-entries` now excludes the reminded item; assert no duplicate on a second `new-entries`. Run `mise run pre-commit`; coverage ≥80%. Merge gate. | | |
+| TASK-034 | `.claude/skills/feed-filter-add-site/SKILL.md`: main-model flow (GUD-004) — run `feed-filter discover <url>`; if `rejection` is set, relay its actionable message (`needs_js` → site unsupported; `no_article_clusters` → point at the article-listing page) instead of proceeding; on transport error (non-zero exit) report and stop. Otherwise: prefer a feed candidate, else inspect candidates' `sample_urls` and pick the real article cluster (subagent optional); run `feed-filter add-site …` (which snapshots seen before writing config, REQ-002); confirm the snapshot occurred. | ✅ | 2026-06-06 |
+| TASK-035 | `.claude/skills/feed-filter-run/SKILL.md`: routine body — run `feed-filter new-entries`; for each entry dispatch a **haiku** subagent with `selection.md` returning `{keep, title, summary, reason}` — two-stage (title+summary first, `WebFetch` only when ambiguous) for `kind=="feed"`, straight full `WebFetch` for `kind=="scrape"` (no metadata; the returned `title` is authoritative for the reminder, REQ-005). For keeps run `feed-filter remind --site-id … --url … --title … --notes …` (reminds and records seen atomically — do NOT call `mark-seen` separately, REQ-009); for drops `feed-filter mark-seen --site-id … --url … --title …` (records kept=0); on subagent/fetch error call `feed-filter remind` with the title-or-URL fallback (REQ-007). For each site flagged `zero_links`, dispatch a subagent to re-pick the cluster from `feed-filter discover`, then `feed-filter heal-site --site-id … --pattern …`; surface any `error` flag in the summary. Emit a run summary. State cost controls explicitly (GUD-003, CON-005). | ✅ | 2026-06-06 |
+| TASK-036 | Create `selection.md`: a template selection-criteria prompt (keep/drop heuristics, examples) with a note that per-site overrides live in `sites.toml`. Confirm content scope with the user before finalizing wording. | ✅ | 2026-06-06 |
+| TASK-037 | README: registration, manual run, and `create_scheduled_task` cron guidance (off-:00 minute, local execution, 7-day note); document CON-001 and the failure/self-heal behavior. Update `CLAUDE.md` Architecture/Commands/Gotchas to final state (GUD per CLAUDE.md "keep current"). | ✅ | 2026-06-06 |
+| TASK-038 | Add `tests/test_cli_integration.py`: end-to-end CLI smoke over a tmp sites.toml + tmp DB with mocked fetch — `add-site` (snapshot-before-config) → `new-entries` returns only post-snapshot items → `remind` (creates reminder via fake `rem` runner AND records seen in one call) → `new-entries` now excludes the reminded item; assert no duplicate on a second `new-entries`. Run `mise run pre-commit`; coverage ≥80%. Merge gate. | ✅ | 2026-06-06 |
 
 ## 3. Alternatives
 

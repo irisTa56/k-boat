@@ -27,7 +27,8 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 ## Architecture
 
 - `src/feed_filter/` — the Python core. `config.py` holds constants and env-overridable paths (`FEED_FILTER_DB`, `FEED_FILTER_SITES`); `canonical.py`/`seen.py`/`sites.py` are the pure primitives; `fetch.py`/`feeds.py`/`scrape.py` are the deterministic ingestion (sync httpx fetch, feedparser, selectolax); `discover.py` is the 4-layer zero-input feed/scrape discovery (self-feed → `rel=alternate` → typical-path probe → index-page clustering). `reminders.py` is the injectable `rem` wrapper (raises on non-zero exit, CON-004); `pipeline.py` is per-site `gather_new` (seen-filter + per-site cap + the `zero_links` self-heal signal); `cli.py` + `__main__.py` are the argparse subcommand dispatch that ties them together.
-- A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the only contract between the Python core and the Claude Code skills (`.claude/skills/`). Skills never reach into Python internals.
+- A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the only contract between the Python core and the Claude Code skills. Skills never reach into Python internals.
+- `.claude/skills/feed-filter-add-site/` (main-model registration: discover → pick cluster → `add-site`) and `.claude/skills/feed-filter-run/` (periodic run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal) are the orchestration layer; `selection.md` is the keep/drop prompt they feed each judging subagent.
 - Synchronous throughout: a sequential CLI batch tool with a sync `httpx.Client`, no `asyncio`.
 
 ## Writing conventions
