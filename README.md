@@ -121,9 +121,4 @@ The design favors **never-lost over never-duplicated**:
 - A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
 - The seen-store is the sole dedupe authority (`rem` does not dedupe). The remind-then-record pair runs in one process; the only duplicate window is a crash in the sub-millisecond gap between them, accepted to guarantee no loss.
 
-When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and files a `feed-filter:` alert reminder reporting the change.
-
-## Status
-
-Phases 1–5 (the deterministic Python core and CLI surface) and Phase 6 (the Claude Code skills and docs) are in place.
-The opt-in browser ingestion path (Playwright, for JS / anti-bot sites) is also in place; see [Sites that need a browser](#sites-that-need-a-browser-js--anti-bot).
+When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's push summary. The heal files no reminder into the list, which holds only pages; operational notices go to the push channel.

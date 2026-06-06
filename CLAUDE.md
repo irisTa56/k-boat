@@ -27,10 +27,12 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 ## Architecture
 
-- `src/feed_filter/` — the Python core. `config.py` holds constants and env-overridable paths (`FEED_FILTER_DB`, `FEED_FILTER_SITES`); `canonical.py`/`seen.py`/`sites.py` are the pure primitives; `fetch.py`/`feeds.py`/`scrape.py` are the deterministic httpx ingestion (sync httpx fetch, feedparser, selectolax); `browser.py` is the opt-in synchronous Playwright gather path (lazy single-instance Chromium, a User-Agent strip dropping the `HeadlessChrome` marker to skip Cloudflare's first-line bot check, a cold non-persisted context — replaying clearance cookies re-triggers the challenge on a headless session — the `require_playwright_*` install gates); `discover.py` is the 4-layer zero-input feed/scrape discovery (self-feed → `rel=alternate` → typical-path probe → index-page clustering). `reminders.py` is the injectable `rem` wrapper (raises on non-zero exit, CON-004); `pipeline.py` is per-site `gather_new` plus `fetch_entries`, which branches to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal); `cli.py` + `__main__.py` are the argparse subcommand dispatch that ties them together (each browser-using command — `new-entries`/`add-site`/`heal-site` — gates on the Playwright install and tears the browser down in a `finally`).
-- A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the only contract between the Python core and the Claude Code skills. Skills never reach into Python internals.
-- `.claude/skills/feed-filter-add-site/` (main-model registration: discover → pick cluster → `add-site`), `.claude/skills/feed-filter-run/` (periodic run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal), and `.claude/skills/feed-filter-manage-sites/` (ad-hoc pause/resume via `disable-site`/`enable-site` + on/off status from `list-sites`) are the orchestration layer; `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
-- Synchronous throughout: a sequential CLI batch tool with a sync `httpx.Client`, no `asyncio`.
+The full module-by-module map, the CLI ↔ skills JSON contract, and the behavioral invariants live in [ARCHITECTURE.md](ARCHITECTURE.md) — read it before any change spanning more than one module. The load-bearing rules:
+
+- Deterministic logic is plain Python behind a single `feed-filter <subcommand>` CLI emitting JSON on stdout; that CLI is the **only** contract with the Claude Code skills, which never reach into Python internals. The LLM is reserved for cluster-pick at registration and keep/drop at run time.
+- Synchronous throughout: a sequential CLI batch over a sync `httpx.Client`, no `asyncio`.
+- Always dedupe on `canonical_url`, never the raw URL.
+- Design bias is **never-lost over never-duplicated**: a judging error reminds-then-records anyway; a gather failure records nothing so the next run retries.
 
 ## Writing conventions
 
