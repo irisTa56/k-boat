@@ -42,7 +42,7 @@ from feed_filter.config import DEFAULT_GLOBAL_CAP, db_path, sites_path
 from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.fetch import FetchError, build_client
 from feed_filter.pipeline import fetch_entries, gather_new
-from feed_filter.reminders import ReminderError, add_reminder, report
+from feed_filter.reminders import ReminderError, add_reminder
 from feed_filter.seen import open_db, record, snapshot
 from feed_filter.sites import SiteConfig, add_site, load_sites, update_pattern
 
@@ -217,8 +217,9 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     effect, so a fetch failure can never leave ``sites.toml`` carrying the new
     pattern with no snapshot under it — that gap would flood the back-catalog on
     the next run. The new pattern is applied via an in-memory ``replace`` so the
-    re-scrape uses it without committing it first. ``report`` runs after both, so
-    a failed alert (the safe failure direction) cannot cost the flood guard.
+    re-scrape uses it without committing it first. The heal files NO list
+    reminder — it is an operational notice, not a page; the run routine reports
+    the heal in its push summary instead (the list holds only pages).
     """
     site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
     if site.kind != "scrape":
@@ -236,19 +237,9 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
                 conn, site.id, [e.canonical_url for e in entries]
             )  # flood guard, before config
         update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
-        reminder_id = report(
-            f"healed {site.id}: pattern -> {args.pattern} ({len(entries)} urls snapshotted)"
-        )
     finally:
         close_browser()  # tear down a lazily-launched browser (F2: heal-site re-scrapes too)
-    _emit(
-        {
-            "site_id": site.id,
-            "pattern": args.pattern,
-            "snapshotted": len(entries),
-            "reminder_id": reminder_id,
-        }
-    )
+    _emit({"site_id": site.id, "pattern": args.pattern, "snapshotted": len(entries)})
     return 0
 
 

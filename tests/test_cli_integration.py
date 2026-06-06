@@ -158,20 +158,11 @@ def test_scrape_site_self_heal_end_to_end(
     (snapshot back-catalog) → a new article surfaces → the index moves under a
     new path so the stored pattern matches nothing (``zero_links``) → ``heal-site``
     re-scrapes under the new pattern, snapshots the live URLs, rewrites config
-    last, and files an alert → the next run is clean.
+    last → the next run is clean. heal-site files NO list reminder (the list holds
+    only pages; the heal is reported in the run's push summary).
     """
     site = _MockSite(_index_html("/blog/a", "/blog/b"), content_type="text/html")
     monkeypatch.setattr(cli, "build_client", site.client)
-
-    rem_calls: list[list[str]] = []
-
-    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
-        rem_calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "rem-1"}), stderr="")
-
-    # heal-site files its alert via reminders.report (not add_reminder), so the
-    # real report → add_reminder argv build runs against the injected runner.
-    monkeypatch.setattr(cli, "report", lambda msg: reminders_mod.report(msg, runner=fake_runner))
 
     # --- register the scrape site: snapshots /blog/a and /blog/b seen ---------
     assert (
@@ -211,16 +202,13 @@ def test_scrape_site_self_heal_end_to_end(
     # zero_links fires on a broken pattern (index_matches == 0), NOT a quiet day
     assert broken["sites"] == [{"site_id": "blg", "zero_links": True, "error": None}]
 
-    # --- heal: re-scrape under the new pattern, snapshot, rewrite config, alert
+    # --- heal: re-scrape under the new pattern, snapshot, rewrite config (no list reminder)
     assert cli.main(["heal-site", "--site-id", "blg", "--pattern", NEW_PATTERN]) == 0
     healed = _out(capsys)
     assert healed["pattern"] == NEW_PATTERN
     assert healed["snapshotted"] == 3  # the three live /posts URLs
     assert load_sites(sites_path())[0].article_url_pattern == NEW_PATTERN  # config rewritten
     assert _seen("https://example.com/posts/a")  # newly-matched URLs snapshotted (flood guard)
-    assert any(  # a feed-filter: alert was filed via report
-        a[:2] == ["rem", "add"] and a[2].startswith("feed-filter:") for a in rem_calls
-    )
 
     # --- next run is clean: pattern matches, all snapshotted, no false zero_links
     assert cli.main(["new-entries"]) == 0
@@ -341,7 +329,6 @@ def test_heal_site_browser_scrape_succeeds(
     config is rewritten last, and the flag survives (the success counterpart to the
     error-path teardown test in test_cli.py)."""
     monkeypatch.setattr(cli, "build_client", _MockSite(b"nope", content_type="text/plain").client)
-    monkeypatch.setattr(cli, "report", lambda _msg: "ALERT-1")
 
     # Register the browser scrape site under the OLD pattern; the fake serves /old/*.
     install_fake_playwright(

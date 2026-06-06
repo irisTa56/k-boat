@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from feed_filter.reminders import ReminderError, add_reminder, report
+from feed_filter.reminders import ReminderError, add_reminder
 
 
 @dataclass
@@ -122,14 +122,3 @@ def test_missing_binary_raises_reminder_error() -> None:
         add_reminder("T", "https://e.example.com/a", "n", runner=boom)
     assert excinfo.value.returncode == 127
     assert "could not execute" in str(excinfo.value)
-
-
-def test_report_formats_alert() -> None:
-    runner = _ok("ALERT-1")
-    rid = report("healed s1: pattern changed", runner=runner)
-    assert rid == "ALERT-1"
-    argv = runner.calls[0][0]
-    assert argv[2] == "feed-filter: healed s1: pattern changed"
-    # Alerts carry no url/notes.
-    assert "--url" not in argv
-    assert "--notes" not in argv

@@ -11,8 +11,10 @@ Two invariants the rest of the pipeline relies on:
   the caller does NOT then record the entry seen and silently lose it.
 
 ``runner`` is injected (defaults to ``subprocess.run``) so tests assert the exact
-argv without touching Reminders.app. ``report`` is the alert channel for
-self-heal and error notices — a titled reminder with no url/notes.
+argv without touching Reminders.app. The ``Filtered Feeds`` list holds **only
+pages** (article reminders, including error-noted ones); operational notices
+(self-heal, per-site errors, the run summary) go to the routine's push
+notification, never into the list — so there is no alert-reminder channel here.
 """
 
 from __future__ import annotations
@@ -27,10 +29,6 @@ from feed_filter.config import REMINDER_LIST
 # The CLI binary. Bare name (resolved via PATH); the scheduled routine is
 # responsible for a PATH that includes Homebrew (DEP-007).
 REM_BINARY = "rem"
-
-# Prefix marking a reminder as a feed-filter alert (self-heal / error) rather
-# than a kept article, so the user can tell the two apart in the list.
-ALERT_PREFIX = "feed-filter"
 
 # The injected runner mirrors ``subprocess.run``'s shape: argv list in, an object
 # exposing ``returncode`` / ``stdout`` / ``stderr`` out.
@@ -98,19 +96,3 @@ def add_reminder(
         raise ReminderError(
             argv, proc.returncode, f"unparseable rem output: {proc.stdout!r}"
         ) from exc
-
-
-def report(
-    message: str,
-    *,
-    list_name: str = REMINDER_LIST,
-    runner: Runner = subprocess.run,
-) -> str:
-    """Add an alert reminder (self-heal / error channel) and return its id.
-
-    The message becomes the reminder title, prefixed so it reads as a feed-filter
-    notice. No url/notes — alerts are advisory, not articles.
-    """
-    return add_reminder(
-        f"{ALERT_PREFIX}: {message}", None, None, list_name=list_name, runner=runner
-    )

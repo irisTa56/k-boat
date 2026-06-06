@@ -14,7 +14,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 ## Prerequisites
 
-- The **`Filtered Feeds`** Reminders list must already exist (user-created); the wrapper never creates lists, and a missing/renamed list makes `remind`/`heal-site` exit non-zero (CON-004). If reminds fail this way, stop and report — do not keep judging entries you cannot deliver.
+- The **`Filtered Feeds`** Reminders list must already exist (user-created); the wrapper never creates lists, and a missing/renamed list makes `remind` exit non-zero (CON-004). If reminds fail this way, stop and report — do not keep judging entries you cannot deliver. The list holds **only pages** (article reminders, including error/wall ones whose note explains the issue); operational notices go to the push summary, never into the list.
 - `rem` must be on `PATH` (Homebrew, DEP-007). A scheduled routine often starts with a PATH lacking `/opt/homebrew/bin`; ensure it is present (an absent `rem` surfaces as a non-zero `remind` exit, not a silent drop).
 - Read the current criteria from `selection.md` once at the start of the run and pass them to every judging subagent. Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
 
@@ -47,21 +47,18 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page (REQ-006) — not merely a quiet day. Repair it:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `feed-filter-add-site` skill does (a subagent to eyeball `sample_urls` is fine).
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
-     This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), rewrites `sites.toml`, and files a `feed-filter:` alert reminder — all in one process, config written last (REQ-006).
-   - A non-zero exit (no `{site_id, pattern, snapshotted, reminder_id}` JSON) has two cases, because the config write precedes the alert (config last, REQ-006).
-     To tell them apart, check the site's `article_url_pattern` via `feed-filter list-sites`:
-     - Still the **old** pattern → an **index-fetch failure** before anything was written; report it and let the next run retry the heal.
-     - Already the **new** pattern → a **`rem`/alert failure** (the `Filtered Feeds` list vanished, CON-004) *after* the pattern was rewritten and the back-catalog snapshotted; the heal itself succeeded and only the advisory alert was lost, so do **not** retry — surface the `rem` failure instead.
+     This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last (REQ-006). It files **no** list reminder (the list holds only pages); record the heal in the run summary (the push channel) instead. On success the output is `{site_id, pattern, snapshotted}`.
+   - A non-zero exit means the index re-scrape failed *before* the config write (snapshot-first / config-last), so `sites.toml` still carries the old pattern and nothing was snapshotted; report it in the summary and let the next run retry the heal.
 
 5. **Surface errors.** For each site in `sites` with a non-null `error`, the gather fetch failed (REQ-008); the entry list was empty and nothing was recorded, so it retries naturally next run. Report it in the summary — a persistently broken feed is visible here, by design there is no backoff (RISK-002).
 
 ## Run summary
 
-End the run with a concise summary:
+End the run by **sending the summary as a push notification** (the `PushNotification` tool — one line, ≤200 chars, no markdown) so it reaches the user without opening Claude. This is the **only** channel for operational notices, since none of them enter the `Filtered Feeds` list (pages only). Send it whenever the run did anything noteworthy (any kept, walled, error, or heal); skip the push for a pure no-op run (nothing new, no errors). Lead with what's actionable, e.g. `feed-filter: 12 kept, 3 walls, 2 site errors (qdrant 403, fly timeout), healed mem0`. Keep the fuller breakdown below as the run's text output (the transcript) — a fallback when the push is not delivered (the tool may report it wasn't sent; that is expected, no action needed).
 
 - Counts: sites gathered, entries judged, kept (reminded), dropped, walled (reminded for manual review), error-fallback reminders (REQ-007).
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
-- Errors: each site with a gather `error`, and any `remind`/`heal-site` non-zero exit, with its cause.
+- Errors: each site with a gather `error`, any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)
 
