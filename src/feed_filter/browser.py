@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from feed_filter.config import browser_state_path
-from feed_filter.sites import load_sites
+from feed_filter.sites import SiteConfig, load_sites
 
 if TYPE_CHECKING:
     # Real Playwright types, imported only for annotations so the runtime path
@@ -60,6 +60,14 @@ class MissingPlaywrightError(RuntimeError):
     operator sees the exact install command instead of a raw ``ModuleNotFoundError``
     deep in the gather path (REQ-006).
     """
+
+
+# Shared by both gates (registered-sites and about-to-be-registered) so the
+# operator sees one install command regardless of which path catches the miss.
+_INSTALL_HINT = (
+    "the 'playwright' package is not installed. Install it with:\n"
+    "  uv sync --extra browser && uv run playwright install chromium"
+)
 
 
 class BrowserFetchError(RuntimeError):
@@ -197,18 +205,38 @@ def require_playwright_if_needed(sites_toml_path: Path) -> None:
     if _playwright_installed():
         return
     raise MissingPlaywrightError(
-        f"sites.toml registers requires_browser=true site(s) {flagged!r} but the "
-        "'playwright' package is not installed. Install it with:\n"
-        "  uv sync --extra browser && uv run playwright install chromium"
+        f"sites.toml registers requires_browser=true site(s) {flagged!r} but {_INSTALL_HINT}"
     )
 
 
-def fetch_html(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> str:
-    """Return the post-JS rendered HTML for ``url`` (the scrape index path, REQ-002).
+def require_playwright_for(site: SiteConfig) -> None:
+    """Fail fast if ``site`` needs the browser but Playwright is absent (add-site, REQ-006).
+
+    The on-disk gate ``require_playwright_if_needed`` cannot see a site mid-
+    registration — config is written last (REQ-002) — so ``add-site`` checks the
+    in-memory ``SiteConfig`` directly, before its cold-start snapshot, so a
+    Playwright-less machine gets this friendly error instead of a raw
+    ``ModuleNotFoundError`` from the browser snapshot fetch.
+    """
+    if site.requires_browser and not _playwright_installed():
+        raise MissingPlaywrightError(
+            f"site {site.id!r} sets requires_browser=true but {_INSTALL_HINT}"
+        )
+
+
+def fetch_html(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> tuple[str, str]:
+    """Return ``(post-redirect URL, rendered HTML)`` for ``url`` (scrape index, REQ-002).
+
+    The post-redirect URL (``response.url``) is the base for resolving relative
+    article links, matching the httpx path's ``final_url`` and ``fetch_raw``'s
+    element 0 — so all four gather paths anchor link resolution to the same
+    post-redirect base and yield identical ``Entry`` lists across transports
+    regardless of an index redirect (http->https, ``www`` host, etc.). When ``goto``
+    returns no response (same-document SPA nav), the requested ``url`` is the base.
 
     Raises ``BrowserFetchError`` on a navigation/timeout failure, an HTTP >= 400
     response, or a rendered body over the size cap. The caller (``pipeline``) feeds
-    the result to ``scrape_index`` exactly as it would the httpx ``text``.
+    the HTML to ``scrape_index`` exactly as it would the httpx ``text``.
     """
     bundle = get_browser()
     page = bundle.context.new_page()
@@ -235,7 +263,8 @@ def fetch_html(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> str
                 f"rendered HTML for {url!r} exceeds {_MAX_BROWSER_BODY_BYTES} bytes "
                 f"({len(html)} chars)"
             )
-        return html
+        base_url = str(response.url) if response is not None else url
+        return base_url, html
     finally:
         page.close()
 

@@ -38,11 +38,18 @@ def _reset_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[N
 # --- fetch_html -----------------------------------------------------------
 
 
-def test_fetch_html_returns_rendered_html(monkeypatch: pytest.MonkeyPatch) -> None:
-    ctx = FakeContext(html="<html>rendered</html>", response=FakeResponse(status=200))
+def test_fetch_html_returns_post_redirect_url_and_html(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The base is the POST-redirect URL, not the requested one, so relative links
+    # resolve against where the page actually landed (symmetric with fetch_raw).
+    ctx = FakeContext(
+        html="<html>rendered</html>",
+        response=FakeResponse(status=200, url="https://www.example.com/index"),
+    )
     install_fake_playwright(monkeypatch, context=ctx)
 
-    assert fetch_html("https://example.com/index") == "<html>rendered</html>"
+    base_url, html = fetch_html("https://example.com/index")
+    assert html == "<html>rendered</html>"
+    assert base_url == "https://www.example.com/index"  # post-redirect (www), not requested
     # Navigation waits for ``load`` and passes the timeout in milliseconds.
     assert ctx.goto_calls[0].wait_until == "load"
     assert ctx.goto_calls[0].timeout == browser.DEFAULT_BROWSER_TIMEOUT_SEC * 1000.0
@@ -50,12 +57,16 @@ def test_fetch_html_returns_rendered_html(monkeypatch: pytest.MonkeyPatch) -> No
     assert ctx.pages[0].closed is True
 
 
-def test_fetch_html_none_response_still_returns_content(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_html_none_response_falls_back_to_requested_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # A same-document navigation returns no response object; fetch_html skips the
-    # status check and still hands back the rendered DOM.
+    # status check, returns the rendered DOM, and bases on the requested URL.
     ctx = FakeContext(html="<html>ok</html>", response=None)
     install_fake_playwright(monkeypatch, context=ctx)
-    assert fetch_html("https://example.com/index") == "<html>ok</html>"
+    base_url, html = fetch_html("https://example.com/index")
+    assert html == "<html>ok</html>"
+    assert base_url == "https://example.com/index"
 
 
 def test_fetch_html_http_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:

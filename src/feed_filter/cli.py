@@ -30,6 +30,13 @@ from dataclasses import replace
 from itertools import zip_longest
 from typing import Any
 
+from feed_filter.browser import (
+    BrowserFetchError,
+    MissingPlaywrightError,
+    close_browser,
+    require_playwright_for,
+    require_playwright_if_needed,
+)
 from feed_filter.canonical import canonical_url
 from feed_filter.config import DEFAULT_GLOBAL_CAP, db_path, sites_path
 from feed_filter.discover import DiscoveryCandidate, discover
@@ -78,6 +85,7 @@ def _site_from_args(args: argparse.Namespace) -> SiteConfig:
         index_url=args.index_url,
         article_url_pattern=args.article_url_pattern,
         selection=args.selection,
+        requires_browser=args.requires_browser,
     )
 
 
@@ -125,11 +133,18 @@ def cmd_discover(args: argparse.Namespace) -> int:
 def cmd_add_site(args: argparse.Namespace) -> int:
     """Register a site: snapshot its current entries seen, THEN write config (REQ-002)."""
     site = _site_from_args(args)  # shape validation first
-    with build_client() as client:
-        entries = fetch_entries(site, client=client)  # full back-catalog (FetchError → exit 1)
-    with contextlib.closing(open_db(db_path())) as conn:
-        snapshot(conn, site.id, [e.canonical_url for e in entries])  # durable, before config
-    add_site(sites_path(), site)  # config last
+    # The on-disk gate can't see this site yet (config is written last), so check
+    # the in-memory config before the snapshot — a flagged site on a Playwright-less
+    # machine must fail with the friendly message, not a raw ModuleNotFoundError.
+    require_playwright_for(site)
+    try:
+        with build_client() as client:
+            entries = fetch_entries(site, client=client)  # full back-catalog (Fetch* → exit 1)
+        with contextlib.closing(open_db(db_path())) as conn:
+            snapshot(conn, site.id, [e.canonical_url for e in entries])  # durable, before config
+        add_site(sites_path(), site)  # config last
+    finally:
+        close_browser()  # tear down a lazily-launched browser (no-op for httpx sites)
     _emit({"site_id": site.id, "kind": site.kind, "snapshotted": len(entries)})
     return 0
 
@@ -142,26 +157,32 @@ def cmd_list_sites(_args: argparse.Namespace) -> int:
 def cmd_new_entries(args: argparse.Namespace) -> int:
     """Gather new entries across sites, interleave, then apply the global cap (REQ-010)."""
     sites = _select_sites(args.site_id)
+    # Fail fast before any fetch if a registered site needs the browser but the
+    # extra is missing (REQ-006), so a misconfigured run errors cleanly up front.
+    require_playwright_if_needed(sites_path())
     groups: list[list[dict[str, Any]]] = []
     site_status: list[dict[str, Any]] = []
-    with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
-        for site in sites:
-            gathered = gather_new(conn, site, client=client)
-            groups.append(
-                [
-                    {
-                        "site_id": site.id,
-                        "url": str(e.canonical_url),
-                        "title": e.title,
-                        "summary": e.summary,
-                        "kind": e.kind,
-                    }
-                    for e in gathered.entries
-                ]
-            )
-            site_status.append(
-                {"site_id": site.id, "zero_links": gathered.zero_links, "error": gathered.error}
-            )
+    try:
+        with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
+            for site in sites:
+                gathered = gather_new(conn, site, client=client)
+                groups.append(
+                    [
+                        {
+                            "site_id": site.id,
+                            "url": str(e.canonical_url),
+                            "title": e.title,
+                            "summary": e.summary,
+                            "kind": e.kind,
+                        }
+                        for e in gathered.entries
+                    ]
+                )
+                site_status.append(
+                    {"site_id": site.id, "zero_links": gathered.zero_links, "error": gathered.error}
+                )
+    finally:
+        close_browser()  # tear down a lazily-launched browser (no-op for httpx-only runs)
     entries = _round_robin(groups)[: args.global_cap]
     _emit({"entries": entries, "sites": site_status})
     return 0
@@ -202,16 +223,24 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
     if site.kind != "scrape":
         raise ValueError(f"heal-site targets scrape sites only (site {site.id!r})")
+    # The healed site is already on disk, so the on-disk gate sees it: fail fast if
+    # it is browser-flagged but the extra is missing (REQ-006) before the re-scrape.
+    require_playwright_if_needed(sites_path())
 
     healed_site = replace(site, article_url_pattern=args.pattern)
-    with build_client() as client:
-        entries = fetch_entries(healed_site, client=client)  # re-scraped under the NEW pattern
-    with contextlib.closing(open_db(db_path())) as conn:
-        snapshot(conn, site.id, [e.canonical_url for e in entries])  # flood guard, before config
-    update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
-    reminder_id = report(
-        f"healed {site.id}: pattern -> {args.pattern} ({len(entries)} urls snapshotted)"
-    )
+    try:
+        with build_client() as client:
+            entries = fetch_entries(healed_site, client=client)  # re-scraped under the NEW pattern
+        with contextlib.closing(open_db(db_path())) as conn:
+            snapshot(
+                conn, site.id, [e.canonical_url for e in entries]
+            )  # flood guard, before config
+        update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
+        reminder_id = report(
+            f"healed {site.id}: pattern -> {args.pattern} ({len(entries)} urls snapshotted)"
+        )
+    finally:
+        close_browser()  # tear down a lazily-launched browser (F2: heal-site re-scrapes too)
     _emit(
         {
             "site_id": site.id,
@@ -238,6 +267,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--index-url", dest="index_url")
     p_add.add_argument("--article-url-pattern", dest="article_url_pattern")
     p_add.add_argument("--selection")
+    p_add.add_argument(
+        "--requires-browser",
+        dest="requires_browser",
+        action="store_true",
+        help="fetch this site through the opt-in Playwright path (JS / anti-bot sites)",
+    )
     p_add.set_defaults(handler=cmd_add_site)
 
     p_list = sub.add_parser("list-sites", help="list registered sites")
@@ -283,11 +318,23 @@ def main(argv: Sequence[str] | None = None) -> int:
       (disk full, permission, atomic-rename failure). Caught for the same reason
       ``rem``'s absence is: a config write that can't complete is an operational
       failure to report, not a stack trace to dump.
+    - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
+      directly (add-site / heal-site snapshot), the browser analog of ``FetchError``;
+    - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
+      extra (the message carries the install command, REQ-006).
     """
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.handler(args)
-    except (FetchError, ReminderError, ValueError, KeyError, OSError) as exc:
+    except (
+        FetchError,
+        BrowserFetchError,
+        ReminderError,
+        ValueError,
+        KeyError,
+        OSError,
+        MissingPlaywrightError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return exit_code

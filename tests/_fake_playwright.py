@@ -16,6 +16,7 @@ and ``chromium.launch_count`` / ``playwright.stopped`` for the lifecycle).
 
 from __future__ import annotations
 
+import importlib.machinery
 import sys
 import types
 from pathlib import Path
@@ -165,10 +166,15 @@ def install_fake_playwright(
     # setattr (not direct assignment) so the dynamic module attribute does not trip
     # the type checker, which cannot see attributes added to a bare ModuleType.
     setattr(fake_module, "sync_playwright", lambda: starter)  # noqa: B010
+    # Inject the parent package too, with a valid ``__spec__`` so the fake fully
+    # represents an *installed* Playwright: ``importlib.util.find_spec("playwright")``
+    # (used by ``_playwright_installed`` / the gates) returns this spec rather than
+    # raising on a ``__spec__ is None`` stub. Always override, so the result does not
+    # depend on whether the real dev-only ``playwright`` happens to be imported.
+    fake_parent = types.ModuleType("playwright")
+    fake_parent.__spec__ = importlib.machinery.ModuleSpec("playwright", loader=None)
+    monkeypatch.setitem(sys.modules, "playwright", fake_parent)
     monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_module)
-    # The parent package must resolve for ``from playwright.sync_api import ...``.
-    if "playwright" not in sys.modules:
-        monkeypatch.setitem(sys.modules, "playwright", types.ModuleType("playwright"))
 
     return SimpleNamespace(
         playwright=playwright, chromium=chromium, browser=browser, context=context

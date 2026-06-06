@@ -16,7 +16,8 @@ from typing import Any
 
 import pytest
 
-from feed_filter import cli
+from feed_filter import browser, cli
+from feed_filter.browser import BrowserFetchError
 from feed_filter.canonical import CanonicalUrl, canonical_url
 from feed_filter.config import db_path, sites_path
 from feed_filter.discover import DiscoveryCandidate, DiscoveryRejection, DiscoveryResult
@@ -487,6 +488,104 @@ def test_heal_site_unknown_id_exits_nonzero(
     add_site(sites_path(), SiteConfig(id="s1", name="S", feed_url="https://e.example.com/f.xml"))
     assert cli.main(["heal-site", "--site-id", "nope", "--pattern", "^/x/"]) == 1
     assert "error:" in capsys.readouterr().err
+
+
+# --- browser opt-in path (gate + teardown) --------------------------------
+
+
+def test_new_entries_gate_fires_before_any_fetch(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A flagged site with Playwright missing must fail at the startup gate (REQ-006)
+    # BEFORE any gather, with the install command — not a mid-run ModuleNotFoundError.
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="js", name="JS", feed_url="https://e.example.com/f.xml", requires_browser=True
+        ),
+    )
+    monkeypatch.setattr(browser, "_playwright_installed", lambda: False)
+    monkeypatch.setattr(cli, "gather_new", lambda *a, **k: pytest.fail("fetched before the gate"))
+
+    rc = cli.main(["new-entries"])
+    assert rc == 1
+    assert "uv sync --extra browser" in capsys.readouterr().err
+
+
+def test_add_site_requires_browser_missing_playwright_fails_before_snapshot(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # add-site writes config last, so the on-disk gate can't see the new site; the
+    # in-memory require_playwright_for must fail before the snapshot fetch (REQ-006).
+    monkeypatch.setattr(browser, "_playwright_installed", lambda: False)
+    monkeypatch.setattr(
+        cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before the gate")
+    )
+
+    rc = cli.main(
+        [
+            "add-site",
+            "--id",
+            "js",
+            "--name",
+            "JS",
+            "--feed-url",
+            "https://e/f.xml",
+            "--requires-browser",
+        ]
+    )
+    assert rc == 1
+    assert "uv sync --extra browser" in capsys.readouterr().err
+    assert not sites_path().exists()  # no config written on a gate failure
+
+
+def test_heal_site_closes_browser_even_on_error(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # F2: heal-site re-scrapes, so it must tear down a lazily-launched browser in its
+    # finally even when the re-scrape errors (it was previously omitted entirely).
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="S",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/old/[^/]+/?$",
+            requires_browser=True,
+        ),
+    )
+
+    def boom(site: SiteConfig, *, client: object) -> list[Entry]:
+        raise BrowserFetchError("render failed")
+
+    closed: list[bool] = []
+    monkeypatch.setattr(cli, "fetch_entries", boom)
+    monkeypatch.setattr(cli, "close_browser", lambda: closed.append(True))
+
+    rc = cli.main(["heal-site", "--site-id", "s1", "--pattern", r"^/posts/[^/]+/?$"])
+    assert rc == 1
+    assert closed == [True]  # torn down despite the BrowserFetchError
+    assert "error:" in capsys.readouterr().err
+
+
+def test_new_entries_closes_browser_in_finally(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The teardown is unconditional: even a plain httpx run closes the (never-launched)
+    # browser, so a lazily-launched one can never leak.
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    monkeypatch.setattr(
+        cli,
+        "gather_new",
+        lambda *a, **k: GatherResult(entries=[], index_matches=0, zero_links=False, error=None),
+    )
+    closed: list[bool] = []
+    monkeypatch.setattr(cli, "close_browser", lambda: closed.append(True))
+
+    assert cli.main(["new-entries"]) == 0
+    assert closed == [True]
 
 
 # --- dispatch root --------------------------------------------------------

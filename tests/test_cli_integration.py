@@ -23,8 +23,9 @@ from typing import Any
 
 import httpx
 import pytest
+from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
-from feed_filter import cli
+from feed_filter import browser, cli
 from feed_filter import reminders as reminders_mod
 from feed_filter.canonical import canonical_url
 from feed_filter.config import db_path, sites_path
@@ -225,3 +226,162 @@ def test_scrape_site_self_heal_end_to_end(
     after = _out(capsys)
     assert after["entries"] == []
     assert after["sites"] == [{"site_id": "blg", "zero_links": False, "error": None}]
+
+
+# --- opt-in browser path end-to-end ---------------------------------------
+
+JS_FEED_URL = "https://js.example.com/feed.xml"
+JS_INDEX_URL = "https://js.example.com/blog"
+X = ("X", "https://js.example.com/x")
+Y = ("Y", "https://js.example.com/y")
+Z = ("Z", "https://js.example.com/z")
+
+
+@pytest.fixture
+def browser_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cold browser singleton + tmp storage-state for the browser-path tests."""
+    monkeypatch.setenv("FEED_FILTER_BROWSER_STATE", str(tmp_path / "browser-state.json"))
+    browser._bundle = None
+
+
+def test_add_site_requires_browser_snapshots_via_browser(
+    state_dir: Path,
+    browser_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A JS feed registers through the browser path: its back-catalog is snapshotted
+    via the fake Chromium (REQ-007), the flag persists, and the httpx client is
+    never touched."""
+    # An httpx client that errors if used — the browser add-site must not fetch over it.
+    monkeypatch.setattr(cli, "build_client", _MockSite(b"nope", content_type="text/plain").client)
+    ctx = FakeContext(response=FakeResponse(status=200, url=JS_FEED_URL, body=_rss(X, Y)))
+    install_fake_playwright(monkeypatch, context=ctx)
+
+    assert (
+        cli.main(
+            [
+                "add-site",
+                "--id",
+                "js",
+                "--name",
+                "JS",
+                "--feed-url",
+                JS_FEED_URL,
+                "--requires-browser",
+            ]
+        )
+        == 0
+    )
+    assert _out(capsys) == {"site_id": "js", "kind": "feed", "snapshotted": 2}
+    assert load_sites(sites_path())[0].requires_browser is True
+    assert _seen(X[1]) and _seen(Y[1])  # back-catalog snapshotted through the browser
+
+
+def test_new_entries_mixed_registry_returns_both(
+    state_dir: Path,
+    browser_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A registry of one httpx feed and one browser feed gathers both transports in
+    a single run; each surfaces its own post-registration entry."""
+    httpx_site = _MockSite(_rss(A, B))
+    monkeypatch.setattr(cli, "build_client", httpx_site.client)
+    assert cli.main(["add-site", "--id", "hx", "--name", "HX", "--feed-url", FEED_URL]) == 0
+    capsys.readouterr()
+
+    # Register the browser feed; its add-site snapshot runs through the fake (X, Y).
+    install_fake_playwright(
+        monkeypatch,
+        context=FakeContext(response=FakeResponse(status=200, url=JS_FEED_URL, body=_rss(X, Y))),
+    )
+    assert (
+        cli.main(
+            [
+                "add-site",
+                "--id",
+                "js",
+                "--name",
+                "JS",
+                "--feed-url",
+                JS_FEED_URL,
+                "--requires-browser",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    # A new entry appears on each transport after registration.
+    httpx_site.body = _rss(A, B, C)
+    install_fake_playwright(
+        monkeypatch,
+        context=FakeContext(response=FakeResponse(status=200, url=JS_FEED_URL, body=_rss(X, Y, Z))),
+    )
+
+    assert cli.main(["new-entries"]) == 0
+    out = _out(capsys)
+    assert {e["url"] for e in out["entries"]} == {C[1], Z[1]}  # one new from each transport
+    statuses = {s["site_id"]: s for s in out["sites"]}
+    assert statuses["hx"]["error"] is None
+    assert statuses["js"]["error"] is None
+
+
+def test_heal_site_browser_scrape_succeeds(
+    state_dir: Path,
+    browser_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """heal-site re-scrapes a browser scrape site THROUGH the browser: replace()
+    preserves requires_browser, the new pattern's URLs are snapshotted via the fake,
+    config is rewritten last, and the flag survives (the success counterpart to the
+    error-path teardown test in test_cli.py)."""
+    monkeypatch.setattr(cli, "build_client", _MockSite(b"nope", content_type="text/plain").client)
+    monkeypatch.setattr(cli, "report", lambda _msg: "ALERT-1")
+
+    # Register the browser scrape site under the OLD pattern; the fake serves /old/*.
+    install_fake_playwright(
+        monkeypatch,
+        context=FakeContext(
+            html=_index_html("/old/a", "/old/b").decode(),
+            response=FakeResponse(status=200, url=JS_INDEX_URL),
+        ),
+    )
+    assert (
+        cli.main(
+            [
+                "add-site",
+                "--id",
+                "bs",
+                "--name",
+                "BS",
+                "--index-url",
+                JS_INDEX_URL,
+                "--article-url-pattern",
+                "^/old/[^/]+/?$",
+                "--requires-browser",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    # The index is redesigned to /posts/*; heal under the new pattern via the browser.
+    install_fake_playwright(
+        monkeypatch,
+        context=FakeContext(
+            html=_index_html("/posts/a", "/posts/b", "/posts/c").decode(),
+            response=FakeResponse(status=200, url=JS_INDEX_URL),
+        ),
+    )
+    assert cli.main(["heal-site", "--site-id", "bs", "--pattern", "^/posts/[^/]+/?$"]) == 0
+    healed = _out(capsys)
+    assert healed["pattern"] == "^/posts/[^/]+/?$"
+    assert healed["snapshotted"] == 3  # the three live /posts URLs, re-scraped via browser
+
+    site = load_sites(sites_path())[0]
+    assert site.article_url_pattern == "^/posts/[^/]+/?$"  # config rewritten last
+    assert site.requires_browser is True  # replace() preserved the flag through the heal
+    assert _seen("https://js.example.com/posts/a")  # newly-matched URLs snapshotted

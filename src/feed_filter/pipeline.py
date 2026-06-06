@@ -21,6 +21,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from feed_filter import browser
+from feed_filter.browser import BrowserFetchError
 from feed_filter.config import DEFAULT_PER_SITE_CAP
 from feed_filter.feeds import Entry, parse_feed
 from feed_filter.fetch import FetchError, fetch
@@ -46,20 +48,40 @@ class GatherResult:
 
 
 def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
-    """All of ``site``'s current entries, uncapped and unfiltered (raises ``FetchError``).
+    """All of ``site``'s current entries, uncapped and unfiltered.
 
-    The feed path parses raw bytes (CON-002); the scrape path resolves links
-    against the post-redirect URL and matches ``article_url_pattern``. Used both
-    by ``gather_new`` (then filtered) and by registration's cold-start snapshot
-    (REQ-002), which needs the full back-catalog, not the filtered slice.
+    Branches on kind, then on transport. The feed path parses raw bytes (CON-002);
+    the scrape path resolves links against a base URL and matches
+    ``article_url_pattern``. A ``requires_browser`` site routes its gather fetch
+    through the Playwright path (``browser.fetch_raw`` / ``browser.fetch_html``)
+    while every other site keeps the ``httpx`` path; both transports feed the same
+    parsers, so they yield identical ``Entry`` lists (REQ-002). ``client`` is unused
+    on the browser branch (F2). Raises ``FetchError`` (httpx) or ``BrowserFetchError``
+    (browser) on a fetch failure.
+
+    Used both by ``gather_new`` (then filtered) and by registration's cold-start
+    snapshot (REQ-002), which needs the full back-catalog, not the filtered slice.
     """
     if site.feed_url is not None:
-        result = fetch(site.feed_url, client=client)
-        return parse_feed(result.content, result.final_url)
+        if site.requires_browser:
+            # Anchor parsing to the post-redirect URL (element 0), matching the
+            # httpx path's ``final_url`` so relative entry links resolve identically
+            # (F5 — deliberately unlike loose-feeds, which anchors to ``feed_url``).
+            base_url, body = browser.fetch_raw(site.feed_url)
+        else:
+            result = fetch(site.feed_url, client=client)
+            base_url, body = result.final_url, result.content
+        return parse_feed(body, base_url)
     # SiteConfig's exactly-one invariant guarantees a scrape site has both fields.
     assert site.index_url is not None and site.article_url_pattern is not None
-    result = fetch(site.index_url, client=client)
-    return scrape_index(result.text, result.final_url, site.article_url_pattern)
+    if site.requires_browser:
+        # Both transports anchor link resolution to the post-redirect URL, so a
+        # redirecting index (http->https, www host) resolves entry links identically.
+        base_url, html = browser.fetch_html(site.index_url)
+    else:
+        result = fetch(site.index_url, client=client)
+        base_url, html = result.final_url, result.text
+    return scrape_index(html, base_url, site.article_url_pattern)
 
 
 def gather_new(conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client) -> GatherResult:
@@ -70,7 +92,10 @@ def gather_new(conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Clie
     """
     try:
         all_entries = fetch_entries(site, client=client)
-    except FetchError as exc:
+    except (FetchError, BrowserFetchError) as exc:
+        # Both transports' fetch failures absorb into the per-site error with an
+        # empty entry list (REQ-008); nothing is recorded seen, so the next run
+        # retries naturally.
         return GatherResult(entries=[], index_matches=0, zero_links=False, error=str(exc))
 
     index_matches = len(all_entries)

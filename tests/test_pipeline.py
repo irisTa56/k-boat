@@ -8,11 +8,14 @@ exercised against actual storage.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import httpx
+import pytest
+from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
+from feed_filter import browser
 from feed_filter.canonical import canonical_url
 from feed_filter.config import DEFAULT_PER_SITE_CAP
 from feed_filter.pipeline import gather_new
@@ -20,6 +23,11 @@ from feed_filter.seen import count, open_db, snapshot
 from feed_filter.sites import SiteConfig
 
 Handler = Callable[[httpx.Request], httpx.Response]
+
+
+def _no_http(_: httpx.Request) -> httpx.Response:
+    """A client handler that must never fire — the browser branch ignores it (F2)."""
+    raise AssertionError("browser path must not use the httpx client")
 
 
 def _client(handler: Handler) -> httpx.Client:
@@ -133,3 +141,107 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
     assert result.entries == []
     assert result.index_matches == 0
     assert result.zero_links is False
+
+
+# --- browser gather path (requires_browser) -------------------------------
+
+
+@pytest.fixture
+def browser_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Cold browser singleton + tmp state path for each browser-path test."""
+    monkeypatch.setenv("FEED_FILTER_BROWSER_STATE", str(tmp_path / "state.json"))
+    browser._bundle = None
+    yield
+    browser._bundle = None
+
+
+_BROWSER_FEED = SiteConfig(
+    id="bf", name="JS Feed", feed_url="https://example.com/feed.xml", requires_browser=True
+)
+_BROWSER_SCRAPE = SiteConfig(
+    id="bs",
+    name="JS Scrape",
+    index_url="https://example.com/blog",
+    article_url_pattern=r"^/blog/[^/]+/?$",
+    requires_browser=True,
+)
+
+
+def test_browser_feed_yields_same_entries_as_httpx(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
+) -> None:
+    # REQ-002: the browser feed path must produce an identical Entry list to the
+    # httpx path over the same bytes. Establish the httpx baseline, then route the
+    # same feed through the browser (fake) and compare.
+    rss = _rss(3)
+
+    def serve(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=rss, headers={"content-type": "application/rss+xml"})
+
+    httpx_feed = SiteConfig(id="hf", name="HF", feed_url="https://example.com/feed.xml")
+    with contextlib.closing(open_db(tmp_path / "a")) as conn, _client(serve) as client:
+        baseline = gather_new(conn, httpx_feed, client=client)
+
+    resp = FakeResponse(status=200, url="https://example.com/feed.xml", body=rss.encode())
+    install_fake_playwright(monkeypatch, context=FakeContext(response=resp))
+    with contextlib.closing(open_db(tmp_path / "b")) as conn, _client(_no_http) as client:
+        gathered = gather_new(conn, _BROWSER_FEED, client=client)
+
+    assert [str(e.canonical_url) for e in gathered.entries] == [
+        str(e.canonical_url) for e in baseline.entries
+    ]
+    assert [e.title for e in gathered.entries] == [e.title for e in baseline.entries]
+    assert gathered.index_matches == baseline.index_matches
+    assert gathered.error is None
+
+
+def test_browser_scrape_routes_through_fetch_html(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
+) -> None:
+    ctx = FakeContext(html=_index(["/blog/a", "/blog/b"]), response=FakeResponse(status=200))
+    install_fake_playwright(monkeypatch, context=ctx)
+    with contextlib.closing(open_db(tmp_path / "db")) as conn, _client(_no_http) as client:
+        gathered = gather_new(conn, _BROWSER_SCRAPE, client=client)
+
+    assert [str(e.canonical_url) for e in gathered.entries] == [
+        "https://example.com/blog/a",
+        "https://example.com/blog/b",
+    ]
+    assert all(e.kind == "scrape" for e in gathered.entries)
+    # The rendered index URL was the navigation target.
+    assert ctx.goto_calls[0].url == "https://example.com/blog"
+
+
+def test_browser_scrape_resolves_links_against_post_redirect_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
+) -> None:
+    # The index redirects example.com/blog -> www.example.com/blog; the rendered
+    # page's relative link must resolve against the post-redirect host (REQ-002,
+    # symmetric with the httpx path), not the configured index_url. If the base were
+    # the configured index_url, the canonical URL would carry the bare host instead.
+    ctx = FakeContext(
+        html=_index(["/blog/a"]),
+        response=FakeResponse(status=200, url="https://www.example.com/blog"),
+    )
+    install_fake_playwright(monkeypatch, context=ctx)
+    with contextlib.closing(open_db(tmp_path / "db")) as conn, _client(_no_http) as client:
+        gathered = gather_new(conn, _BROWSER_SCRAPE, client=client)
+
+    assert [str(e.canonical_url) for e in gathered.entries] == ["https://www.example.com/blog/a"]
+
+
+def test_browser_fetch_error_sets_error_and_records_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
+) -> None:
+    # A BrowserFetchError absorbs into the per-site error exactly like FetchError
+    # (REQ-008): empty entries, nothing recorded seen, retried next run.
+    install_fake_playwright(monkeypatch, context=FakeContext(response=FakeResponse(status=403)))
+    with contextlib.closing(open_db(tmp_path / "db")) as conn:
+        with _client(_no_http) as client:
+            gathered = gather_new(conn, _BROWSER_FEED, client=client)
+        assert count(conn) == 0
+
+    assert gathered.error is not None
+    assert "HTTP 403" in gathered.error
+    assert gathered.entries == []
+    assert gathered.index_matches == 0
