@@ -23,6 +23,7 @@ See [plan/feature-feed-filter-1.md](plan/feature-feed-filter-1.md) for the full 
 
 ```sh
 mise install          # install tools + generate the git pre-commit hook
+cp prompts/selection.example.md prompts/selection.md   # then edit your keep/drop criteria
 mise run pre-commit   # run the full QA gate (Python + markdown + secrets)
 mise run qa:py:test   # run the Python test suite
 ```
@@ -52,7 +53,7 @@ feed-filter list-sites
 ```
 
 `sites.toml` (the registry), `prompts/selection.md` (the keep/drop criteria), and `feed-filter.db` (the seen-store) are **gitignored local state** — personal config that stays on your machine.
-The only version-controlled prompt is `prompts/selection.example.md`: copy it to `prompts/selection.md` and edit (or point `FEED_FILTER_SELECTION` elsewhere). Edit the registry by hand or via the skills.
+Only the `prompts/selection.example.md` template is committed (Setup copies it to `prompts/selection.md`); set `FEED_FILTER_SELECTION` to keep the active prompt elsewhere. Edit the registry by hand or via the skills.
 
 ### Pause or resume a site
 
