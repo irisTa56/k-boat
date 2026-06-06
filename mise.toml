@@ -1,14 +1,14 @@
 [tools]
+lychee = "latest"
 rumdl = "latest"
 
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
-# Where distilled concept notes live (a Basic Memory project root). Defaults to a
-# subdir of the vault; .env overrides it (for K-Boat, a Git-managed directory).
+# Where distilled concept notes live (a Basic Memory project root).
+# Defaults to a subdir of the vault; .env overrides it (for K-Boat, a Git-managed directory).
 KBOAT_KNOWLEDGE_PATH = "~/Documents/K-Boat/Knowledge"
 _.file = ".env"
-# Automatically activate the venv (uv is provided by Homebrew)
-_.python.venv = { path = ".venv", create = true }
+_.python.venv = { path = ".venv", create = true } # Automatically activate the venv
 
 [tasks.setup]
 description = "Sync dependencies from pyproject.toml and install Chromium"
@@ -21,6 +21,11 @@ run = [
 [tasks."fmt:md"]
 description = "Format markdown files"
 run = "rumdl check --fix"
+
+# Not in `qa:*`: full-repo external link check is too slow / network-bound for pre-commit.
+[tasks."check:links"]
+description = "Check links in the repo"
+run = "lychee -v ."
 
 [tasks."nblm:login"]
 description = "Log in to NotebookLM with a Google account"
