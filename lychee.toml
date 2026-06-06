@@ -1,3 +1,11 @@
-# Loopback URLs (if ever documented for local execution) are reachable only
-# while a local process is running; lychee should not try to fetch them.
-exclude = ["^http://127\\.0\\.0\\.1[:/]", "^http://localhost[:/]"]
+# URL-pattern excludes (not path excludes): every file stays in scope, so a real
+# link added anywhere — including test code — is still checked. We only skip URLs
+# that are unverifiable by construction.
+exclude = [
+    # Loopback URLs are reachable only while a local process is running.
+    "^http://127\\.0\\.0\\.1[:/]",
+    "^http://localhost[:/]",
+    # RFC 2606 reserved example.com (and any subdomain) is non-routable sample
+    # data used throughout the test fixtures; never a real link.
+    "^https?://([a-z0-9-]+\\.)*example\\.com([:/]|$)",
+]

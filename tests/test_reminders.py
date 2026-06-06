@@ -40,7 +40,7 @@ def _ok(id_: str = "ABC-123") -> FakeRunner:
 
 def test_exact_argv_and_id_parsed() -> None:
     runner = _ok("R1")
-    rid = add_reminder("My Title", "https://e.com/a", "a note", runner=runner)
+    rid = add_reminder("My Title", "https://e.example.com/a", "a note", runner=runner)
 
     assert rid == "R1"
     argv, kwargs = runner.calls[0]
@@ -53,7 +53,7 @@ def test_exact_argv_and_id_parsed() -> None:
         "-o",
         "json",
         "--url",
-        "https://e.com/a",
+        "https://e.example.com/a",
         "--notes",
         "a note",
     ]
@@ -68,7 +68,7 @@ def test_special_chars_passed_as_single_argv_elements() -> None:
     runner = _ok()
     title = 'A; rm -rf / & "$(whoami)"'
     notes = "line with | pipe and `backtick`"
-    add_reminder(title, "https://e.com/a", notes, runner=runner)
+    add_reminder(title, "https://e.example.com/a", notes, runner=runner)
 
     argv = runner.calls[0][0]
     assert argv[2] == title
@@ -77,17 +77,17 @@ def test_special_chars_passed_as_single_argv_elements() -> None:
 
 def test_empty_title_falls_back_to_url() -> None:
     runner = _ok()
-    add_reminder("   ", "https://e.com/fallback", None, runner=runner)
+    add_reminder("   ", "https://e.example.com/fallback", None, runner=runner)
     argv = runner.calls[0][0]
-    assert argv[2] == "https://e.com/fallback"
+    assert argv[2] == "https://e.example.com/fallback"
     # notes omitted when None.
     assert "--notes" not in argv
 
 
 def test_none_title_falls_back_to_url() -> None:
     runner = _ok()
-    add_reminder(None, "https://e.com/x", None, runner=runner)
-    assert runner.calls[0][0][2] == "https://e.com/x"
+    add_reminder(None, "https://e.example.com/x", None, runner=runner)
+    assert runner.calls[0][0][2] == "https://e.example.com/x"
 
 
 def test_no_title_and_no_url_raises() -> None:
@@ -101,7 +101,7 @@ def test_nonzero_exit_raises_unknown_list() -> None:
     # CON-004: a renamed/missing list must surface, not swallow the kept entry.
     runner = FakeRunner(FakeProc(returncode=1, stderr="reminders: list not found: Filtered Feeds"))
     with pytest.raises(ReminderError) as excinfo:
-        add_reminder("T", "https://e.com/a", "n", runner=runner)
+        add_reminder("T", "https://e.example.com/a", "n", runner=runner)
     assert excinfo.value.returncode == 1
     assert "list not found" in excinfo.value.stderr
 
@@ -109,7 +109,7 @@ def test_nonzero_exit_raises_unknown_list() -> None:
 def test_unparseable_output_raises() -> None:
     runner = FakeRunner(FakeProc(returncode=0, stdout="not json"))
     with pytest.raises(ReminderError, match="unparseable"):
-        add_reminder("T", "https://e.com/a", "n", runner=runner)
+        add_reminder("T", "https://e.example.com/a", "n", runner=runner)
 
 
 def test_missing_binary_raises_reminder_error() -> None:
@@ -119,7 +119,7 @@ def test_missing_binary_raises_reminder_error() -> None:
         raise FileNotFoundError(2, "No such file or directory", "rem")
 
     with pytest.raises(ReminderError) as excinfo:
-        add_reminder("T", "https://e.com/a", "n", runner=boom)
+        add_reminder("T", "https://e.example.com/a", "n", runner=boom)
     assert excinfo.value.returncode == 127
     assert "could not execute" in str(excinfo.value)
 

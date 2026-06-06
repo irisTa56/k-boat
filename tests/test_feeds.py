@@ -27,9 +27,25 @@ def test_rss_canonicalizes_and_orders_newest_first() -> None:
     assert all(e.published_at is not None for e in entries)
 
 
+# Atom feed with a root-relative entry link, kept inline (not a fixture file) so
+# the relative link documents resolution without becoming a dangling link for the
+# repo's link checker — the same reason test_discover builds relative hrefs inline.
+_ATOM = b"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Example</title>
+  <link href="https://atom.example.com/"/>
+  <entry>
+    <title>Atom Entry One</title>
+    <link href="/articles/one"/>
+    <summary>First atom entry.</summary>
+    <updated>2026-06-01T12:00:00Z</updated>
+    <id>urn:uuid:0001</id>
+  </entry>
+</feed>"""
+
+
 def test_atom_resolves_relative_links() -> None:
-    body = (FIXTURES / "atom.xml").read_bytes()
-    entries = parse_feed(body, "https://atom.example.com/")
+    entries = parse_feed(_ATOM, "https://atom.example.com/")
 
     assert len(entries) == 1
     entry = entries[0]

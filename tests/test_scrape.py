@@ -20,7 +20,7 @@ def _html() -> str:
 def test_matches_article_links_excludes_nav_and_cross_host() -> None:
     entries = scrape_index(_html(), "https://blog.example.com/", ARTICLE_PATTERN)
 
-    # /about, /contact fail the pattern; the other.com link is cross-host. The
+    # /about, /contact fail the pattern; the other.example.com link is cross-host. The
     # duplicate first-post (with tracking query) collapses to one entry.
     assert [e.canonical_url for e in entries] == [
         "https://blog.example.com/blog/first-post",

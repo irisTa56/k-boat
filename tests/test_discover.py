@@ -351,7 +351,7 @@ def test_unreachable_host_raises_fetch_error() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     with client, pytest.raises(FetchError):
-        discover("https://nope.example/", client=client)
+        discover("https://nope.example.com/", client=client)
 
 
 def test_layer_c_caps_probes(monkeypatch: pytest.MonkeyPatch) -> None:

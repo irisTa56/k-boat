@@ -49,19 +49,19 @@ def test_discover_emits_candidates(
 ) -> None:
     _no_client(monkeypatch)
     candidate = DiscoveryCandidate(
-        feed_url="https://e.com/f.xml",
+        feed_url="https://e.example.com/f.xml",
         feed_type="feed",
         index_url="",
         article_url_pattern="",
-        sample_urls=("https://e.com/a",),
+        sample_urls=("https://e.example.com/a",),
         entry_count=3,
     )
     monkeypatch.setattr(cli, "discover", lambda url, *, client: DiscoveryResult((candidate,), None))
 
-    assert cli.main(["discover", "https://e.com"]) == 0
+    assert cli.main(["discover", "https://e.example.com"]) == 0
     out = _out(capsys)
-    assert out["candidates"][0]["feed_url"] == "https://e.com/f.xml"
-    assert out["candidates"][0]["sample_urls"] == ["https://e.com/a"]
+    assert out["candidates"][0]["feed_url"] == "https://e.example.com/f.xml"
+    assert out["candidates"][0]["sample_urls"] == ["https://e.example.com/a"]
     assert out["rejection"] is None
 
 
@@ -72,7 +72,7 @@ def test_discover_passes_rejection_through(
     rejection = DiscoveryRejection("no_article_clusters", "point at the listing page")
     monkeypatch.setattr(cli, "discover", lambda url, *, client: DiscoveryResult((), rejection))
 
-    assert cli.main(["discover", "https://e.com"]) == 0
+    assert cli.main(["discover", "https://e.example.com"]) == 0
     out = _out(capsys)
     assert out["candidates"] == []
     assert out["rejection"] == {
@@ -90,7 +90,7 @@ def test_discover_transport_error_exits_nonzero(
         raise FetchError(url)
 
     monkeypatch.setattr(cli, "discover", boom)
-    assert cli.main(["discover", "https://e.com"]) == 1
+    assert cli.main(["discover", "https://e.example.com"]) == 1
     assert "error:" in capsys.readouterr().err
 
 
@@ -101,7 +101,7 @@ def test_add_site_snapshots_before_writing_config(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _no_client(monkeypatch)
-    entries = [_entry("https://e.com/posts/1"), _entry("https://e.com/posts/2")]
+    entries = [_entry("https://e.example.com/posts/1"), _entry("https://e.example.com/posts/2")]
     monkeypatch.setattr(cli, "fetch_entries", lambda site, *, client: entries)
 
     events: list[str] = []
@@ -121,7 +121,9 @@ def test_add_site_snapshots_before_writing_config(
     monkeypatch.setattr(cli, "snapshot", spy_snapshot)
     monkeypatch.setattr(cli, "add_site", spy_add_site)
 
-    rc = cli.main(["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.com/f.xml"])
+    rc = cli.main(
+        ["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.example.com/f.xml"]
+    )
 
     assert rc == 0
     assert events == ["snapshot", "add_site"]  # ordering enforced by the CLI
@@ -130,8 +132,8 @@ def test_add_site_snapshots_before_writing_config(
     # The snapshot rows and the config entry both landed.
     assert [s.id for s in load_sites(sites_path())] == ["f1"]
     with contextlib.closing(open_db(db_path())) as conn:
-        assert is_seen(conn, canonical_url("https://e.com/posts/1"))
-        assert is_seen(conn, canonical_url("https://e.com/posts/2"))
+        assert is_seen(conn, canonical_url("https://e.example.com/posts/1"))
+        assert is_seen(conn, canonical_url("https://e.example.com/posts/2"))
 
 
 def test_add_site_fetch_error_writes_no_config(
@@ -140,10 +142,12 @@ def test_add_site_fetch_error_writes_no_config(
     _no_client(monkeypatch)
 
     def boom(site: SiteConfig, *, client: object) -> list[Entry]:
-        raise FetchError("https://e.com/f.xml")
+        raise FetchError("https://e.example.com/f.xml")
 
     monkeypatch.setattr(cli, "fetch_entries", boom)
-    rc = cli.main(["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.com/f.xml"])
+    rc = cli.main(
+        ["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.example.com/f.xml"]
+    )
 
     assert rc == 1
     assert not sites_path().exists()  # config never written on a gather failure
@@ -162,7 +166,9 @@ def test_filesystem_error_surfaces_as_clean_exit(
         raise OSError("disk full")
 
     monkeypatch.setattr(cli, "add_site", boom)
-    rc = cli.main(["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.com/f.xml"])
+    rc = cli.main(
+        ["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.example.com/f.xml"]
+    )
     assert rc == 1
     assert "error: disk full" in capsys.readouterr().err
 
@@ -171,7 +177,7 @@ def test_filesystem_error_surfaces_as_clean_exit(
 
 
 def test_list_sites_shape(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    add_site(sites_path(), SiteConfig(id="f1", name="Feed", feed_url="https://e.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="f1", name="Feed", feed_url="https://e.example.com/f.xml"))
     assert cli.main(["list-sites"]) == 0
     out = _out(capsys)
     assert out == [
@@ -179,7 +185,7 @@ def test_list_sites_shape(state_dir: Path, capsys: pytest.CaptureFixture[str]) -
             "id": "f1",
             "name": "Feed",
             "kind": "feed",
-            "feed_url": "https://e.com/f.xml",
+            "feed_url": "https://e.example.com/f.xml",
             "index_url": None,
             "article_url_pattern": None,
             "selection": None,
@@ -194,14 +200,14 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _no_client(monkeypatch)
-    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.com/f.xml"))
-    add_site(sites_path(), SiteConfig(id="b", name="B", feed_url="https://b.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="b", name="B", feed_url="https://b.example.com/f.xml"))
 
     def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
         if site.id == "a":
-            ents = [_entry(f"https://a.com/{i}") for i in range(3)]
+            ents = [_entry(f"https://a.example.com/{i}") for i in range(3)]
         else:
-            ents = [_entry("https://b.com/0")]
+            ents = [_entry("https://b.example.com/0")]
         return GatherResult(entries=ents, index_matches=len(ents), zero_links=False, error=None)
 
     monkeypatch.setattr(cli, "gather_new", fake_gather)
@@ -212,8 +218,8 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
     urls = [e["url"] for e in out["entries"]]
     # Round-robin (REQ-010): site b's single entry is reached before site a's
     # tail is exhausted, so a noisy site a can't starve b. a/2 is truncated.
-    assert urls == ["https://a.com/0", "https://b.com/0", "https://a.com/1"]
-    assert "https://a.com/2" not in urls
+    assert urls == ["https://a.example.com/0", "https://b.example.com/0", "https://a.example.com/1"]
+    assert "https://a.example.com/2" not in urls
     assert out["sites"] == [
         {"site_id": "a", "zero_links": False, "error": None},
         {"site_id": "b", "zero_links": False, "error": None},
@@ -257,14 +263,24 @@ def test_remind_adds_then_records_atomically(
     monkeypatch.setattr(cli, "record", spy_record)
 
     rc = cli.main(
-        ["remind", "--site-id", "f1", "--url", "https://e.com/a", "--title", "T", "--notes", "N"]
+        [
+            "remind",
+            "--site-id",
+            "f1",
+            "--url",
+            "https://e.example.com/a",
+            "--title",
+            "T",
+            "--notes",
+            "N",
+        ]
     )
     assert rc == 0
     assert events == ["add", "record"]  # rem add first, seen record second (REQ-009)
     out = _out(capsys)
-    assert out == {"id": "RID-1", "url": "https://e.com/a", "kept": True}
+    assert out == {"id": "RID-1", "url": "https://e.example.com/a", "kept": True}
     with contextlib.closing(open_db(db_path())) as conn:
-        assert is_seen(conn, canonical_url("https://e.com/a"))
+        assert is_seen(conn, canonical_url("https://e.example.com/a"))
 
 
 def test_remind_does_not_record_when_add_raises(
@@ -275,24 +291,36 @@ def test_remind_does_not_record_when_add_raises(
 
     monkeypatch.setattr(cli, "add_reminder", boom)
     rc = cli.main(
-        ["remind", "--site-id", "f1", "--url", "https://e.com/a", "--title", "T", "--notes", "N"]
+        [
+            "remind",
+            "--site-id",
+            "f1",
+            "--url",
+            "https://e.example.com/a",
+            "--title",
+            "T",
+            "--notes",
+            "N",
+        ]
     )
     assert rc == 1
     # The reminder failed, so the entry must stay unseen and retry next run.
     with contextlib.closing(open_db(db_path())) as conn:
-        assert not is_seen(conn, canonical_url("https://e.com/a"))
+        assert not is_seen(conn, canonical_url("https://e.example.com/a"))
         assert count(conn) == 0
 
 
 def test_mark_seen_records_drop(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = cli.main(["mark-seen", "--site-id", "f1", "--url", "https://e.com/a", "--title", "T"])
+    rc = cli.main(
+        ["mark-seen", "--site-id", "f1", "--url", "https://e.example.com/a", "--title", "T"]
+    )
     assert rc == 0
     out = _out(capsys)
-    assert out == {"url": "https://e.com/a", "kept": False}
+    assert out == {"url": "https://e.example.com/a", "kept": False}
     with contextlib.closing(open_db(db_path())) as conn:
-        assert is_seen(conn, canonical_url("https://e.com/a"))
+        assert is_seen(conn, canonical_url("https://e.example.com/a"))
         row = conn.execute(
-            "SELECT kept FROM seen WHERE canonical_url = ?", ("https://e.com/a",)
+            "SELECT kept FROM seen WHERE canonical_url = ?", ("https://e.example.com/a",)
         ).fetchone()
         assert row[0] == 0
 
@@ -309,15 +337,15 @@ def test_heal_site_snapshots_exactly_the_new_pattern_matches(
         SiteConfig(
             id="s1",
             name="Scrape",
-            index_url="https://e.com/blog",
+            index_url="https://e.example.com/blog",
             article_url_pattern=r"^/old/[^/]+/?$",
         ),
     )
 
     new_pattern = r"^/posts/[^/]+/?$"
     healed = [
-        _entry("https://e.com/posts/a", kind="scrape"),
-        _entry("https://e.com/posts/b", kind="scrape"),
+        _entry("https://e.example.com/posts/a", kind="scrape"),
+        _entry("https://e.example.com/posts/b", kind="scrape"),
     ]
     captured: dict[str, object] = {}
 
@@ -345,7 +373,7 @@ def test_heal_site_snapshots_exactly_the_new_pattern_matches(
     # ...and the snapshot set is EXACTLY the fetched matches, nothing more.
     with contextlib.closing(open_db(db_path())) as conn:
         rows = {r[0] for r in conn.execute("SELECT canonical_url FROM seen")}
-    assert rows == {"https://e.com/posts/a", "https://e.com/posts/b"}
+    assert rows == {"https://e.example.com/posts/a", "https://e.example.com/posts/b"}
 
 
 def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
@@ -360,12 +388,15 @@ def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
     add_site(
         sites_path(),
         SiteConfig(
-            id="s1", name="Scrape", index_url="https://e.com/blog", article_url_pattern=old_pattern
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=old_pattern,
         ),
     )
 
     def boom(site: SiteConfig, *, client: object) -> list[Entry]:
-        raise FetchError("https://e.com/blog")
+        raise FetchError("https://e.example.com/blog")
 
     monkeypatch.setattr(cli, "fetch_entries", boom)
     # report must never be reached on a fetch failure.
@@ -395,12 +426,14 @@ def test_heal_site_alert_failure_leaves_pattern_committed(
         SiteConfig(
             id="s1",
             name="Scrape",
-            index_url="https://e.com/blog",
+            index_url="https://e.example.com/blog",
             article_url_pattern=r"^/old/[^/]+/?$",
         ),
     )
     monkeypatch.setattr(
-        cli, "fetch_entries", lambda *a, **k: [_entry("https://e.com/posts/a", kind="scrape")]
+        cli,
+        "fetch_entries",
+        lambda *a, **k: [_entry("https://e.example.com/posts/a", kind="scrape")],
     )
 
     def boom(message: str, **_k: object) -> str:
@@ -416,7 +449,7 @@ def test_heal_site_alert_failure_leaves_pattern_committed(
     # ...and the back-catalog already snapshotted (the flood guard is in place).
     with contextlib.closing(open_db(db_path())) as conn:
         rows = {r[0] for r in conn.execute("SELECT canonical_url FROM seen")}
-    assert rows == {"https://e.com/posts/a"}
+    assert rows == {"https://e.example.com/posts/a"}
 
 
 def test_heal_site_rejects_feed_site(
@@ -425,7 +458,7 @@ def test_heal_site_rejects_feed_site(
     # Healing a feed site is meaningless and would corrupt the exactly-one
     # invariant; reject before any fetch/snapshot side effect.
     _no_client(monkeypatch)
-    add_site(sites_path(), SiteConfig(id="f1", name="Feed", feed_url="https://e.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="f1", name="Feed", feed_url="https://e.example.com/f.xml"))
     monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a feed site"))
 
     assert cli.main(["heal-site", "--site-id", "f1", "--pattern", "^/x/"]) == 1
@@ -435,7 +468,7 @@ def test_heal_site_rejects_feed_site(
 def test_heal_site_unknown_id_exits_nonzero(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    add_site(sites_path(), SiteConfig(id="s1", name="S", feed_url="https://e.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="s1", name="S", feed_url="https://e.example.com/f.xml"))
     assert cli.main(["heal-site", "--site-id", "nope", "--pattern", "^/x/"]) == 1
     assert "error:" in capsys.readouterr().err
 

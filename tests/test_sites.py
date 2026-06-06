@@ -32,8 +32,8 @@ def test_validation_rejects_both_set() -> None:
         SiteConfig(
             id="x",
             name="X",
-            feed_url="https://e.com/feed",
-            index_url="https://e.com",
+            feed_url="https://e.example.com/feed",
+            index_url="https://e.example.com",
             article_url_pattern="^/a/",
         )
 
@@ -50,9 +50,9 @@ def test_validation_rejects_pattern_without_index() -> None:
 
 def test_validation_rejects_empty_id_and_name() -> None:
     with pytest.raises(ValueError, match="id must be non-empty"):
-        SiteConfig(id="  ", name="X", feed_url="https://e.com/feed")
+        SiteConfig(id="  ", name="X", feed_url="https://e.example.com/feed")
     with pytest.raises(ValueError, match="name must be non-empty"):
-        SiteConfig(id="x", name="", feed_url="https://e.com/feed")
+        SiteConfig(id="x", name="", feed_url="https://e.example.com/feed")
 
 
 def test_blank_optional_is_treated_as_unset() -> None:
@@ -62,7 +62,7 @@ def test_blank_optional_is_treated_as_unset() -> None:
         id="s",
         name="S",
         feed_url="",
-        index_url="https://e.com",
+        index_url="https://e.example.com",
         article_url_pattern="^/a/",
     )
     assert site.feed_url is None
@@ -118,12 +118,12 @@ def test_load_rejects_duplicate_ids(tmp_path: Path) -> None:
                 "[[site]]",
                 'id = "dup"',
                 'name = "First"',
-                'feed_url = "https://e.com/a.xml"',
+                'feed_url = "https://e.example.com/a.xml"',
                 "",
                 "[[site]]",
                 'id = "dup"',
                 'name = "Second"',
-                'feed_url = "https://e.com/b.xml"',
+                'feed_url = "https://e.example.com/b.xml"',
             )
         ),
         encoding="utf-8",
@@ -137,7 +137,7 @@ def test_load_rejects_missing_required_key(tmp_path: Path) -> None:
     # leak tomlkit's NonExistentKey (the documented contract).
     path = tmp_path / "sites.toml"
     path.write_text(
-        '[[site]]\nname = "No Id"\nfeed_url = "https://e.com/a.xml"\n',
+        '[[site]]\nname = "No Id"\nfeed_url = "https://e.example.com/a.xml"\n',
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="missing required key 'id'"):
@@ -156,7 +156,7 @@ def test_update_pattern_heals_scrape_site_with_blank_feed_url(tmp_path: Path) ->
                 'id = "s1"',
                 'name = "Scrape"',
                 'feed_url = ""',
-                'index_url = "https://e.com/blog"',
+                'index_url = "https://e.example.com/blog"',
                 'article_url_pattern = "^/blog/[^/]+/?$"',
             )
         ),
