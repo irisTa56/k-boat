@@ -17,8 +17,8 @@ run = "rumdl check --fix"
 [tasks."fmt:py"]
 description = "Auto-fix lint issues and format Python files"
 run = [
-    "uv run ruff check --fix .",
-    "uv run ruff format .",
+  "uv run ruff check --fix .",
+  "uv run ruff format .",
 ]
 
 # Not in `qa:*`: full-repo external link check is too slow / network-bound for pre-commit.
