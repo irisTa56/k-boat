@@ -19,7 +19,7 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. This 
 
 ## Procedure
 
-1. Resolve the vault from `OBSIDIAN_VAULT_PATH` in `.env`. Read every `Sources/*.md` frontmatter once.
+1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes "Environment"). Read every `Sources/*.md` frontmatter once.
 2. Keep the in-scope notes (default `keep`, or the `--states` union above; always drop `blocked`).
 3. Rank by lexical overlap between the query and each note's `title`, `topics`, `summary`, and `url`. `topics` and `title` are the strongest signals; `summary` adds recall; a bare URL match is weak. A cheap subagent can read the top candidates and judge relevance against the question when the query is fuzzy.
 4. Return the best matches, each with: `title`, `summary`, `source_type`, `reading_link`, and `url`. Order by relevance. If nothing clears the bar in scope, say so and offer to widen via `--states` (e.g. add `distill` or `active`).
