@@ -11,7 +11,8 @@ Follow the kboat-notes skill for the note schema, naming, and file writing.
 
 ## Prerequisites
 
-- Run `.venv/bin/notebooklm auth refresh` before the batch, since NotebookLM cookies expire.
+- Run `eval "$(mise env)"` at the top of every shell block (see kboat-notes "Environment"): it loads `.env` and puts the venv on `PATH`, so `notebooklm` and `$OBSIDIAN_VAULT_PATH` resolve bare. Re-run it in each block — the Bash tool keeps no shell state.
+- Run `notebooklm auth refresh` before the batch, since NotebookLM cookies expire.
 - Read the queue with [`rem`](https://github.com/bro3886/rem-cli): `rem list --list "K-Boat Queue" --incomplete --output json`.
 
 ## Per-item procedure
@@ -43,12 +44,12 @@ Collect, per item, at least:
 - PDF download failures (HTTP 4xx/5xx, timeout, zero size, or saved bytes not starting with `%PDF-` after detection said PDF, e.g. a truncated transfer). Transient — no note is written; keep the reminder to retry. (A persistent bot-protection challenge is the "blocked PDF" case above, which goes to the DLQ instead.)
 - Title fell back to the reminder text (the abstract page and the PDF's own metadata/first page all failed). The note is still created — flag it so a human can fix the title.
 - Source guide failed (rate limit, error), so `summary`/`topics` are left empty. The note is still created; report it so a later pass or a human can fill them (recall falls back to `title`).
-- `.venv/bin/notebooklm create` / `source add` failures (rate limit, auth). The source note is kept without a `notebooklm_id`; report it so a later pass or a human can give it a notebook.
+- `notebooklm create` / `source add` failures (rate limit, auth). The source note is kept without a `notebooklm_id`; report it so a later pass or a human can give it a notebook.
 - Web page that did not fetch successfully (not `ready`, or a wall fetched instead of the article) → the DLQ. Record it as `blocked` (note kept, walled notebook discarded) so `kboat-rescue` can supply real content.
 - PDF that uploaded but extracted to empty/garbled text → **not** the DLQ (see kboat-notes): the file is readable, only the notebook text is unusable, and rescue's re-fetch can't fix it. Keep the note, file, and notebook (`blocked` stays `false`) and report it so a human can supply a text-bearing copy.
 - Source-note write failures. The reminder is kept (see Safety).
 - Slug collisions: an existing `Sources/<slug>.md` holds a different `url` than the item being ingested (see kboat-notes de-dup). Stop that item without overwriting, keep its reminder, and report it; this is deterministic, so it needs a human to resolve rather than a retry.
-- A failed `.venv/bin/notebooklm auth refresh` at the start. If auth is unusable, stop and report rather than processing the queue.
+- A failed `notebooklm auth refresh` at the start. If auth is unusable, stop and report rather than processing the queue.
 
 ## Run summary
 

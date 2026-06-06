@@ -18,8 +18,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Environment gotchas
 
-- The NotebookLM CLI is at `.venv/bin/notebooklm`.
-  - Invoke it by that path; the bare `notebooklm` fails because the mise shim is not configured.
+- Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke them bare (`notebooklm`, `kboat-lifecycle`, `kboat-repos`): it loads `.env` over `mise.toml`'s defaults and puts the venv on `PATH`. Re-run it per block — the Bash tool keeps no state. See kboat-notes "Environment" for the full mechanism.
 - Reminders are read with the `rem` CLI (macOS Reminders).
   - The ingest queue is the `K-Boat Queue` list. A GitHub repo URL in it is routed to the repo catalogue, not the source path.
 - GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
@@ -63,8 +62,8 @@ Seven skills, all under `.claude/skills/`:
 
 Two deterministic helper packages, uv workspace members, each implementing a mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the package and its tests):
 
-- `kboat-lifecycle/` (module `kboat_lifecycle`, console script `.venv/bin/kboat-lifecycle`) — the distillation lifecycle state machine, the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous source work sets plus the ripe Kindle set (`kindles.ripe`; `distill && distilled_date` empty, no cooldown, no on-disk writes) as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
-- `kboat-repos/` (module `kboat_repos`, console script `.venv/bin/kboat-repos`) — the repo catalogue's mechanics, three subcommands: `gather <url>` (resolve canonical owner/repo via `gh`, `gh` metadata + README excerpt → JSON, for the skill to classify), `write` (assemble and write `Repos/<slug>.md` from a gather record + classification on stdin — order, YAML quoting, de-dup, body preservation), and `refresh` (re-fetch every `Repos/*.md`'s GitHub-derived frontmatter + recompute `status`, preserving the judged role/domain/summary and the `## Notes` body, adopting renames, reporting collisions/failures). All shell out to `gh`; no LLM call lives here.
+- `kboat-lifecycle/` (module `kboat_lifecycle`, console script `kboat-lifecycle`) — the distillation lifecycle state machine, the part decided purely by boolean and date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass: it maintains the cooldown clock on disk (Phase A — stamps/clears `filed_date`) and emits the ripe / dismiss / ambiguous source work sets plus the ripe Kindle set (`kindles.ripe`; `distill && distilled_date` empty, no cooldown, no on-disk writes) as JSON. The agent then does only the judgement-heavy work (distillation, NotebookLM calls) over that list.
+- `kboat-repos/` (module `kboat_repos`, console script `kboat-repos`) — the repo catalogue's mechanics, three subcommands: `gather <url>` (resolve canonical owner/repo via `gh`, `gh` metadata + README excerpt → JSON, for the skill to classify), `write` (assemble and write `Repos/<slug>.md` from a gather record + classification on stdin — order, YAML quoting, de-dup, body preservation), and `refresh` (re-fetch every `Repos/*.md`'s GitHub-derived frontmatter + recompute `status`, preserving the judged role/domain/summary and the `## Notes` body, adopting renames, reporting collisions/failures). All shell out to `gh`; no LLM call lives here.
 
 Load-bearing model, spread across the skills, so it is easy to break with a local edit:
 
@@ -85,7 +84,7 @@ Load-bearing model, spread across the skills, so it is easy to break with a loca
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`.venv/bin/kboat-repos refresh`), then `kboat-distill`, in that order, under a single auth refresh. The task name is cadence-agnostic; the schedule is configured separately and may change.
+- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`kboat-repos refresh`), then `kboat-distill`, in that order, under a single auth refresh. The task name is cadence-agnostic; the schedule is configured separately and may change.
 - It must be local — not a cloud Routine or Cowork — because the queue (macOS Reminders), the NotebookLM auth cookies, the iCloud vault, and the Basic Memory store are all local-only.
 - The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
 

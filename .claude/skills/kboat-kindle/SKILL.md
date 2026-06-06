@@ -17,7 +17,7 @@ Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), a
 
 ## Procedure
 
-1. **Resolve the ASIN.** From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key. Read the vault from `OBSIDIAN_VAULT_PATH` in `.env`.
+1. **Resolve the ASIN.** From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key. Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded from `.env` by `eval "$(mise env)"` (see kboat-notes "Environment").
 2. **De-dup.** If `Kindles/<ASIN>.md` already exists, this is the same book — report it as already recorded and stop (do not re-extract), unless the user asked to refresh its metadata, in which case update it in place. The filename, being the ASIN, never changes.
 3. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser. If none, fall back to the manual path (step 5).
 4. **Extract metadata through the real browser.** Navigate the user's Chrome to `https://www.amazon.co.jp/dp/<ASIN>` and read the page:

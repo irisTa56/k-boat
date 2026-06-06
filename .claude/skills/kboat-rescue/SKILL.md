@@ -16,7 +16,7 @@ Follow kboat-notes for the schema and "Procedure: rescue a blocked source"; this
 
 ## Procedure
 
-1. **Pick the source.** With a slug or `url` argument, load `Sources/<slug>.md` (or the note whose `url` matches) and confirm `blocked: true`. With no argument, read every `Sources/*.md` frontmatter, list those with `blocked: true` (their slug, title, `url`), and ask the user which to rescue. Read the vault from `OBSIDIAN_VAULT_PATH` in `.env`.
+1. **Pick the source.** With a slug or `url` argument, load `Sources/<slug>.md` (or the note whose `url` matches) and confirm `blocked: true`. With no argument, read every `Sources/*.md` frontmatter, list those with `blocked: true` (their slug, title, `url`), and ask the user which to rescue. Load the env with `eval "$(mise env)"` at the top of every shell block (see kboat-notes "Environment"): it sets `$OBSIDIAN_VAULT_PATH` from `.env` and puts the venv on `PATH`, so the `notebooklm` commands in step 5 resolve bare. The Bash tool keeps no shell state, so re-run it in each block.
 2. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser. If none, fall back to the manual path (step 4).
 3. **Fetch through the real browser.** Navigate the user's Chrome to the note's `url`.
    - If a CAPTCHA / "Human Verification" page appears, ask the user to solve it in their browser, then continue once the real content loads.
