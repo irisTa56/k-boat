@@ -26,13 +26,15 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - `summary` is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
    - Keep `sites` aside for steps 3–4.
 
-2. **Judge each entry** with a **haiku** subagent, passing `selection.md` (plus any per-site override) and the entry. The subagent returns `{keep, title, summary, reason}` (see `selection.md` "Output"). Judging the entries in parallel is fine.
+2. **Judge each entry** with a **haiku** subagent, passing `selection.md` (plus any per-site override) and the entry. The subagent returns `{keep, wall, title, summary, reason}` (see `selection.md` "Output"). Judging the entries in parallel is fine.
    - **`kind == "feed"`** — two-stage to save cost (GUD-003): give the subagent the `title` and `summary` first and let it decide from those; only when they are too thin to judge does it `WebFetch` the page for the full text.
    - **`kind == "scrape"`** — there is no feed metadata, so the subagent goes straight to a full `WebFetch` of the `url`. The `title` it returns is authoritative — it is the **only** title source for the reminder (REQ-005).
    - Feeds **must not** be re-fetched with `WebFetch` for their item list (CON-002) — but `WebFetch` on an individual article page is exactly what the second stage is for.
+   - **`wall == true`** — when a `WebFetch` returns a login wall / paywall / subscribe gate instead of the article, the subagent sets `wall = true` rather than guessing a keep/drop (selection.md "Walls and unreadable pages"). Wall detection is tied to the fetch: a `kind == "feed"` entry decided from its title+summary alone is never fetched, so it has no wall to flag — only scrape entries (always fetched) and feeds that fall through to the full-text fetch can surface a wall. This is distinct from a hard fetch error (the page would not load at all), handled in step 3.
 
 3. **Act on each judged entry** (one `feed-filter` process per entry — the remind/record pair is atomic inside it).
    `remind` requires both `--title` and `--notes` (and `mark-seen` requires `--title`); always pass them, but an **empty string is allowed** — pass `--title ""` to invoke the URL fallback (REQ-005), and `--notes ""` when there is no summary. Omitting a required flag is an argparse error (exit 2), not a fallback, and would lose the entry.
+   - **Wall** (`wall == true`) → take this branch **before** the keep/drop check: the page was a login/paywall, not the article, so defer to the user instead of dropping it (selection.md "Walls and unreadable pages"). Call `feed-filter remind --site-id <id> --url <url> --title "<title>" --notes "wall: needs manual review"`. **Prefer `--title ""`** (the URL fallback, reminders.py names the reminder after the canonical URL) unless the subagent extracted a genuine article title (e.g. from `og:title` left on the gate) — the visible page title on a wall is usually the gate's ("Sign in — …"), which is worse for manual review than the bare URL. This reminds and records seen (kept=1) like any keep, so the walled page is handed off once and not judged again.
    - **Keep** → `feed-filter remind --site-id <id> --url <url> --title <title> --notes <summary>`.
      This creates the reminder **and** records the entry seen (kept=1) in one process (REQ-009).
      Do **not** also call `mark-seen` — that would double-record.
@@ -56,7 +58,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 End the run with a concise summary:
 
-- Counts: sites gathered, entries judged, kept (reminded), dropped, error-fallback reminders (REQ-007).
+- Counts: sites gathered, entries judged, kept (reminded), dropped, walled (reminded for manual review), error-fallback reminders (REQ-007).
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
 - Errors: each site with a gather `error`, and any `remind`/`heal-site` non-zero exit, with its cause.
 

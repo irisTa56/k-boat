@@ -23,7 +23,7 @@ When in doubt, prefer to **keep** — a stray extra reminder is cheaper to dismi
 **Drop** pages that are:
 
 - Pure marketing, release-note churn, or job postings.
-- Login walls, index/listing pages, or content that is not an article.
+- Index/listing pages, or content that is not an article.
 - <any topic you specifically do not want, e.g. "cryptocurrency price news">
 
 ## Heuristics
@@ -32,6 +32,14 @@ When in doubt, prefer to **keep** — a stray extra reminder is cheaper to dismi
 - A title alone can be misleading; if the title is ambiguous, read the body before deciding (see the run routine's two-stage judgment).
 - Length is not quality: a short focused post can be worth keeping, a long SEO page is not.
 
+## Walls and unreadable pages
+
+Sometimes the fetched page is not the article but a login wall, paywall, or subscribe gate — you got a "sign in / subscribe" page instead of the body.
+You cannot judge an article you cannot read, so do **not** drop it on a guess: set `wall = true`.
+When `wall = true` the run routine reminds the page for manual review and **ignores `keep`**, so `keep` is irrelevant — set it either way.
+Wall detection only happens once you actually fetch the page: scrape entries are always fetched, but a feed entry you can judge from its title and summary alone is judged normally and never reaches a wall — its metadata is the readable content, so there is nothing to flag.
+Hard fetch errors (the page would not load at all) are handled by the run routine itself, not here.
+
 ## Output
 
 Return a single JSON object and nothing else:
@@ -39,6 +47,7 @@ Return a single JSON object and nothing else:
 ```json
 {
   "keep": true,
+  "wall": false,
   "title": "A concise, human-readable title for the page",
   "summary": "One sentence on what the page is about and why it was kept.",
   "reason": "One short clause explaining the keep/drop decision."
@@ -46,6 +55,7 @@ Return a single JSON object and nothing else:
 ```
 
 - `keep` — boolean.
+- `wall` — boolean; `true` when the fetched page is a login wall / paywall / subscribe gate rather than the article (see "Walls and unreadable pages"). A walled page is reminded for manual review regardless of `keep`.
 - `title` — a non-empty title for the reminder. For scrape entries (no feed metadata) this is the **only** source of a title, so always supply one; on a keep it becomes the reminder's name.
 - `summary` — one line; becomes the reminder's note. Omit or leave empty on a drop.
 - `reason` — a brief justification, surfaced only in the run summary.

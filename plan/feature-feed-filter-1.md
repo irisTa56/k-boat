@@ -219,3 +219,9 @@ The design splits responsibilities deterministically: **plain Python** owns ever
 - Existing local routine pattern: `~/.claude/scheduled-tasks/kboat-queue-ingest/SKILL.md` (rem + haiku subagent + local paths).
 - `rem` CLI: <https://github.com/BRO3886/rem> (v0.11).
 - Project memory: `feed-filter-design` (agreed decisions & constraints).
+
+## 9. Post-completion amendments
+
+Behavioral changes made after the plan reached `Completed`. The as-built requirements (REQ-001..010) above are frozen; new behavior is recorded here with its PR so the design doc stays current without rewriting history.
+
+- **AMD-001** (PR #8) — **Walls reminded for manual review.** A page the judging subagent classifies as a login wall / paywall / subscribe gate (`wall=true`) is reminded and recorded seen (kept=1), instead of being dropped as "not an article." This mirrors REQ-007's never-lost preference (defer the call to the user rather than discard) and reuses the REQ-009 single-process `remind` path, so there is no Python change and no new test — only `selection.md` (the `wall` output field + "Walls and unreadable pages" rule) and the `feed-filter-run` skill (wall branch before keep/drop, wall count in the summary). Wall detection is tied to the page fetch: scrape entries are always fetched, but a feed entry judged from its title+summary alone is never fetched and so cannot surface a wall (its metadata is the readable content). Per-entry transient fetch errors are unchanged (remind-and-done, no per-entry retry); site/gather-level fetch failures still retry next run and are surfaced in the run summary.
