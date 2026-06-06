@@ -1,0 +1,104 @@
+"""Canonical URL normalization — the sole dedupe key (PAT-002).
+
+A canonical URL has a lowercased scheme + host, default ports dropped, no
+fragment, tracking params stripped, query params sorted, percent-encodings
+upper-cased, duplicate path slashes collapsed, and a normalized trailing slash.
+The same article reached by two different links must canonicalize identically;
+two genuinely distinct articles must not collide.
+
+``canonical_url`` returns a ``CanonicalUrl`` — a ``NewType`` over ``str`` so the
+seen-store (the dedupe authority, REQ-009) can require, and ``ty`` can enforce,
+that every key it stores has actually been canonicalized.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import NewType
+from urllib.parse import SplitResult, parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+
+CanonicalUrl = NewType("CanonicalUrl", str)
+
+# Query keys that carry no content identity (analytics / click attribution).
+# Exact matches plus the ``utm_*`` / ``mc_*`` prefixes used by Google and
+# Mailchimp. Matched case-insensitively. ``ref`` is deliberately NOT stripped:
+# it is content-bearing on some sites (e.g. a git ref), and the project favors
+# never-lost over never-duplicated (REQ-009), so collapsing a real ``ref`` would
+# be the worse failure.
+_TRACKING_EXACT = frozenset({"gclid", "fbclid"})
+_TRACKING_PREFIXES = ("utm_", "mc_")
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+_DUP_SLASH = re.compile(r"/{2,}")
+_PCT = re.compile(r"%[0-9a-fA-F]{2}")
+
+
+def _is_tracking(key: str) -> bool:
+    k = key.lower()
+    return k in _TRACKING_EXACT or k.startswith(_TRACKING_PREFIXES)
+
+
+def _normalize_netloc(parts: SplitResult, scheme: str) -> str:
+    # ``.hostname`` is already lowercased and strips IPv6 brackets; re-add them.
+    # userinfo is case-sensitive (RFC 3986), so it is preserved verbatim.
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    prefix = ""
+    if parts.username is not None:
+        prefix = parts.username
+        if parts.password is not None:
+            prefix += f":{parts.password}"
+        prefix += "@"
+    netloc = prefix + host
+    port = parts.port
+    if port is not None and port != _DEFAULT_PORTS.get(scheme):
+        netloc += f":{port}"
+    return netloc
+
+
+def _strip_tracking(query: str) -> str:
+    # keep_blank_values so a valueless ``?foo`` survives (as ``foo=``) rather
+    # than vanishing. Sorted so param order can't fork the dedupe key.
+    kept = [(k, v) for k, v in parse_qsl(query, keep_blank_values=True) if not _is_tracking(k)]
+    kept.sort()
+    return urlencode(kept)
+
+
+def _normalize_path(path: str) -> str:
+    path = _DUP_SLASH.sub("/", path)
+    # Percent-encoding hex digits are case-insensitive (RFC 3986); upper-case
+    # them so ``%2f`` and ``%2F`` dedupe (the query side already does via
+    # urlencode). Unreserved-character decoding is intentionally not attempted.
+    path = _PCT.sub(lambda m: m.group(0).upper(), path)
+    if not path:
+        return "/"
+    # Drop a trailing slash on everything but the bare root, so ``/blog/`` and
+    # ``/blog`` dedupe to one key.
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
+    return path
+
+
+def canonical_url(url: str, base: str | None = None) -> CanonicalUrl:
+    """Return the canonical form of ``url``.
+
+    When ``base`` is given, ``url`` may be relative and is resolved against it
+    first. Idempotent: ``canonical_url(canonical_url(x)) == canonical_url(x)``.
+    """
+    if base is not None:
+        url = urljoin(base, url)
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    return CanonicalUrl(
+        urlunsplit(
+            (
+                scheme,
+                _normalize_netloc(parts, scheme),
+                _normalize_path(parts.path),
+                _strip_tracking(parts.query),
+                "",  # fragment always dropped
+            )
+        )
+    )
