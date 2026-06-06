@@ -10,7 +10,7 @@ OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
 # Defaults to a subdir of the vault; .env overrides it (for K-Boat, a Git-managed directory).
 KBOAT_KNOWLEDGE_PATH = "~/Documents/K-Boat/Knowledge"
 _.file = ".env"
-_.python.venv = { path = ".venv", create = true } # Automatically activate the venv
+_.python.venv = { path = ".venv", create = true }
 
 [tasks.setup]
 description = "Sync dependencies from pyproject.toml and install Chromium"
