@@ -1,0 +1,65 @@
+[project]
+name = "feed-filter"
+version = "0.1.0"
+description = "Filter new feed/scrape pages by prompt and push survivors to Reminders.app"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx",
+    "feedparser",
+    "selectolax",
+    "tomlkit",
+]
+
+[project.scripts]
+feed-filter = "feed_filter.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/feed_filter"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    # Bounded range, not a floor-only pin: `ty` is pre-1.0 and may shift
+    # behavior across 0.0.x releases, so cap below 0.1 (RISK-004).
+    "ty>=0.0.34,<0.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B", "SIM", "N"]
+
+[tool.ty.environment]
+root = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --cov=feed_filter --cov-report=term-missing --cov-fail-under=80"
+# Promote ResourceWarning to error so leaked sqlite/file handles fail loudly
+# instead of surfacing as cryptic GC-time warnings during collection.
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.coverage.run]
+source = ["src/feed_filter"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+    # The entrypoint guard and not-yet-implemented dispatch arms (marked
+    # `# pragma: no cover`) must not force coverage-padding against stubs.
+    "if __name__ == \"__main__\":",
+]

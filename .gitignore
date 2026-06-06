@@ -1,0 +1,16 @@
+# Mutable runtime state (the seen-store); config lives in version control.
+feed-filter.db
+feed-filter.db-wal
+feed-filter.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.ty_cache/
+
+# Local env / tool caches
+.env
+.rumdl_cache/
