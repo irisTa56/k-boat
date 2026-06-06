@@ -18,7 +18,7 @@ The CLI emits one JSON document on stdout and exits non-zero on a transport/oper
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
    - **Non-zero exit** → the initial URL could not be fetched (transport failure, CON-006). Report the error to the user and stop; do not register a site you could not reach.
    - **`rejection` is set** (exit 0, no usable candidate) → relay its actionable message instead of proceeding:
-     - `needs_js` → the page renders its content with JavaScript, which feed-filter cannot follow. Tell the user the site is unsupported as-is and ask for an alternative URL (e.g. a feed link or a server-rendered archive page).
+     - `needs_js` → the page renders its content with JavaScript, which the default httpx path cannot follow. Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below). This rejection is the hint that a scrape index is JS-rendered.
      - `no_article_clusters` → no feed and no article-shaped link cluster was found. Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
    - Otherwise you have one or more `candidates`.
 
@@ -34,6 +34,7 @@ The CLI emits one JSON document on stdout and exits non-zero on a transport/oper
 4. **Register.** Run the matching form:
    - **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
    - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern <article_url_pattern>`
+   - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last** (REQ-002).
    That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever reminded.
@@ -41,6 +42,19 @@ The CLI emits one JSON document on stdout and exits non-zero on a transport/oper
 
 5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
    Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be reminded).
+
+## Sites that need a browser (JS / anti-bot)
+
+A site that renders its feed/index with JavaScript, or gates it behind an anti-bot challenge such as Cloudflare, is registered through the opt-in browser path by adding `--requires-browser` to `add-site`.
+The flag needs the optional Playwright extra (`uv sync --extra browser && uv run playwright install chromium`); without it the command fails fast with that exact install command, so register such a site only once it is installed.
+
+There are two ways you arrive here:
+
+- **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery. Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
+- **A JS-rendered scrape index.** A `needs_js` rejection in step 1 is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
+
+The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
+The anti-bot handling covers Cloudflare's first-line bot check only (it normalizes the headless User-Agent); a site that still serves an interactive challenge is unsupported and surfaces as a recurring per-site error at run time, not at registration.
 
 ## Optional per-site selection override
 

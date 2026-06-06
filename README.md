@@ -54,6 +54,35 @@ feed-filter list-sites
 `sites.toml` (the registry) and `selection.md` (the keep/drop criteria) are version-controlled config you edit by hand or via the skills.
 `feed-filter.db` (the seen-store) is gitignored local state.
 
+### Sites that need a browser (JS / anti-bot)
+
+Most sites are fetched over plain HTTP.
+A site that renders its feed or index with JavaScript, or gates it behind an anti-bot challenge such as Cloudflare, needs the opt-in browser path, which fetches through a headless Chromium driven by [Playwright](https://playwright.dev/python/).
+Playwright is an optional dependency: a setup with no such site pulls in neither Playwright nor Chromium and pays nothing.
+
+Install it only if you have such a site:
+
+```sh
+uv sync --extra browser && uv run playwright install chromium   # also pulls a large Chromium download
+```
+
+Register the site with `--requires-browser`; its cold-start snapshot then runs through the browser too:
+
+```sh
+feed-filter add-site --id example --name "Example (JS feed)" \
+  --feed-url https://example.com/feed.xml --requires-browser
+```
+
+If the flag is set but the extra is not installed, the CLI fails fast with the exact install command — it never silently falls back to plain HTTP.
+
+The anti-bot handling is deliberately narrow.
+The browser context rebuilds Playwright's default User-Agent without the `HeadlessChrome` marker.
+That marker is what Cloudflare's first-line bot check matches to serve a challenge headless Chromium cannot solve, so removing it makes those checks skip the challenge — there is no cookie seeding and no manual login step.
+This covers the common first-line-bot-check class only; a site that still serves an interactive challenge after the User-Agent is normalized is unsupported, and surfaces as a recurring per-site error in run summaries rather than being worked around.
+
+One further limit applies at judging time: the per-article body is fetched by the run skill's subagent over plain HTTP (`WebFetch`), not through the browser.
+A body behind the same gate the browser gather passed is therefore unreadable to the judge, so such an entry is judged on its feed summary — or, when that is too thin, reminded for manual review rather than content-filtered.
+
 ### Run the filter
 
 Use the `feed-filter-run` skill. One pass gathers new entries across all sites, judges each against `selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
@@ -85,3 +114,4 @@ When a **scrape** site's index page yields zero pattern matches — the stored `
 ## Status
 
 Phases 1–5 (the deterministic Python core and CLI surface) and Phase 6 (the Claude Code skills and docs) are in place.
+The opt-in browser ingestion path (Playwright, for JS / anti-bot sites) is also in place; see [Sites that need a browser](#sites-that-need-a-browser-js--anti-bot).
