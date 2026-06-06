@@ -47,6 +47,11 @@ class SiteConfig:
     # (REQ-001). Default false → the unchanged httpx path. Not a string optional,
     # so it sits outside _OPTIONAL_FIELDS' blank-normalization.
     requires_browser: bool = False
+    # Whether the run gathers this site. Default true; a disabled site is skipped
+    # by new-entries (no fetch, no error, no push) while its config and seen-store
+    # are preserved, so re-enabling resumes without a back-catalog flood. The lever
+    # a user reaches for when a site is chronically broken or temporarily unwanted.
+    enabled: bool = True
 
     def __post_init__(self) -> None:
         # Normalize blank/whitespace-only optionals to None so a half-written
@@ -102,19 +107,20 @@ def _opt_str(table: Table, key: str) -> str | None:
     return _blank_to_none(str(val) if val is not None else None)
 
 
-def _opt_bool(table: Table, key: str) -> bool:
-    """Strict bool parse: absent → False, non-bool → ValueError (no soft coercion).
+def _opt_bool(table: Table, key: str, *, default: bool = False) -> bool:
+    """Strict bool parse: absent → ``default``, non-bool → ValueError (no soft coercion).
 
     Ported from loose-feeds ``_require_bool``: a hand-edited ``requires_browser =
     "yes"`` (a string, not a TOML bool) must fail loudly rather than read as a
-    silent False, which would leave the operator unable to tell why the browser
-    path never engages. tomlkit unwraps TOML booleans to native ``bool`` and
-    integers to a non-bool ``Integer``, so ``isinstance(_, bool)`` cleanly admits
-    only ``true``/``false``.
+    silent default, which would leave the operator unable to tell why the flag had
+    no effect. tomlkit unwraps TOML booleans to native ``bool`` and integers to a
+    non-bool ``Integer``, so ``isinstance(_, bool)`` cleanly admits only
+    ``true``/``false``. ``default`` covers fields whose unset value is not False
+    (``enabled`` defaults true).
     """
     raw = table.get(key)
     if raw is None:
-        return False
+        return default
     if not isinstance(raw, bool):
         raise ValueError(f"{key} must be a bool, got {raw!r}")
     return raw
@@ -153,6 +159,7 @@ def load_sites(path: Path) -> list[SiteConfig]:
             article_url_pattern=_opt_str(table, "article_url_pattern"),
             selection=_opt_str(table, "selection"),
             requires_browser=_opt_bool(table, "requires_browser"),
+            enabled=_opt_bool(table, "enabled", default=True),
         )
         if site.id in seen_ids:
             raise ValueError(f"duplicate site id {site.id!r} in {path}")
@@ -183,6 +190,10 @@ def add_site(path: Path, site: SiteConfig) -> None:
     # row free of a redundant ``requires_browser = false`` (mirrors the optionals).
     if site.requires_browser:
         table["requires_browser"] = True
+    # Emit ``enabled`` only when False (the non-default): an active site's row stays
+    # minimal, and a disabled one carries an explicit ``enabled = false``.
+    if not site.enabled:
+        table["enabled"] = False
 
     aot = doc.get("site")
     if aot is None:
@@ -208,6 +219,26 @@ def update_pattern(path: Path, site_id: str, pattern: str) -> None:
             if _opt_str(table, "feed_url") is not None:
                 raise ValueError(f"update_pattern targets scrape sites only (site {site_id!r})")
             table["article_url_pattern"] = pattern
+            _atomic_write(path, tomlkit.dumps(doc))
+            return
+    raise KeyError(f"no site with id {site_id!r}")
+
+
+def set_enabled(path: Path, site_id: str, enabled: bool) -> None:
+    """Toggle ``site_id``'s ``enabled`` flag (enable-site / disable-site).
+
+    Raises ``KeyError`` if the id is absent. Mirrors the emit-only-when-non-default
+    serialization: disabling writes ``enabled = false``; enabling removes the key so
+    the row returns to its minimal default-true form. Atomic write, so a crash never
+    leaves a half-toggled registry.
+    """
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    for table in _iter_site_tables(doc):
+        if _req_str(table, "id", path) == site_id:
+            if enabled:
+                table.pop("enabled", None)
+            else:
+                table["enabled"] = False
             _atomic_write(path, tomlkit.dumps(doc))
             return
     raise KeyError(f"no site with id {site_id!r}")

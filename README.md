@@ -54,6 +54,17 @@ feed-filter list-sites
 `sites.toml` (the registry) and `selection.md` (the keep/drop criteria) are version-controlled config you edit by hand or via the skills.
 `feed-filter.db` (the seen-store) is gitignored local state.
 
+### Pause or resume a site
+
+To stop gathering a site without losing it — a chronically failing site, or one you simply want to mute for a while — disable it instead of deleting it:
+
+```sh
+feed-filter disable-site --site-id example   # the run skips it; config + seen-store kept
+feed-filter enable-site  --site-id example   # resume; only post-resume entries are reminded
+```
+
+A disabled site is skipped entirely (no fetch, no error, no notification) and stays in `sites.toml` with an `enabled = false` line. Because its seen-store is preserved, re-enabling never floods the back-catalog. This is reversible and cheap, unlike deleting and re-registering (which re-runs discovery and loses history).
+
 ### Sites that need a browser (JS / anti-bot)
 
 Most sites are fetched over plain HTTP.

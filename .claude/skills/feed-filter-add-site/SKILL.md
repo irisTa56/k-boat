@@ -1,6 +1,6 @@
 ---
 name: feed-filter-add-site
-description: Register a new site in feed-filter from its URL alone — run discovery, pick the article cluster, and add it to sites.toml with a cold-start snapshot. Use when the user wants to add/register a site to feed-filter, whether by URL or by name.
+description: Register a new site in feed-filter from its URL alone — run discovery, pick the article cluster, and add it to sites.toml with a cold-start snapshot. Also manages an existing site's lifecycle: enable or disable it (pause/resume gathering). Use when the user wants to add/register a site to feed-filter (by URL or by name), or to disable/enable/pause/resume a site.
 ---
 
 # Register a site in feed-filter
@@ -28,7 +28,7 @@ The CLI emits one JSON document on stdout and exits non-zero on a transport/oper
    - If no candidate looks like real articles, do **not** guess — tell the user what was found and ask for a better listing URL.
 
 3. **Choose an id and name.**
-   - `--id` is a short, stable, unique slug (e.g. the domain stem like `simonwillison` or `acme-blog`). It keys the seen-store and self-heal, so it must not collide with an existing site — run `feed-filter list-sites` if unsure.
+   - `--id` is a short, stable, unique slug (e.g. the domain stem, like `example-blog` for `example-blog.com`). It keys the seen-store and self-heal, so it must not collide with an existing site — run `feed-filter list-sites` if unsure.
    - `--name` is a human-readable label for reminders/summaries.
 
 4. **Register.** Run the matching form:
@@ -61,6 +61,15 @@ The anti-bot handling covers Cloudflare's first-line bot check only (it normaliz
 If the user wants different keep/drop criteria for this one site, set its `selection` field.
 It overrides the **Topics** section of `selection.md` for that site only (see `selection.md`).
 Set it at registration with `feed-filter add-site … --selection "<criteria>"`, or add/change it later by editing the `selection = "..."` line under that site's `[[site]]` block in `sites.toml` (version-controlled config, so hand-editing is fine).
+
+## Disable or enable a site
+
+When the user wants to pause a site without losing it — e.g. it is chronically failing (a recurring error in the run's push), temporarily noisy, or simply unwanted for now — disable it rather than deleting it:
+
+- **Disable:** `feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`. The run skips it (no fetch, no error, no push) while its `[[site]]` config and its seen-store stay intact.
+- **Enable:** `feed-filter enable-site --site-id <id>` → `{site_id, enabled: true}`. Gathering resumes; because the seen-store was preserved, only entries that appear *after* re-enabling are reminded — no back-catalog flood.
+
+Find the id with `feed-filter list-sites` (each site carries an `enabled` field). A non-zero exit means the id is unknown. Prefer this over removing the `[[site]]` block by hand: deleting then re-adding loses the seen-store and re-runs discovery, whereas disable/enable is reversible and cheap.
 
 ## Notes
 

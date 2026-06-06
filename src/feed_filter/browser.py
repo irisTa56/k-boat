@@ -187,9 +187,10 @@ def require_playwright_if_needed(sites_toml_path: Path) -> None:
     every caller passes ``config.sites_path()`` so the gate sees the same registry
     — honoring ``FEED_FILTER_SITES`` — as everything else (F8). Raises
     ``MissingPlaywrightError`` with the exact install command rather than letting a
-    raw ``ModuleNotFoundError`` surface mid-gather (REQ-006).
+    raw ``ModuleNotFoundError`` surface mid-gather (REQ-006). A **disabled** site is
+    ignored — it is never gathered, so it must not force the install on its own.
     """
-    flagged = [s.id for s in load_sites(sites_toml_path) if s.requires_browser]
+    flagged = [s.id for s in load_sites(sites_toml_path) if s.requires_browser and s.enabled]
     if not flagged:
         return
     if _playwright_installed():

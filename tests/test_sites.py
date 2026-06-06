@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from feed_filter.sites import SiteConfig, add_site, load_sites, update_pattern
+from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
 
 
 def _feed(site_id: str = "f1") -> SiteConfig:
@@ -169,6 +169,73 @@ def test_add_preserves_existing_requires_browser_row(tmp_path: Path) -> None:
     assert by_id["plain"].requires_browser is False
     # The plain row carries no redundant flag line in the persisted file.
     assert path.read_text(encoding="utf-8").count("requires_browser") == 1
+
+
+def test_enabled_defaults_true_and_is_not_emitted(tmp_path: Path) -> None:
+    # A site is enabled by default and its row stays minimal — no redundant
+    # ``enabled = true`` line (mirrors the requires_browser policy).
+    assert _feed().enabled is True
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed())
+    assert "enabled" not in path.read_text(encoding="utf-8")
+    assert load_sites(path)[0].enabled is True
+
+
+def test_add_site_disabled_round_trip(tmp_path: Path) -> None:
+    # add_site must serialize a disabled SiteConfig faithfully (the emit-when-False arm).
+    path = tmp_path / "sites.toml"
+    add_site(
+        path, SiteConfig(id="s", name="S", feed_url="https://e.example.com/f.xml", enabled=False)
+    )
+    assert "enabled = false" in path.read_text(encoding="utf-8")
+    assert load_sites(path)[0].enabled is False
+
+
+def test_set_enabled_round_trip(tmp_path: Path) -> None:
+    # disable writes ``enabled = false``; enable removes the key (back to minimal).
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed(site_id="s"))
+
+    set_enabled(path, "s", False)
+    assert load_sites(path)[0].enabled is False
+    assert "enabled = false" in path.read_text(encoding="utf-8")
+
+    set_enabled(path, "s", True)
+    assert load_sites(path)[0].enabled is True
+    assert "enabled" not in path.read_text(encoding="utf-8")  # key removed on enable
+
+
+def test_set_enabled_rewrites_only_target(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed(site_id="a"))
+    add_site(path, _scrape(site_id="b"))
+
+    set_enabled(path, "a", False)
+
+    by_id = {s.id: s for s in load_sites(path)}
+    assert by_id["a"].enabled is False
+    assert by_id["b"].enabled is True  # sibling untouched
+    assert by_id["b"].article_url_pattern == r"^/blog/[^/]+/?$"
+
+
+def test_set_enabled_unknown_site_raises(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed(site_id="s"))
+    with pytest.raises(KeyError):
+        set_enabled(path, "nope", False)
+
+
+def test_load_rejects_non_bool_enabled(tmp_path: Path) -> None:
+    # A hand-edited non-bool ``enabled`` must fail loudly, not coerce.
+    path = tmp_path / "sites.toml"
+    path.write_text(
+        '[[site]]\nid = "s"\nname = "S"\n'
+        'feed_url = "https://e.example.com/f.xml"\n'
+        'enabled = "no"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="enabled must be a bool"):
+        load_sites(path)
 
 
 def test_load_rejects_non_bool_requires_browser(tmp_path: Path) -> None:

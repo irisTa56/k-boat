@@ -191,6 +191,7 @@ def test_list_sites_shape(state_dir: Path, capsys: pytest.CaptureFixture[str]) -
             "article_url_pattern": None,
             "selection": None,
             "requires_browser": False,
+            "enabled": True,
         }
     ]
 
@@ -208,6 +209,54 @@ def test_list_sites_surfaces_requires_browser(
     )
     assert cli.main(["list-sites"]) == 0
     assert _out(capsys)[0]["requires_browser"] is True
+
+
+# --- enable / disable -----------------------------------------------------
+
+
+def test_disable_then_enable_site(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    add_site(sites_path(), SiteConfig(id="s", name="S", feed_url="https://e.example.com/f.xml"))
+
+    assert cli.main(["disable-site", "--site-id", "s"]) == 0
+    assert _out(capsys) == {"site_id": "s", "enabled": False}
+    assert load_sites(sites_path())[0].enabled is False
+    assert "enabled = false" in sites_path().read_text(encoding="utf-8")
+
+    assert cli.main(["enable-site", "--site-id", "s"]) == 0
+    assert _out(capsys) == {"site_id": "s", "enabled": True}
+    assert load_sites(sites_path())[0].enabled is True
+    assert "enabled" not in sites_path().read_text(encoding="utf-8")
+
+
+def test_disable_site_unknown_id_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_site(sites_path(), SiteConfig(id="s", name="S", feed_url="https://e.example.com/f.xml"))
+    assert cli.main(["disable-site", "--site-id", "nope"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_new_entries_skips_disabled_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="on", name="On", feed_url="https://a.example.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="off", name="Off", feed_url="https://b.example.com/f.xml"))
+    assert cli.main(["disable-site", "--site-id", "off"]) == 0
+    capsys.readouterr()
+
+    gathered_ids: list[str] = []
+
+    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+        gathered_ids.append(site.id)
+        return GatherResult(entries=[], index_matches=0, zero_links=False, error=None)
+
+    monkeypatch.setattr(cli, "gather_new", fake_gather)
+
+    assert cli.main(["new-entries"]) == 0
+    out = _out(capsys)
+    assert gathered_ids == ["on"]  # the disabled site is never gathered
+    assert [s["site_id"] for s in out["sites"]] == ["on"]  # and absent from the status
 
 
 # --- new-entries ----------------------------------------------------------
@@ -443,6 +492,30 @@ def test_heal_site_unknown_id_exits_nonzero(
     add_site(sites_path(), SiteConfig(id="s1", name="S", feed_url="https://e.example.com/f.xml"))
     assert cli.main(["heal-site", "--site-id", "nope", "--pattern", "^/x/"]) == 1
     assert "error:" in capsys.readouterr().err
+
+
+def test_heal_site_refuses_disabled_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A disabled site is inert: heal-site must refuse before any fetch, so a disabled
+    # requires_browser site can't slip past the (disabled-ignoring) gate into a raw
+    # ModuleNotFoundError. Enable it first.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="S",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/old/[^/]+/?$",
+        ),
+    )
+    assert cli.main(["disable-site", "--site-id", "s1"]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("healed a disabled site"))
+
+    assert cli.main(["heal-site", "--site-id", "s1", "--pattern", r"^/posts/[^/]+/?$"]) == 1
+    assert "enabled sites only" in capsys.readouterr().err
 
 
 # --- browser opt-in path (gate + teardown) --------------------------------

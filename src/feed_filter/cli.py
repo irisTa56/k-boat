@@ -44,7 +44,7 @@ from feed_filter.fetch import FetchError, build_client
 from feed_filter.pipeline import fetch_entries, gather_new
 from feed_filter.reminders import ReminderError, add_reminder
 from feed_filter.seen import open_db, record, snapshot
-from feed_filter.sites import SiteConfig, add_site, load_sites, update_pattern
+from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
 
 
 def _emit(obj: Any) -> None:
@@ -73,6 +73,7 @@ def _site_to_dict(s: SiteConfig) -> dict[str, Any]:
         "article_url_pattern": s.article_url_pattern,
         "selection": s.selection,
         "requires_browser": s.requires_browser,
+        "enabled": s.enabled,
     }
 
 
@@ -156,7 +157,9 @@ def cmd_list_sites(_args: argparse.Namespace) -> int:
 
 def cmd_new_entries(args: argparse.Namespace) -> int:
     """Gather new entries across sites, interleave, then apply the global cap (REQ-010)."""
-    sites = _select_sites(args.site_id)
+    # Skip disabled sites entirely (no fetch, no error, no push) — they stay in the
+    # registry with their seen-store intact for a later enable-site.
+    sites = [s for s in _select_sites(args.site_id) if s.enabled]
     # Fail fast before any fetch if a registered site needs the browser but the
     # extra is missing (REQ-006), so a misconfigured run errors cleanly up front.
     require_playwright_if_needed(sites_path())
@@ -222,6 +225,13 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     the heal in its push summary instead (the list holds only pages).
     """
     site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
+    if not site.enabled:
+        # A disabled site is inert (new-entries skips it). Healing would run a gather
+        # it should not, and would slip past the on-disk Playwright gate (which now
+        # ignores disabled sites) into a raw ModuleNotFoundError. Refuse — enable first.
+        raise ValueError(
+            f"heal-site targets enabled sites only (site {site.id!r}); enable it first"
+        )
     if site.kind != "scrape":
         raise ValueError(f"heal-site targets scrape sites only (site {site.id!r})")
     # The healed site is already on disk, so the on-disk gate sees it: fail fast if
@@ -240,6 +250,20 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     finally:
         close_browser()  # tear down a lazily-launched browser (F2: heal-site re-scrapes too)
     _emit({"site_id": site.id, "pattern": args.pattern, "snapshotted": len(entries)})
+    return 0
+
+
+def cmd_disable_site(args: argparse.Namespace) -> int:
+    """Stop gathering a site; config and seen-store are preserved (KeyError if absent)."""
+    set_enabled(sites_path(), args.site_id, False)
+    _emit({"site_id": args.site_id, "enabled": False})
+    return 0
+
+
+def cmd_enable_site(args: argparse.Namespace) -> int:
+    """Resume gathering a disabled site (KeyError if absent)."""
+    set_enabled(sites_path(), args.site_id, True)
+    _emit({"site_id": args.site_id, "enabled": True})
     return 0
 
 
@@ -291,6 +315,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_heal.add_argument("--site-id", dest="site_id", required=True)
     p_heal.add_argument("--pattern", required=True)
     p_heal.set_defaults(handler=cmd_heal_site)
+
+    p_disable = sub.add_parser(
+        "disable-site", help="stop gathering a site (keeps its config + seen-store)"
+    )
+    p_disable.add_argument("--site-id", dest="site_id", required=True)
+    p_disable.set_defaults(handler=cmd_disable_site)
+
+    p_enable = sub.add_parser("enable-site", help="resume gathering a disabled site")
+    p_enable.add_argument("--site-id", dest="site_id", required=True)
+    p_enable.set_defaults(handler=cmd_enable_site)
 
     return parser
 

@@ -253,3 +253,22 @@ def test_require_playwright_flagged_and_present_passes(
     # (guards against the negative test regressing to "always raise").
     monkeypatch.setattr(browser.importlib.util, "find_spec", lambda _name: object())
     require_playwright_if_needed(_write_sites(tmp_path, flagged=True))
+
+
+def test_require_playwright_ignores_disabled_flagged_site(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A disabled requires_browser site is never gathered, so it must not force the
+    # install on its own — the gate skips it even with Playwright missing.
+    path = tmp_path / "sites.toml"
+    path.write_text(
+        '[[site]]\nid = "ex"\nname = "Ex"\nfeed_url = "https://e.example.com/f.xml"\n'
+        "requires_browser = true\nenabled = false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        browser.importlib.util,
+        "find_spec",
+        lambda name: None if name == "playwright" else object(),
+    )
+    require_playwright_if_needed(path)  # no raise: the only flagged site is disabled
