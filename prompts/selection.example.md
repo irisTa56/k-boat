@@ -1,8 +1,10 @@
-# Selection criteria
+# Selection criteria (template)
+
+This is the version-controlled **template**. Copy it to `prompts/selection.md` (gitignored, your personal criteria) — that copy is what the run routine reads, so your interests never enter version control. Override the path with `FEED_FILTER_SELECTION` if you keep it elsewhere.
 
 This file is the keep/drop prompt the run routine hands to each judging subagent.
 A subagent sees one candidate page at a time and decides whether it belongs in the **`Filtered Feeds`** Reminders list.
-Edit the criteria below to match what you actually want to read; the routine reloads this file every run, so changes take effect on the next run with no code change.
+Replace the placeholders below with your own interests; the routine reloads `prompts/selection.md` every run, so edits take effect on the next run with no code change.
 
 A per-site override may live in `sites.toml` (`selection = "..."` on a `[[site]]`); when present it replaces the **Topics** section below for that site only, while the **Output** and **Heuristics** sections still apply.
 

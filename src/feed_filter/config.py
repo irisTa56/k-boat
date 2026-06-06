@@ -23,9 +23,10 @@ DEFAULT_GLOBAL_CAP = 80
 # Repo root = .../feed-filter, two levels above this file (src/feed_filter/).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Env vars that redirect mutable state away from the repo (e.g. for tests).
+# Env vars that redirect local state away from the repo (e.g. for tests).
 ENV_DB = "FEED_FILTER_DB"
 ENV_SITES = "FEED_FILTER_SITES"
+ENV_SELECTION = "FEED_FILTER_SELECTION"
 
 
 def sites_path() -> Path:
@@ -35,8 +36,15 @@ def sites_path() -> Path:
 
 
 def selection_path() -> Path:
-    """Path to the selection-criteria prompt. Repo-relative, version-controlled."""
-    return REPO_ROOT / "selection.md"
+    """Path to the active selection-criteria prompt. Overridable via
+    ``FEED_FILTER_SELECTION``.
+
+    This is **gitignored local state** (personal criteria), like ``sites.toml`` —
+    copied from the committed ``prompts/selection.example.md`` template and edited
+    locally. Only the template is version-controlled.
+    """
+    override = os.environ.get(ENV_SELECTION)
+    return Path(override) if override else REPO_ROOT / "prompts" / "selection.md"
 
 
 def db_path() -> Path:

@@ -1,11 +1,11 @@
 ---
 name: feed-filter-run
-description: Run one feed-filter pass — gather new entries from registered sites, judge each against selection.md with cheap haiku subagents, push keeps to the Filtered Feeds Reminders list, and self-heal broken scrape patterns. Use for the scheduled routine or a manual run.
+description: Run one feed-filter pass — gather new entries from registered sites, judge each against prompts/selection.md with cheap haiku subagents, push keeps to the Filtered Feeds Reminders list, and self-heal broken scrape patterns. Use for the scheduled routine or a manual run.
 ---
 
 # feed-filter periodic run
 
-One pass of the filter: gather unseen entries across all registered sites, judge each against `selection.md`, remind the keeps, and record everything processed as seen.
+One pass of the filter: gather unseen entries across all registered sites, judge each against `prompts/selection.md`, remind the keeps, and record everything processed as seen.
 This is the periodic, cost-sensitive half of feed-filter — the judging runs on **haiku** subagents (GUD-003), and the per-site/global caps (CON-005), not subagent cleverness, are the primary cost bound.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
@@ -16,7 +16,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 - The **`Filtered Feeds`** Reminders list must already exist (user-created); the wrapper never creates lists, and a missing/renamed list makes `remind` exit non-zero (CON-004). If reminds fail this way, stop and report — do not keep judging entries you cannot deliver. The list holds **only pages** (article reminders, including error/wall ones whose note explains the issue); operational notices go to the push summary, never into the list.
 - `rem` must be on `PATH` (Homebrew, DEP-007). A scheduled routine often starts with a PATH lacking `/opt/homebrew/bin`; ensure it is present (an absent `rem` surfaces as a non-zero `remind` exit, not a silent drop).
-- Read the current criteria from `selection.md` once at the start of the run and pass them to every judging subagent. Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
+- Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent. Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
 
 ## Procedure
 
@@ -26,16 +26,16 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - `summary` is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
    - Keep `sites` aside for steps 3–4.
 
-2. **Judge each entry** with a **haiku** subagent, passing `selection.md` (plus any per-site override) and the entry. The subagent returns `{keep, wall, title, summary, reason}` (see `selection.md` "Output"). Judging the entries in parallel is fine.
+2. **Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry. The subagent returns `{keep, wall, title, summary, reason}` (see `prompts/selection.md` "Output"). Judging the entries in parallel is fine.
    - **`kind == "feed"`** — two-stage to save cost (GUD-003): give the subagent the `title` and `summary` first and let it decide from those; only when they are too thin to judge does it `WebFetch` the page for the full text.
    - **`kind == "scrape"`** — there is no feed metadata, so the subagent goes straight to a full `WebFetch` of the `url`. The `title` it returns is authoritative — it is the **only** title source for the reminder (REQ-005).
    - Feeds **must not** be re-fetched with `WebFetch` for their item list (CON-002) — but `WebFetch` on an individual article page is exactly what the second stage is for.
-   - **`wall == true`** — when a `WebFetch` returns a login wall / paywall / subscribe gate instead of the article, the subagent sets `wall = true` rather than guessing a keep/drop (selection.md "Walls and unreadable pages"). Wall detection is tied to the fetch: a `kind == "feed"` entry decided from its title+summary alone is never fetched, so it has no wall to flag — only scrape entries (always fetched) and feeds that fall through to the full-text fetch can surface a wall. This is distinct from a hard fetch error (the page would not load at all), handled in step 3.
+   - **`wall == true`** — when a `WebFetch` returns a login wall / paywall / subscribe gate instead of the article, the subagent sets `wall = true` rather than guessing a keep/drop (prompts/selection.md "Walls and unreadable pages"). Wall detection is tied to the fetch: a `kind == "feed"` entry decided from its title+summary alone is never fetched, so it has no wall to flag — only scrape entries (always fetched) and feeds that fall through to the full-text fetch can surface a wall. This is distinct from a hard fetch error (the page would not load at all), handled in step 3.
    - **`requires_browser` site** (the `requires_browser` field from `feed-filter list-sites`) — the browser fetches only the *gather* feed/index, not the per-article body. The judging subagent's `WebFetch` is plain HTTP, so an article body behind the same gate the gather passed (e.g. Cloudflare) comes back as a wall/error: judge such an entry from its `title`+`summary` when those suffice, otherwise it falls to the wall path and is reminded for manual review (step 3) rather than content-filtered. A per-article browser fetch is a planned follow-up; until it lands such bodies are handed off, never lost. Decide relevance from the summary first: an entry the summary already places out of scope is dropped — never fetched, so never walled — so only a plausibly-in-scope entry whose quality or depth the summary alone cannot settle reaches the wall.
 
 3. **Act on each judged entry** (one `feed-filter` process per entry — the remind/record pair is atomic inside it).
    `remind` requires both `--title` and `--notes` (and `mark-seen` requires `--title`); always pass them, but an **empty string is allowed** — pass `--title ""` to invoke the URL fallback (REQ-005), and `--notes ""` when there is no summary. Omitting a required flag is an argparse error (exit 2), not a fallback, and would lose the entry.
-   - **Wall** (`wall == true`) → take this branch **before** the keep/drop check: the page was a login/paywall, not the article, so defer to the user instead of dropping it (selection.md "Walls and unreadable pages"). Call `feed-filter remind --site-id <id> --url <url> --title "<title>" --notes "wall: needs manual review"`. **Prefer `--title ""`** (the URL fallback, reminders.py names the reminder after the canonical URL) unless the subagent extracted a genuine article title (e.g. from `og:title` left on the gate) — the visible page title on a wall is usually the gate's ("Sign in — …"), which is worse for manual review than the bare URL. This reminds and records seen (kept=1) like any keep, so the walled page is handed off once and not judged again.
+   - **Wall** (`wall == true`) → take this branch **before** the keep/drop check: the page was a login/paywall, not the article, so defer to the user instead of dropping it (prompts/selection.md "Walls and unreadable pages"). Call `feed-filter remind --site-id <id> --url <url> --title "<title>" --notes "wall: needs manual review"`. **Prefer `--title ""`** (the URL fallback, reminders.py names the reminder after the canonical URL) unless the subagent extracted a genuine article title (e.g. from `og:title` left on the gate) — the visible page title on a wall is usually the gate's ("Sign in — …"), which is worse for manual review than the bare URL. This reminds and records seen (kept=1) like any keep, so the walled page is handed off once and not judged again.
    - **Keep** → `feed-filter remind --site-id <id> --url <url> --title <title> --notes <summary>`.
      This creates the reminder **and** records the entry seen (kept=1) in one process (REQ-009).
      Do **not** also call `mark-seen` — that would double-record.

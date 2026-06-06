@@ -22,7 +22,7 @@ def test_repo_root_contains_pyproject() -> None:
 
 def test_default_paths_are_repo_relative(clean_env: None) -> None:
     assert config.sites_path() == config.REPO_ROOT / "sites.toml"
-    assert config.selection_path() == config.REPO_ROOT / "selection.md"
+    assert config.selection_path() == config.REPO_ROOT / "prompts" / "selection.md"
     assert config.db_path() == config.REPO_ROOT / "feed-filter.db"
 
 
@@ -38,8 +38,9 @@ def test_sites_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     assert config.sites_path() == target
 
 
-def test_selection_has_no_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    # selection.md is intentionally not redirectable; it stays version-controlled.
-    monkeypatch.setenv("FEED_FILTER_DB", str(tmp_path / "x.db"))
-    monkeypatch.setenv("FEED_FILTER_SITES", str(tmp_path / "x.toml"))
-    assert config.selection_path() == config.REPO_ROOT / "selection.md"
+def test_selection_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # The active selection prompt is gitignored local state, redirectable like the
+    # others (FEED_FILTER_SELECTION) — only prompts/selection.example.md is committed.
+    target = tmp_path / "elsewhere-selection.md"
+    monkeypatch.setenv("FEED_FILTER_SELECTION", str(target))
+    assert config.selection_path() == target

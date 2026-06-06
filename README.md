@@ -51,8 +51,8 @@ feed-filter add-site --id example --name "Example Blog" \
 feed-filter list-sites
 ```
 
-`sites.toml` (the registry) and `selection.md` (the keep/drop criteria) are version-controlled config you edit by hand or via the skills.
-`feed-filter.db` (the seen-store) is gitignored local state.
+`sites.toml` (the registry), `prompts/selection.md` (the keep/drop criteria), and `feed-filter.db` (the seen-store) are **gitignored local state** — personal config that stays on your machine.
+The only version-controlled prompt is `prompts/selection.example.md`: copy it to `prompts/selection.md` and edit (or point `FEED_FILTER_SELECTION` elsewhere). Edit the registry by hand or via the skills.
 
 ### Pause or resume a site
 
@@ -96,7 +96,7 @@ A body behind the same gate the browser gather passed is therefore unreadable to
 
 ### Run the filter
 
-Use the `feed-filter-run` skill. One pass gathers new entries across all sites, judges each against `selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
+Use the `feed-filter-run` skill. One pass gathers new entries across all sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
 
 ## Scheduling

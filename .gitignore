@@ -21,3 +21,6 @@ mise.lock
 
 # Personal subscription list — local state, never committed.
 sites.toml
+
+# Personal selection prompt — local, not committed (copy of prompts/selection.example.md).
+prompts/selection.md
