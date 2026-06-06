@@ -53,6 +53,16 @@ def test_dedupes_canonical_variants() -> None:
     assert [e.canonical_url for e in entries] == ["https://blog.example.com/blog/x"]
 
 
+def test_matches_double_slash_variant_via_canonical_path() -> None:
+    # A `/blog//x` link points at the same article as `/blog/x`; canonicalization
+    # collapses the `//`, so matching on the canonical path keeps it (and dedupes
+    # it against the clean variant) instead of skipping it on the raw path. This
+    # keeps scrape symmetric with discovery, which counts the canonical form.
+    html = '<a href="/blog//x">a</a><a href="/blog/x">b</a>'
+    entries = scrape_index(html, "https://blog.example.com/", ARTICLE_PATTERN)
+    assert [e.canonical_url for e in entries] == ["https://blog.example.com/blog/x"]
+
+
 def test_invalid_pattern_propagates() -> None:
     # A broken pattern must raise, not return [] — Phase 5 distinguishes a
     # 0-match index (REQ-006 self-heal signal) from a quiet healthy day, and a

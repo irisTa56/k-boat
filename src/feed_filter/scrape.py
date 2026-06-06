@@ -32,18 +32,20 @@ def scrape_index(
     """Extract article ``Entry`` objects from ``html`` in DOM order.
 
     Links are resolved against ``index_url`` and kept only if same-host and
-    path-matching ``pattern`` (``re.search`` on the raw path, as discovery
-    authored it). ``max_entries`` caps enumeration in DOM order (a paginated
-    archive would otherwise grow unbounded); ``None`` means no cap. An invalid
-    ``pattern`` raises ``re.error`` — a config bug surfaces, not silently empty.
+    path-matching ``pattern``. ``max_entries`` caps enumeration in DOM order (a
+    paginated archive would otherwise grow unbounded); ``None`` means no cap. An
+    invalid ``pattern`` raises ``re.error`` — a config bug surfaces, not silently
+    empty.
 
-    Dedupe is on the **canonical** URL (PAT-002), not the raw path-only URL, so
-    host-case / trailing-slash / duplicate-slash variants of one article collapse
-    to the single key the seen-store will dedupe against downstream — otherwise a
-    page linking ``/post`` and ``/post/`` would emit two entries the seen-store
-    then treats as one, double-counting toward the cap and the first-sight
-    reminder. Query and fragment are dropped first so rotating tracking params on
-    an index link don't fork an article.
+    Both the ``pattern`` match and the dedupe key are computed on the
+    **canonical** URL (PAT-002), not the raw path. ``discover`` synthesizes the
+    pattern from the canonical cluster key, so matching here on the canonical path
+    keeps the two sides symmetric: a ``//`` or trailing-slash variant of one
+    article (``/post`` vs ``/post/`` vs ``/blog//post``) collapses to the single
+    key the seen-store dedupes against and matches identically to the form
+    discovery counted — otherwise the registration preview's ``entry_count`` and
+    what this ingester emits could diverge. Query and fragment are dropped first
+    so rotating tracking params on an index link don't fork an article.
     """
     rx = re.compile(pattern)
     tree = HTMLParser(html)
@@ -54,9 +56,9 @@ def scrape_index(
         if absolute is None:
             continue
         parts = urlsplit(absolute)
-        if not rx.search(parts.path or "/"):
-            continue
         cu = canonical_url(f"{parts.scheme}://{parts.netloc}{parts.path}")
+        if not rx.search(urlsplit(cu).path or "/"):
+            continue
         if cu in seen:
             continue
         seen.add(cu)
