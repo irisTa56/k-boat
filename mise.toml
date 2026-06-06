@@ -1,0 +1,25 @@
+[tools]
+rumdl = "latest"
+lychee = "latest"
+
+[hooks]
+postinstall = """
+mise generate git-pre-commit --write --task=pre-commit
+"""
+
+[tasks."fmt:md"]
+description = "Format markdown files"
+run = "rumdl check --fix"
+
+# Not in `qa:*`: full-repo external link check is too slow / network-bound for pre-commit.
+[tasks."check:links"]
+description = "Check links in the repo"
+run = "lychee -v ."
+
+[tasks.pre-commit]
+description = "Run all pre-commit checks"
+depends = ["qa:*"]
+
+[tasks."qa:md"]
+description = "Lint markdown files"
+run = "rumdl check"
