@@ -26,7 +26,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 ## Architecture
 
-- `src/feed_filter/` — the Python core. `config.py` holds constants and env-overridable paths (`FEED_FILTER_DB`, `FEED_FILTER_SITES`). Ingestion, discovery, the seen-store, and the CLI dispatch (`cli.py` + `__main__.py`) land across later phases.
+- `src/feed_filter/` — the Python core. `config.py` holds constants and env-overridable paths (`FEED_FILTER_DB`, `FEED_FILTER_SITES`); `canonical.py`/`seen.py`/`sites.py` are the pure primitives; `fetch.py`/`feeds.py`/`scrape.py` are the deterministic ingestion (sync httpx fetch, feedparser, selectolax). Discovery and the CLI dispatch (`cli.py` + `__main__.py`) land in later phases.
 - A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the only contract between the Python core and the Claude Code skills (`.claude/skills/`). Skills never reach into Python internals.
 - Synchronous throughout: a sequential CLI batch tool with a sync `httpx.Client`, no `asyncio`.
 

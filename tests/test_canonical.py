@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from feed_filter.canonical import canonical_url
+from feed_filter.canonical import canonical_url, resolve_link
 
 # (url, base, expected)
 CASES: list[tuple[str, str | None, str]] = [
@@ -75,3 +75,23 @@ def test_distinct_articles_stay_distinct() -> None:
     a = canonical_url("https://example.com/blog/alpha")
     b = canonical_url("https://example.com/blog/beta")
     assert a != b
+
+
+def test_resolve_link_resolves_relative_and_absolute() -> None:
+    assert resolve_link("https://example.com/blog/", "post") == "https://example.com/blog/post"
+    assert resolve_link("https://example.com/", "https://other.com/a") == "https://other.com/a"
+
+
+@pytest.mark.parametrize(
+    "href", [None, "", "   ", "#section", "javascript:void(0)", "mailto:a@b.c"]
+)
+def test_resolve_link_rejects_non_article_hrefs(href: str | None) -> None:
+    assert resolve_link("https://example.com/", href) is None
+
+
+def test_resolve_link_same_host_guard() -> None:
+    # Cross-host is allowed by default (feed syndication) but rejected under the
+    # scrape path's same-host guard.
+    off_host = "https://other.com/a"
+    assert resolve_link("https://example.com/", off_host) == off_host
+    assert resolve_link("https://example.com/", off_host, require_same_host=True) is None

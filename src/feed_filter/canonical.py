@@ -102,3 +102,31 @@ def canonical_url(url: str, base: str | None = None) -> CanonicalUrl:
             )
         )
     )
+
+
+def resolve_link(base_url: str, href: str | None, *, require_same_host: bool = False) -> str | None:
+    """Resolve ``href`` against ``base_url``, rejecting non-article links.
+
+    Co-located with ``canonical_url`` because both ingest paths turn raw link
+    values into URLs before canonicalizing: ``feeds.parse_feed`` (cross-host
+    syndication is legitimate, so no host guard) and ``scrape.scrape_index``
+    (``index_url`` binds a single host, so ``require_same_host=True``). Keeping
+    the resolution rules in one place stops the two callers from drifting apart.
+
+    Returns ``None`` (caller skips the link) when ``href`` is missing, blank,
+    fragment-only (``#anchor`` — these collapse to the base URL once the
+    fragment is stripped), non-http(s) (``javascript:`` / ``mailto:`` would
+    explode in ``httpx``), or — under ``require_same_host`` — points off-host.
+    """
+    if href is None:
+        return None
+    stripped = str(href).strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    absolute = urljoin(base_url, stripped)
+    parts = urlsplit(absolute)
+    if parts.scheme not in ("http", "https"):
+        return None
+    if require_same_host and (parts.hostname or "") != (urlsplit(base_url).hostname or ""):
+        return None
+    return absolute
