@@ -189,8 +189,24 @@ def test_list_sites_shape(state_dir: Path, capsys: pytest.CaptureFixture[str]) -
             "index_url": None,
             "article_url_pattern": None,
             "selection": None,
+            "requires_browser": False,
         }
     ]
+
+
+def test_list_sites_surfaces_requires_browser(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # list-sites is the JSON projection of the full model; a browser-backed site
+    # must be distinguishable from an httpx one in the inventory the skills read.
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="js", name="JS", feed_url="https://e.example.com/f.xml", requires_browser=True
+        ),
+    )
+    assert cli.main(["list-sites"]) == 0
+    assert _out(capsys)[0]["requires_browser"] is True
 
 
 # --- new-entries ----------------------------------------------------------

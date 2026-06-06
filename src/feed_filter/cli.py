@@ -65,6 +65,7 @@ def _site_to_dict(s: SiteConfig) -> dict[str, Any]:
         "index_url": s.index_url,
         "article_url_pattern": s.article_url_pattern,
         "selection": s.selection,
+        "requires_browser": s.requires_browser,
     }
 
 

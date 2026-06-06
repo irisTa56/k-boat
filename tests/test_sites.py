@@ -99,6 +99,92 @@ def test_add_site_with_selection_override(tmp_path: Path) -> None:
     assert load_sites(path)[0].selection == "keep only release notes"
 
 
+def test_requires_browser_defaults_false() -> None:
+    # Absent flag → httpx path (REQ-001); shape validation is unaffected.
+    assert _feed().requires_browser is False
+    assert _scrape().requires_browser is False
+
+
+def test_requires_browser_round_trip(tmp_path: Path) -> None:
+    # A flagged feed site survives add→load; the flag does not disturb the
+    # exactly-one-of feed/scrape shape (REQ-001).
+    path = tmp_path / "sites.toml"
+    add_site(
+        path,
+        SiteConfig(
+            id="js",
+            name="JS Site",
+            feed_url="https://example.com/feed.xml",
+            requires_browser=True,
+        ),
+    )
+    loaded = load_sites(path)[0]
+    assert loaded.requires_browser is True
+    assert loaded.kind == "feed"
+
+
+def test_requires_browser_round_trip_scrape(tmp_path: Path) -> None:
+    # The flag is orthogonal to kind: a flagged scrape site round-trips too.
+    path = tmp_path / "sites.toml"
+    add_site(
+        path,
+        SiteConfig(
+            id="js-scrape",
+            name="JS Scrape",
+            index_url="https://example.com/blog",
+            article_url_pattern=r"^/blog/[^/]+/?$",
+            requires_browser=True,
+        ),
+    )
+    loaded = load_sites(path)[0]
+    assert loaded.requires_browser is True
+    assert loaded.kind == "scrape"
+
+
+def test_requires_browser_false_is_not_emitted(tmp_path: Path) -> None:
+    # The common (httpx) site keeps a minimal row — no redundant
+    # ``requires_browser = false`` line, mirroring the optional-field policy.
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed())
+    assert "requires_browser" not in path.read_text(encoding="utf-8")
+    assert load_sites(path)[0].requires_browser is False
+
+
+def test_add_preserves_existing_requires_browser_row(tmp_path: Path) -> None:
+    # Adding a second (plain) site re-parses and re-dumps the whole document; a
+    # pre-existing flagged row must survive untouched, and the new row must stay
+    # minimal (emit-only-when-true). Guards the serialization policy across the
+    # multi-site re-dump the round-trip test only exercises for string fields.
+    path = tmp_path / "sites.toml"
+    add_site(
+        path,
+        SiteConfig(
+            id="js", name="JS", feed_url="https://e.example.com/a.xml", requires_browser=True
+        ),
+    )
+    add_site(path, _feed(site_id="plain"))
+
+    by_id = {s.id: s for s in load_sites(path)}
+    assert by_id["js"].requires_browser is True
+    assert by_id["plain"].requires_browser is False
+    # The plain row carries no redundant flag line in the persisted file.
+    assert path.read_text(encoding="utf-8").count("requires_browser") == 1
+
+
+def test_load_rejects_non_bool_requires_browser(tmp_path: Path) -> None:
+    # A hand-edited string/int value must fail loudly, not coerce to False — the
+    # operator would otherwise have no signal that the browser path is off.
+    path = tmp_path / "sites.toml"
+    path.write_text(
+        '[[site]]\nid = "js"\nname = "JS"\n'
+        'feed_url = "https://e.example.com/f.xml"\n'
+        'requires_browser = "yes"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="requires_browser must be a bool"):
+        load_sites(path)
+
+
 def test_add_site_rejects_duplicate_id(tmp_path: Path) -> None:
     path = tmp_path / "sites.toml"
     add_site(path, _feed(site_id="dup"))

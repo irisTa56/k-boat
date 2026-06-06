@@ -43,6 +43,10 @@ class SiteConfig:
     article_url_pattern: str | None = None
     # Optional per-site selection override; falls back to the global selection.md.
     selection: str | None = None
+    # Opt-in browser (Playwright) gather path for JS-rendered / anti-bot sites
+    # (REQ-001). Default false → the unchanged httpx path. Not a string optional,
+    # so it sits outside _OPTIONAL_FIELDS' blank-normalization.
+    requires_browser: bool = False
 
     def __post_init__(self) -> None:
         # Normalize blank/whitespace-only optionals to None so a half-written
@@ -98,6 +102,24 @@ def _opt_str(table: Table, key: str) -> str | None:
     return _blank_to_none(str(val) if val is not None else None)
 
 
+def _opt_bool(table: Table, key: str) -> bool:
+    """Strict bool parse: absent → False, non-bool → ValueError (no soft coercion).
+
+    Ported from loose-feeds ``_require_bool``: a hand-edited ``requires_browser =
+    "yes"`` (a string, not a TOML bool) must fail loudly rather than read as a
+    silent False, which would leave the operator unable to tell why the browser
+    path never engages. tomlkit unwraps TOML booleans to native ``bool`` and
+    integers to a non-bool ``Integer``, so ``isinstance(_, bool)`` cleanly admits
+    only ``true``/``false``.
+    """
+    raw = table.get(key)
+    if raw is None:
+        return False
+    if not isinstance(raw, bool):
+        raise ValueError(f"{key} must be a bool, got {raw!r}")
+    return raw
+
+
 def _req_str(table: Table, key: str, path: Path) -> str:
     # Uniform ValueError (not tomlkit's NonExistentKey) for a malformed row, so
     # load_sites/add_site keep their documented "ValueError on bad entry" contract.
@@ -130,6 +152,7 @@ def load_sites(path: Path) -> list[SiteConfig]:
             index_url=_opt_str(table, "index_url"),
             article_url_pattern=_opt_str(table, "article_url_pattern"),
             selection=_opt_str(table, "selection"),
+            requires_browser=_opt_bool(table, "requires_browser"),
         )
         if site.id in seen_ids:
             raise ValueError(f"duplicate site id {site.id!r} in {path}")
@@ -156,6 +179,10 @@ def add_site(path: Path, site: SiteConfig) -> None:
         value = getattr(site, key)
         if value is not None:
             table[key] = value
+    # Emit the opt-in browser flag only when set, keeping the common (httpx) site
+    # row free of a redundant ``requires_browser = false`` (mirrors the optionals).
+    if site.requires_browser:
+        table["requires_browser"] = True
 
     aot = doc.get("site")
     if aot is None:
