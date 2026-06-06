@@ -88,6 +88,7 @@ Automation:
 - A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`kboat-repos refresh`), then `kboat-distill`, in that order, under a single auth refresh. The task name is cadence-agnostic; the schedule is configured separately and may change.
 - It must be local — not a cloud Routine or Cowork — because the queue (macOS Reminders), the NotebookLM auth cookies, the iCloud vault, and the Basic Memory store are all local-only.
 - The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
+- Because it runs unattended, a failure that needs the user's action but would otherwise go unseen until they open Claude Desktop — auth unusable, the `k-boat-knowledge` project missing, or Basic Memory down so distillation deferred — sends one `PushNotification`; routine and self-healing outcomes stay in the run summary. The trigger set is owned by the task prompt.
 
 `README.md` is the human entry point and links to the skills.
 Keep schema and automation detail in the skills, not duplicated in README.
