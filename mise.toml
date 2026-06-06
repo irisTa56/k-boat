@@ -8,9 +8,7 @@ uv = "latest"
 _.file = ".env"
 
 [hooks]
-postinstall = """
-mise generate git-pre-commit --write --task=pre-commit
-"""
+postinstall = "mise generate git-pre-commit --write --task=pre-commit"
 
 [tasks."fmt:md"]
 description = "Format markdown files"
