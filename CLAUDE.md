@@ -27,7 +27,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Commands
 
-- `mise run setup` — sync the venv (`uv sync`), install Chromium for `notebooklm-py[browser]`, and generate the git pre-commit hook.
+- `mise install` — install tools, then a postinstall hook syncs the venv (`uv sync`), installs Chromium for `notebooklm-py[browser]`, and generates the git pre-commit hook.
 - NotebookLM auth:
   - `mise run nblm:login` — authenticate once.
   - `mise run nblm:auth:check` — verify auth with a network test.
