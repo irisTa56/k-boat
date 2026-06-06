@@ -28,9 +28,6 @@ mise run pre-commit   # run the full QA gate (Python + markdown + secrets)
 mise run qa:py:test   # run the Python test suite
 ```
 
-`prompts/selection.md` is your local (gitignored) keep/drop criteria; the routine reads it every run.
-Register sites with the `feed-filter-add-site` skill (they land in the gitignored `sites.toml`).
-
 ## Usage
 
 Registration and the periodic run are driven by Claude Code skills, which wrap the CLI.
@@ -56,7 +53,7 @@ feed-filter list-sites
 ```
 
 `sites.toml` (the registry), `prompts/selection.md` (the keep/drop criteria), and `feed-filter.db` (the seen-store) are **gitignored local state** — personal config that stays on your machine.
-The only version-controlled prompt is `prompts/selection.example.md`: copy it to `prompts/selection.md` and edit (or point `FEED_FILTER_SELECTION` elsewhere). Edit the registry by hand or via the skills.
+Only the `prompts/selection.example.md` template is committed (Setup copies it to `prompts/selection.md`); set `FEED_FILTER_SELECTION` to keep the active prompt elsewhere. Edit the registry by hand or via the skills.
 
 ### Pause or resume a site
 
