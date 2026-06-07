@@ -160,7 +160,7 @@ Distillation reads the **note body** (the highlights/notes). A ripe book whose b
 
 ### Kindle Base
 
-A standalone Base at the vault root, `Kindles.base`, over `type == "kindle"`, with three views: an **All** catalogue, a **Reading list** view of the books not yet finished (`finished != true`), and a **To distill** view (`distill == true`). The Reading-list view is the active to-read / now-reading shelf — checking `finished` drops a book off it while leaving it in the All catalogue, so the list shrinks as books are read. The To-distill view carries a `distilled_date` column so a distilled book (date set) can be told from a still-ripe one (date empty) — the filter cannot test date-emptiness, so the column carries that signal, as the source Holding view does; the All catalogue omits it. Titles show through a `title_link` formula (`file.asLink(note.title)`) because the file is named by ASIN.
+A standalone Base at the vault root, `Kindles.base`, over `type == "kindle"`, with three views. It leads with **Reading list**, the books not yet finished (`finished != true`) — the active to-read / now-reading shelf, so checking `finished` drops a book off it while leaving it in the All catalogue, and the list shrinks as books are read. Reading list is listed first deliberately: a Base shows [its first view on open](https://help.obsidian.md/bases/views), so the first view is the default, and the day-to-day working view should be the default. The other two are the **All** catalogue and a **To distill** view (`distill == true`). The To-distill view carries a `distilled_date` column so a distilled book (date set) can be told from a still-ripe one (date empty) — the filter cannot test date-emptiness, so the column carries that signal, as the source Holding view does; the All catalogue omits it. Titles show through a `title_link` formula (`file.asLink(note.title)`) because the file is named by ASIN.
 
 ```yaml
 filters:
@@ -170,7 +170,10 @@ formulas:
   title_link: file.asLink(note.title)
 views:
   - type: table
-    name: Kindles · All
+    name: Reading list
+    filters:
+      and:
+        - finished != true
     order:
       - read
       - finished
@@ -183,10 +186,7 @@ views:
       - property: added_date
         direction: DESC
   - type: table
-    name: Reading list
-    filters:
-      and:
-        - finished != true
+    name: Kindles · All
     order:
       - read
       - finished
@@ -335,7 +335,7 @@ Column widths and other cosmetics are per-vault tweaks, as with the other Bases.
 
 ## Reading inbox Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, gives six views over all sources: three to-read inboxes — an **All** view plus **Web** and **PDF** views — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources that could not be fetched.
+A single standalone Base at the vault root, `Reading Inbox.base`, gives six views over all sources: three to-read inboxes — a **Web** view, an **All** view, and a **PDF** view — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources that could not be fetched. The **Web** view is listed first so it is the default Obsidian opens (a Base shows its first view on open, as noted for the Kindle Base).
 The to-read inboxes filter `distill != true && keep != true && dismiss != true && blocked != true` — readable, undispositioned sources only (a blocked source has no content to read, so it belongs in the DLQ, not the inbox). The All inbox adds no type filter, so it is exhaustive over that set: every readable, undispositioned source appears whatever its `source_type`. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish.
 The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `read`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
 The Ambiguous view (`dismiss && (keep || distill)`, and `blocked != true`) lists the contradictory sources the routine refuses to process, so they can be fixed. It is kept separate from Holding because it is an error state, not a resting one; like every non-DLQ view it excludes `blocked`, so a blocked source never leaks out of the DLQ.
@@ -353,25 +353,6 @@ filters:
     - type == "source"
 views:
   - type: table
-    name: Reading Inbox · All
-    filters:
-      and:
-        - distill != true
-        - keep != true
-        - dismiss != true
-        - blocked != true
-    order:
-      - read
-      - distill
-      - keep
-      - dismiss
-      - formula.title_link
-      - source_type
-      - added_date
-    sort:
-      - property: added_date
-        direction: DESC
-  - type: table
     name: Reading Inbox · Web
     filters:
       and:
@@ -386,6 +367,25 @@ views:
       - keep
       - dismiss
       - formula.title_link
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Reading Inbox · All
+    filters:
+      and:
+        - distill != true
+        - keep != true
+        - dismiss != true
+        - blocked != true
+    order:
+      - read
+      - distill
+      - keep
+      - dismiss
+      - formula.title_link
+      - source_type
       - added_date
     sort:
       - property: added_date
