@@ -22,8 +22,8 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Repos/` — one note per GitHub repository, named by a URL hash; no notebook, a metadata catalogue entry.
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
 - `Reviews/` — one report per distillation run, read for memory consolidation.
-- `Reading Inbox.base` — a standalone Base: to-read views (all unread, plus web and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
-- `Kindles.base` — a standalone Base over the Kindle books: an All catalogue, a Reading-list view (books not yet finished), and a To-distill view.
+- `Reading Inbox.base` — a standalone Base: to-read views (web by default, plus all-unread and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
+- `Kindles.base` — a standalone Base over the Kindle books: a Reading-list view (books not yet finished, shown by default), an All catalogue, and a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
