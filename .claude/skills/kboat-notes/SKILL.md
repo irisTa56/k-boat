@@ -125,7 +125,7 @@ A Kindle book read on a Kindle device or app. Unlike a source it has no Notebook
 
 Identity is the Amazon **ASIN**, taken from the Kindle reader URL `https://read.amazon.co.jp/?asin=<ASIN>`. The note is named `Kindles/<ASIN>.md` — the ASIN is the stable id, so (as with a source's URL hash) the file is never renamed and the readable title lives in the `title` property, surfaced by the Base via a `title_link` formula. De-dup is by the ASIN filename: if `Kindles/<ASIN>.md` exists it is the same book.
 
-Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `read`/`distill` checkboxes and the routine-managed dates.
+Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `read`/`finished`/`distill` checkboxes and the routine-managed dates.
 
 | Property | Meaning |
 | --- | --- |
@@ -136,7 +136,8 @@ Fields are ordered for reading — `title` then the reader link, then the rest o
 | `store_link` | The Amazon **product-page link** (`https://www.amazon.co.jp/dp/<ASIN>`) — a clickable store link. The bare ASIN itself is not stored as a value: it is the note's filename (`Kindles/<ASIN>.md`), which is the identity/de-dup key. |
 | `published` | Publication date as a string at whatever precision is available (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); never zero-padded to fake finer precision. |
 | `publisher` | Publisher, if available. |
-| `read` | Checkbox, set by the human. Informational only (read progress); drives nothing. |
+| `read` | Checkbox, set by the human when reading starts. Informational only (read progress); drives no routine behaviour. |
+| `finished` | Checkbox, set by the human when the book is read to the end. Informational only; drives no routine behaviour. Its sole effect is in the Base: the reading-list view hides finished books (`finished != true`), so checking it takes the book off that list while leaving it in the All catalogue. |
 | `distill` | Checkbox, set by the human. Opt-in to distil this book into the knowledge graph (from the body). |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
 | `added_date` | Date the note was created. |
@@ -146,9 +147,10 @@ There is deliberately no `isbn` field: a Kindle product page shows the ASIN, not
 
 ### Lifecycle and state
 
-Simpler than a source's, because there is no notebook to retain or discard and so nothing destructive to gate: no cooldown, and no `keep`/`dismiss`/`blocked`. A Kindle note is created, optionally read, optionally marked `distill`, and once distilled carries `distilled_date`. The note is never deleted — it is a permanent catalogue and de-dup record.
+Simpler than a source's, because there is no notebook to retain or discard and so nothing destructive to gate: no cooldown, and no `keep`/`dismiss`/`blocked`. A Kindle note is created, marked `read` then `finished` as reading progresses, optionally marked `distill`, and once distilled carries `distilled_date`. The note is never deleted — it is a permanent catalogue and de-dup record.
 
-- `read` — informational, exactly as for a source.
+- `read` — informational (read progress), set when reading starts. Where a source tracks reading with a single `read` checkbox, a Kindle book splits it into a `read` (started) / `finished` (done) pair, since the reading-list view needs a distinct "done" signal.
+- `finished` — informational, set by the human when the book is read to the end. Drives no routine behaviour — the ripe predicate ignores it; its only effect is the Base reading-list view, which filters it out. It is orthogonal to `distill`: a book can be distilled before or after it is marked finished.
 - `distill` checked and `distilled_date` empty → **ripe**: the routine distils the note body and stamps `distilled_date`. Unlike a source there is no 7-day cooldown — a Kindle book is distilled on the next run after `distill` is checked.
 - `distilled_date` set → distilled; a further run is a no-op. Re-distilling requires the human to clear `distilled_date` first.
 
@@ -158,7 +160,7 @@ Distillation reads the **note body** (the highlights/notes). A ripe book whose b
 
 ### Kindle Base
 
-A standalone Base at the vault root, `Kindles.base`, over `type == "kindle"`, with two views: an **All** catalogue and a **To distill** view (`distill == true`). The To-distill view carries a `distilled_date` column so a distilled book (date set) can be told from a still-ripe one (date empty) — the filter cannot test date-emptiness, so the column carries that signal, as the source Holding view does; the All catalogue omits it. Titles show through a `title_link` formula (`file.asLink(note.title)`) because the file is named by ASIN.
+A standalone Base at the vault root, `Kindles.base`, over `type == "kindle"`, with three views: an **All** catalogue, a **Reading list** view of the books not yet finished (`finished != true`), and a **To distill** view (`distill == true`). The Reading-list view is the active to-read / now-reading shelf — checking `finished` drops a book off it while leaving it in the All catalogue, so the list shrinks as books are read. The To-distill view carries a `distilled_date` column so a distilled book (date set) can be told from a still-ripe one (date empty) — the filter cannot test date-emptiness, so the column carries that signal, as the source Holding view does; the All catalogue omits it. Titles show through a `title_link` formula (`file.asLink(note.title)`) because the file is named by ASIN.
 
 ```yaml
 filters:
@@ -171,6 +173,23 @@ views:
     name: Kindles · All
     order:
       - read
+      - finished
+      - distill
+      - formula.title_link
+      - author
+      - published
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Reading list
+    filters:
+      and:
+        - finished != true
+    order:
+      - read
+      - finished
       - distill
       - formula.title_link
       - author
@@ -186,6 +205,7 @@ views:
         - distill
     order:
       - read
+      - finished
       - distill
       - formula.title_link
       - author
@@ -534,7 +554,7 @@ The browser mechanics — extracting the metadata from the Amazon product page t
 
 1. Resolve the ASIN. From a Kindle reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key.
 2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete. The filename, being the ASIN, never changes.
-3. Otherwise write a new `Kindles/<ASIN>.md` with `type: kindle` and the fields from "Kindle note": `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `read` and `distill` start `false`; `distilled_date` starts empty. The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads.
+3. Otherwise write a new `Kindles/<ASIN>.md` with `type: kindle` and the fields from "Kindle note": `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `read`, `finished`, and `distill` start `false`; `distilled_date` starts empty. The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads.
 
 ## Procedure: create or update a repo note
 
