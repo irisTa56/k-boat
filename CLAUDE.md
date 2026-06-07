@@ -77,7 +77,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 - Every source carries `summary` and `topics` (from the NotebookLM source guide at ingest) — the durable description `kboat-recall` searches once the notebook is gone.
 - Concept→source provenance is an observation carrying the source URL (the two roots can't resolve a wikilink); concept→concept stays a wikilink. Claims are tagged `#grounded` or `#dialogue`, and distillation verifies the `#dialogue` ones before keeping them. Distillation targets the `k-boat-knowledge` project explicitly and stops if it is missing.
 - A Kindle book (`type: kindle`, ASIN-keyed) and a GitHub repo (`type: repo`, canonical-URL-hash-named) are parallel, simpler kinds — no notebook, distilled-from-note-body (Kindle) or never distilled (repo, a searchable catalogue). A repo's identity is the `gh`-resolved canonical owner/repo, so refresh adopts renames; its only judged fields are `role`/`domain`/`summary`.
-- The reading inbox, Kindle, and Repos Bases filter only on plain booleans (`distill`/`keep`/`dismiss`/`blocked`) or `source_type ==` — never `!=` or a date-emptiness test (Obsidian Bases can't do those), which is why those booleans are written on every source and empty dates are tested by reading frontmatter directly.
+- The reading inbox, Kindle, and Repos Bases filter only on plain booleans (sources: `distill`/`keep`/`dismiss`/`blocked`; Kindle: `read`/`finished`/`distill`) or `source_type ==` — never `!=` over a possibly-missing property or a date-emptiness test (Obsidian Bases can't do those), which is why those booleans are written on every note and empty dates are tested by reading frontmatter directly.
 
 Automation:
 

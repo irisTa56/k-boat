@@ -23,7 +23,7 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
 - `Reviews/` — one report per distillation run, read for memory consolidation.
 - `Reading Inbox.base` — a standalone Base: to-read views (all unread, plus web and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
-- `Kindles.base` — a standalone Base over the Kindle books: an All catalogue and a To-distill view.
+- `Kindles.base` — a standalone Base over the Kindle books: an All catalogue, a Reading-list view (books not yet finished), and a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
@@ -54,6 +54,6 @@ One progress checkbox plus three dispositions drive a source. `read` is just rea
 
 The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
 
-Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — just `read` and `distill`. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
+Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — `read` marks it started, `finished` marks it read (which drops it off the reading-list view), and `distill` opts it in. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
 
 GitHub repos are simpler still — a catalogue, never distilled. Drop a `github.com/<owner>/<repo>` link into the `K-Boat Queue` (or hand one to `kboat-repos` directly); ingest fetches its metadata, a cheap subagent tags it with a `role`, a `domain` (from a small controlled vocabulary), and a short `summary`, and it lands in `Repos/`, browsable and searchable in `Repos.base`. The daily routine's `kboat-repos refresh` keeps each repo's stars, last-commit, and `status` current while leaving your tags and the `## Notes` body untouched.
