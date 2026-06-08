@@ -45,6 +45,7 @@ Collect, per item, at least:
 - Title fell back to the reminder text (the abstract page and the PDF's own metadata/first page all failed). The note is still created — flag it so a human can fix the title.
 - Source guide failed (rate limit, error), so `summary`/`topics` are left empty. The note is still created; report it so a later pass or a human can fill them (recall falls back to `title`).
 - `notebooklm create` / `source add` failures (rate limit, auth). The source note is kept without a `notebooklm_id`; report it so a later pass or a human can give it a notebook.
+- Chat-persona `configure` failure (rate limit, auth). Non-fatal: the notebook is fully usable without the persona, so keep the notebook and `notebooklm_id` and report it (a later pass or a human can re-run `configure`).
 - Web page that did not fetch successfully (not `ready`, or a wall fetched instead of the article) → the DLQ. Record it as `blocked` (note kept, walled notebook discarded) so `kboat-rescue` can supply real content.
 - PDF that uploaded but extracted to empty/garbled text → **not** the DLQ (see kboat-notes): the file is readable, only the notebook text is unusable, and rescue's re-fetch can't fix it. Keep the note, file, and notebook (`blocked` stays `false`) and report it so a human can supply a text-bearing copy.
 - Source-note write failures. The reminder is kept (see Safety).
@@ -56,4 +57,4 @@ Collect, per item, at least:
 End the run with a summary covering:
 
 - Counts: items drained, **GitHub repos catalogued** (routed to `Repos/`), notebooks created, sources left without a notebook, **sources sent to the DLQ** (blocked PDF or walled web page — awaiting `kboat-rescue`), PDFs ingested with empty/garbled extraction (readable file, unusable notebook), and sources left with empty `summary`/`topics`. For PDFs also count: transient download failures (reminder kept) and titles that fell back to the reminder text.
-- Errors: each collected error with the item it affected and the cause (e.g. bot-blocked PDF → DLQ, walled web page → DLQ, undecidable type, transient PDF download failure, rate-limited `create`/`source add`, source-guide failure, note write failure, slug collision).
+- Errors: each collected error with the item it affected and the cause (e.g. bot-blocked PDF → DLQ, walled web page → DLQ, undecidable type, transient PDF download failure, rate-limited `create`/`source add`, persona-configure failure (non-fatal), source-guide failure, note write failure, slug collision).
