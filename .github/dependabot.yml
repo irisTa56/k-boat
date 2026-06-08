@@ -1,5 +1,5 @@
-# Dependabot version updates. Free on private repos; no GitHub Actions minutes
-# are consumed (this repo has no CI workflows for the PRs to trigger).
+# Dependabot version updates. No GitHub Actions minutes are consumed: this repo
+# has no CI workflows for the update PRs to trigger (relevant if CI is added).
 #
 # Only the uv ecosystem is configured: every updatable dependency lives in the
 # root pyproject.toml (notebooklm-py plus the dev group). The workspace members
