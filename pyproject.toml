@@ -3,11 +3,15 @@ name = "feed-filter"
 version = "0.1.0"
 description = "Filter new feed/scrape pages by prompt and push survivors to Reminders.app"
 requires-python = ">=3.13"
+# Floors = the versions under test (locked in uv.lock); a floor-less spec lets a
+# source/lock-less install resolve an untested-old release. No upper caps: uv.lock
+# pins exact versions, so an unreviewed major can land only via a deliberate
+# `uv lock --upgrade`, where it is reviewed — a cap would just add churn-y bumps.
 dependencies = [
-    "httpx",
-    "feedparser",
-    "selectolax",
-    "tomlkit",
+    "httpx>=0.28",
+    "feedparser>=6.0",
+    "selectolax>=0.4.10",
+    "tomlkit>=0.15",
 ]
 
 [project.optional-dependencies]

@@ -128,11 +128,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "feedparser" },
-    { name = "httpx" },
+    { name = "feedparser", specifier = ">=6.0" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "playwright", marker = "extra == 'browser'" },
-    { name = "selectolax" },
-    { name = "tomlkit" },
+    { name = "selectolax", specifier = ">=0.4.10" },
+    { name = "tomlkit", specifier = ">=0.15" },
 ]
 provides-extras = ["browser"]
 
