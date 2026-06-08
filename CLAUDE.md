@@ -68,7 +68,7 @@ Two deterministic helper packages (uv workspace members) hold the mechanical cor
 
 Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
 
-- One notebook per source (1:1), throwaway by default but retained for a `keep` source; its `notebooklm_id`/`gemini_url`/`notebooklm_url` live on the source note. No notebook notes, wikilinks, or backlinks.
+- One notebook per source (1:1), throwaway by default but retained for a `keep` source; its `notebooklm_id`/`gemini_url`/`notebooklm_url` live on the source note. No notebook notes, wikilinks, or backlinks. At creation every notebook is given the same fixed honest-dialogue chat persona (owned by `kboat-notes`), shared by its NotebookLM chat and Gemini view.
 - A source is a web page or a PDF (`source_type`); a PDF is uploaded into the notebook as a file at `PDFs/<slug>.pdf` (read via PDF++), never fetched from a URL. No Google Drive or Play Books — Play Books has no upload API, so it would break the unattended routine.
 - The DLQ is exactly the *fetch*-blocked set: an ingest that cannot fetch becomes a `blocked` note keeping its `url` (not a silently re-failing reminder), cleared by `kboat-rescue`. A PDF that fetched but extracted to nothing is readable — ingested, not blocked.
 - The NotebookLM source id is never stored — it is resolved on demand by matching `url` (then `title`, for `url: null` PDF uploads) in `notebooklm source list`.

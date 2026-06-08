@@ -477,6 +477,7 @@ This is the web-page path. For a PDF source, follow "Procedure: ingest a PDF sou
 2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `read`, `distill`, `keep`, `dismiss`, and `blocked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 3 fills `summary`/`topics`).
 3. Create the 1:1 notebook and record its coordinates:
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
+   - Set the notebook's chat persona (see "Procedure: set the notebook chat persona"). Non-fatal — on failure, report it and continue.
    - Run `notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
    - Confirm NotebookLM actually fetched the article: `notebooklm source wait <source_id> --notebook <id>` (adding is async; exit 0 = ready, 1 = failed, 2 = timeout). A **successful fetch** means the source reaches `ready` *and* its text is the real article — not empty, and not a wall (a login / JS-required / Cloudflare / paywall page NotebookLM fetched instead of the content). Judge wall-vs-article by reading, not by keyword: page chrome such as a `Log in` link or a noscript `enable JavaScript` notice alongside the real text is normal. A source that does not fetch successfully is not ingested — when ingest hits this, record it in the DLQ (see "Procedure: record a blocked source"); when distillation re-checks a ripe source and hits it, abort that source (it stays ripe) and report it. This verification can run in a cheap subagent.
    - Capture the summary while the notebook still exists (see "Procedure: capture summary and topics") and write `summary` and `topics` onto the note.
@@ -500,6 +501,7 @@ The bytes decide PDF-vs-not; the URL shape only decides blocked-vs-web once the 
 4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read`, `distill`, `keep`, `dismiss`, and `blocked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 5 fills `summary`/`topics`). This note write is the commit point, exactly as on the web path.
 5. Create the 1:1 notebook and record its coordinates:
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
+   - Set the notebook's chat persona (see "Procedure: set the notebook chat persona"). Non-fatal — on failure, report it and continue.
    - Add the PDF as an uploaded file, titling the source so it can be resolved later (a file upload has no `url` to match on): `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>" --notebook <id> --json`, and read the returned source id. Use the absolute vault path and quote it — it contains a space — because `source add` silently ingests a path that does not exist on disk as inline *text* rather than erroring, so a wrong path would upload the path string instead of the PDF.
    - Confirm NotebookLM extracted the PDF: `notebooklm source wait <source_id> --notebook <id>` (exit 0 = ready, 1 = failed, 2 = timeout), then write the text to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile>` and read it. Use `-o`, not stdout, which truncates at 2000 chars and would make a good PDF look empty. A direct upload cannot fetch a wall, so the failure mode is **empty or garbled extraction** rather than a login page. This is **not** a DLQ/blocked case: the `PDFs/<slug>.pdf` file downloaded fine and is readable in Obsidian (an image-only scan, say) — only the notebook text is unusable, and re-fetching the same file would extract to nothing again, so `kboat-rescue`'s browser fetch cannot help. Keep the note, file, and notebook (`blocked` stays `false`), write `notebooklm_id`, and report the empty extraction so a human can supply a text-bearing copy if they want AI dialogue or distillation. This verification can run in a cheap subagent.
    - Capture the summary (see "Procedure: capture summary and topics") and write `summary` and `topics` onto the note.
@@ -512,12 +514,31 @@ Every source — web or PDF — gets a `summary` and `topics`, captured at inges
 1. `notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags). The guide follows the notebook's language.
 2. Write `topics` = the `.keywords` list, and `summary` = a concise one- or two-sentence summary (trim `.summary` to its lead if it runs long). If the guide call fails, leave both empty and report it; ingest continues (recall falls back to `title`).
 
+## Procedure: set the notebook chat persona
+
+Every 1:1 notebook gets the same chat persona, set once right after `create`, so reading-time dialogue stays honest and direct instead of agreeable. NotebookLM and Gemini share one per-notebook custom instruction, so this single setting governs both the NotebookLM chat and the Gemini view (`gemini_url`); the output language is left to NotebookLM's own language setting, not the persona. The persona is a per-notebook setting persisted on the notebook (it survives across chats), not a per-message flag. Set it with `notebooklm configure --notebook <id> --persona "<persona>"` (the bare `--persona` selects NotebookLM's "Custom" goal).
+
+The persona is fixed — the same text for every notebook, the honest-dialogue principles below, kept in English per the repo's language policy (output language is set on the notebook, so the persona carries no language directive):
+
+```text
+Prioritize factual accuracy and logical consistency. To support my goals, hold to transparent, honest dialogue under these principles:
+1. Genuine honesty: avoid easy agreement, sycophancy, or flattery; get straight to the point and answer against objective facts.
+2. Constructive correction: when my premise is mistaken, don't merely negate it — supply the correct information to lead to a better outcome.
+3. State your limits: don't answer by speculation; on unclear matters, say honestly that there isn't firm evidence yet, and suggest what to check or how to investigate.
+4. Multiple perspectives: for questions without a single answer, present the several sides neutrally, with the information and a recommended direction.
+5. Cite sources: for claims that need verification, investigate reliable information (e.g. via web search) and make the basis explicit with source links.
+```
+
+The persona is non-essential: if `configure` fails (rate limit, auth), the notebook is still fully usable, so report the failure and continue rather than treating it as a fatal ingest error.
+
+`configure` is a pure **setter** with no getter, and it is destructive: a bare `notebooklm configure --notebook <id>` (or `--json` with no `--mode`/`--persona`) **resets** the notebook's chat settings to `default`, wiping any persona. So never call it to "read back" or verify — there is no CLI way to read the current persona; check it in the NotebookLM or Gemini UI instead.
+
 ## Procedure: reactivate a discarded source's notebook
 
 A `keep` source keeps its notebook, so reading, dialogue, and distillation need no reactivation there — just adjust the disposition. Reactivation is only for a source whose notebook was already discarded: a `distill`-only source after distillation, or a `dismiss`ed one. Its note and, for a PDF, its `PDFs/<slug>.pdf` remain; reading needs no notebook (open `reading_link` in Obsidian), only AI dialogue or re-distillation does. Do it in this order, so the source is never in a dangerous intermediate state:
 
 1. **Reset the state first — before re-creating the notebook.** Clear the disposition that discarded the notebook (`dismiss`, or the spent `distill`), clear `filed_date`, and — for a re-distillation — clear `distilled_date` (which otherwise keeps the source out of the ripe set). Order matters: if the notebook were re-created while a stale destructive disposition and an already-elapsed `filed_date` still stood, the next routine run could discard the fresh notebook before you finished. With the disposition cleared the source is momentarily back in the inbox, which is harmless.
-2. **Re-create the notebook.** Re-run the create-and-add step of the matching ingest procedure on the stored source: `create`, then `source add "<url>"` (web) or `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` (PDF), verify, and write the fresh `notebooklm_id`/`gemini_url`/`notebooklm_url` back.
+2. **Re-create the notebook.** Re-run the create-and-add step of the matching ingest procedure on the stored source: `create`, set the chat persona (see "Procedure: set the notebook chat persona"), then `source add "<url>"` (web) or `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` (PDF), verify, and write the fresh `notebooklm_id`/`gemini_url`/`notebooklm_url` back.
 3. **Choose the new disposition.** `keep` to hold the notebook going forward, or `distill` (optionally `distill` + `keep`) to re-distil. The routine re-stamps `filed_date`, so the cooldown counts fresh.
 
 ## Procedure: record a blocked source (DLQ)
@@ -536,7 +557,7 @@ Driven by the `kboat-rescue` skill (interactive). Given a DLQ source by its slug
 
 1. Resolve the note from the slug (`Sources/<slug>.md`) or `url`. It must have `blocked: true`.
 2. Obtain the content. For a PDF, get the real file to `PDFs/<slug>.pdf` — typically by driving the real browser (the `kboat-rescue` skill uses Claude in Chrome) to the `url`, letting the human solve any CAPTCHA, and saving the PDF; or by the human downloading it and pointing the skill at the file. Verify it starts with `%PDF-`.
-3. Build the notebook from the supplied content with the matching ingest steps: `create` → `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` → `source wait` → extraction verify (`fulltext -o`) → capture `summary`/`topics` (see "Procedure: capture summary and topics").
+3. Build the notebook from the supplied content with the matching ingest steps: `create` → set chat persona (see "Procedure: set the notebook chat persona") → `source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --title "<title>"` → `source wait` → extraction verify (`fulltext -o`) → capture `summary`/`topics` (see "Procedure: capture summary and topics").
 4. Once a real PDF is in hand the wall is cleared, so set `blocked: false`, write `notebooklm_id` and the derived `gemini_url`/`notebooklm_url`, and set `reading_link` = `[[<slug>.pdf]]`. The source leaves the DLQ and joins the inbox like a freshly-ingested PDF. Two non-clean endings: if the wall could not be cleared (no real PDF obtained), leave `blocked: true` — it stays in the DLQ; if the fetched PDF extracts to nothing, keep `blocked: false` (the fetch succeeded) but report the empty extraction — that is the ingest garbled-extraction case (readable file, unusable notebook), not a DLQ state.
 
 ## Procedure: discard a source's notebook
