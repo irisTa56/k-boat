@@ -1,12 +1,15 @@
 """Tests for the pure parts of gather (no `gh` calls): README excerpting and
-the GitHub-payload -> frontmatter mapping."""
+the GitHub-payload -> frontmatter mapping. `gather` itself is covered with `gh`
+monkeypatched."""
 
 from __future__ import annotations
 
 from datetime import date
 
+import kboat_repos.gather as gather_mod
 from kboat_repos.gather import (
     first_paragraphs,
+    gather,
     github_fields,
     repo_languages,
     resolved_identity,
@@ -138,3 +141,23 @@ def test_github_fields_handles_missing_optional() -> None:
     assert fields["homepage"] == ""
     assert fields["stars"] == 0
     assert fields["status"] == "unknown"  # no pushedAt
+
+
+def test_gather_injects_today_into_status(monkeypatch) -> None:
+    # pushedAt is 2026-06-01; against a far-future `today` the same payload is
+    # `dormant`, proving `gather` uses the injected date, not the wall clock.
+    meta = {
+        "owner": {"login": "acme"},
+        "name": "tool",
+        "pushedAt": "2026-06-01T00:00:00Z",
+        "primaryLanguage": {"name": "Go"},
+    }
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: ("", None))
+
+    recent = gather("https://github.com/acme/tool", today=date(2026, 6, 6))
+    assert recent["status"] == "ok"
+    assert recent["fields"]["status"] == "recent"
+
+    later = gather("https://github.com/acme/tool", today=date(2030, 1, 1))
+    assert later["fields"]["status"] == "dormant"
