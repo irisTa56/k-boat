@@ -88,7 +88,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
     )
     parser.add_argument(
-        "--today", default=date.today().isoformat(), help="Override today (YYYY-MM-DD)."
+        "--today",
+        default=date.today().isoformat(),
+        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
     )
     args = parser.parse_args(argv)
 
