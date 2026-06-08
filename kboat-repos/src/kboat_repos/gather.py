@@ -150,8 +150,12 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
     return (owner or None, name or None)
 
 
-def gather(url: str) -> dict:
-    """Resolve a GitHub URL to its canonical slug + metadata + README excerpt (one record)."""
+def gather(url: str, *, today: date) -> dict:
+    """Resolve a GitHub URL to its canonical slug + metadata + README excerpt (one record).
+
+    `today` is injected (not read from the clock here) so `status` is reproducible
+    and testable — matching `github_fields`, `derive_status`, and `refresh`.
+    """
     owner, repo = parse_repo(url)
     if not owner or not repo:
         return {"url": url, "status": "skip-not-a-repo"}
@@ -185,7 +189,7 @@ def gather(url: str) -> dict:
             # The mechanical, ready-to-write GitHub-derived frontmatter (the 10%
             # language rule, `status`, etc.) so the skill never re-derives it —
             # it only adds the judged role/domain/summary on top.
-            fields=github_fields(meta, today=date.today()),
+            fields=github_fields(meta, today=today),
             readme_excerpt=first_paragraphs(readme or ""),
         )
         return record
@@ -200,8 +204,19 @@ def main(argv: list[str] | None = None) -> int:
         description="Fetch a GitHub repo's metadata + README excerpt as JSON.",
     )
     parser.add_argument("url", help="A GitHub repository URL (any variant).")
+    parser.add_argument(
+        "--today",
+        default=date.today().isoformat(),
+        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
+    )
     args = parser.parse_args(argv)
-    record = gather(args.url)
+
+    try:
+        today = date.fromisoformat(args.today)
+    except ValueError:
+        parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
+
+    record = gather(args.url, today=today)
     json.dump(record, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 0 if record.get("status") == "ok" else 1
