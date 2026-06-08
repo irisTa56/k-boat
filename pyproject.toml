@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Dump your content into a knowledge lake, then sail it with AI agents."
 requires-python = ">=3.13"
 dependencies = [
-    "notebooklm-py[browser]>=0.6.0",
+    "notebooklm-py[browser]>=0.7.1",
 ]
 
 [tool.uv]
