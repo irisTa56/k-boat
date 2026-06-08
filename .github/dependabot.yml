@@ -1,0 +1,19 @@
+# Dependabot version updates. Free on private repos; no GitHub Actions minutes
+# are consumed (this repo has no CI workflows for the PRs to trigger).
+#
+# Only the uv ecosystem is configured: every updatable dependency lives in the
+# root pyproject.toml (notebooklm-py plus the dev group). The workspace members
+# (kboat-lifecycle, kboat-repos) declare no runtime deps — only a uv_build
+# build-system pin, which Dependabot does not manage — so a single root entry
+# covers everything; uv resolves the whole workspace from the root uv.lock.
+# The mise-managed tools (gitleaks, lychee, rumdl, uv) are out of Dependabot's
+# scope and stay on `mise upgrade`.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      python-deps:
+        patterns: ["*"]
