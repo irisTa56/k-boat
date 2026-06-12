@@ -108,3 +108,7 @@ Update it autonomously, without being asked, whenever a change alters the archit
 
 The note schema's source of truth is the `kboat-notes` skill.
 When the schema or conventions change, update `kboat-notes` first, then reconcile this file and `README.md` so all three stay consistent.
+
+The `kboat-routine` prompt (path under Automation above) defers to the skills at runtime, so a pure schema change need not touch it.
+But it hardcodes the cross-phase orchestration: the phase set and their order, the identifiers the run depends on (the `K-Boat Queue` list, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `PushNotification` trigger set.
+When a change alters any of those, treat that prompt as part of the definition of done: reconcile it in the same change (including list/task renames) and confirm it back, rather than waiting to be asked.
