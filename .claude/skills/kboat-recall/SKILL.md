@@ -1,6 +1,6 @@
 ---
 name: kboat-recall
-description: Find shelved "read later" sources by a natural-language question. Use when the user asks whether they saved something to read on a topic, wants to surface kept sources matching a question, or says things like "do I have anything about X to read", "find that paper I shelved", "what's on my read-later shelf about Y". Searches source-note title/summary/topics; defers to kboat-notes for the schema.
+description: Find shelved "read later" sources by a natural-language question, and run the routine's daily pick. Use when the user asks whether they saved something to read on a topic, wants to surface kept sources matching a question, or says things like "do I have anything about X to read", "find that paper I shelved", "what's on my read-later shelf about Y" — and when the kboat-routine runs the daily pick after distillation (the write-capable "Daily pick mode" below: surface up to two web sources for today from the Daily-note `## 明日への問い`, via the kboat-pick package). Searches source-note title/summary/topics; defers to kboat-notes for the schema.
 ---
 
 # K-Boat recall
@@ -8,7 +8,7 @@ description: Find shelved "read later" sources by a natural-language question. U
 Answer "do I have something saved to read about X?" by searching the source notes.
 A K-Boat source marked `keep` is the **read-later shelf** — kept as a searchable archive entry whose notebook is retained for re-reading and dialogue (see kboat-notes lifecycle). Its `summary` and `topics`, captured at ingest, are the durable signal this skill searches.
 
-Follow the kboat-notes skill for the source-note schema and the lifecycle. This skill is read-only — it never edits notes or touches NotebookLM.
+Follow the kboat-notes skill for the source-note schema and the lifecycle. The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag, through `kboat-pick`. Neither use touches NotebookLM.
 
 ## Scope
 
@@ -28,6 +28,18 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. This 
 
 - **Just read it:** open `reading_link` — a web URL, or for a PDF the Obsidian/PDF++ link to `PDFs/<slug>.pdf`. No notebook is needed to read.
 - **Chat with it or distil it:** decide by the result's `notebooklm_id`, not its disposition. If `notebooklm_id` is present (always for a `keep` source, and for anything whose notebook has not been discarded), open `gemini_url` to chat or check `distill` to have the routine distil it. If it is empty (a distilled `distill`-only source, or a `dismiss`ed one), the notebook is gone — reactivate it first via kboat-notes "Procedure: reactivate a discarded source's notebook".
+
+## Daily pick mode
+
+A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today from the questions you wrote, and is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` package. The spec is kboat-notes "Daily pick".
+
+1. `eval "$(mise env)"`, then `kboat-pick candidates` → JSON with `questions` (Daily-note `## 明日への問い`, newest-first, on or before today) and `candidates` (the active web inbox, each with `summary`/`topics`).
+2. If there are no questions or no candidates, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.
+3. Rank by relevance, newest question first: judge which candidates genuinely answer each question from their `summary`/`topics` (delegate to a cheap subagent when the inbox is large, lexically pre-filtering first to keep it cheap). Accumulate distinct picks until you have two, descending to older questions when a question yields fewer. Stop at two; if the questions run out first, take fewer — never pad with weak matches (a precise miss is honest).
+4. `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices. Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
+5. Report the picks — each with the question it answers — and that they are read in the Today view of the reading-inbox Base (kboat-notes "Reading inbox Base").
+
+This mode never writes the Daily note and never touches NotebookLM. The picks are a spotlight, replaced each run.
 
 ## Limitations
 

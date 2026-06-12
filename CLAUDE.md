@@ -56,15 +56,16 @@ Seven skills, all under `.claude/skills/`:
   - It defers to `kboat-notes` for the Kindle schema and create transitions.
 - `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
   - It defers to `kboat-notes` for the schemas and to the Basic Memory skills (`memory-notes`, `memory-ingest`, `memory-curate`) for the concept graph.
-- `kboat-recall` — read-only search over the source notes for a "read later" source matching a question; lexical for now (`title`/`summary`/`topics`).
-  - It defers to `kboat-notes` for the schema.
+- `kboat-recall` — read-only search over the source notes for a "read later" source matching a question; lexical for now (`title`/`summary`/`topics`). Also hosts the **daily-pick mode** the routine runs: surface up to two `web_page` picks for today from the Daily-note `## 明日への問い` — its one write, the `picked` flag, via `kboat-pick`.
+  - It defers to `kboat-notes` for the schema and the "Daily pick" spec.
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
   - It defers to `kboat-notes` for the rescue transitions.
 
-Two deterministic helper packages (uv workspace members) hold the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the package and its tests):
+Three deterministic helper packages (uv workspace members) hold the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the package and its tests):
 
 - `kboat-lifecycle/` (console script `kboat-lifecycle`) — the distillation lifecycle state machine: the boolean/date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass for the on-disk cooldown clock (Phase A) and the ripe/dismiss/ambiguous source and ripe-Kindle work sets as JSON.
 - `kboat-repos/` (console script `kboat-repos`) — the repo catalogue's mechanics: subcommands `gather`/`write`/`refresh`, all shelling out to `gh`, no LLM. See the `kboat-repos` skill and package for the subcommand contract.
+- `kboat-pick/` (console script `kboat-pick`) — the daily-pick mechanics: `candidates` (the Daily-note `## 明日への問い` questions + the active web inbox, as JSON) and `set` (reset `picked`, then set it on the chosen slugs), no LLM. `kboat-recall`'s daily-pick mode ranks between the two. See the `kboat-pick` package and kboat-notes "Daily pick".
 
 Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
 
@@ -75,13 +76,14 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 - Reading state is one informational `reading` checkbox plus three dispositions: `distill` (opt into the graph) and `keep` (retain notebook as a read-later shelf) compose; `dismiss` (discard, exclude from recall) is exclusive, so combining it is the ambiguous case the routine refuses. The routine stamps `filed_date` on first disposition, runs a 7-day cooldown from it, then acts; `distilled_date` is terminal.
 - Crash-safety: a ripe source's notebook is discarded **last** (if at all — `keep` retains it), after `distilled_date` is stamped and the review report written.
 - Every source carries `summary` and `topics` (from the NotebookLM source guide at ingest) — the durable description `kboat-recall` searches once the notebook is gone.
+- The daily pick is a routine step, not a disposition: each run resets the hidden `picked` boolean on every source and re-sets it on at most two `web_page` sources answering the Daily-note `## 明日への問い` (newest-first look-back, no padding), shown in the Reading Inbox Today view beside in-progress (`reading`) PDFs. The Daily note is read, never written; the mechanics are `kboat-pick`, the ranking `kboat-recall`.
 - Concept→source provenance is an observation carrying the source URL (the two roots can't resolve a wikilink); concept→concept stays a wikilink. Claims are tagged `#grounded` or `#dialogue`, and distillation verifies the `#dialogue` ones before keeping them. Distillation targets the `k-boat-knowledge` project explicitly and stops if it is missing.
 - A Kindle book (`type: kindle`, ASIN-keyed) and a GitHub repo (`type: repo`, canonical-URL-hash-named) are parallel, simpler kinds — no notebook, distilled-from-note-body (Kindle) or never distilled (repo, a searchable catalogue). A repo's identity is the `gh`-resolved canonical owner/repo, so refresh adopts renames; its only judged fields are `role`/`domain`/`summary`.
 - The reading inbox, Kindle, and Repos Bases filter only on plain booleans (sources: `distill`/`keep`/`dismiss`/`blocked`/`picked`; Kindle: `reading`/`finished`/`distill`) or `source_type ==` — never `!=` over a possibly-missing property or a date-emptiness test (Obsidian Bases can't do those), which is why those booleans are written on every note and empty dates are tested by reading frontmatter directly.
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`kboat-repos refresh`), then `kboat-distill`, in that order, under a single auth refresh. The task name is cadence-agnostic; the schedule is configured separately and may change.
+- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`kboat-repos refresh`), then `kboat-distill`, then the daily pick (`kboat-recall` daily-pick mode), in that order, under a single auth refresh. The daily pick is purely local (no NotebookLM, Basic Memory, or `gh`), so it runs even when distillation defers. The task name is cadence-agnostic; the schedule is configured separately and may change.
 - It must be local — not a cloud Routine or Cowork — because the queue (macOS Reminders), the NotebookLM auth cookies, the iCloud vault, and the Basic Memory store are all local-only.
 - The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
 - Because it runs unattended, a failure that needs the user's action but would otherwise go unseen until they open Claude Desktop — auth unusable, the `k-boat-knowledge` project missing, or Basic Memory down so distillation deferred — sends one `PushNotification`; routine and self-healing outcomes stay in the run summary. The trigger set is owned by the task prompt.

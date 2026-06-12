@@ -337,17 +337,17 @@ Column widths and other cosmetics are per-vault tweaks, as with the other Bases.
 ## Daily pick
 
 The daily-pick step turns "what do I read first?" from scanning a flat inbox into a pull: you write questions and the routine surfaces the sources that answer them.
-The matching logic belongs to `kboat-recall`, to be run by the routine as a step after distillation; this section is its spec. The `kboat-recall` mode and the routine step are not yet wired, so until they are `picked` stays `false` and the Today view shows only in-progress PDFs.
+Two pieces implement it: the `kboat-pick` package does the deterministic I/O — `kboat-pick candidates` reads the questions and the web inbox, `kboat-pick set` writes `picked` — and `kboat-recall` does the relevance ranking between them. The routine runs the whole step after distillation; this section is the spec all three follow.
 
 **Input — your questions, from the Daily notes.** You write free-form questions under a `## 明日への問い` heading in a Daily note (in the `Daily/` folder; the daily-note template seeds the heading).
 The step only reads the Daily note — it never writes one, so the Daily note stays human-authored.
 
-**Look-back.** The step walks the Daily notes newest-first and reads the `## 明日への問い` items it finds, so a day with no note (or no heading) is skipped and the most recent questions are used.
+**Look-back.** `kboat-pick candidates` walks the Daily notes newest-first (dated on or before today) and returns the `## 明日への問い` items it finds, so a day with no note (or no heading) is skipped and the most recent questions are used.
 
-**Output — at most two `web_page` picks, marked `picked`.** For each question, newest-first, the step ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`) by relevance: a lexical pre-filter narrows the candidates, then a subagent reads their `summary`/`topics` and judges genuine relevance, so the match is semantic rather than keyword overlap alone.
+**Output — at most two `web_page` picks, marked `picked`.** For each question, newest-first, `kboat-recall` ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`, the candidate set `kboat-pick` returns) by relevance: it reads the candidates' `summary`/`topics` and judges genuine relevance — pre-filtering lexically first when the inbox is large — so the match is semantic rather than keyword overlap alone.
 It accumulates distinct picks until it has two, descending to older questions when a question yields fewer; if the questions run out first it stops short rather than padding — two is a cap, not a quota, so a precise miss is reported honestly.
 PDFs are never picked: a PDF you are mid-read already surfaces in the Today view via `reading`, and a pick is for choosing the next web read.
-Each run first resets `picked` to `false` on every source, then sets it `true` on the new choices, so yesterday's spotlight never lingers.
+Each run `kboat-pick set --slugs` first resets `picked` to `false` on every source, then sets it `true` on the new choices, so yesterday's spotlight never lingers.
 
 The result is read in the Today view of the reading-inbox Base, not in the Daily note — web picks and started PDFs side by side, which works on mobile where the project CLIs do not.
 

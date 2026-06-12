@@ -1,0 +1,19 @@
+[project]
+name = "kboat-pick"
+version = "0.1.0"
+description = "Deterministic K-Boat daily-pick mechanics: gather Daily-note questions and the web inbox, and set the picked flag."
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "kboat_pick"
+
+[project.scripts]
+kboat-pick = "kboat_pick.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

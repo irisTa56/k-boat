@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 members = [
     "k-boat",
     "kboat-lifecycle",
+    "kboat-pick",
     "kboat-repos",
 ]
 
@@ -201,6 +202,11 @@ dev = [
 name = "kboat-lifecycle"
 version = "0.1.0"
 source = { editable = "kboat-lifecycle" }
+
+[[package]]
+name = "kboat-pick"
+version = "0.1.0"
+source = { editable = "kboat-pick" }
 
 [[package]]
 name = "kboat-repos"
