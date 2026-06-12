@@ -3,6 +3,11 @@ gitleaks = "latest"
 lychee = "latest"
 rumdl = "latest"
 uv = "latest"
+# The browser-driven NotebookLM CLI, isolated from the project venv (uvx-backed).
+# Keeps the `kboat` package zero-dependency; auth lives in ~/.notebooklm, Chromium
+# in Playwright's cache, both outside this env. `notebooklm login` installs Chromium
+# on first run, so no explicit playwright step is needed.
+"pipx:notebooklm-py" = { version = "0.7.1", extras = "browser" }
 
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
@@ -14,8 +19,7 @@ _.python.venv = { path = ".venv", create = true }
 
 [hooks]
 postinstall = """
-uv sync --all-packages
-playwright install chromium
+uv sync
 mise generate git-pre-commit --write --task=pre-commit
 """
 
@@ -48,29 +52,18 @@ run = "rumdl check"
 description = "Scan staged changes for secrets"
 run = "gitleaks git --staged -v"
 
-# Python format/QA: one task per package, plus a wildcard aggregator each.
-# `pre-commit` (depends = ["qa:*"]) picks up every qa:py:<pkg> directly; `qa:py`
-# is the manual all-packages shortcut.
+# Python format/QA for the `kboat` package (now the repo root). `pre-commit`
+# (depends = ["qa:*"]) picks up `qa:py` directly.
 
 [tasks."fmt:py"]
-description = "Autofix Python lint and formatting for all packages"
-depends = ["fmt:py:*"]
-
-[tasks."fmt:py:kboat"]
-description = "Autofix lint and formatting for the kboat package"
-dir = "{{config_root}}/kboat"
+description = "Autofix Python lint and formatting"
 run = """
 uv run ruff check --fix
 uv run ruff format
 """
 
 [tasks."qa:py"]
-description = "Lint, type-check, and test all Python packages"
-depends = ["qa:py:*"]
-
-[tasks."qa:py:kboat"]
 description = "Lint, type-check, and test the kboat package"
-dir = "{{config_root}}/kboat"
 run = """
 uv run ruff check
 uv run ruff format --check
