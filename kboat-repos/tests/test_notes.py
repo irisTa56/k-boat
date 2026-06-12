@@ -78,7 +78,7 @@ FIELDS = {
     "title": "google/A2A",
     "url": "https://github.com/google/A2A",
     "homepage": "https://a2a-protocol.org/",
-    "read": False,
+    "reading": False,
     "description": "An open protocol: agents talk.",  # contains a colon -> must quote
     "language": ["Shell"],
     "topics": ["a2a", "agents"],
@@ -105,7 +105,7 @@ def test_build_repo_note_roundtrips_scalars() -> None:
     assert fm["title"] == "google/A2A"
     assert fm["stars"] == "23707"  # parser returns scalars as strings
     assert fm["archived"] is False
-    assert fm["read"] is False
+    assert fm["reading"] is False
     # A value with a colon is quoted so YAML stays valid.
     assert 'description: "An open protocol: agents talk."' in note
     # Lists render inline (flow style), one line each.

@@ -20,7 +20,7 @@ def _note_fields(url: str, title: str) -> dict[str, object]:
         "title": title,
         "url": url,
         "homepage": "",
-        "read": True,
+        "reading": True,
         "description": "old desc",
         "language": ["Go"],
         "topics": ["x"],
@@ -82,7 +82,7 @@ def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, m
     assert fm["stars"] == "42"  # refreshed
     assert fm["status"] == "recent"  # recomputed from pushedAt
     assert fm["role"] == "library" and fm["summary"] == "要約"  # judgement preserved
-    assert fm["read"] is True  # preserved
+    assert fm["reading"] is True  # preserved
     assert "keep me" in note  # body preserved
 
 

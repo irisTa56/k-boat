@@ -20,7 +20,7 @@ _KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(.*)$")
 
 Scalar = str | bool | None
 
-# Canonical frontmatter field order (open links -> read checkbox -> GitHub
+# Canonical frontmatter field order (open links -> reading checkbox -> GitHub
 # metadata -> classification -> status -> routine dates). Mirrors the schema
 # table in `kboat-notes` "Repo note".
 FIELD_ORDER = (
@@ -28,7 +28,7 @@ FIELD_ORDER = (
     "title",
     "url",
     "homepage",
-    "read",
+    "reading",
     "description",
     "language",
     "topics",
@@ -168,7 +168,7 @@ def render_value(key: str, value: object) -> str:
     if key in ("language", "topics", "domain"):
         items: list[object] = list(value) if isinstance(value, list) else []
         return yaml_list(items)
-    if key in ("read", "archived"):
+    if key in ("reading", "archived"):
         return "true" if value else "false"
     if key == "stars":
         return str(value) if value is not None else "0"

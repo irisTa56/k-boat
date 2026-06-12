@@ -1,4 +1,4 @@
-"""Tests for `write_note` — note assembly, body/read/added_date preservation, de-dup."""
+"""Tests for `write_note` — note assembly, body/reading/added_date preservation, de-dup."""
 
 from __future__ import annotations
 
@@ -44,11 +44,13 @@ def test_write_creates_note(tmp_path: Path) -> None:
     assert note.rstrip().endswith("## Notes")  # empty body
 
 
-def test_write_update_preserves_body_read_and_added_date(tmp_path: Path) -> None:
+def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> None:
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
     path = tmp_path / "Repos" / "abc123def456.md"
-    # Simulate the human editing the body and checking `read`.
-    edited = path.read_text().replace("read: false", "read: true").rstrip() + "\nmy hand notes\n"
+    # Simulate the human editing the body and checking `reading`.
+    edited = (
+        path.read_text().replace("reading: false", "reading: true").rstrip() + "\nmy hand notes\n"
+    )
     path.write_text(edited)
 
     bumped = {**RECORD, "fields": {**RECORD["fields"], "stars": 999}, "summary": "新しい要約。"}
@@ -57,7 +59,7 @@ def test_write_update_preserves_body_read_and_added_date(tmp_path: Path) -> None
     note = path.read_text()
     fm = parse_frontmatter(note)
     assert fm["stars"] == "999"  # refreshed
-    assert fm["read"] is True  # preserved
+    assert fm["reading"] is True  # preserved
     assert fm["added_date"] == "2026-06-06"  # original kept, not bumped to 2027
     assert fm["refreshed_date"] == "2027-01-01"
     assert "summary: 新しい要約。" in note

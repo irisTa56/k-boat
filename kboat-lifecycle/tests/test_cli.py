@@ -11,7 +11,7 @@ NOTE_TEMPLATE = """\
 ---
 type: source
 title: {title}
-read: false
+reading: false
 distill: {distill}
 keep: {keep}
 dismiss: {dismiss}
