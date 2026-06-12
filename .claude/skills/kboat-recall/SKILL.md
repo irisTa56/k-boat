@@ -31,7 +31,7 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. The s
 
 ## Daily pick mode
 
-A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today from the questions you wrote, and is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` package. The spec is kboat-notes "Daily pick".
+A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today from the questions you wrote, and is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool. The spec is kboat-notes "Daily pick".
 
 1. `eval "$(mise env)"`, then `kboat-pick candidates` → JSON with `questions` (Daily-note `## 明日への問い`, newest-first, on or before today) and `candidates` (the active web inbox, each with `summary`/`topics`).
 2. If there are no questions or no candidates, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.

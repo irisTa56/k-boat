@@ -5,9 +5,7 @@ requires-python = ">=3.13"
 [manifest]
 members = [
     "k-boat",
-    "kboat-lifecycle",
-    "kboat-pick",
-    "kboat-repos",
+    "kboat",
 ]
 
 [[package]]
@@ -199,19 +197,9 @@ dev = [
 ]
 
 [[package]]
-name = "kboat-lifecycle"
+name = "kboat"
 version = "0.1.0"
-source = { editable = "kboat-lifecycle" }
-
-[[package]]
-name = "kboat-pick"
-version = "0.1.0"
-source = { editable = "kboat-pick" }
-
-[[package]]
-name = "kboat-repos"
-version = "0.1.0"
-source = { editable = "kboat-repos" }
+source = { editable = "kboat" }
 
 [[package]]
 name = "markdown-it-py"

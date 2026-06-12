@@ -17,7 +17,7 @@ Follow the kboat-notes skill for the note schema, naming, and file writing.
 
 ## Per-item procedure
 
-**Route by kind first.** If the URL is a GitHub repository URL (`https://github.com/<owner>/<repo>`, including deep links into `/tree`, `/blob`, `/issues` and a `.git` suffix — but not a bare profile `github.com/<owner>` or a reserved route like `/orgs/...`), it is a **repo**, not a source: hand it to the `kboat-repos` skill (create-or-update a repo note via the `kboat-repos` package's `gather` plus a cheap classifying subagent, per kboat-notes "Procedure: create or update a repo note"), then delete the reminder once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below). A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it. A non-repo GitHub URL (a bare profile, a gist, a reserved route) falls through to the source path below.
+**Route by kind first.** If the URL is a GitHub repository URL (`https://github.com/<owner>/<repo>`, including deep links into `/tree`, `/blob`, `/issues` and a `.git` suffix — but not a bare profile `github.com/<owner>` or a reserved route like `/orgs/...`), it is a **repo**, not a source: hand it to the `kboat-repos` skill (create-or-update a repo note via the `kboat-repos` tool's `gather` plus a cheap classifying subagent, per kboat-notes "Procedure: create or update a repo note"), then delete the reminder once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below). A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it. A non-repo GitHub URL (a bare profile, a gist, a reserved route) falls through to the source path below.
 
 For every other URL, follow the source path:
 

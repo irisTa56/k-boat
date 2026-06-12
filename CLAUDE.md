@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 K-Boat is not an application.
 It is a Claude Code skill package plus a thin Python environment (a uv workspace whose root holds `notebooklm-py[browser]`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
 The skills in `.claude/skills/` are the product; most "code" is prose that an agent executes.
-The exception is the deterministic, purely-mechanical core of the routine, which is extracted into tested Python packages so the model neither re-derives it nor pays tokens for it — `kboat-lifecycle` (the distillation state machine) and `kboat-repos` (the GitHub-repo catalogue helper); see Architecture.
+The exception is the deterministic, purely-mechanical core of the routine, which is extracted into a tested Python package (`kboat`) so the model neither re-derives it nor pays tokens for it — its tools are `kboat-lifecycle` (the distillation state machine), `kboat-repos` (the GitHub-repo catalogue helper), and `kboat-pick` (the daily-pick mechanics), over a shared frontmatter core; see Architecture.
 
 Each piece of content gets its own throwaway NotebookLM notebook (1:1) for reading and dialogue. A week after a source is filed for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless the source is also kept).
 
@@ -34,7 +34,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 - Quality gates (a `qa:*` task each; `mise run pre-commit` runs them all and the generated git pre-commit hook calls it, so a failure blocks commits):
   - Markdown: `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
   - Secrets: `mise run qa:secrets` scans staged changes with `gitleaks`.
-  - Python: `mise run qa:py` runs ruff (lint + format check), `ty`, and pytest for every package (a wildcard over `qa:py:*`); `mise run qa:py:<pkg>` runs one. The `pre-commit` task's `qa:*` glob picks up each `qa:py:<pkg>` directly. `mise run fmt:py` autofixes all packages (wildcard over `fmt:py:*`); `mise run fmt:py:<pkg>` autofixes one.
+  - Python: `mise run qa:py` runs ruff (lint + format check), `ty`, and pytest for the `kboat` package via `qa:py:kboat` (kept under the `qa:py:*` wildcard so the `pre-commit` task's `qa:*` glob still picks it up). `mise run fmt:py` (→ `fmt:py:kboat`) autofixes.
 - The Python packages are tested (pytest); the prose skills are not.
   - Validate skill changes by running them against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
@@ -51,7 +51,7 @@ Seven skills, all under `.claude/skills/`:
 - `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos` instead.
   - It defers to `kboat-notes` for the schema and file writing.
 - `kboat-repos` — non-interactive: catalogues a GitHub repository (`type: repo`) — fetches metadata via `gh`, judges role/domain/summary with a cheap subagent — and refreshes the catalogue's metadata.
-  - It defers to `kboat-notes` for the repo schema and to the `kboat-repos` package for the deterministic fetch/refresh.
+  - It defers to `kboat-notes` for the repo schema and to the `kboat-repos` tool for the deterministic fetch/refresh.
 - `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome (Claude in Chrome), into an ASIN-named `Kindles/` note.
   - It defers to `kboat-notes` for the Kindle schema and create transitions.
 - `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
@@ -61,11 +61,11 @@ Seven skills, all under `.claude/skills/`:
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
   - It defers to `kboat-notes` for the rescue transitions.
 
-Three deterministic helper packages (uv workspace members) hold the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the package and its tests):
+One deterministic helper package, `kboat/` (a uv workspace member), holds the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the code and its tests). It exposes three console scripts over a shared frontmatter core (`kboat.frontmatter`: read, scoped single-/multi-line rewrite, YAML-safe rendering):
 
-- `kboat-lifecycle/` (console script `kboat-lifecycle`) — the distillation lifecycle state machine: the boolean/date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass for the on-disk cooldown clock (Phase A) and the ripe/dismiss/ambiguous source and ripe-Kindle work sets as JSON.
-- `kboat-repos/` (console script `kboat-repos`) — the repo catalogue's mechanics: subcommands `gather`/`write`/`refresh`, all shelling out to `gh`, no LLM. See the `kboat-repos` skill and package for the subcommand contract.
-- `kboat-pick/` (console script `kboat-pick`) — the daily-pick mechanics: `candidates` (the Daily-note `## 明日への問い` questions + the active web inbox, as JSON) and `set` (reset `picked`, then set it on the chosen slugs), no LLM. `kboat-recall`'s daily-pick mode ranks between the two. See the `kboat-pick` package and kboat-notes "Daily pick".
+- `kboat-lifecycle` (`kboat.lifecycle`) — the distillation lifecycle state machine: the boolean/date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass for the on-disk cooldown clock (Phase A) and the ripe/dismiss/ambiguous source and ripe-Kindle work sets as JSON.
+- `kboat-repos` (`kboat.repos`) — the repo catalogue's mechanics: subcommands `gather`/`write`/`refresh`, all shelling out to `gh`, no LLM. See the `kboat-repos` skill and tool for the subcommand contract.
+- `kboat-pick` (`kboat.pick`) — the daily-pick mechanics: `candidates` (the Daily-note `## 明日への問い` questions + the active web inbox, as JSON) and `set` (reset `picked`, then set it on the chosen slugs), no LLM. `kboat-recall`'s daily-pick mode ranks between the two. See the `kboat-pick` tool and kboat-notes "Daily pick".
 
 Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
 
