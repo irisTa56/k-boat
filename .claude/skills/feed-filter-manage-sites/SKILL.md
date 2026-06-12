@@ -9,11 +9,13 @@ Turn an individual site's gathering off or on without losing it, and report whic
 This is the ad-hoc, user-driven half of site management — registration lives in the `feed-filter-add-site` skill, the periodic run in `feed-filter-run`.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
+The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
+Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 Each subcommand emits one JSON document on stdout and exits non-zero on failure — parse the JSON and read the exit code.
 
 ## See what's paused
 
-Run `feed-filter list-sites`: it returns every site with an `enabled` field.
+Run `eval "$(mise env)" && feed-filter list-sites`: it returns every site with an `enabled` field.
 Report the sites with `enabled: false` as paused and the rest as active — e.g. "2 paused (Lab BRAINS, Foo Blog), 68 active".
 This is the only place the on/off status lives; there is no separate state to consult.
 

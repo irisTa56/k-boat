@@ -10,11 +10,13 @@ The user supplies only a URL; deterministic discovery decides whether it is a fe
 This is the infrequent, main-model half of feed-filter (GUD-004) — the periodic keep/drop half lives in the `feed-filter-run` skill.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
+The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
+Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 The CLI emits one JSON document on stdout and exits non-zero on a transport/operational failure — parse the JSON, read the exit code, never scrape prose.
 
 ## Procedure
 
-1. **Discover.** Run `feed-filter discover <url>`.
+1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
    - **Non-zero exit** → the initial URL could not be fetched (transport failure, CON-006). Report the error to the user and stop; do not register a site you could not reach.
    - **`rejection` is set** (exit 0, no usable candidate) → relay its actionable message instead of proceeding:

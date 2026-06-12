@@ -9,6 +9,8 @@ One pass of the filter: gather unseen entries across all registered sites, judge
 This is the periodic, cost-sensitive half of feed-filter — the judging runs on **haiku** subagents (GUD-003), and the per-site/global caps (CON-005), not subagent cleverness, are the primary cost bound.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
+The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
+Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 The routine must run **locally** — `rem` writes the local Reminders.app, so a cloud run cannot push keeps (CON-001).
 Each subcommand emits one JSON document on stdout and exits non-zero on an operational failure; parse the JSON and check the exit code.
 
@@ -20,7 +22,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 ## Procedure
 
-1. **Gather.** Run `feed-filter new-entries`.
+1. **Gather.** Run `eval "$(mise env)" && feed-filter new-entries`.
    The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error}]}`.
    - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap (REQ-010). Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
    - `summary` is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
