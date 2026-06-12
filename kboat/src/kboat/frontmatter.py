@@ -37,20 +37,35 @@ class FrontmatterError(ValueError):
 # --------- reading ---------
 
 
-def _unquote(value: str) -> str:
-    """Strip surrounding quotes and reverse the quote style's escaping.
+_DQ_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
 
-    The inverse of `yaml_scalar`'s double-quoting (`\\` -> `\\\\`, `"` -> `\\"`),
-    so a value containing a quote or backslash round-trips. Single-quoted values
-    (which YAML escapes as `''` -> `'`) are handled too, though `yaml_scalar`
-    only ever emits double-quoted.
+
+def _decode_double(inner: str) -> str:
+    """Reverse `_quote`'s double-quoted escaping (`\\\\`, `\\"`, `\\n`, `\\t`,
+    `\\r`) in one left-to-right pass; an unrecognised `\\x` keeps its backslash."""
+    out: list[str] = []
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if ch == "\\" and i + 1 < len(inner):
+            out.append(_DQ_ESCAPES.get(inner[i + 1], "\\" + inner[i + 1]))
+            i += 2
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _unquote(value: str) -> str:
+    """Strip surrounding quotes and reverse the quote style's escaping — the
+    inverse of `yaml_scalar`'s double-quoting, so a value with a quote, backslash,
+    or control char round-trips. Single-quoted values (`''` -> `'`) are handled
+    too, though `yaml_scalar` only ever emits double-quoted.
     """
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
         inner = value[1:-1]
-        if value[0] == '"':
-            return inner.replace('\\"', '"').replace("\\\\", "\\")
-        return inner.replace("''", "'")
+        return _decode_double(inner) if value[0] == '"' else inner.replace("''", "'")
     return value
 
 
@@ -217,7 +232,17 @@ _CONTROL = "\t\n\r"
 
 
 def _quote(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # Escape backslash first, then the quote and the control chars a double-quoted
+    # YAML scalar represents with a backslash escape — a raw newline/tab inside the
+    # quotes would otherwise break the line. `_unquote` reverses these.
+    body = (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return '"' + body + '"'
 
 
 def _needs_quote(text: str) -> bool:

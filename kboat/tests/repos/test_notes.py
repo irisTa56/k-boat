@@ -67,6 +67,27 @@ def test_yaml_scalar_leaves_safe_values_bare(value: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "value",
+    [
+        'say "hi"',  # an embedded double quote
+        "back\\slash",  # a backslash
+        'Official Repository for "Eureka: a title" (ICLR 2024)',  # quotes + a `: `
+        "line one\nline two",  # an embedded newline
+        "col\tumn",  # an embedded tab
+        'mix "q" and\nnewline\tand tab',
+        "literal backslash-n: a\\nb",  # a `\` + `n`, NOT a newline — stays literal
+        "ends with a backslash\\",  # a trailing backslash
+    ],
+)
+def test_quoted_scalar_round_trips(value: str) -> None:
+    # yaml_scalar (-> _quote) and parse_frontmatter (-> _unquote) are inverses,
+    # even for embedded quotes / backslashes / control chars, on one valid line.
+    note = f"---\nx: {yaml_scalar(value)}\n---\n"
+    assert "\n" not in note.split("---")[1].strip()  # the value stays on one line
+    assert parse_frontmatter(note)["x"] == value
+
+
+@pytest.mark.parametrize(
     "description",
     [
         "true",  # would parse as bool without quoting
