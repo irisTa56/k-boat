@@ -4,8 +4,9 @@ The deterministic, purely-mechanical core of the K-Boat routine, extracted from
 the prose skills so the model neither re-derives it nor pays tokens for it. One
 package, four console scripts, over a shared frontmatter core
 (`kboat.frontmatter`: read, scoped single-line/multi-line rewrite, YAML-safe
-rendering) and a code-authoritative schema (`kboat.schema`: field names, order,
-kinds, defaults, the always-present booleans, the enums). The **spec** for all of it is the `kboat-notes` skill — change the
+rendering), a code-authoritative schema (`kboat.schema`: field names, order,
+kinds, defaults, the always-present booleans, the enums), and a schema-driven
+writer (`kboat.write`: `build_note`/`render_field`). The **spec** for all of it is the `kboat-notes` skill — change the
 spec there first, then the code and its tests.
 
 - `kboat-lifecycle` (`kboat.lifecycle`) — the distillation lifecycle state
