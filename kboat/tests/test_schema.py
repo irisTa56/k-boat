@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kboat.schema import BY_TYPE, DIR_BY_TYPE, KINDLE, REPO, SOURCE, Kind
+from kboat.schema import BY_TYPE, DIR_BY_TYPE, KINDLE, REPO, SOURCE, Field, Kind
 
 
 def test_by_type_covers_all_three() -> None:
@@ -32,7 +32,21 @@ def test_booleans_are_never_empty_ok() -> None:
                 assert not f.empty_ok and f.present, f"{schema.type}.{f.name}"
 
 
-def test_repo_field_order_matches_the_writer() -> None:
-    from kboat.repos.notes import FIELD_ORDER
+def test_repo_writer_emits_schema_field_order() -> None:
+    # The order now lives only in the schema; the writer reads it.
+    from kboat.frontmatter import parse_frontmatter
+    from kboat.repos.notes import build_repo_note
 
-    assert REPO.field_names() == FIELD_ORDER
+    def sample(f: Field) -> object:
+        if f.kind is Kind.BOOL:
+            return False
+        if f.kind is Kind.INT:
+            return 0
+        if f.kind is Kind.STR_LIST:
+            return []
+        if f.kind is Kind.ENUM:
+            return f.enum[0]
+        return "x"
+
+    note = build_repo_note({f.name: sample(f) for f in REPO.fields})
+    assert list(parse_frontmatter(note).keys()) == list(REPO.field_names())

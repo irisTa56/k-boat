@@ -1,0 +1,50 @@
+"""Tests for schema-driven note assembly (`build_note` / `render_field`)."""
+
+from __future__ import annotations
+
+from kboat.frontmatter import parse_frontmatter
+from kboat.schema import REPO, SOURCE, Field, Kind
+from kboat.write import build_note, render_field
+
+
+def test_render_field_by_kind() -> None:
+    assert render_field(Field("b", Kind.BOOL), True) == "true"
+    assert render_field(Field("b", Kind.BOOL), False) == "false"
+    assert render_field(Field("n", Kind.INT, default=0), 42) == "42"
+    assert render_field(Field("n", Kind.INT, default=0), None) == "0"
+    assert render_field(Field("l", Kind.STR_LIST), ["a", "b"]) == "[a, b]"
+    assert render_field(Field("l", Kind.STR_LIST), []) == "[]"
+    assert render_field(Field("s", Kind.STR), "hi") == "hi"
+    assert render_field(None, "x") == "x"  # unknown field → plain scalar
+
+
+def test_block_list_is_multiline() -> None:
+    note = build_note(SOURCE, {"type": "source", "title": "T", "topics": ["a", "b"]})
+    assert "topics:\n  - a\n  - b" in note
+    assert parse_frontmatter(note)["topics"] == ["a", "b"]
+
+
+def test_inline_list_is_flow_style() -> None:
+    note = build_note(REPO, {"type": "repo", "title": "r", "topics": ["x", "y"]})
+    assert "topics: [x, y]" in note
+
+
+def test_frontmatter_only_has_no_body() -> None:
+    note = build_note(SOURCE, {"type": "source", "title": "T"})
+    assert note == "---\ntype: source\ntitle: T\n---\n"
+
+
+def test_body_appended_after_blank_line() -> None:
+    note = build_note(REPO, {"type": "repo"}, body="## Notes\n\nhand notes\n")
+    assert note.endswith("---\n\n## Notes\n\nhand notes\n")
+
+
+def test_unknown_keys_are_appended_not_dropped() -> None:
+    note = build_note(SOURCE, {"type": "source", "extra": "kept"})
+    assert "extra: kept" in note
+
+
+def test_only_present_keys_are_written() -> None:
+    note = build_note(SOURCE, {"type": "source", "title": "T"})
+    keys = set(parse_frontmatter(note))
+    assert keys == {"type", "title"}  # absent schema fields are not emitted
