@@ -112,7 +112,7 @@ The cooldown gates only the destructive actions (`distill`, `dismiss`); during i
 States are readable from the disposition flags plus the dates: `distilled_date` set → distilled; `keep` set with `notebooklm_id` present → a retained "read later" source; `dismiss` set with `notebooklm_id` empty → an abandoned tombstone; a `distill` or `dismiss` source with `distilled_date` empty and `notebooklm_id` present → in flight (awaiting the cooldown, or — for `distill` — ripe and retried after a recorded error).
 For a ripe source the notebook is discarded last (when it is discarded at all — not under `keep`), after `distilled_date` is stamped and the review report is written, so nothing it holds is destroyed before it is recorded.
 
-This state machine is purely mechanical — boolean and date predicates over frontmatter — so kboat-distill delegates it to a deterministic tool, `kboat-lifecycle` (package `kboat-lifecycle`), which applies Phase A (stamp/clear `filed_date`) and emits the ripe / dismiss / ambiguous work sets as JSON. This skill remains the **spec**; the tool is an implementation of it. When the predicates here change, update the tool (and its tests) to match.
+This state machine is purely mechanical — boolean and date predicates over frontmatter — so kboat-distill delegates it to a deterministic tool, `kboat-lifecycle` (in the `kboat` package), which applies Phase A (stamp/clear `filed_date`) and emits the ripe / dismiss / ambiguous work sets as JSON. This skill remains the **spec**; the tool is an implementation of it. When the predicates here change, update the tool (and its tests) to match.
 
 ### The DLQ (blocked sources)
 
@@ -225,7 +225,7 @@ A GitHub repository read about, not read through NotebookLM: a tagged, searchabl
 Like a Kindle book it is a parallel kind with no notebook, but simpler still — it is **never distilled** into the knowledge graph (it is a catalogue, not a concept), so it has no disposition, no cooldown, and nothing destructive to gate.
 Its only lifecycle is: created when its link is ingested from the `K-Boat Queue`, then its GitHub metadata refreshed periodically.
 
-A repo note is frontmatter plus a single `## Notes` body section — the one part a human edits (free-form thoughts), preserved across every refresh. The deterministic mechanics (URL parsing, the slug, `status`, the `gh` fetch, the full-catalogue refresh) live in the `kboat-repos` package; the judgement (role, domain, summary) is done at ingest by a cheap subagent driven by the `kboat-repos` skill.
+A repo note is frontmatter plus a single `## Notes` body section — the one part a human edits (free-form thoughts), preserved across every refresh. The deterministic mechanics (URL parsing, the slug, `status`, the `gh` fetch, the full-catalogue refresh) live in the `kboat-repos` tool; the judgement (role, domain, summary) is done at ingest by a cheap subagent driven by the `kboat-repos` skill.
 
 Fields are ordered for reading — the links you open and the `reading` checkbox first, then the GitHub metadata, then the judged classification and derived `status`, then the routine-managed dates.
 
@@ -237,7 +237,7 @@ Fields are ordered for reading — the links you open and the `reading` checkbox
 | `homepage` | The project's homepage, if any (GitHub's `homepageUrl`). May be empty. |
 | `reading` | Checkbox, set by the human. Informational only (have you looked at it); drives nothing, exactly as for a source or Kindle note. |
 | `description` | GitHub's repository description. |
-| `language` | YAML list of the significant languages, byte-share descending: each language at ≥10% of the repo's bytes, plus the primary language always. Glue files (Makefile, Dockerfile) drop out; a Python+C++ project keeps both. Computed by the `kboat-repos` package. |
+| `language` | YAML list of the significant languages, byte-share descending: each language at ≥10% of the repo's bytes, plus the primary language always. Glue files (Makefile, Dockerfile) drop out; a Python+C++ project keeps both. Computed by the `kboat-repos` tool. |
 | `topics` | YAML list of GitHub topics. The open keyword field and the main lexical signal for search; there is deliberately no separate `tags` field (it would duplicate `topics` + `language` + `summary`). |
 | `stars` | Star count (integer). |
 | `archived` | Boolean — GitHub's archived flag. |
@@ -247,7 +247,7 @@ Fields are ordered for reading — the links you open and the `reading` checkbox
 | `role` | Closed enum, judged by the subagent: `library` / `framework` / `cli-tool` / `application` / `recipe` / `sample`. |
 | `domain` | YAML list from the controlled 14-word vocabulary below, judged by the subagent. The coarse browse axis. |
 | `summary` | A one- or two-sentence summary (Japanese), judged by the subagent. The durable, searchable description, in frontmatter so the Base is browsable and a future recall can read it. |
-| `status` | Derived from `last_commit` by the `kboat-repos` package: `recent` (≤60d) / `active` (≤180d) / `slow` (≤730d) / `dormant` (>730d) / `archived` (flag set) / `unknown` (no push date). |
+| `status` | Derived from `last_commit` by the `kboat-repos` tool: `recent` (≤60d) / `active` (≤180d) / `slow` (≤730d) / `dormant` (>730d) / `archived` (flag set) / `unknown` (no push date). |
 | `added_date` | Date the note was created. |
 | `refreshed_date` | Date the GitHub metadata was last refreshed (`kboat-repos refresh`). |
 
@@ -262,7 +262,7 @@ A repo's identity is its `owner/repo`, which GitHub keeps unique. Queued links v
 1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
 2. Slug = first 12 hex of its SHA-256, same recipe as a source: `printf '%s' "<canonical-url>" | shasum -a 256 | cut -c1-12`. The file is `Repos/<slug>.md`.
 
-This is exactly `kboat_repos.identity.canonical_slug` plus `gather`'s resolution step (the package is the implementation, this is the spec). Resolving via `gh` makes de-dup case-insensitive (two casings of one repo resolve to one slug) and lets refresh follow renames. De-dup like a source: if `Repos/<slug>.md` exists, read its `url`; a match means the same repo (update in place, preserving the `## Notes` body), a mismatch is a slug collision (stop and report). Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and avoids the join ambiguity of replacing `/` with `-` (`a-b/c` vs `a/b-c`).
+This is exactly `kboat.repos.identity.canonical_slug` plus `gather`'s resolution step (the package is the implementation, this is the spec). Resolving via `gh` makes de-dup case-insensitive (two casings of one repo resolve to one slug) and lets refresh follow renames. De-dup like a source: if `Repos/<slug>.md` exists, read its `url`; a match means the same repo (update in place, preserving the `## Notes` body), a mismatch is a slug collision (stop and report). Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and avoids the join ambiguity of replacing `/` with `-` (`a-b/c` vs `a/b-c`).
 
 ### Classification vocabulary
 
@@ -337,7 +337,7 @@ Column widths and other cosmetics are per-vault tweaks, as with the other Bases.
 ## Daily pick
 
 The daily-pick step turns "what do I read first?" from scanning a flat inbox into a pull: you write questions and the routine surfaces the sources that answer them.
-Two pieces implement it: the `kboat-pick` package does the deterministic I/O — `kboat-pick candidates` reads the questions and the web inbox, `kboat-pick set` writes `picked` — and `kboat-recall` does the relevance ranking between them. The routine runs the whole step after distillation; this section is the spec all three follow.
+Two pieces implement it: the `kboat-pick` tool does the deterministic I/O — `kboat-pick candidates` reads the questions and the web inbox, `kboat-pick set` writes `picked` — and `kboat-recall` does the relevance ranking between them. The routine runs the whole step after distillation; this section is the spec all three follow.
 
 **Input — your questions, from the Daily notes.** You write free-form questions under a `## 明日への問い` heading in a Daily note (in the `Daily/` folder; the daily-note template seeds the heading).
 The step only reads the Daily note — it never writes one, so the Daily note stays human-authored.
@@ -624,14 +624,14 @@ The browser mechanics — extracting the metadata from the Amazon product page t
 
 ## Procedure: create or update a repo note
 
-The mechanics — fetching GitHub metadata and judging the classification — belong to the `kboat-repos` skill, which defers here for the schema and these transitions, the same split as source ingest and Kindle ingest. The note **write itself is owned by the `kboat-repos` package** (`kboat-repos write`), so frontmatter order, YAML quoting (a `description` with a colon must not break the note), de-dup, and `## Notes` body preservation are guaranteed rather than hand-assembled:
+The mechanics — fetching GitHub metadata and judging the classification — belong to the `kboat-repos` skill, which defers here for the schema and these transitions, the same split as source ingest and Kindle ingest. The note **write itself is owned by the `kboat-repos` tool** (`kboat-repos write`), so frontmatter order, YAML quoting (a `description` with a colon must not break the note), de-dup, and `## Notes` body preservation are guaranteed rather than hand-assembled:
 
 1. `gather` resolves the canonical owner/repo via `gh` and returns `slug`/`url`/`title` plus the ready-to-write `fields`. The subagent adds `role`/`domain`/`summary` to that record.
 2. Pipe the augmented record to `kboat-repos write`. It de-dups by slug (a differing `url` at the same slug is a collision → it returns `status: collision`, written nowhere), preserves an existing note's `## Notes` body, `reading`, and original `added_date` on update, stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
 
 ## Procedure: refresh repo metadata
 
-Drain ingestion snapshots a repo once; this keeps the GitHub-derived fields fresh. It is mechanical and runs over the whole catalogue, so the `kboat-repos` package does it directly:
+Drain ingestion snapshots a repo once; this keeps the GitHub-derived fields fresh. It is mechanical and runs over the whole catalogue, so the `kboat-repos` tool does it directly:
 
 1. Run `kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`). For every `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched. When `gh` resolves a new canonical `owner/repo`, it adopts the rename (updates `url`/`title`, renames the file to the new slug).
 2. It prints a JSON report. The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked by an existing note — a human merges), and `failed` (repos `gh` could not fetch) — the routine never deletes a note.

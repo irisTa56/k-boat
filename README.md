@@ -40,7 +40,7 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — finish a source that could not be fetched (a bot-protected PDF in the DLQ) by pulling it through your real browser.
 
-The mechanical cores live in small tested Python packages rather than in prose, so the routine is cheaper and the logic is unit-tested: [`kboat-lifecycle`](kboat-lifecycle/) (the distill pass's cooldown clock and work-set predicates) and [`kboat-repos`](kboat-repos/) (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically). Both have a quality gate (ruff, `ty`, pytest) in pre-commit; run them with `mise run qa:py` (all packages) or `mise run qa:py:<pkg>` (one), and autofix with `mise run fmt:py` / `mise run fmt:py:<pkg>`.
+The mechanical cores live in one tested Python package, [`kboat`](kboat/), rather than in prose, so the routine is cheaper and the logic is unit-tested. It exposes three tools over a shared frontmatter core: `kboat-lifecycle` (the distill pass's cooldown clock and work-set predicates), `kboat-repos` (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically), and `kboat-pick` (the daily pick's question/candidate gather and `picked` flag). Its quality gate (ruff, `ty`, pytest) runs in pre-commit; invoke it with `mise run qa:py`, and autofix with `mise run fmt:py`.
 
 The scheduled routine runs `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill` daily.
 

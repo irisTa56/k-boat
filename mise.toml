@@ -56,25 +56,9 @@ run = "gitleaks git --staged -v"
 description = "Autofix Python lint and formatting for all packages"
 depends = ["fmt:py:*"]
 
-[tasks."fmt:py:kboat-lifecycle"]
-description = "Autofix lint and formatting for the kboat-lifecycle package"
-dir = "{{config_root}}/kboat-lifecycle"
-run = """
-uv run ruff check --fix
-uv run ruff format
-"""
-
-[tasks."fmt:py:kboat-pick"]
-description = "Autofix lint and formatting for the kboat-pick package"
-dir = "{{config_root}}/kboat-pick"
-run = """
-uv run ruff check --fix
-uv run ruff format
-"""
-
-[tasks."fmt:py:kboat-repos"]
-description = "Autofix lint and formatting for the kboat-repos package"
-dir = "{{config_root}}/kboat-repos"
+[tasks."fmt:py:kboat"]
+description = "Autofix lint and formatting for the kboat package"
+dir = "{{config_root}}/kboat"
 run = """
 uv run ruff check --fix
 uv run ruff format
@@ -84,29 +68,9 @@ uv run ruff format
 description = "Lint, type-check, and test all Python packages"
 depends = ["qa:py:*"]
 
-[tasks."qa:py:kboat-lifecycle"]
-description = "Lint, type-check, and test the kboat-lifecycle package"
-dir = "{{config_root}}/kboat-lifecycle"
-run = """
-uv run ruff check
-uv run ruff format --check
-uv run ty check
-uv run pytest
-"""
-
-[tasks."qa:py:kboat-pick"]
-description = "Lint, type-check, and test the kboat-pick package"
-dir = "{{config_root}}/kboat-pick"
-run = """
-uv run ruff check
-uv run ruff format --check
-uv run ty check
-uv run pytest
-"""
-
-[tasks."qa:py:kboat-repos"]
-description = "Lint, type-check, and test the kboat-repos package"
-dir = "{{config_root}}/kboat-repos"
+[tasks."qa:py:kboat"]
+description = "Lint, type-check, and test the kboat package"
+dir = "{{config_root}}/kboat"
 run = """
 uv run ruff check
 uv run ruff format --check
