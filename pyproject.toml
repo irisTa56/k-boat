@@ -1,19 +1,26 @@
 [project]
-name = "k-boat"
+name = "kboat"
 version = "0.1.0"
-description = "Dump your content into a knowledge lake, then sail it with AI agents."
+description = "Deterministic K-Boat tools over a shared frontmatter core: lifecycle, repos, the daily pick, validation, and the note writer."
 requires-python = ">=3.13"
-dependencies = [
-    "notebooklm-py[browser]>=0.7.1",
-]
+# Intentionally zero runtime dependencies: the mechanical core stays a pure,
+# independently-testable package. The browser-driven NotebookLM CLI lives outside
+# this env as a mise tool (`pipx:notebooklm-py`), so it never leaks in here.
+dependencies = []
 
-[tool.uv]
-# The root is just an environment, not a distributable package;
-# the workspace members below are the actual packages.
-package = false
+[project.scripts]
+kboat-lifecycle = "kboat.lifecycle.__main__:main"
+kboat-repos = "kboat.repos.__main__:main"
+kboat-pick = "kboat.pick.__main__:main"
+kboat-note = "kboat.note.__main__:main"
+kboat-validate = "kboat.validate.__main__:main"
 
-[tool.uv.workspace]
-members = ["kboat"]
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "kboat"
 
 [dependency-groups]
 dev = [
@@ -21,6 +28,9 @@ dev = [
     "ruff>=0.15",
     "ty>=0.0.35",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100

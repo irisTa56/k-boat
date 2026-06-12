@@ -8,8 +8,8 @@ Two kinds are exceptions, each with no notebook. Books you read on **Kindle** ar
 
 ## Setup
 
-- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; a postinstall hook syncs the venv and installs Chromium.
-- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed in the project venv. Authenticate once with `mise run nblm:login`. To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts the venv on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
+- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; it installs the tools and a postinstall hook syncs the venv.
+- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run. To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
 - `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
 - Distilled knowledge is a [Basic Memory](https://github.com/basicmachines-co/basic-memory) project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
 
@@ -40,7 +40,7 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — finish a source that could not be fetched (a bot-protected PDF in the DLQ) by pulling it through your real browser.
 
-The mechanical cores live in one tested Python package, [`kboat`](kboat/), rather than in prose, so the routine is cheaper and the logic is unit-tested. It exposes five tools over a shared frontmatter core, a code-authoritative schema (`kboat.schema`), and a schema-driven writer (`kboat.write`): `kboat-lifecycle` (the distill pass's cooldown clock and work-set predicates), `kboat-repos` (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically), `kboat-pick` (the daily pick's question/candidate gather and `picked` flag), `kboat-validate` (checks every vault note against the schema), and `kboat-note` (schema-driven create-or-update of a note from a JSON record). Its quality gate (ruff, `ty`, pytest) runs in pre-commit; invoke it with `mise run qa:py`, and autofix with `mise run fmt:py`.
+The mechanical cores live in one tested Python package, [`kboat`](src/kboat/), rather than in prose, so the routine is cheaper and the logic is unit-tested. It exposes five tools over a shared frontmatter core, a code-authoritative schema (`kboat.schema`), and a schema-driven writer (`kboat.write`): `kboat-lifecycle` (the distill pass's cooldown clock and work-set predicates), `kboat-repos` (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically), `kboat-pick` (the daily pick's question/candidate gather and `picked` flag), `kboat-validate` (checks every vault note against the schema), and `kboat-note` (schema-driven create-or-update of a note from a JSON record). Its quality gate (ruff, `ty`, pytest) runs in pre-commit; invoke it with `mise run qa:py`, and autofix with `mise run fmt:py`.
 
 The scheduled routine runs `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then `kboat-validate`, daily.
 

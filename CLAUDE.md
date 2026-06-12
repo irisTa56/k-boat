@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 K-Boat is not an application.
-It is a Claude Code skill package plus a thin Python environment (a uv workspace whose root holds `notebooklm-py[browser]`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
+It is a Claude Code skill package plus a thin Python environment (a single zero-dependency uv package, `kboat`; the browser-driven NotebookLM CLI is a separate mise tool, `pipx:notebooklm-py`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
 The skills in `.claude/skills/` are the product; most "code" is prose that an agent executes.
 The exception is the deterministic, purely-mechanical core of the routine, which is extracted into a tested Python package (`kboat`) so the model neither re-derives it nor pays tokens for it — its tools are `kboat-lifecycle` (the distillation state machine), `kboat-repos` (the GitHub-repo catalogue helper), `kboat-pick` (the daily-pick mechanics), and `kboat-validate` (the vault schema check), over a shared frontmatter core and a code-authoritative schema (`kboat.schema`); see Architecture.
 
@@ -18,7 +18,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Environment gotchas
 
-- Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke them bare (`notebooklm`, `kboat-lifecycle`, `kboat-repos`): it loads `.env` over `mise.toml`'s defaults and puts the venv on `PATH`. Re-run it per block — the Bash tool keeps no state. See kboat-notes "Environment" for the full mechanism.
+- Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke them bare (`notebooklm`, `kboat-lifecycle`, `kboat-repos`): it loads `.env` over `mise.toml`'s defaults and puts both the venv (the `kboat-*` scripts) and the mise tools (`notebooklm`) on `PATH`. Re-run it per block — the Bash tool keeps no state. See kboat-notes "Environment" for the full mechanism.
 - Reminders are read with the `rem` CLI (macOS Reminders).
   - The ingest queue is the `K-Boat Queue` list. A GitHub repo URL in it is routed to the repo catalogue, not the source path.
 - GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
@@ -27,14 +27,14 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Commands
 
-- `mise install` — install tools, then a postinstall hook syncs the venv (`uv sync --all-packages` — the workspace member `kboat` and its console scripts only install with `--all-packages`), installs Chromium for `notebooklm-py[browser]`, and generates the git pre-commit hook.
+- `mise install` — install tools (including the `notebooklm` CLI as the `pipx:notebooklm-py` tool), then a postinstall hook syncs the venv (`uv sync` installs the `kboat` package and its console scripts editable) and generates the git pre-commit hook. Chromium for NotebookLM is installed lazily by `notebooklm login` on first run, not here.
 - NotebookLM auth:
   - `mise run nblm:login` — authenticate once.
   - `mise run nblm:auth:check` — verify auth with a network test.
 - Quality gates (a `qa:*` task each; `mise run pre-commit` runs them all and the generated git pre-commit hook calls it, so a failure blocks commits):
   - Markdown: `mise run qa:md` (or `rumdl check`) lints; `mise run fmt:md` autofixes.
   - Secrets: `mise run qa:secrets` scans staged changes with `gitleaks`.
-  - Python: `mise run qa:py` runs ruff (lint + format check), `ty`, and pytest for the `kboat` package via `qa:py:kboat` (kept under the `qa:py:*` wildcard so the `pre-commit` task's `qa:*` glob still picks it up). `mise run fmt:py` (→ `fmt:py:kboat`) autofixes.
+  - Python: `mise run qa:py` runs ruff (lint + format check), `ty`, and pytest for the `kboat` package (picked up by the `pre-commit` task's `qa:*` glob). `mise run fmt:py` autofixes.
 - The Python packages are tested (pytest); the prose skills are not.
   - Validate skill changes by running them against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
@@ -61,7 +61,7 @@ Seven skills, all under `.claude/skills/`:
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
   - It defers to `kboat-notes` for the rescue transitions.
 
-One deterministic helper package, `kboat/` (a uv workspace member), holds the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the code and its tests). Three shared modules underlie its tools: `kboat.frontmatter` (read, scoped single-/multi-line rewrite, YAML-safe rendering), `kboat.schema` (the code-authoritative mechanical schema — field names, order, kinds, defaults, the always-present booleans, the enums; `kboat-notes` keeps the human semantics and points here), and `kboat.write` (schema-driven note assembly and create-or-update — `build_note`/`render_field`/`upsert`, the one writer all note types share). It exposes five console scripts (workspace members install only with `uv sync --all-packages`):
+One deterministic helper package, `kboat` (the repo-root uv package, source in `src/kboat`, tests in `tests/`), holds the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the code and its tests). Three shared modules underlie its tools: `kboat.frontmatter` (read, scoped single-/multi-line rewrite, YAML-safe rendering), `kboat.schema` (the code-authoritative mechanical schema — field names, order, kinds, defaults, the always-present booleans, the enums; `kboat-notes` keeps the human semantics and points here), and `kboat.write` (schema-driven note assembly and create-or-update — `build_note`/`render_field`/`upsert`, the one writer all note types share). It exposes five console scripts:
 
 - `kboat-lifecycle` (`kboat.lifecycle`) — the distillation lifecycle state machine: the boolean/date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass for the on-disk cooldown clock (Phase A) and the ripe/dismiss/ambiguous source and ripe-Kindle work sets as JSON.
 - `kboat-repos` (`kboat.repos`) — the repo catalogue's mechanics: subcommands `gather`/`write`/`refresh`, all shelling out to `gh`, no LLM. See the `kboat-repos` skill and tool for the subcommand contract.
