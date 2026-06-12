@@ -114,7 +114,7 @@ def github_fields(github: dict, *, today: date) -> dict[str, object]:
     """Map a raw `gh repo view` payload to the note's GitHub-derived frontmatter.
 
     Shared by `gather` (ingest) and `refresh` so both write the same shape. The
-    judgement fields (role/domain/summary) and `read`/`added_date` are NOT here —
+    judgement fields (role/domain/summary) and `reading`/`added_date` are NOT here —
     they are owned by the agent and the routine respectively.
     """
     language = repo_languages(github)

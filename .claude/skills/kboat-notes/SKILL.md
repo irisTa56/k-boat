@@ -59,7 +59,7 @@ The NotebookLM source id is not stored. It is a per-notebook attribute resolved 
 
 ## Source note (`Sources/*.md`)
 
-Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the `read`/`distill`/`keep`/`dismiss` checkboxes first, then the source metadata (including `summary` and `topics`), then the routine-managed dates and the `blocked` flag, and finally the notebook coordinates.
+Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the `reading`/`distill`/`keep`/`dismiss` checkboxes first, then the source metadata (including `summary` and `topics`), then the routine-managed dates and the `blocked` flag, and finally the notebook coordinates.
 
 | Property | Meaning |
 | --- | --- |
@@ -67,7 +67,7 @@ Frontmatter only, no body. Fields are ordered for reading — the URLs you open 
 | `title` | The source title. For a web page NotebookLM sets it from the page once the source is added; for a PDF it is the human title resolved during ingest and passed to `source add --title` (otherwise an uploaded source would be titled by its filename, which the on-demand source-id resolution could not match). |
 | `reading_link` | Where to read. May hold a URL or an Obsidian internal link. For a web page it starts equal to `url`, then is overwritten with a "Link with Highlight" as reading progresses. For a PDF it is an Obsidian internal link to the vault file, starting as `[[<slug>.pdf]]` and upgraded by hand to a [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) page or highlight link as reading progresses. |
 | `gemini_url` | Gemini chat view of the notebook, used for asking questions while reading. |
-| `read` | Checkbox, set by the human. Informational only — whether (or how far) you have read it. No routine behaviour depends on it, so a partially-read source you keep stays honestly marked. |
+| `reading` | Checkbox, set by the human when reading starts (it marks a source in progress, not finished). Informational only (reading progress) — no routine behaviour depends on it, so a part-read source you keep stays honestly marked. |
 | `distill` | Checkbox (a disposition), set by the human. Opt-in to distil this source into the knowledge graph. Like any disposition, checking it takes the source off the active inbox at once; the distillation itself runs after the cooldown. Composes with `keep`: `distill` alone distils then discards the notebook, `distill` + `keep` distils but retains it. |
 | `keep` | Checkbox (a disposition), set by the human. Keep this source as a searchable "read later" entry and **retain its notebook**, so the reading-time dialogue survives. Checking it takes the source off the active inbox at once. Orthogonal to `distill` (they compose) but mutually exclusive with `dismiss`. Recall searches `keep` sources. |
 | `dismiss` | Checkbox (a disposition), set by the human. Abandon this source: take it off the inbox, discard its notebook after the cooldown, and exclude it from recall. The note (and any PDF) stays as a de-dup tombstone. Mutually exclusive with `keep`/`distill` — combining them is the ambiguous state the routine refuses to process. |
@@ -79,6 +79,7 @@ Frontmatter only, no body. Fields are ordered for reading — the URLs you open 
 | `filed_date` | Date, stamped by the routine when it first observes any disposition (`distill`/`keep`/`dismiss`); cleared if every disposition is later unchecked. Empty until then. The clock that the cooldown counts from. |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
 | `blocked` | Boolean, default `false`, managed by the routine — not the human. Set `true` when ingest could not **fetch** the content (a bot-blocked PDF or a walled page); the note then sits in the DLQ with `notebooklm_id` empty until `kboat-rescue` pulls it through the real browser and clears it. (A PDF that fetched fine but extracted to nothing is not `blocked` — its file is readable; see the PDF procedure.) Always present (like `distill`) so the boolean Base filters never hit a missing property. |
+| `picked` | Boolean, default `false`, written on every source at creation like the other Base booleans — but managed by the routine's daily-pick step, not the human. Set `true` on the `web_page` sources the step surfaced for today (at most two) and reset to `false` on the rest each run, so it is a transient spotlight, not a disposition. A hidden flag: the Today view filters on it (`picked == true`) but never shows it as a column, so it is not hand-toggled. See "Daily pick". |
 | `notebooklm_id` | NotebookLM notebook id for this source's 1:1 notebook. Cleared once the notebook is discarded. |
 | `notebooklm_url` | NotebookLM view of the notebook. |
 | `tags` | Empty for now. |
@@ -91,7 +92,7 @@ Derive both from `notebooklm_id`:
 
 ### Lifecycle and state
 
-`read` is an independent, informational checkbox (read progress) that drives no routine behaviour. The three **dispositions** — `distill`, `keep`, `dismiss` — are what the human sets to finish with a source; `filed_date` and `distilled_date` are dates the routine stamps. The dispositions share one effect — the source leaves the active inbox the moment any of them is checked (the Base filters on them, not on a date) — and otherwise mean different things: `distill` enters the knowledge graph, `keep` retains the source as a searchable archive with its notebook intact, `dismiss` abandons it. `keep` composes with `distill`; `dismiss` is exclusive of both. Because `read` is orthogonal, a part-read source can be kept or distilled without touching `read`.
+`reading` is an independent, informational checkbox (reading progress) that drives no routine behaviour. The three **dispositions** — `distill`, `keep`, `dismiss` — are what the human sets to finish with a source; `filed_date` and `distilled_date` are dates the routine stamps. The dispositions share one effect — the source leaves the active inbox the moment any of them is checked (the Base filters on them, not on a date) — and otherwise mean different things: `distill` enters the knowledge graph, `keep` retains the source as a searchable archive with its notebook intact, `dismiss` abandons it. `keep` composes with `distill`; `dismiss` is exclusive of both. Because `reading` is orthogonal, a part-read source can be kept or distilled without touching `reading`.
 
 `filed_date` records when the routine first observed a disposition, not when the human checked it — a checkbox carries no timestamp — so the cooldown below counts from that first observation, and a stretch where the routine cannot run delays it. Unchecking every disposition clears `filed_date` and returns the source to the inbox.
 
@@ -125,7 +126,7 @@ A Kindle book read on a Kindle device or app. Unlike a source it has no Notebook
 
 Identity is the Amazon **ASIN**, taken from the Kindle reader URL `https://read.amazon.co.jp/?asin=<ASIN>`. The note is named `Kindles/<ASIN>.md` — the ASIN is the stable id, so (as with a source's URL hash) the file is never renamed and the readable title lives in the `title` property, surfaced by the Base via a `title_link` formula. De-dup is by the ASIN filename: if `Kindles/<ASIN>.md` exists it is the same book.
 
-Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `read`/`finished`/`distill` checkboxes and the routine-managed dates.
+Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `reading`/`finished`/`distill` checkboxes and the routine-managed dates.
 
 | Property | Meaning |
 | --- | --- |
@@ -136,7 +137,7 @@ Fields are ordered for reading — `title` then the reader link, then the rest o
 | `store_link` | The Amazon **product-page link** (`https://www.amazon.co.jp/dp/<ASIN>`) — a clickable store link. The bare ASIN itself is not stored as a value: it is the note's filename (`Kindles/<ASIN>.md`), which is the identity/de-dup key. |
 | `published` | Publication date as a string at whatever precision is available (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); never zero-padded to fake finer precision. |
 | `publisher` | Publisher, if available. |
-| `read` | Checkbox, set by the human when reading starts. Informational only (read progress); drives no routine behaviour. |
+| `reading` | Checkbox, set by the human when reading starts. Informational only (reading progress); drives no routine behaviour. |
 | `finished` | Checkbox, set by the human when the book is read to the end. Informational only; drives no routine behaviour. Its sole effect is in the Base: the reading-list view hides finished books (`finished != true`), so checking it takes the book off that list while leaving it in the All catalogue. |
 | `distill` | Checkbox, set by the human. Opt-in to distil this book into the knowledge graph (from the body). |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
@@ -147,9 +148,9 @@ There is deliberately no `isbn` field: a Kindle product page shows the ASIN, not
 
 ### Lifecycle and state
 
-Simpler than a source's, because there is no notebook to retain or discard and so nothing destructive to gate: no cooldown, and no `keep`/`dismiss`/`blocked`. A Kindle note is created, marked `read` then `finished` as reading progresses, optionally marked `distill`, and once distilled carries `distilled_date`. The note is never deleted — it is a permanent catalogue and de-dup record.
+Simpler than a source's, because there is no notebook to retain or discard and so nothing destructive to gate: no cooldown, and no `keep`/`dismiss`/`blocked`. A Kindle note is created, marked `reading` then `finished` as reading progresses, optionally marked `distill`, and once distilled carries `distilled_date`. The note is never deleted — it is a permanent catalogue and de-dup record.
 
-- `read` — informational (read progress), set when reading starts. Where a source tracks reading with a single `read` checkbox, a Kindle book splits it into a `read` (started) / `finished` (done) pair, since the reading-list view needs a distinct "done" signal.
+- `reading` — informational (reading progress), set when reading starts. Where a source tracks reading with a single `reading` checkbox, a Kindle book splits it into a `reading` (started) / `finished` (done) pair, since the reading-list view needs a distinct "done" signal.
 - `finished` — informational, set by the human when the book is read to the end. Drives no routine behaviour — the ripe predicate ignores it; its only effect is the Base reading-list view, which filters it out. It is orthogonal to `distill`: a book can be distilled before or after it is marked finished.
 - `distill` checked and `distilled_date` empty → **ripe**: the routine distils the note body and stamps `distilled_date`. Unlike a source there is no 7-day cooldown — a Kindle book is distilled on the next run after `distill` is checked.
 - `distilled_date` set → distilled; a further run is a no-op. Re-distilling requires the human to clear `distilled_date` first.
@@ -175,7 +176,7 @@ views:
       and:
         - finished != true
     order:
-      - read
+      - reading
       - finished
       - distill
       - formula.title_link
@@ -188,7 +189,7 @@ views:
   - type: table
     name: Kindles · All
     order:
-      - read
+      - reading
       - finished
       - distill
       - formula.title_link
@@ -204,7 +205,7 @@ views:
       and:
         - distill
     order:
-      - read
+      - reading
       - finished
       - distill
       - formula.title_link
@@ -226,7 +227,7 @@ Its only lifecycle is: created when its link is ingested from the `K-Boat Queue`
 
 A repo note is frontmatter plus a single `## Notes` body section — the one part a human edits (free-form thoughts), preserved across every refresh. The deterministic mechanics (URL parsing, the slug, `status`, the `gh` fetch, the full-catalogue refresh) live in the `kboat-repos` package; the judgement (role, domain, summary) is done at ingest by a cheap subagent driven by the `kboat-repos` skill.
 
-Fields are ordered for reading — the links you open and the `read` checkbox first, then the GitHub metadata, then the judged classification and derived `status`, then the routine-managed dates.
+Fields are ordered for reading — the links you open and the `reading` checkbox first, then the GitHub metadata, then the judged classification and derived `status`, then the routine-managed dates.
 
 | Property | Meaning |
 | --- | --- |
@@ -234,7 +235,7 @@ Fields are ordered for reading — the links you open and the `read` checkbox fi
 | `title` | `owner/repo` (e.g. `a2aproject/A2A`), the **`gh`-resolved** canonical owner/repo. The file is hash-named, so the Base shows this via a `title_link` formula. |
 | `url` | Canonical repository URL `https://github.com/<owner>/<repo>`, owner/repo as `gh` resolves them. The de-dup key. Unlike a source URL it is **not immutable**: a repo can be renamed/transferred, and refresh adopts the new canonical URL (and renames the file). |
 | `homepage` | The project's homepage, if any (GitHub's `homepageUrl`). May be empty. |
-| `read` | Checkbox, set by the human. Informational only (have you looked at it); drives nothing, exactly as for a source or Kindle note. |
+| `reading` | Checkbox, set by the human. Informational only (have you looked at it); drives nothing, exactly as for a source or Kindle note. |
 | `description` | GitHub's repository description. |
 | `language` | YAML list of the significant languages, byte-share descending: each language at ≥10% of the repo's bytes, plus the primary language always. Glue files (Makefile, Dockerfile) drop out; a Python+C++ project keeps both. Computed by the `kboat-repos` package. |
 | `topics` | YAML list of GitHub topics. The open keyword field and the main lexical signal for search; there is deliberately no separate `tags` field (it would duplicate `topics` + `language` + `summary`). |
@@ -284,7 +285,7 @@ The subagent judges three fields; prefer existing values and keep the vocabulary
 There is nothing destructive to gate, so the state is minimal:
 
 - Created when `kboat-ingest` sees the repo's link in the queue and routes it here (the `kboat-repos` skill fetches metadata, the subagent classifies, `kboat-repos write` writes the note, the reminder is deleted). The note is the durable record; the reminder is only a queue.
-- `read` — informational, set by the human; drives nothing.
+- `reading` — informational, set by the human; drives nothing.
 - `refreshed_date` advances each time `kboat-repos refresh` re-fetches the GitHub metadata and recomputes `status`. Refresh **preserves** the judged layer (`role`/`domain`/`summary`) and the `## Notes` body.
 - **Renames/transfers/case are adopted automatically.** When `gh` resolves a different canonical `owner/repo` than the note holds, refresh updates `url`/`title` and renames the file to the new canonical slug (carrying the judgement layer and body across). This keeps every note keyed off the live repo and is why the catalogue does not accumulate stale-name notes. The one exception is a slug **collision** — when the new canonical slug is already taken by another note — which refresh reports (`rename_collisions`) and leaves for a human to merge, refreshing metadata in place meanwhile. A repo `gh` cannot fetch at all (deleted, private) is reported under `failed`; the note is never deleted by the routine.
 
@@ -303,7 +304,7 @@ views:
   - type: table
     name: Repos · All
     order:
-      - read
+      - reading
       - formula.title_link
       - role
       - language
@@ -333,11 +334,29 @@ views:
 
 Column widths and other cosmetics are per-vault tweaks, as with the other Bases.
 
+## Daily pick
+
+The daily-pick step turns "what do I read first?" from scanning a flat inbox into a pull: you write questions and the routine surfaces the sources that answer them.
+Two pieces implement it: the `kboat-pick` package does the deterministic I/O — `kboat-pick candidates` reads the questions and the web inbox, `kboat-pick set` writes `picked` — and `kboat-recall` does the relevance ranking between them. The routine runs the whole step after distillation; this section is the spec all three follow.
+
+**Input — your questions, from the Daily notes.** You write free-form questions under a `## 明日への問い` heading in a Daily note (in the `Daily/` folder; the daily-note template seeds the heading).
+The step only reads the Daily note — it never writes one, so the Daily note stays human-authored.
+
+**Look-back.** `kboat-pick candidates` walks the Daily notes newest-first (dated on or before today) and returns the `## 明日への問い` items it finds, so a day with no note (or no heading) is skipped and the most recent questions are used.
+
+**Output — at most two `web_page` picks, marked `picked`.** For each question, newest-first, `kboat-recall` ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`, the candidate set `kboat-pick` returns) by relevance: it reads the candidates' `summary`/`topics` and judges genuine relevance — pre-filtering lexically first when the inbox is large — so the match is semantic rather than keyword overlap alone.
+It accumulates distinct picks until it has two, descending to older questions when a question yields fewer; if the questions run out first it stops short rather than padding — two is a cap, not a quota, so a precise miss is reported honestly.
+PDFs are never picked: a PDF you are mid-read already surfaces in the Today view via `reading`, and a pick is for choosing the next web read.
+Each run `kboat-pick set --slugs` first resets `picked` to `false` on every source, then sets it `true` on the new choices, so yesterday's spotlight never lingers.
+
+The result is read in the Today view of the reading-inbox Base, not in the Daily note — web picks and started PDFs side by side, which works on mobile where the project CLIs do not.
+
 ## Reading inbox Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, gives six views over all sources: three to-read inboxes — a **Web** view, an **All** view, and a **PDF** view — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources that could not be fetched. The **Web** view is listed first so it is the default Obsidian opens (a Base shows its first view on open, as noted for the Kindle Base).
+A single standalone Base at the vault root, `Reading Inbox.base`, gives seven views over all sources: a **Today** view (the daily-pick shortlist plus what you are mid-read), three to-read inboxes — a **Web** view, an **All** view, and a **PDF** view — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources that could not be fetched. The **Today** view is listed first so it is the default Obsidian opens (a Base shows its first view on open, as noted for the Kindle Base).
+The Today view is the reading entry point, mobile included: it filters `distill != true && keep != true && dismiss != true && blocked != true` and then `picked == true || (source_type == "pdf" && reading == true)`, so it shows the day's at-most-two web picks (set by the daily-pick step, see "Daily pick") next to every PDF you have started (`reading`) but not yet filed. Both halves are plain booleans plus `source_type ==`, staying within the filter rules below; it carries `summary` so the two picks are legible at a glance, and sorts by `added_date` newest-first like the other inboxes (`picked` is hidden, so it is not a stable sort key).
 The to-read inboxes filter `distill != true && keep != true && dismiss != true && blocked != true` — readable, undispositioned sources only (a blocked source has no content to read, so it belongs in the DLQ, not the inbox). The All inbox adds no type filter, so it is exhaustive over that set: every readable, undispositioned source appears whatever its `source_type`. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish.
-The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `read`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
+The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `reading`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
 The Ambiguous view (`dismiss && (keep || distill)`, and `blocked != true`) lists the contradictory sources the routine refuses to process, so they can be fixed. It is kept separate from Holding because it is an error state, not a resting one; like every non-DLQ view it excludes `blocked`, so a blocked source never leaks out of the DLQ.
 The DLQ view (`blocked`) lists the sources ingest could not fetch, with their `file.name` (the URL-hash slug) as the first column so it is easy to copy into `kboat-rescue`, plus the `url`; the failure is implied by their presence here. Rescuing one clears `blocked`, moving it out of the DLQ.
 Every Base filter is a plain boolean (`distill`, `keep`, `dismiss`, `blocked`) or an `==`/`!=` over an always-present property (`source_type` and the disposition booleans) — never a `!=` over a property that might be missing, and never a date-emptiness test. This holds only because `distill`, `keep`, `dismiss`, and `blocked` are written on every source at creation; the create-time invariant, not the booleanness alone, is what keeps the views complete (a `!=` over a *missing* property would silently drop the note). Visibility never depends on the routine having stamped a date.
@@ -353,6 +372,31 @@ filters:
     - type == "source"
 views:
   - type: table
+    name: Today
+    filters:
+      and:
+        - distill != true
+        - keep != true
+        - dismiss != true
+        - blocked != true
+        - or:
+            - picked == true
+            - and:
+                - source_type == "pdf"
+                - reading == true
+    order:
+      - reading
+      - distill
+      - keep
+      - dismiss
+      - formula.title_link
+      - summary
+      - source_type
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
     name: Reading Inbox · Web
     filters:
       and:
@@ -362,7 +406,7 @@ views:
         - blocked != true
         - source_type == "web_page"
     order:
-      - read
+      - reading
       - distill
       - keep
       - dismiss
@@ -380,7 +424,7 @@ views:
         - dismiss != true
         - blocked != true
     order:
-      - read
+      - reading
       - distill
       - keep
       - dismiss
@@ -400,7 +444,7 @@ views:
         - blocked != true
         - source_type == "pdf"
     order:
-      - read
+      - reading
       - distill
       - keep
       - dismiss
@@ -419,7 +463,7 @@ views:
             - keep
             - dismiss
     order:
-      - read
+      - reading
       - distill
       - keep
       - dismiss
@@ -474,7 +518,7 @@ views:
 This is the web-page path. For a PDF source, follow "Procedure: ingest a PDF source" below, which shares step 1 (slug and de-dup) but differs in how the source note and notebook are built.
 
 1. Compute the slug from the `url`: `printf '%s' "<url>" | shasum -a 256 | cut -c1-12` (same recipe as Conventions). This is the de-dup key. If `Sources/<slug>.md` already exists, read its `url`: when it matches, this is the same source, so update it in place rather than creating a new note (the title may have changed, but only the `title` property updates; the filename, being the URL hash, never changes), and if it already has a `notebooklm_id` it already has a notebook, so do not create a second one. A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-fetch or create a notebook for it; treat the item as already recorded (the caller deletes the reminder and reports "already in the DLQ"). When the existing note's `url` differs, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
-2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `read`, `distill`, `keep`, `dismiss`, and `blocked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 3 fills `summary`/`topics`).
+2. Otherwise write a new `Sources/<slug>.md` with `source_type: web_page`. `reading_link` starts equal to `url`; `reading`, `distill`, `keep`, `dismiss`, `blocked`, and `picked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 3 fills `summary`/`topics`).
 3. Create the 1:1 notebook and record its coordinates:
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Set the notebook's chat persona (see "Procedure: set the notebook chat persona"). Non-fatal — on failure, report it and continue.
@@ -498,7 +542,7 @@ The bytes decide PDF-vs-not; the URL shape only decides blocked-vs-web once the 
 1. Compute the slug and de-dup exactly as step 1 of "create or update a source note": the `url` is the queued URL verbatim (the same hash recipe), even when it points straight at the PDF. If `Sources/<slug>.md` already exists with a matching `url` and a `notebooklm_id`, it already has its file and notebook — update the note in place and stop, without re-downloading or creating a second notebook (the 1:1 invariant). A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-download or create a notebook; treat the item as already recorded (the caller deletes the reminder and reports "already in the DLQ"). If the existing note's `url` differs, report the slug collision and stop. Otherwise this is a new source — continue with steps 2–5.
 2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client. Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check. This same magic-byte check must still hold immediately before the upload in step 5 — treat download → verify → upload as one uninterrupted sequence. A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the reminder.
 3. Resolve the `title`. Prefer a clean human title over the PDF's internal one: for an arXiv PDF, read the abstract page (`/pdf/<id>` → `/abs/<id>`); otherwise use the PDF's metadata title, then its first-page heading, then the reminder text. Whenever the title falls back to the reminder text, flag it so a human can fix it later (kboat-ingest reports this).
-4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `read`, `distill`, `keep`, `dismiss`, and `blocked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 5 fills `summary`/`topics`). This note write is the commit point, exactly as on the web path.
+4. Write a new `Sources/<slug>.md` with `source_type: pdf`, `url` = the queued URL, and `reading_link` = `[[<slug>.pdf]]`; `reading`, `distill`, `keep`, `dismiss`, `blocked`, and `picked` start `false`; `summary`, `topics`, `filed_date`, and `distilled_date` start empty (step 5 fills `summary`/`topics`). This note write is the commit point, exactly as on the web path.
 5. Create the 1:1 notebook and record its coordinates:
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Set the notebook's chat persona (see "Procedure: set the notebook chat persona"). Non-fatal — on failure, report it and continue.
@@ -546,7 +590,7 @@ A `keep` source keeps its notebook, so reading, dialogue, and distillation need 
 
 The DLQ is for sources whose content could not be **fetched** — a bot-blocked PDF (detection returned HTML for a `.pdf` URL) or a web page NotebookLM fetched as a wall — where pulling it through a real browser (`kboat-rescue`) is the fix. (An uploaded PDF that extracts to nothing is *not* a DLQ case: its file is fine and readable, the notebook is just unusable — re-fetching the same file would re-fail, so it is reported, not blocked; see the PDF procedure.) Ingest does not drop a fetch-blocked source; it parks it in the DLQ:
 
-1. Ensure `Sources/<slug>.md` exists (slug = the url-hash, as in step 1 of the create procedure). If a note was already written before the failure (the web path writes it before verifying), update it; otherwise create it now with `source_type`, `url` = the queued URL, `read`/`distill`/`keep`/`dismiss` = `false`, `summary`/`topics` empty. Set `reading_link` = `url`, so a click goes to the original where the human can clear the wall themselves.
+1. Ensure `Sources/<slug>.md` exists (slug = the url-hash, as in step 1 of the create procedure). If a note was already written before the failure (the web path writes it before verifying), update it; otherwise create it now with `source_type`, `url` = the queued URL, `reading`/`distill`/`keep`/`dismiss`/`picked` = `false`, `summary`/`topics` empty. Set `reading_link` = `url`, so a click goes to the original where the human can clear the wall themselves.
 2. Set `blocked: true`. Discard any contentless notebook that was created (a walled web fetch) per "discard a source's notebook", leaving `notebooklm_id` empty — rescue creates a fresh one. A fetch-blocked source has no local file (the fetch never produced one).
 3. The note now sits in the DLQ Base view, identified by its slug. kboat-ingest deletes the reminder — the durable note has replaced it. `kboat-rescue` later supplies the content and clears `blocked`.
 
@@ -576,14 +620,14 @@ The browser mechanics — extracting the metadata from the Amazon product page t
 
 1. Resolve the ASIN. From a Kindle reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key.
 2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete. The filename, being the ASIN, never changes.
-3. Otherwise write a new `Kindles/<ASIN>.md` with `type: kindle` and the fields from "Kindle note": `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `read`, `finished`, and `distill` start `false`; `distilled_date` starts empty. The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads.
+3. Otherwise write a new `Kindles/<ASIN>.md` with `type: kindle` and the fields from "Kindle note": `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `reading`, `finished`, and `distill` start `false`; `distilled_date` starts empty. The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads.
 
 ## Procedure: create or update a repo note
 
 The mechanics — fetching GitHub metadata and judging the classification — belong to the `kboat-repos` skill, which defers here for the schema and these transitions, the same split as source ingest and Kindle ingest. The note **write itself is owned by the `kboat-repos` package** (`kboat-repos write`), so frontmatter order, YAML quoting (a `description` with a colon must not break the note), de-dup, and `## Notes` body preservation are guaranteed rather than hand-assembled:
 
 1. `gather` resolves the canonical owner/repo via `gh` and returns `slug`/`url`/`title` plus the ready-to-write `fields`. The subagent adds `role`/`domain`/`summary` to that record.
-2. Pipe the augmented record to `kboat-repos write`. It de-dups by slug (a differing `url` at the same slug is a collision → it returns `status: collision`, written nowhere), preserves an existing note's `## Notes` body, `read`, and original `added_date` on update, stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
+2. Pipe the augmented record to `kboat-repos write`. It de-dups by slug (a differing `url` at the same slug is a collision → it returns `status: collision`, written nowhere), preserves an existing note's `## Notes` body, `reading`, and original `added_date` on update, stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
 
 ## Procedure: refresh repo metadata
 

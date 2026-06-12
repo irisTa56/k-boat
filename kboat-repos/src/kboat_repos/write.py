@@ -37,7 +37,7 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict:
     path = vault / "Repos" / f"{slug}.md"
 
     body = ""
-    read = False
+    reading = False
     added_date = today_iso
     if path.exists():
         existing = path.read_text(encoding="utf-8")
@@ -47,7 +47,7 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict:
             # Same slug, different repo — a 48-bit hash collision. Never overwrite.
             return {"status": "collision", "slug": slug, "url": url, "existing_url": existing_url}
         body = _existing_notes_body(existing)  # preserve the human-edited body
-        read = fm.get("read") is True  # preserve the human's read checkbox
+        reading = fm.get("reading") is True  # preserve the human's reading checkbox
         if isinstance(fm.get("added_date"), str) and fm["added_date"]:
             added_date = fm["added_date"]  # keep the original ingest date on update
 
@@ -56,7 +56,7 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict:
         "title": record["title"],
         "url": url,
         "homepage": fields_in.get("homepage", ""),
-        "read": read,
+        "reading": reading,
         "description": fields_in.get("description", ""),
         "language": fields_in.get("language", []),
         "topics": fields_in.get("topics", []),

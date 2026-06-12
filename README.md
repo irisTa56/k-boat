@@ -46,7 +46,7 @@ The scheduled routine runs `kboat-ingest`, then the `kboat-repos` refresh, then 
 
 A source ingest cannot fetch — a PDF behind a CAPTCHA wall, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing. Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA once) and finishes the ingest, keeping the original URL.
 
-One progress checkbox plus three dispositions drive a source. `read` is just read progress. Checking any disposition takes the source off the to-read inbox at once:
+One progress checkbox plus three dispositions drive a source. `reading` is just reading progress. Checking any disposition takes the source off the to-read inbox at once:
 
 - `distill` — distil it into the knowledge graph (a week later), then discard the notebook.
 - `keep` — hold it on the searchable "read later" shelf, keeping its notebook for re-reading. Combine with `distill` to distil *and* keep the notebook.
@@ -54,6 +54,6 @@ One progress checkbox plus three dispositions drive a source. `read` is just rea
 
 The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
 
-Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — `read` marks it started, `finished` marks it read (which drops it off the reading-list view), and `distill` opts it in. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
+Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — `reading` marks it started, `finished` marks it read (which drops it off the reading-list view), and `distill` opts it in. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
 
 GitHub repos are simpler still — a catalogue, never distilled. Drop a `github.com/<owner>/<repo>` link into the `K-Boat Queue` (or hand one to `kboat-repos` directly); ingest fetches its metadata, a cheap subagent tags it with a `role`, a `domain` (from a small controlled vocabulary), and a short `summary`, and it lands in `Repos/`, browsable and searchable in `Repos.base`. The daily routine's `kboat-repos refresh` keeps each repo's stars, last-commit, and `status` current while leaving your tags and the `## Notes` body untouched.

@@ -64,6 +64,14 @@ uv run ruff check --fix
 uv run ruff format
 """
 
+[tasks."fmt:py:kboat-pick"]
+description = "Autofix lint and formatting for the kboat-pick package"
+dir = "{{config_root}}/kboat-pick"
+run = """
+uv run ruff check --fix
+uv run ruff format
+"""
+
 [tasks."fmt:py:kboat-repos"]
 description = "Autofix lint and formatting for the kboat-repos package"
 dir = "{{config_root}}/kboat-repos"
@@ -79,6 +87,16 @@ depends = ["qa:py:*"]
 [tasks."qa:py:kboat-lifecycle"]
 description = "Lint, type-check, and test the kboat-lifecycle package"
 dir = "{{config_root}}/kboat-lifecycle"
+run = """
+uv run ruff check
+uv run ruff format --check
+uv run ty check
+uv run pytest
+"""
+
+[tasks."qa:py:kboat-pick"]
+description = "Lint, type-check, and test the kboat-pick package"
+dir = "{{config_root}}/kboat-pick"
 run = """
 uv run ruff check
 uv run ruff format --check

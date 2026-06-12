@@ -10,7 +10,7 @@ NOTE = """\
 type: source
 title: "Heterogeneous Federated Learning: State-of-the-art"
 reading_link: "[[1f1db63db5f4.pdf]]"
-read: false
+reading: false
 distill: true
 keep: false
 dismiss: false
