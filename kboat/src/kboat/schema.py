@@ -44,12 +44,23 @@ class Field:
     enum: tuple[str, ...] = ()
     default: object | None = None
     list_style: str = "block"  # "block" or "inline" (repo lists are inline)
+    stamp: str = (
+        ""  # "created" (set to today on create, preserved after) / "refreshed" (every write)
+    )
 
 
 @dataclass(frozen=True)
 class NoteSchema:
     type: str
     fields: tuple[Field, ...]
+    # The frontmatter field whose value uniquely identifies the note, used to
+    # detect a slug collision on update (None when the slug itself is the
+    # identity, e.g. a Kindle ASIN).
+    identity: str | None = None
+    # How the note carries a body: "none" (frontmatter only), "verbatim" (free
+    # markdown after the fence, e.g. Kindle highlights), or "notes" (a `## Notes`
+    # section, e.g. a repo's human notes).
+    body: str = "none"
 
     def field_names(self) -> tuple[str, ...]:
         return tuple(f.name for f in self.fields)
@@ -77,15 +88,16 @@ SOURCE = NoteSchema(
         Field("url", Kind.STR, empty_ok=True),  # null for an uploaded PDF
         Field("summary", Kind.STR, empty_ok=True),
         Field("topics", Kind.STR_LIST, empty_ok=True),
-        Field("added_date", Kind.DATE),
+        Field("added_date", Kind.DATE, stamp="created"),
         Field("filed_date", Kind.DATE, empty_ok=True),
         Field("distilled_date", Kind.DATE, empty_ok=True),
         _bool("blocked"),
         _bool("picked"),
         Field("notebooklm_id", Kind.STR, empty_ok=True, present=False),
         Field("notebooklm_url", Kind.STR, empty_ok=True, present=False),
-        Field("tags", Kind.STR_LIST, empty_ok=True),
+        Field("tags", Kind.STR_LIST, empty_ok=True, list_style="inline"),
     ),
+    identity="url",
 )
 
 KINDLE = NoteSchema(
@@ -102,9 +114,10 @@ KINDLE = NoteSchema(
         _bool("finished"),
         _bool("distill"),
         Field("distilled_date", Kind.DATE, empty_ok=True),
-        Field("added_date", Kind.DATE),
+        Field("added_date", Kind.DATE, stamp="created"),
         Field("tags", Kind.STR_LIST, empty_ok=True),
     ),
+    body="verbatim",
 )
 
 REPO = NoteSchema(
@@ -131,9 +144,11 @@ REPO = NoteSchema(
             Kind.ENUM,
             enum=("recent", "active", "slow", "dormant", "archived", "unknown"),
         ),
-        Field("added_date", Kind.DATE),
-        Field("refreshed_date", Kind.DATE, empty_ok=True),
+        Field("added_date", Kind.DATE, stamp="created"),
+        Field("refreshed_date", Kind.DATE, empty_ok=True, stamp="refreshed"),
     ),
+    identity="url",
+    body="notes",
 )
 
 BY_TYPE: dict[str, NoteSchema] = {s.type: s for s in (SOURCE, KINDLE, REPO)}

@@ -17,7 +17,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from .io_utils import atomic_write_text
+from kboat.io_utils import atomic_write_text
+
 from .notes import FrontmatterError, body_after_frontmatter, build_repo_note, parse_frontmatter
 
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")

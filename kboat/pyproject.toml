@@ -16,6 +16,7 @@ module-name = "kboat"
 kboat-lifecycle = "kboat.lifecycle.__main__:main"
 kboat-repos = "kboat.repos.__main__:main"
 kboat-pick = "kboat.pick.__main__:main"
+kboat-note = "kboat.note.__main__:main"
 kboat-validate = "kboat.validate.__main__:main"
 
 [tool.pytest.ini_options]
