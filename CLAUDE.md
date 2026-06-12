@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 K-Boat is not an application.
 It is a Claude Code skill package plus a thin Python environment (a uv workspace whose root holds `notebooklm-py[browser]`) that reads content through Google NotebookLM and matures what it learns into a knowledge base.
 The skills in `.claude/skills/` are the product; most "code" is prose that an agent executes.
-The exception is the deterministic, purely-mechanical core of the routine, which is extracted into a tested Python package (`kboat`) so the model neither re-derives it nor pays tokens for it — its tools are `kboat-lifecycle` (the distillation state machine), `kboat-repos` (the GitHub-repo catalogue helper), and `kboat-pick` (the daily-pick mechanics), over a shared frontmatter core; see Architecture.
+The exception is the deterministic, purely-mechanical core of the routine, which is extracted into a tested Python package (`kboat`) so the model neither re-derives it nor pays tokens for it — its tools are `kboat-lifecycle` (the distillation state machine), `kboat-repos` (the GitHub-repo catalogue helper), `kboat-pick` (the daily-pick mechanics), and `kboat-validate` (the vault schema check), over a shared frontmatter core and a code-authoritative schema (`kboat.schema`); see Architecture.
 
 Each piece of content gets its own throwaway NotebookLM notebook (1:1) for reading and dialogue. A week after a source is filed for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless the source is also kept).
 
@@ -27,7 +27,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Commands
 
-- `mise install` — install tools, then a postinstall hook syncs the venv (`uv sync`), installs Chromium for `notebooklm-py[browser]`, and generates the git pre-commit hook.
+- `mise install` — install tools, then a postinstall hook syncs the venv (`uv sync --all-packages` — the workspace member `kboat` and its console scripts only install with `--all-packages`), installs Chromium for `notebooklm-py[browser]`, and generates the git pre-commit hook.
 - NotebookLM auth:
   - `mise run nblm:login` — authenticate once.
   - `mise run nblm:auth:check` — verify auth with a network test.
@@ -61,11 +61,12 @@ Seven skills, all under `.claude/skills/`:
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling its PDF through the user's real Chrome (Claude in Chrome), keeping the `url`.
   - It defers to `kboat-notes` for the rescue transitions.
 
-One deterministic helper package, `kboat/` (a uv workspace member), holds the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the code and its tests). It exposes three console scripts over a shared frontmatter core (`kboat.frontmatter`: read, scoped single-/multi-line rewrite, YAML-safe rendering):
+One deterministic helper package, `kboat/` (a uv workspace member), holds the mechanical core whose **spec** is `kboat-notes` (change the spec there first, then the code and its tests). Two shared modules underlie its tools: `kboat.frontmatter` (read, scoped single-/multi-line rewrite, YAML-safe rendering) and `kboat.schema` (the code-authoritative mechanical schema — field names, order, kinds, defaults, the always-present booleans, the enums; `kboat-notes` keeps the human semantics and points here). It exposes four console scripts (workspace members install only with `uv sync --all-packages`):
 
 - `kboat-lifecycle` (`kboat.lifecycle`) — the distillation lifecycle state machine: the boolean/date predicates over frontmatter, no judgement. `kboat-distill` runs it once per pass for the on-disk cooldown clock (Phase A) and the ripe/dismiss/ambiguous source and ripe-Kindle work sets as JSON.
 - `kboat-repos` (`kboat.repos`) — the repo catalogue's mechanics: subcommands `gather`/`write`/`refresh`, all shelling out to `gh`, no LLM. See the `kboat-repos` skill and tool for the subcommand contract.
 - `kboat-pick` (`kboat.pick`) — the daily-pick mechanics: `candidates` (the Daily-note `## 明日への問い` questions + the active web inbox, as JSON) and `set` (reset `picked`, then set it on the chosen slugs), no LLM. `kboat-recall`'s daily-pick mode ranks between the two. See the `kboat-pick` tool and kboat-notes "Daily pick".
+- `kboat-validate` (`kboat.validate`) — checks every vault note against `kboat.schema` and prints the violations as JSON (per-field plus cross-field invariants like ambiguous dispositions, a blocked source with a notebook, a non-web pick). Read-only; report-only by default (`--strict` exits non-zero). The routine runs it last (Phase 5) and surfaces violations as drift to fix.
 
 Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
 
@@ -83,7 +84,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`kboat-repos refresh`), then `kboat-distill`, then the daily pick (`kboat-recall` daily-pick mode), in that order, under a single auth refresh. The daily pick is purely local (no NotebookLM, Basic Memory, or `gh`), so it runs even when distillation defers. The task name is cadence-agnostic; the schedule is configured separately and may change.
+- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh (`kboat-repos refresh`), then `kboat-distill`, then the daily pick (`kboat-recall` daily-pick mode), then `kboat-validate`, in that order, under a single auth refresh. The daily pick and validate are purely local (no NotebookLM, Basic Memory, or `gh`), so they run even when distillation defers; validate is read-only and report-only, surfacing vault drift in the run summary. The task name is cadence-agnostic; the schedule is configured separately and may change.
 - It must be local — not a cloud Routine or Cowork — because the queue (macOS Reminders), the NotebookLM auth cookies, the iCloud vault, and the Basic Memory store are all local-only.
 - The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
 - Because it runs unattended, a failure that needs the user's action but would otherwise go unseen until they open Claude Desktop — auth unusable, the `k-boat-knowledge` project missing, or Basic Memory down so distillation deferred — sends one `PushNotification`; routine and self-healing outcomes stay in the run summary. The trigger set is owned by the task prompt.

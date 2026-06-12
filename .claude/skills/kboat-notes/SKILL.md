@@ -57,6 +57,12 @@ Reading-time questions go to the notebook's `gemini_url`, and because the notebo
 
 The NotebookLM source id is not stored. It is a per-notebook attribute resolved on demand by matching the source's `url` (then `title`) in `notebooklm source list` (see the discard and distill procedures). A file-uploaded PDF source has no `url` (it is `null`), so for a PDF the match is by `title` — which is why the PDF upload passes `--title` set to the note's `title`. Because each notebook is 1:1 there is exactly one source either way, so this is really a sanity-check on that single source.
 
+## Schema authority and validation
+
+The schema *tables* below describe what each field means and when it is set. The **mechanical** schema — the exact field names, their order, kinds, defaults, which fields are always-present booleans (the Base-filter invariant), and the enum domains — is code-authoritative in `kboat.schema` (`SOURCE`/`KINDLE`/`REPO`), the single declaration the note writers and the validator both read. When a field changes, update this skill's description and `kboat.schema` together; the field tuple order there *is* the canonical frontmatter order.
+
+`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool`/`bad_enum`/`bad_date`/`not_list`/`not_int`/`not_str`) and cross-field (`ambiguous` dispositions, `blocked_has_notebook`, `picked_non_web`, `web_missing_url`, the repo `status_archived_mismatch`), plus `parse_error`. It is read-only and report-only by default (exit 0; `--strict` exits non-zero); the routine runs it last (Phase 5) and surfaces any violations in its run summary as drift for the human to fix.
+
 ## Source note (`Sources/*.md`)
 
 Frontmatter only, no body. Fields are ordered for reading — the URLs you open and the `reading`/`distill`/`keep`/`dismiss` checkboxes first, then the source metadata (including `summary` and `topics`), then the routine-managed dates and the `blocked` flag, and finally the notebook coordinates.

@@ -14,7 +14,7 @@ _.python.venv = { path = ".venv", create = true }
 
 [hooks]
 postinstall = """
-uv sync
+uv sync --all-packages
 playwright install chromium
 mise generate git-pre-commit --write --task=pre-commit
 """
