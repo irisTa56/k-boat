@@ -206,41 +206,62 @@ def set_fields(text: str, rendered: Mapping[str, str | None]) -> str:
 _YAML_KEYWORDS = frozenset({"true", "false", "null", "yes", "no", "on", "off", "none", "~"})
 # A value YAML would parse as a number (int, float, or scientific notation).
 _YAML_NUMBER_RE = re.compile(r"^[+-]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)([eE][+-]?\d+)?$")
-# Characters that need quoting anywhere — block indicators, the flow indicators
-# (`,[]{}`) that matter because `yaml_scalar` also renders inline list items
-# (`topics: [a, b]`), and the whitespace controls (tab/newline/CR) that a bare
-# scalar cannot carry (an interior tab makes real YAML parsers reject the line).
-_DANGEROUS_CHARS = ":#&*!|>'\"%@`,[]{}\t\n\r"
+# Indicators a *plain* scalar may not START with — YAML would read them as a
+# block/flow/anchor/tag/directive marker. Mid-string most are harmless, so they
+# are only checked at position 0 (see `_needs_quote`).
+_LEADING_INDICATORS = "-?:,[]{}#&*!|>@%`\"'"
+# In a *flow* context (an inline `[a, b]` list item) these are special anywhere,
+# not just at the start, so a list item carrying one must be quoted.
+_FLOW_SPECIAL = ":,?#&*!|>'\"%@`[]{}\t\n\r"
+_CONTROL = "\t\n\r"
+
+
+def _quote(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _needs_quote(text: str) -> bool:
+    """Whether a top-level *plain* scalar needs quoting.
+
+    Minimal: a `:`, `#`, or flow char *mid-string* is safe in block context
+    (`https://…`, `a, b`), so quoting is forced only by edge whitespace, a YAML
+    keyword/number, a leading indicator, an ambiguous colon (`: ` or a trailing
+    one), a comment (` #`), or a control char.
+    """
     if text == "" or text.strip() != text:
         return True
-    if text.lower() in _YAML_KEYWORDS:  # `true`, `null`, ... would become bool/null
+    if text.lower() in _YAML_KEYWORDS or _YAML_NUMBER_RE.match(text):
         return True
-    if _YAML_NUMBER_RE.match(text):  # a digit-only/numeric value would become a number
+    if text[0] in _LEADING_INDICATORS:
         return True
-    if text[0] in "-?":  # a leading indicator (`- foo` is a list, `? foo` a key)
+    if ": " in text or " #" in text or text.endswith(":"):
         return True
-    return any(c in text for c in _DANGEROUS_CHARS)
+    return any(c in _CONTROL for c in text)
+
+
+def _needs_quote_flow(text: str) -> bool:
+    """Stricter rule for an inline-list item, where `,[]{}:?#…` are special
+    anywhere — over-quoting a rare odd item is fine; a misparse is not."""
+    if text == "" or text.strip() != text:
+        return True
+    if text.lower() in _YAML_KEYWORDS or _YAML_NUMBER_RE.match(text):
+        return True
+    if text[0] == "-":
+        return True
+    return any(c in text for c in _FLOW_SPECIAL)
 
 
 def yaml_scalar(value: object) -> str:
-    """Render a scalar, quoting it whenever bare YAML would misparse it.
-
-    Covers dangerous characters, leading indicators, and whole-string values that
-    YAML reads as a bool/null/number (`true`, `123`, `- x`) — important for free
-    GitHub text in `description`.
-    """
+    """Render a top-level scalar, quoting only when bare YAML would misparse it
+    (a keyword/number, a leading indicator, an ambiguous colon, …)."""
     if value is None:
         return ""
     text = str(value)
-    if _needs_quote(text):
-        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    return text
+    return _quote(text) if _needs_quote(text) else text
 
 
 def yaml_list(items: list[object] | None) -> str:
     if not items:
         return "[]"
-    return "[" + ", ".join(yaml_scalar(x) for x in items) + "]"
+    rendered = [_quote(s) if _needs_quote_flow(s) else s for s in (str(x) for x in items)]
+    return "[" + ", ".join(rendered) + "]"

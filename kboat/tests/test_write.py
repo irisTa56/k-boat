@@ -29,6 +29,23 @@ def test_inline_list_is_flow_style() -> None:
     assert "topics: [x, y]" in note
 
 
+def test_inline_list_item_with_comma_is_quoted() -> None:
+    # A comma is safe in a plain scalar but breaks a flow list item, so it quotes.
+    note = build_note(REPO, {"type": "repo", "topics": ["a, b", "plain"]})
+    assert 'topics: ["a, b", plain]' in note
+
+
+def test_empty_list_renders_as_flow_empty() -> None:
+    # Empty block-style and inline-style lists both render `[]` (re-read as []).
+    assert "topics: []" in build_note(SOURCE, {"type": "source", "topics": []})
+    assert "topics: []" in build_note(REPO, {"type": "repo", "topics": []})
+
+
+def test_url_is_not_quoted() -> None:
+    note = build_note(SOURCE, {"type": "source", "url": "https://ex.com/a?x=1:2"})
+    assert "url: https://ex.com/a?x=1:2" in note  # bare — a URL colon is safe
+
+
 def test_frontmatter_only_has_no_body() -> None:
     note = build_note(SOURCE, {"type": "source", "title": "T"})
     assert note == "---\ntype: source\ntitle: T\n---\n"

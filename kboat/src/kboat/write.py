@@ -60,7 +60,7 @@ def _scalar_line(name: str, rendered: str) -> str:
 def _block_list_lines(name: str, value: object) -> list[str]:
     items = list(value) if isinstance(value, list) else []
     if not items:
-        return [f"{name}:"]
+        return [f"{name}: []"]  # an empty list stays a list (re-reads as [], not None)
     return [f"{name}:"] + [f"  - {yaml_scalar(item)}" for item in items]
 
 
