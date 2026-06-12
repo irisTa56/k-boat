@@ -34,8 +34,8 @@ def test_source_create_stamps_and_fills(vault: Path) -> None:
     # present-required fields filled on create
     for b in ("reading", "distill", "keep", "dismiss", "blocked", "picked"):
         assert fm[b] is False
-    # An empty block list is written bare (`topics:`), so it re-reads as None.
-    assert fm["filed_date"] is None and fm["topics"] is None and fm["tags"] == []
+    # An empty list (block or inline) is written `[]`, so it re-reads as [].
+    assert fm["filed_date"] is None and fm["topics"] == [] and fm["tags"] == []
     # present=False fields are not synthesised on create.
     assert "gemini_url" not in fm and "notebooklm_id" not in fm
 

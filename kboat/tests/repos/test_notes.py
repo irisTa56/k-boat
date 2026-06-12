@@ -36,9 +36,10 @@ from kboat.repos.notes import (
         "? leading",
         "@ at",
         "* star",  # leading indicators
-        "has: colon",
-        "a # hash",
-        "with, comma",
+        "has: colon",  # a `: ` mapping separator
+        "ends with colon:",  # a trailing colon
+        ":leading colon",  # a leading colon
+        "a # comment",  # a ` #` comment
         " leading space",
         "trailing space ",
     ],
@@ -49,7 +50,17 @@ def test_yaml_scalar_quotes_ambiguous_values(value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "value", ["plain text", "Agent2Agent protocol", "apache-2.0", "google/A2A"]
+    "value",
+    [
+        "plain text",
+        "Agent2Agent protocol",
+        "apache-2.0",
+        "google/A2A",
+        "https://example.com/a?x=1:2",  # a colon inside a URL is safe bare
+        "ratio 3:2 here",  # a colon with no following space is safe
+        "free text, with a comma",  # a comma is safe in a plain (block) scalar
+        "a (parenthetical) note",
+    ],
 )
 def test_yaml_scalar_leaves_safe_values_bare(value: str) -> None:
     assert yaml_scalar(value) == value
