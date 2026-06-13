@@ -15,7 +15,7 @@ url: https://example.com/a
 summary: "One sentence."
 topics:
   - "Apache Iceberg"
-  - 隠れたパーティショニング
+  - Hidden Partitioning
 added_date: 2026-06-01
 blocked: false
 picked: false
@@ -31,7 +31,7 @@ def test_parse_scalars_and_lists() -> None:
     assert fm["summary"] == "One sentence."
     assert fm["blocked"] is False
     assert fm["picked"] is False
-    assert fm["topics"] == ["Apache Iceberg", "隠れたパーティショニング"]
+    assert fm["topics"] == ["Apache Iceberg", "Hidden Partitioning"]
 
 
 def test_parse_empty_and_inline_empty_list() -> None:

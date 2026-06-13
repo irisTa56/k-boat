@@ -18,8 +18,8 @@ source_type: pdf
 url: https://arxiv.org/pdf/2307.10616
 summary: "実用的な連合学習で不可避となるヘテロジニティ問題のサーベイ。"
 topics:
-  - 異種連邦学習
-  - 統計的不均一性
+  - Heterogeneous Federated Learning
+  - Statistical Heterogeneity
 added_date: 2026-06-05
 filed_date:
 distilled_date:
@@ -55,8 +55,8 @@ class TestParseFrontmatter:
         fm = parse_frontmatter(NOTE)
         # `topics:` is a block list; the shared parser reads it as a list and its
         # `- ...` items do not leak in as bogus top-level keys.
-        assert fm["topics"] == ["異種連邦学習", "統計的不均一性"]
-        assert "異種連邦学習" not in fm
+        assert fm["topics"] == ["Heterogeneous Federated Learning", "Statistical Heterogeneity"]
+        assert "Heterogeneous Federated Learning" not in fm
 
     def test_missing_fence_raises(self):
         with pytest.raises(FrontmatterError):
