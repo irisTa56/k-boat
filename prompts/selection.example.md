@@ -62,5 +62,5 @@ Return a single JSON object and nothing else:
 - `keep` — boolean.
 - `wall` — boolean; `true` when the fetched page is a login wall / paywall / subscribe gate rather than the article (see "Walls and unreadable pages"). A walled page is reminded for manual review regardless of `keep`.
 - `title` — a non-empty title for the reminder. For scrape entries (no feed metadata) this is the **only** source of a title, so always supply one; on a keep it becomes the reminder's name.
-- `summary` — one line; becomes the reminder's note. Omit or leave empty on a drop.
+- `summary` — one line; becomes the reminder's note. Write it in whatever language you triage fastest in (e.g. add "write the summary in Japanese" here) — the run routine never inspects its language. Omit or leave empty on a drop.
 - `reason` — a brief justification, surfaced only in the run summary.
