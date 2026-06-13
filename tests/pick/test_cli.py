@@ -61,6 +61,27 @@ def test_candidates_lists_only_active_web_plus_questions(
     assert out["counts"]["candidates_total"] == 2
     assert out["questions"] == [{"date": "2026-06-04", "items": ["a question"]}]
     assert out["candidates"][0]["topics"] == ["topic-web1"]
+    assert out["lookback_days"] == 14  # default window
+
+
+def test_candidates_lookback_window_drops_stale_questions(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The fixture's only question is dated 2026-06-04; an 8-day-back date with a
+    # 3-day window is out of scope, so no questions surface (candidates still do).
+    args = ["--vault", str(vault), "candidates", "--today", "2026-06-12", "--lookback-days", "3"]
+    assert main(args) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["questions"] == []
+    assert out["lookback_days"] == 3
+    assert {c["slug"] for c in out["candidates"]} == {"web1", "web2"}
+
+
+def test_candidates_rejects_negative_lookback(vault: Path) -> None:
+    args = ["--vault", str(vault), "candidates", "--today", "2026-06-12", "--lookback-days", "-1"]
+    with pytest.raises(SystemExit) as exc:  # argparse parser.error exits with code 2
+        main(args)
+    assert exc.value.code == 2
 
 
 def test_set_marks_chosen_and_resets_rest(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:

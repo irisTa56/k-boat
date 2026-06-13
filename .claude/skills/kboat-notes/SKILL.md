@@ -350,10 +350,14 @@ Two pieces implement it: the `kboat-pick` tool does the deterministic I/O — `k
 **Input — your questions, from the Daily notes.** You write free-form questions under a `## 明日への問い` heading in a Daily note (in the `Daily/` folder; the daily-note template seeds the heading).
 The step only reads the Daily note — it never writes one, so the Daily note stays human-authored.
 
-**Look-back.** `kboat-pick candidates` walks the Daily notes newest-first (dated on or before today) and returns the `## 明日への問い` items it finds, so a day with no note (or no heading) is skipped and the most recent questions are used.
+**Look-back — a bounded window.** `kboat-pick candidates` walks the Daily notes newest-first (dated on or before today) and returns the `## 明日への問い` items within a look-back window — the last two weeks by default (`--lookback-days`, default 14, inclusive of both ends), so a day with no note (or no heading) is skipped and only the recent questions are used. The window keeps the pick anchored to what you are asking now; questions older than it are out of scope, so a stretch with no recent questions yields no picks rather than dredging up stale ones. The window the tool used is echoed back as `lookback_days` in its JSON.
 
-**Output — at most two `web_page` picks, marked `picked`.** For each question, newest-first, `kboat-recall` ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`, the candidate set `kboat-pick` returns) by relevance: it reads the candidates' `summary`/`topics` and judges genuine relevance — pre-filtering lexically first when the inbox is large — so the match is semantic rather than keyword overlap alone.
-It accumulates distinct picks until it has two, descending to older questions when a question yields fewer; if the questions run out first it stops short rather than padding — two is a cap, not a quota, so a precise miss is reported honestly.
+**Output — at most two `web_page` picks, marked `picked`.** `kboat-recall` ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`, the candidate set `kboat-pick` returns) against the in-window questions, reading the candidates' `summary`/`topics` and judging genuine relevance (pre-filtering lexically first when the inbox is large), in two tiers:
+
+- **Tier 1 — direct answers.** For each question, newest-first, take candidates that directly answer it. Accumulate distinct picks until two.
+- **Tier 2 — same-field learning, to fill the cap.** If Tier 1 yields fewer than two, top up with candidates that, while not a direct answer, would teach you something in the field or theme of the in-window questions — newest-question-first again. This is the deliberate relaxation: the pick should not stay empty when a genuinely on-topic read is sitting in the inbox.
+
+Two is a cap, not a quota: stop at two, and if even Tier 2 finds nothing in the questions' field, take fewer rather than pad with an unrelated read — an honest short list beats a forced one. A candidate is picked at most once (Tier 1 wins over Tier 2 for the same source).
 PDFs are never picked: a PDF you are mid-read already surfaces in the Today view via `reading`, and a pick is for choosing the next web read.
 Each run `kboat-pick set --slugs` first resets `picked` to `false` on every source, then sets it `true` on the new choices, so yesterday's spotlight never lingers.
 

@@ -3,8 +3,9 @@
 Two deterministic subcommands behind the daily pick (the relevance ranking is the
 LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
 
-- `candidates` — read the Daily-note `## 明日への問い` questions (newest-first) and
-  the active web inbox, and print both as JSON for the ranker.
+- `candidates` — read the Daily-note `## 明日への問い` questions (newest-first,
+  within a `--lookback-days` window) and the active web inbox, and print both as
+  JSON for the ranker.
 - `set --slugs a,b` — reset `picked` to false on every source, then set it true on
   the chosen slugs (at most two). An empty `--slugs` just clears the spotlight.
 
@@ -22,7 +23,7 @@ from datetime import date
 from pathlib import Path
 
 from .candidates import candidate_from, is_active_web
-from .dailynotes import extract_questions
+from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_questions
 from .notes import FrontmatterError, Value, parse_frontmatter, set_picked
 
 
@@ -44,17 +45,19 @@ def _load_sources(
     return notes, anomalies
 
 
-def _cmd_candidates(vault: Path, today: date) -> dict[str, object]:
+def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, object]:
     notes, anomalies = _load_sources(vault)
     candidates = [
         candidate_from(slug, rel, fm).to_json() for slug, rel, fm in notes if is_active_web(fm)
     ]
     questions = [
-        {"date": dq.date, "items": dq.items} for dq in extract_questions(vault / "Daily", today)
+        {"date": dq.date, "items": dq.items}
+        for dq in extract_questions(vault / "Daily", today, lookback_days)
     ]
     return {
         "today": today.isoformat(),
         "vault": str(vault),
+        "lookback_days": lookback_days,
         "questions": questions,
         "candidates": candidates,
         "counts": {
@@ -116,6 +119,15 @@ def main(argv: list[str] | None = None) -> int:
         default=date.today().isoformat(),
         help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
     )
+    p_cand.add_argument(
+        "--lookback-days",
+        type=int,
+        default=DEFAULT_LOOKBACK_DAYS,
+        help=(
+            "Days of Daily-note questions to consider, counting back from today, "
+            f"inclusive (default {DEFAULT_LOOKBACK_DAYS}). Older questions are out of scope."
+        ),
+    )
 
     p_set = sub.add_parser(
         "set", help="Reset picked on every source, then set it on the chosen slugs."
@@ -139,7 +151,9 @@ def main(argv: list[str] | None = None) -> int:
             today = date.fromisoformat(args.today)
         except ValueError:
             parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
-        output = _cmd_candidates(vault, today)
+        if args.lookback_days < 0:
+            parser.error(f"--lookback-days must be >= 0, got {args.lookback_days}")
+        output = _cmd_candidates(vault, today, args.lookback_days)
     else:
         slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
         output = _cmd_set(vault, slugs)
