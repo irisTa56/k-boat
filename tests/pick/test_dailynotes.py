@@ -43,3 +43,31 @@ def test_future_dated_and_non_date_files_ignored(tmp_path: Path) -> None:
 
 def test_missing_daily_dir_is_empty(tmp_path: Path) -> None:
     assert extract_questions(tmp_path / "Daily", date(2026, 6, 12)) == []
+
+
+def test_lookback_window_excludes_stale_questions(tmp_path: Path) -> None:
+    daily = tmp_path / "Daily"
+    # today = 2026-06-13, default 14-day window → earliest in scope is 2026-05-30.
+    _write(daily, "2026-05-30.md", "## 明日への問い\n- exactly at the boundary\n")
+    _write(daily, "2026-05-29.md", "## 明日への問い\n- one day too old\n")
+    _write(daily, "2026-06-13.md", "## 明日への問い\n- today\n")
+    out = extract_questions(daily, date(2026, 6, 13))
+    assert [dq.date for dq in out] == ["2026-06-13", "2026-05-30"]
+
+
+def test_lookback_window_is_configurable(tmp_path: Path) -> None:
+    daily = tmp_path / "Daily"
+    _write(daily, "2026-06-04.md", "## 明日への問い\n- eight days back\n")
+    _write(daily, "2026-06-10.md", "## 明日への問い\n- two days back\n")
+    # A 3-day window keeps only 2026-06-10 (2026-06-04 is out of scope).
+    out = extract_questions(daily, date(2026, 6, 12), lookback_days=3)
+    assert [dq.date for dq in out] == ["2026-06-10"]
+
+
+def test_lookback_zero_is_today_only(tmp_path: Path) -> None:
+    daily = tmp_path / "Daily"
+    # earliest == today, so only today's questions are in scope (inclusive boundary).
+    _write(daily, "2026-06-12.md", "## 明日への問い\n- today\n")
+    _write(daily, "2026-06-11.md", "## 明日への問い\n- yesterday\n")
+    out = extract_questions(daily, date(2026, 6, 12), lookback_days=0)
+    assert [dq.date for dq in out] == ["2026-06-12"]

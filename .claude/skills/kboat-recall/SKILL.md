@@ -33,9 +33,12 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. The s
 
 A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today from the questions you wrote, and is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool. The spec is kboat-notes "Daily pick".
 
-1. `eval "$(mise env)"`, then `kboat-pick candidates` → JSON with `questions` (Daily-note `## 明日への問い`, newest-first, on or before today) and `candidates` (the active web inbox, each with `summary`/`topics`).
+1. `eval "$(mise env)"`, then `kboat-pick candidates` → JSON with `questions` (Daily-note `## 明日への問い`, newest-first, within the look-back window — the last two weeks by default; the window used is echoed as `lookback_days`) and `candidates` (the active web inbox, each with `summary`/`topics`).
 2. If there are no questions or no candidates, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.
-3. Rank by relevance, newest question first: judge which candidates genuinely answer each question from their `summary`/`topics` (delegate to a cheap subagent when the inbox is large, lexically pre-filtering first to keep it cheap). Accumulate distinct picks until you have two, descending to older questions when a question yields fewer. Stop at two; if the questions run out first, take fewer — never pad with weak matches (a precise miss is honest).
+3. Rank by relevance from the candidates' `summary`/`topics`, newest question first (delegate to a cheap subagent when the inbox is large, lexically pre-filtering first to keep it cheap), in two tiers — see kboat-notes "Daily pick":
+   - **Tier 1 — direct answers**: candidates that directly answer a question. Accumulate distinct picks until two.
+   - **Tier 2 — same-field learning**: only if Tier 1 yields fewer than two, top up with candidates that would teach something in the field or theme of the in-window questions (not a direct answer, but genuinely on-topic), newest-question-first.
+   Stop at two; a candidate is picked at most once (Tier 1 over Tier 2). If even Tier 2 finds nothing in the questions' field, take fewer — never pad with an unrelated read (an honest short list is the goal, not a strict miss).
 4. `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices. Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
 5. Report the picks — each with the question it answers — and that they are read in the Today view of the reading-inbox Base (kboat-notes "Reading inbox Base").
 
