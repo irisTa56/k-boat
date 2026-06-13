@@ -4,11 +4,15 @@ No I/O here: `compute_plan` takes parsed sources plus today's date and returns
 the plan the CLI acts on. The predicates mirror `kboat-notes` ("Lifecycle and
 state"):
 
-- ripe        = distill && !dismiss && !blocked && cooldown elapsed && distilled_date empty
-- dismiss     = dismiss && !keep && !distill && !blocked && cooldown elapsed
-- ambiguous   = dismiss && (keep || distill)   (never processed; reported every run)
+- ripe         = distill && !dismiss && !blocked && cooldown elapsed && distilled_date empty
+- dismiss      = dismiss && !keep && !distill && !blocked && cooldown elapsed
+- ambiguous    = dismiss && (keep || distill)   (never processed; reported every run)
+- needs_summary = notebooklm_id present && !blocked && (summary or topics empty)
 
-Blocked (DLQ) sources are excluded from both phases entirely.
+Blocked (DLQ) sources are excluded from both phases entirely. `needs_summary`
+is orthogonal to the cooldown phases — it is the recovery set the ingest pass
+retries (re-fetch the source guide while the notebook still exists), reported
+regardless of disposition.
 
 Kindle notes have a far simpler lifecycle (see `kboat-notes` "Kindle note"):
 no notebook, so nothing destructive to gate, hence no cooldown and no
@@ -41,6 +45,8 @@ class Source:
     filed_date: str | None
     distilled_date: str | None
     notebooklm_id: str | None
+    summary_empty: bool
+    topics_empty: bool
 
     @classmethod
     def from_frontmatter(cls, slug: str, path: str, fm: dict[str, Value]) -> Source:
@@ -51,6 +57,13 @@ class Source:
             value = fm.get(key)
             return value if isinstance(value, str) else None
 
+        # `summary` is empty unless it is a non-blank string; `topics` is empty
+        # unless it is a list with at least one non-blank string (symmetric with
+        # the summary rule — a list of blank entries counts as empty). The
+        # frontmatter reader yields None for a bare `summary:` / `topics:` and []
+        # for `topics: []` — all "empty".
+        summary = fm.get("summary")
+        topics = fm.get("topics")
         return cls(
             slug=slug,
             path=path,
@@ -64,6 +77,10 @@ class Source:
             filed_date=text("filed_date"),
             distilled_date=text("distilled_date"),
             notebooklm_id=text("notebooklm_id"),
+            summary_empty=not (isinstance(summary, str) and bool(summary.strip())),
+            topics_empty=not (
+                isinstance(topics, list) and any(isinstance(t, str) and t.strip() for t in topics)
+            ),
         )
 
     @property
@@ -73,6 +90,21 @@ class Source:
     @property
     def is_ambiguous(self) -> bool:
         return self.dismiss and (self.keep or self.distill)
+
+    @property
+    def needs_summary(self) -> bool:
+        """A live notebook (so the source guide can still be re-fetched) whose
+        durable `summary`/`topics` are missing — the recovery set the ingest pass
+        retries. Disposition- and cooldown-independent: an undispositioned active
+        source whose guide failed at ingest is the most important case (it never
+        becomes ripe, yet recall and the daily pick lean on its summary). A
+        `blocked` source has no notebook, so it is excluded.
+        """
+        return (
+            self.notebooklm_id is not None
+            and not self.blocked
+            and (self.summary_empty or self.topics_empty)
+        )
 
 
 def cooldown_elapsed(filed_date: str | None, today: date) -> bool:
@@ -95,6 +127,7 @@ class Plan:
     ambiguous: list[Source] = field(default_factory=list)
     ripe: list[Source] = field(default_factory=list)
     dismiss_discard: list[Source] = field(default_factory=list)
+    needs_summary: list[Source] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
 
 
@@ -104,6 +137,8 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
     # Phase A: maintain the cooldown clock. Blocked sources are excluded from
     # both phases, so they never get stamped, cleared, or flagged.
     for s in sources:
+        if s.needs_summary:  # recovery set — orthogonal to the cooldown phases
+            plan.needs_summary.append(s)
         if s.blocked:
             continue
         if s.is_ambiguous:
@@ -163,6 +198,7 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
         "filed_cleared": len(plan.phase_a_clear),
         "ripe": len(plan.ripe),
         "dismiss_discard": len(plan.dismiss_discard),
+        "needs_summary": len(plan.needs_summary),
         "keep_noop": keep_noop,
         "already_distilled": already_distilled,
         "dismiss_already_discarded": dismiss_already_discarded,

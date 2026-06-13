@@ -17,10 +17,12 @@ keep: {keep}
 dismiss: {dismiss}
 source_type: web_page
 url: https://example.com/{slug}
+summary: {summary}
+{topics_field}
 filed_date:{filed_suffix}
 distilled_date:
 blocked: {blocked}
-notebooklm_id: nb-{slug}
+notebooklm_id:{notebook_suffix}
 ---
 """
 
@@ -34,7 +36,14 @@ def write_note(
     dismiss=False,
     blocked=False,
     filed_date=None,
+    summary="a summary",
+    topics=("t",),  # source notes carry block-style topics; () means empty
+    notebook=True,
 ):
+    # Real source notes write topics as a YAML block list (the reader returns an
+    # inline flow list as a plain string, so block is what "a populated list"
+    # must look like). An empty tuple renders the bare `topics:` (parsed None).
+    topics_field = "topics:\n" + "".join(f"  - {t}\n" for t in topics) if topics else "topics:"
     (sources / f"{slug}.md").write_text(
         NOTE_TEMPLATE.format(
             title=slug,
@@ -43,7 +52,10 @@ def write_note(
             keep=str(keep).lower(),
             dismiss=str(dismiss).lower(),
             blocked=str(blocked).lower(),
+            summary=summary,
+            topics_field=topics_field.rstrip("\n"),
             filed_suffix=f" {filed_date}" if filed_date else "",
+            notebook_suffix=f" nb-{slug}" if notebook else "",
         ),
         encoding="utf-8",
     )
@@ -141,6 +153,18 @@ def test_blocked_excluded_from_everything(vault: Path, capsys):
     assert out["phase_a"]["stamped"] == []
     assert out["phase_b"]["ripe"] == []
     assert out["counts"]["blocked_excluded"] == 1
+
+
+def test_needs_summary_surfaced_and_filtered(vault: Path, capsys):
+    sources = vault / "Sources"
+    write_note(sources, "gap", summary="", topics=())  # empty guide, live notebook
+    write_note(sources, "full")  # populated — excluded
+    write_note(sources, "nonb", summary="", topics=(), notebook=False)  # no notebook
+    write_note(sources, "walled", summary="", topics=(), blocked=True)  # DLQ
+    out = run(vault, capsys)
+
+    assert [s["slug"] for s in out["needs_summary"]] == ["gap"]
+    assert out["counts"]["needs_summary"] == 1
 
 
 def test_non_source_note_is_an_anomaly(vault: Path, capsys):
