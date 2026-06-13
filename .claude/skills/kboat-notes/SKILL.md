@@ -80,8 +80,8 @@ The note **write is owned by `kboat-note write`** (`kboat-note write --type sour
 | `dismiss` | Checkbox (a disposition), set by the human. Abandon this source: take it off the inbox, discard its notebook after the cooldown, and exclude it from recall. The note (and any PDF) stays as a de-dup tombstone. Mutually exclusive with `keep`/`distill` — combining them is the ambiguous state the routine refuses to process. |
 | `source_type` | `web_page` or `pdf`. |
 | `url` | Original, canonical URL. Immutable. |
-| `summary` | A concise one- or two-sentence summary, captured at ingest from the NotebookLM source guide. Lets a source be recognised in recall results and browsed in the Base after its notebook is gone. |
-| `topics` | A list of topic keywords from the source guide. The main lexical signal for recall search. |
+| `summary` | A concise one- or two-sentence summary in **Japanese**, captured at ingest from the NotebookLM source guide (translated if the guide returned another language). No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is. Lets a source be recognised in recall results and browsed in the Base after its notebook is gone. Same language rule as a repo note's `summary`. |
+| `topics` | A list of topic keywords from the source guide, in **English** (translated from the guide's keywords if they came back in another language). A primary lexical signal for recall — strongest for an English or technical-term query, while a Japanese query leans on `summary` instead; English keys also join across sources and sit alongside a repo note's (GitHub-derived) English `topics`. |
 | `added_date` | Date the source was ingested. |
 | `filed_date` | Date, stamped by the routine when it first observes any disposition (`distill`/`keep`/`dismiss`); cleared if every disposition is later unchecked. Empty until then. The clock that the cooldown counts from. |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
@@ -352,7 +352,7 @@ The step only reads the Daily note — it never writes one, so the Daily note st
 
 **Look-back — a bounded window.** `kboat-pick candidates` walks the Daily notes newest-first (dated on or before today) and returns the `## 明日への問い` items within a look-back window — the last two weeks by default (`--lookback-days`, default 14, inclusive of both ends), so a day with no note (or no heading) is skipped and only the recent questions are used. The window keeps the pick anchored to what you are asking now; questions older than it are out of scope, so a stretch with no recent questions yields no picks rather than dredging up stale ones. The window the tool used is echoed back as `lookback_days` in its JSON.
 
-**Output — at most two `web_page` picks, marked `picked`.** `kboat-recall` ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`, the candidate set `kboat-pick` returns) against the in-window questions, reading the candidates' `summary`/`topics` and judging genuine relevance (pre-filtering lexically first when the inbox is large), in two tiers:
+**Output — at most two `web_page` picks, marked `picked`.** `kboat-recall` ranks the active web inbox (`!distill && !keep && !dismiss && !blocked && source_type == "web_page"`, the candidate set `kboat-pick` returns) against the in-window questions, reading the candidates' `summary`/`topics` and judging genuine relevance (pre-filtering lexically first when the inbox is large — against the Japanese questions that pre-filter leans on the Japanese `summary`, since `topics` is English), in two tiers:
 
 - **Tier 1 — direct answers.** For each question, newest-first, take candidates that directly answer it. Accumulate distinct picks until two.
 - **Tier 2 — same-field learning, to fill the cap.** If Tier 1 yields fewer than two, top up with candidates that, while not a direct answer, would teach you something in the field or theme of the in-window questions — newest-question-first again. This is the deliberate relaxation: the pick should not stay empty when a genuinely on-topic read is sitting in the inbox.
@@ -567,8 +567,8 @@ The bytes decide PDF-vs-not; the URL shape only decides blocked-vs-web once the 
 
 Every source — web or PDF — gets a `summary` and `topics`, captured at ingest while its notebook still exists. They are the durable, searchable description the recall skill leans on once the notebook is discarded, and they make the Base browsable. Run this after the source is `ready` (the fetch/extraction verification above passed):
 
-1. `notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags). The guide follows the notebook's language.
-2. Write `topics` = the `.keywords` list, and `summary` = a concise one- or two-sentence summary (trim `.summary` to its lead if it runs long). If the guide call fails, leave both empty and report it; ingest continues (recall falls back to `title`).
+1. `notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags). The guide follows the notebook's language, so its output may be in either language — normalise it in the next step, do not store it verbatim.
+2. Write `summary` = a concise one- or two-sentence summary in **Japanese** (if `.summary` came back in another language, **translate** it first — keep established acronyms and proper nouns as-is — then trim to its lead if it runs long), and `topics` = the `.keywords` list in **English** (translate any non-English keyword). This is normalisation, not re-derivation: the guide already summarised the content; here you only fix the language. It is a write-time convention the ingest model applies — `kboat-validate` checks each field's kind and presence, not its language. If the guide call fails, leave both empty and report it; ingest continues (recall falls back to `title`).
 
 ## Procedure: set the notebook chat persona
 
