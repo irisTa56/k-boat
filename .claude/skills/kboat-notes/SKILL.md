@@ -115,11 +115,17 @@ The routine (kboat-distill) drives the transitions:
 
 The ripe predicate is `distill && !dismiss && !blocked && filed_date <= today - 7 days && distilled_date` empty.
 The dismiss predicate is `dismiss && !keep && !distill && !blocked && filed_date <= today - 7 days`.
+
+A source carries one more, disposition-independent predicate — the **needs-summary** (summary-backfill) set: `notebooklm_id` present (a live notebook) `&& !blocked && (summary empty || topics empty)`.
+It is not a lifecycle transition: it gates no destructive action and ignores the cooldown.
+It is the recovery set `kboat-ingest` retries — re-fetch the source guide while the notebook still exists — so a source-guide failure at ingest (which leaves `summary`/`topics` empty, see "Procedure: capture summary and topics") self-heals on a later run.
+An undispositioned active source is the case that needs it most: it never becomes ripe, yet the daily pick and recall lean on its `summary`/`topics`, so distillation would never fill the gap.
+A `blocked` source has no notebook, so it is excluded; `summary` or `topics` empty (either) qualifies, since the guide supplies both at once.
 The cooldown gates only the destructive actions (`distill`, `dismiss`); during it you can still change the disposition — flip `dismiss` → `keep`, or add `distill` — in the Holding view. `filed_date` is the *first*-filed time, so adding `distill` to a source kept long ago distils it on the next run (its cooldown has already elapsed) rather than waiting a fresh week.
 States are readable from the disposition flags plus the dates: `distilled_date` set → distilled; `keep` set with `notebooklm_id` present → a retained "read later" source; `dismiss` set with `notebooklm_id` empty → an abandoned tombstone; a `distill` or `dismiss` source with `distilled_date` empty and `notebooklm_id` present → in flight (awaiting the cooldown, or — for `distill` — ripe and retried after a recorded error).
 For a ripe source the notebook is discarded last (when it is discarded at all — not under `keep`), after `distilled_date` is stamped and the review report is written, so nothing it holds is destroyed before it is recorded.
 
-This state machine is purely mechanical — boolean and date predicates over frontmatter — so kboat-distill delegates it to a deterministic tool, `kboat-lifecycle` (in the `kboat` package), which applies Phase A (stamp/clear `filed_date`) and emits the ripe / dismiss / ambiguous work sets as JSON. This skill remains the **spec**; the tool is an implementation of it. When the predicates here change, update the tool (and its tests) to match.
+This state machine is purely mechanical — boolean and date predicates over frontmatter — so kboat-distill delegates it to a deterministic tool, `kboat-lifecycle` (in the `kboat` package), which applies Phase A (stamp/clear `filed_date`) and emits the ripe / dismiss / ambiguous work sets plus the `needs_summary` set as JSON. The `needs_summary` set is read-only (no writes are tied to it), so `kboat-ingest` reads it from a `kboat-lifecycle --dry-run` invocation. This skill remains the **spec**; the tool is an implementation of it. When the predicates here change, update the tool (and its tests) to match.
 
 ### The DLQ (blocked sources)
 
@@ -565,7 +571,8 @@ The bytes decide PDF-vs-not; the URL shape only decides blocked-vs-web once the 
 
 ## Procedure: capture summary and topics
 
-Every source — web or PDF — gets a `summary` and `topics`, captured at ingest while its notebook still exists. They are the durable, searchable description the recall skill leans on once the notebook is discarded, and they make the Base browsable. Run this after the source is `ready` (the fetch/extraction verification above passed):
+Every source — web or PDF — gets a `summary` and `topics`, captured at ingest while its notebook still exists. They are the durable, searchable description the recall skill leans on once the notebook is discarded, and they make the Base browsable. Run this after the source is `ready` (the fetch/extraction verification above passed).
+The same procedure is the recovery sweep `kboat-ingest` runs against an existing note whose capture failed earlier (the `needs_summary` set above): the notebook is already `ready`, so skip straight to step 1 and write the result back over the existing note — create or re-add nothing.
 
 1. `notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags). The guide follows the notebook's language, so its output may be in either language — normalise it in the next step, do not store it verbatim.
 2. Write `summary` = a concise one- or two-sentence summary in **Japanese** (if `.summary` came back in another language, **translate** it first — keep established acronyms and proper nouns as-is — then trim to its lead if it runs long), and `topics` = the `.keywords` list in **English** (translate any non-English keyword). This is normalisation, not re-derivation: the guide already summarised the content; here you only fix the language. It is a write-time convention the ingest model applies — `kboat-validate` checks each field's kind and presence, not its language. If the guide call fails, leave both empty and report it; ingest continues (recall falls back to `title`).

@@ -4,6 +4,12 @@ Reads every `Sources/*.md` note in the vault, maintains the cooldown clock
 (Phase A — stamps/clears `filed_date` on disk unless `--dry-run`), and prints
 the resulting plan as JSON on stdout for the `kboat-distill` routine to act on.
 
+Alongside the cooldown work sets it emits `needs_summary`: sources with a live
+notebook but an empty `summary`/`topics`, the recovery set the ingest pass
+retries (re-fetch the source guide while the notebook still exists). It is a
+read-only listing — no writes are tied to it — so `kboat-ingest` reads it from a
+`--dry-run` invocation without triggering any `filed_date` change.
+
 It also scans `Kindles/*.md` (if present) and emits the ripe Kindle set under
 `kindles.ripe`. Kindle notes have no cooldown and no notebook, so the tool makes
 no on-disk writes for them — it only selects which are ripe (`distill` &&
@@ -171,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             "ripe": [_source_json(s) for s in plan.ripe],
             "dismiss_discard": [_source_json(s) for s in plan.dismiss_discard],
         },
+        "needs_summary": [_source_json(s) for s in plan.needs_summary],
         "kindles": {
             "ripe": [_kindle_json(k) for k in ripe_kindles],
         },

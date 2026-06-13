@@ -28,6 +28,17 @@ For every other URL, follow the source path:
 3. Create the source's 1:1 notebook (see kboat-notes "create or update a source note"): `create` → `source add` → **verify the fetch** (see kboat-notes: `ready` and the real article, not empty or a wall) → capture `summary`/`topics` from the source guide and write them plus `notebooklm_id` and the derived `gemini_url`/`notebooklm_url` back onto the source note. If the fetch is not successful (a wall), the notebook has no usable content: record the source in the DLQ (kboat-notes "Procedure: record a blocked source") — set `blocked: true` and discard the walled notebook — so `kboat-rescue` can supply the content later. Run the verification in a cheap subagent, like the page fetch in step 1.
 4. Delete the reminder only after the source note is written, with `rem delete <reminder_id> --force` (the id is the `id` field from the queue JSON). A DLQ note counts as written — the durable note replaces the reminder, so delete it. Keep the reminder only when no note was written or the write failed (transient cases: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`) so the item is retried next run.
 
+## Backfill: retry summary/topics capture
+
+After the queue is drained (and whether or not it was empty), retry the durable `summary`/`topics` for any earlier source whose guide capture failed but whose notebook still exists, so a transient source-guide failure self-heals on a later run rather than waiting on a human.
+This belongs in ingest because the gap matters before a source is ever filed: an undispositioned active `web_page` source with no `summary` is exactly what the daily pick (a later phase) ranks on, and it never becomes "ripe", so distillation would never reach it.
+
+1. Get the candidate set from the lifecycle tool read-only — pass `--dry-run` so it does not stamp `filed_date` here: `kboat-lifecycle --dry-run` returns a top-level `needs_summary` array of sources with a live `notebooklm_id` and an empty `summary`/`topics`, already excluding `blocked` (DLQ) sources. It is normally empty; act only on what it lists.
+2. For each listed source, run kboat-notes "Procedure: capture summary and topics" against the existing notebook (resolve the source id by `url`/`title` in `notebooklm source list`, then `source guide`), and write `summary`/`topics` back with `kboat-note write --type source` (a `{slug, fields}` record merged over the note). The notebook already exists — do not create or re-add anything.
+3. If the guide still fails (rate limit, error), leave the fields empty and report it; the next run retries. A source whose guide permanently yields nothing is retried each run until its notebook is discarded by distillation, which is cheap and self-limiting.
+
+This is the same capture as step 3 above applied to existing notes; it needs only NotebookLM (no Basic Memory, no `gh`).
+
 ## Safety
 
 - De-duplicate per kboat-notes (the URL-hash slug); never create a second notebook for a source that already has a `notebooklm_id`.
@@ -57,4 +68,5 @@ Collect, per item, at least:
 End the run with a summary covering:
 
 - Counts: items drained, **GitHub repos catalogued** (routed to `Repos/`), notebooks created, sources left without a notebook, **sources sent to the DLQ** (blocked PDF or walled web page — awaiting `kboat-rescue`), PDFs ingested with empty/garbled extraction (readable file, unusable notebook), and sources left with empty `summary`/`topics`. For PDFs also count: transient download failures (reminder kept) and titles that fell back to the reminder text.
+- Backfill (the summary/topics retry sweep): candidates seen, backfilled this run, and still empty after a retry (guide failed again).
 - Errors: each collected error with the item it affected and the cause (e.g. bot-blocked PDF → DLQ, walled web page → DLQ, undecidable type, transient PDF download failure, rate-limited `create`/`source add`, persona-configure failure (non-fatal), source-guide failure, note write failure, slug collision).
