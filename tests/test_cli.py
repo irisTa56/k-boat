@@ -39,6 +39,17 @@ from feed_filter.seen import count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
 
 
+@pytest.fixture(autouse=True)
+def _no_open_reminder_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default ``cmd_forum_remind``'s open-reminder lookup to empty (hermetic).
+
+    ``cmd_forum_remind`` queries open reminders to dedupe by URL (FRM-006);
+    without this guard every forum-remind test would shell out to the real
+    Reminders store via ``rem list``. Suppression tests override this stub.
+    """
+    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set())
+
+
 def _no_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub out the real httpx client; monkeypatched core fns ignore it."""
     monkeypatch.setattr(cli, "build_client", lambda: contextlib.nullcontext(None))
@@ -1146,6 +1157,7 @@ def test_forum_remind_adds_then_records(
     assert out["id"] == "FR-1"
     assert out["kept"] is True
     assert out["post_id"] == 5001
+    assert out["suppressed"] is False  # no open reminder for this URL (autouse stub)
 
     # rem was invoked with --list "Filtered Forums".
     assert len(rem_calls) == 1
@@ -1161,6 +1173,100 @@ def test_forum_remind_adds_then_records(
 
         assert is_post_seen(conn, FORUM_SITE_ID, 5001)
         assert op_interest_kept(conn, FORUM_SITE_ID, 1234) is None
+
+
+def test_forum_remind_suppresses_when_url_already_open(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An incomplete reminder for the same topic URL suppresses the ``rem add``
+    but still records the disposition (FRM-006: one open reminder per topic URL)."""
+    from feed_filter.forum_store import is_post_seen
+
+    _add_forum_site()
+    url = f"{FORUM_URL}/t/topic/1234"
+
+    # An open reminder for this URL already exists (overrides the autouse stub).
+    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: {url})
+
+    # add_reminder must NOT be invoked when the URL is already open.
+    def fail_add(*_a: object, **_k: object) -> str:
+        pytest.fail("add_reminder must not be called when the URL is already open")
+
+    monkeypatch.setattr(cli, "add_reminder", fail_add)
+
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            url,
+            "--title",
+            "My Topic",
+            "--notes",
+            "Popular",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out["suppressed"] is True
+    assert out["id"] is None  # no reminder created
+
+    # The post-grain seen IS recorded despite the suppressed reminder, so the
+    # post is not re-judged next run (delivered via the surviving open reminder).
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
+
+
+def test_forum_remind_suppressed_rule_a_still_records_verdict(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A suppressed Rule-A remind (`--is-op`) still records the topic-grain
+    verdict: suppression skips only the `rem add`, never the record (FRM-006)."""
+    from feed_filter.forum_store import admit_topic, op_interest_kept
+
+    _add_forum_site()
+    url = f"{FORUM_URL}/t/topic/1234"
+
+    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: {url})
+
+    def fail_add(*_a: object, **_k: object) -> str:
+        pytest.fail("add_reminder must not be called when the URL is already open")
+
+    monkeypatch.setattr(cli, "add_reminder", fail_add)
+
+    # Pre-admit so set_op_verdict has a row to update.
+    with contextlib.closing(open_db(db_path())) as conn:
+        admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
+
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--url",
+            url,
+            "--title",
+            "My Topic",
+            "--notes",
+            "Cross-domain",
+            "--is-op",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out["suppressed"] is True
+    assert out["id"] is None
+
+    # The topic-grain interest verdict is recorded despite the suppressed reminder.
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert op_interest_kept(conn, FORUM_SITE_ID, 1234) == 1
 
 
 def test_forum_remind_rule_a_keep_records_verdict_only(

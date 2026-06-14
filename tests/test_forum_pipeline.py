@@ -293,14 +293,76 @@ def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connecti
     assert result.fetch_count == 3
 
 
+def test_admit_marks_only_top_feed_topics_poll_eligible(conn: sqlite3.Connection) -> None:
+    """Only top-feed topics are poll-eligible; latest-only topics are not (FRM-001).
+
+    latest.rss carries 101/102/103; top.rss carries 201/202/203. The Rule-B poll
+    set must be the top topics alone, so the per-run JSON sweep is bounded to the
+    top-N rather than every latest topic (the prior behavior tripped 429).
+    """
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(_no_json_handler) as client:
+        admit_from_feeds(conn, site, client=client, now=NOW)
+
+    eligible = {
+        topic_id
+        for (topic_id,) in conn.execute(
+            "SELECT topic_id FROM forum_watch WHERE site_id = ? AND poll_eligible = 1",
+            (SITE_ID,),
+        ).fetchall()
+    }
+    assert eligible == {201, 202, 203}, "only top-feed topics are poll-eligible"
+    # The latest-only topics are still admitted (for Rule-A tracking), just not polled.
+    all_admitted = {
+        topic_id
+        for (topic_id,) in conn.execute(
+            "SELECT topic_id FROM forum_watch WHERE site_id = ?", (SITE_ID,)
+        ).fetchall()
+    }
+    assert {101, 102, 103} <= all_admitted, "latest-only topics are admitted, not polled"
+
+
+def test_gather_skips_latest_only_topics(conn: sqlite3.Connection) -> None:
+    """gather_forum JSON-polls only poll-eligible (top-feed) topics (FRM-001).
+
+    After admission, a handler records which /t/<id>.json paths are fetched: the
+    latest-only topics (101/102/103) must never be fetched, only the top topics.
+    """
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(_no_json_handler) as client:
+        admit_from_feeds(conn, site, client=client, now=NOW)
+
+    fetched_ids: list[int] = []
+
+    def recording_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.startswith("/t/") and path.endswith(".json"):
+            fetched_ids.append(int(path[len("/t/") : -len(".json")]))
+            return httpx.Response(
+                200, content=_TOPIC_JSON, headers={"content-type": "application/json"}
+            )
+        return httpx.Response(404, text="not found")
+
+    with _client_from_handler(recording_handler) as client:
+        gather_forum(conn, site, client=client, now=NOW)
+
+    assert {101, 102, 103}.isdisjoint(fetched_ids), "latest-only topics must not be JSON-polled"
+    assert set(fetched_ids) == {201, 202, 203}, "only top-feed topics are JSON-polled"
+
+
 # ---------------------------------------------------------------------------
 # gather_forum: Rule-B candidate assembly (TASK-019)
 # ---------------------------------------------------------------------------
 
 
 def _admit_and_make_due(conn: sqlite3.Connection, topic_id: int) -> None:
-    """Helper: admit a topic with first_seen_at=0 so offset=0 fires at any now."""
-    forum_store.admit_topic(conn, SITE_ID, topic_id, first_seen_at=0)
+    """Helper: admit a poll-eligible topic at first_seen_at=0 so offset=0 fires.
+
+    Rule-B gather tests need the topic JSON-polled, so the topic is admitted
+    ``poll_eligible=True`` (the top-feed case); a latest-only topic would never
+    be due (FRM-001).
+    """
+    forum_store.admit_topic(conn, SITE_ID, topic_id, first_seen_at=0, poll_eligible=True)
 
 
 def test_gather_forum_emits_rule_b_candidates(conn: sqlite3.Connection) -> None:

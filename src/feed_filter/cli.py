@@ -59,7 +59,7 @@ from feed_filter.fetch import FetchError, build_client
 from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import fetch_entries, gather_new
-from feed_filter.reminders import ReminderError, add_reminder
+from feed_filter.reminders import ReminderError, add_reminder, open_reminder_urls
 from feed_filter.seen import open_db, record, snapshot
 from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
 
@@ -486,10 +486,29 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     topic-grain verdict and never touches the post-grain seen store. This keeps
     Rule A fetch-free and lets a later Rule-B pass re-judge the OP if it gains
     likes (FRM-006).
+
+    **Open-reminder de-duplication (FRM-006).** A forum reminder targets the
+    topic top, so two open reminders for the same topic URL are redundant
+    pointers to the same page — the same-run two-axis A/B case, or an unread
+    cross-run re-remind. When an *incomplete* reminder for this URL already
+    exists in ``Filtered Forums`` (``open_reminder_urls``), the ``rem add`` is
+    suppressed but the disposition is **still recorded** (so the post/OP is not
+    re-judged): the surviving open reminder already directs the reader to the
+    topic, where every post is visible, so no content is lost. Once the reader
+    completes that reminder it leaves the incomplete set, so a later qualifying
+    post re-reminds as before. Suppression keeps the record path, so the
+    never-lost ordering (rem-then-record) is unchanged: a non-suppressed
+    ``rem add`` that fails still raises before any record (FRM-CON-005).
     """
-    reminder_id = add_reminder(
-        args.title, args.url, args.notes, list_name=REMINDER_LIST_FORUM
-    )  # ReminderError → exit 1, no record (FRM-CON-005)
+    # Suppress a second OPEN reminder for the same topic (FRM-006); still record.
+    open_urls = {canonical_url(u) for u in open_reminder_urls(REMINDER_LIST_FORUM)}
+    suppressed = bool(args.url) and canonical_url(args.url) in open_urls
+
+    reminder_id: str | None = None
+    if not suppressed:
+        reminder_id = add_reminder(
+            args.title, args.url, args.notes, list_name=REMINDER_LIST_FORUM
+        )  # ReminderError → exit 1, no record (FRM-CON-005)
     with contextlib.closing(open_db(db_path())) as conn:
         if args.post_id is not None:
             record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
@@ -502,6 +521,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
             "topic_id": args.topic_id,
             "post_id": args.post_id,
             "kept": True,
+            "suppressed": suppressed,
         }
     )
     return 0

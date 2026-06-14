@@ -42,22 +42,43 @@ def admit_topic(
     site_id: str,
     topic_id: int,
     first_seen_at: int,
+    *,
+    poll_eligible: bool = False,
 ) -> None:
     """Idempotently admit a topic into the watch set (FRM-CON-005).
 
     INSERT-OR-IGNORE so a second call for the same ``(site_id, topic_id)``
     is a silent no-op — it never resets ``first_seen_at`` or
     ``completed_polls``.
+
+    ``poll_eligible`` marks the topic for Rule-B JSON polling (FRM-001): pass
+    ``True`` for a topic surfaced by a top feed, ``False`` for a ``latest.rss``-
+    only topic (admitted for Rule-A judged-once tracking but not JSON-polled).
+    The default is ``False`` — a topic must be explicitly opted into polling, so
+    a forgotten flag under-polls rather than re-introducing the rate-limit sweep.
+    Upgrading is one-directional: a ``True`` admission flips an existing
+    latest-only row's flag to 1 (INSERT-OR-IGNORE alone cannot, since the row
+    already exists), but a ``False`` admission never downgrades a top topic that
+    reappears only in ``latest.rss``.
     """
     conn.execute(
         """
         INSERT OR IGNORE INTO forum_watch
             (site_id, topic_id, first_seen_at, op_interest_kept,
-             completed_polls, last_like_count, retired)
-        VALUES (?, ?, ?, NULL, 0, NULL, 0)
+             completed_polls, last_like_count, retired, poll_eligible)
+        VALUES (?, ?, ?, NULL, 0, NULL, 0, ?)
         """,
-        (site_id, topic_id, first_seen_at),
+        (site_id, topic_id, first_seen_at, 1 if poll_eligible else 0),
     )
+    if poll_eligible:
+        # Promote a latest-only row (poll_eligible=0) once the topic appears in a
+        # top feed. Guarded by the WHERE so it is a no-op when already 1, and
+        # never runs for a False admission, keeping the upgrade one-directional.
+        conn.execute(
+            "UPDATE forum_watch SET poll_eligible = 1 "
+            "WHERE site_id = ? AND topic_id = ? AND poll_eligible = 0",
+            (site_id, topic_id),
+        )
     conn.commit()
 
 
@@ -152,8 +173,11 @@ def due_topics(
     """Return topics whose next poll offset has elapsed, ordered by
     ``first_seen_at`` then ``topic_id`` (deterministic and stable).
 
-    A topic is due when it is not retired AND
+    A topic is due when it is poll-eligible (surfaced by a top feed, FRM-001)
+    AND not retired AND
     ``now - first_seen_at >= offsets[completed_polls] * 86400`` (FRM-007).
+    A ``latest.rss``-only topic (``poll_eligible = 0``) is never due — it is
+    judged once under Rule A but never JSON-polled for Rule B.
 
     "Due if elapsed, not a wall-clock appointment": a missed/offline run is
     caught up at the next run, and several elapsed offsets during downtime
@@ -172,7 +196,7 @@ def due_topics(
         SELECT topic_id, first_seen_at, completed_polls,
                op_interest_kept, last_like_count
         FROM forum_watch
-        WHERE site_id = ? AND retired = 0
+        WHERE site_id = ? AND retired = 0 AND poll_eligible = 1
         ORDER BY first_seen_at ASC, topic_id ASC
         """,
         (site_id,),

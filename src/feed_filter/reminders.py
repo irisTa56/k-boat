@@ -1,6 +1,8 @@
 """The ``rem`` wrapper — the only writer of Reminders.app (REQ-005, CON-004).
 
 ``add_reminder`` shells out to ``rem add … -o json`` and returns the created id.
+``open_reminder_urls`` is the one read: it lists a list's *incomplete* reminders
+so the forum path can keep at most one open reminder per topic URL (FRM-006).
 Two invariants the rest of the pipeline relies on:
 
 - **A reminder always has a non-empty title.** ``rem add`` rejects an empty name,
@@ -96,3 +98,42 @@ def add_reminder(
         raise ReminderError(
             argv, proc.returncode, f"unparseable rem output: {proc.stdout!r}"
         ) from exc
+
+
+def open_reminder_urls(
+    list_name: str = REMINDER_LIST,
+    *,
+    runner: Runner = subprocess.run,
+) -> set[str]:
+    """Return the URLs of the *incomplete* reminders in ``list_name``.
+
+    Runs ``rem list --list <name> --incomplete -o json`` and collects each
+    reminder's ``url`` field. The forum path uses this to keep **at most one open
+    reminder per topic URL** (FRM-006): a forum reminder targets the topic top,
+    so a second open item for the same URL is a redundant pointer to the same
+    page (the two-axis A/B case, or an unread cross-run re-remind).
+
+    Fails **open**: any failure (non-zero exit, ``rem`` missing, unparseable
+    output, unexpected shape) returns an empty set, so suppression simply does
+    not fire and the caller reminds as usual — never-lost over never-duplicated
+    (FRM-CON-005). A genuine ``rem`` fault then surfaces on the subsequent
+    ``rem add`` (``ReminderError``), not here.
+    """
+    argv = [REM_BINARY, "list", "--list", list_name, "--incomplete", "-o", "json"]
+    try:
+        proc = runner(argv, capture_output=True, text=True)
+    except OSError:
+        return set()
+    if proc.returncode != 0:
+        return set()
+    try:
+        items = json.loads(proc.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return set()
+    if not isinstance(items, list):
+        return set()
+    return {
+        item["url"]
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("url"), str) and item["url"]
+    }

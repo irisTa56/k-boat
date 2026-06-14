@@ -6,7 +6,10 @@ description: Run one forum-filter pass — gather Rule-A and Rule-B candidates f
 # feed-filter forum periodic run
 
 One pass of the forum filter: gather due Rule-A and Rule-B candidates across all registered Discourse forum sites, judge each against `prompts/selection.md`, remind the keeps into `Filtered Forums`, and advance each topic's poll counter.
-This is the periodic, cost-sensitive half of the forum adapter — judging runs on **haiku** subagents (FRM-GUD-003), and the global cap (`DEFAULT_GLOBAL_CAP=80`, FRM-CON-004), not subagent cleverness, is the primary cost bound.
+This is the periodic half of the forum adapter.
+Judging is split by model: **Rule A** (the subtle cross-domain call) runs on a **Sonnet** subagent; **Rule B** (a local per-post value call) stays on **haiku**.
+This revises the skill's original "all judging on haiku" default: a live run showed haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure", so Rule A needs the stronger model; no prompt wording reliably fixes a model that cannot apply the distinction.
+The global cap (`DEFAULT_GLOBAL_CAP=80`, FRM-CON-004) is the primary cost bound; a steady-state run judges only a handful of new topics, so the Sonnet cost is small except at cold start.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
 The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
@@ -41,7 +44,8 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      It is a coarse politeness/rate metric for the run summary; it does not include the judging subagents' `WebFetch` calls, which are not Discourse-API requests.
    - Keep `polls` and `sites` aside for steps 3–4.
 
-2. **Judge each candidate** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
+2. **Judge each candidate**, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
+   Use a **Sonnet** subagent for Rule A and a **haiku** subagent for Rule B (see the model split above).
    Judging candidates in parallel is fine.
 
    **Rule A** (`rule == "A"`) — cross-domain interest judgment on the OP:
@@ -49,10 +53,15 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      Read it from `feed-filter list-sites` (the `forum_subject` field on the site, alongside `selection`); pass it to the judge so it evaluates whether the topic would interest a reader from *outside* that forum's community.
      A topic about the forum's own native subject is not cross-domain and should be dropped; a topic interesting only because it is on-subject for this forum is not a keep.
      When a site has no `forum_subject` set (the field is `null`), there is no native subject to exclude — judge the OP on interest alone.
+   - **Keep cross-domain value; judge the subject's domain, not the post's polish.**
+     - Keep a substantial OP, or a question or discussion the reader could contribute to, when its subject connects to a reader interest domain *other* than this forum's native subject.
+     - Being written in or for this forum's language does not make a topic cross-domain: ecosystem tooling (a parser, an HTTP library, a web-framework add-on, a test helper, a NIF binding) is native even with benchmarks, because it interests only this forum's own community — a library is cross-domain only when its *domain* is.
+     - Drop regardless of polish: a topic interesting only as the native subject; a talk or meetup announcement that is just a link and a blurb; a job, hiring, or freelance post; an off-topic or trivial question.
+   - **Exception — Security**: a serious security vulnerability or advisory is kept even when it is on the forum's native subject (a native CVE is actionable, not on-subject noise); the native-subject exclusion does not apply to it.
    - **Two-stage judgment** (FRM-002): give the subagent the `title` and `op_text` first and let it decide from those; only when they are too thin to decide does it `WebFetch` the topic page (`topic_url`) for the full OP text.
      A `topic_url` fetch is the OP page, not the feed — fetching the feed for its item list is forbidden (CON-002).
-   - The subagent returns `{keep, title, reason}`.
-     There is no `wall` field for forum posts: a public Discourse topic page is not gated behind a login or paywall, so a stage-2 `WebFetch` of `topic_url` returns the OP, not a wall.
+   - The subagent returns the JSON contract from `selection.md`'s **Output** section — `{keep, title, summary, reason}` — so the note convention is shared with the article path, not re-specified here: `summary` becomes the reminder note in whatever language `selection.md` mandates, and `reason` is the brief justification surfaced only in the run summary.
+     The one forum-specific difference is the `wall` field: omit it (a public Discourse topic page is not gated behind a login or paywall, so a stage-2 `WebFetch` of `topic_url` returns the OP, not a wall).
 
    **Rule B** (`rule == "B"`) — "contains worth-reading information," judged per `trigger_posts`:
    - The native subject is **not** excluded for Rule B (FRM-003) — a popular post in the forum's own domain may still be worth reading.
@@ -60,7 +69,9 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      Judge each trigger post independently.
      A `text` field contains plain text stripped from the post's rendered HTML; judge from it directly.
      No `WebFetch` is needed per trigger post — the `text` is already available.
-   - The subagent returns `{keep, title, reason}` per trigger post.
+   - Judge the post's *own* content for worth-reading information — a trigger post is often a reply, not the OP, so do not judge whether the OP is substantial.
+     A popular, substantive post (an insightful answer, a benchmark, a design rationale) is a keep; a merely-popular promotional or social post (a release blurb, congratulations, a `+1`) is a drop — popularity is the gate, not the verdict.
+   - The subagent returns the same `selection.md` Output JSON per trigger post (`summary` the reminder note per `selection.md`'s language rule; `reason` the run-summary justification; no `wall`).
 
 3. **Act on each judged candidate** — one `feed-filter` process per disposition.
    The **never-lost ordering invariant** (FRM-CON-005) is the load-bearing contract this skill owns:
@@ -73,12 +84,12 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
    Because the axes are independent, the OP can be dispositioned under both rules: a topic that is both cross-domain interesting and already popular is reminded once via Rule A and once via Rule B (two items, same topic, different reasons — FRM-005 / FRM-006). This is intended, not a duplicate to suppress.
 
-   - **Keep** (Rule A) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --notes <reason> --is-op`.
+   - **Keep** (Rule A) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --notes <summary> --is-op` (the note is the `summary`).
      Creates the reminder in `Filtered Forums` AND records the interest verdict (kept=1) in one process; `rem add` first, verdict only on success (FRM-CON-005).
      A non-zero exit means `rem` failed; surface it and stop reminding (the failure will recur).
    - **Drop** (Rule A) → `feed-filter forum-mark-seen --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --is-op`.
      Records the interest verdict (kept=0); no reminder, and **no** post-grain seen — so if the OP later gains likes, Rule B re-judges it (FRM-006).
-   - **Keep** (Rule B, per trigger post) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --post-id <post_id> --url <topic_url> --title <title> --notes <reason>`.
+   - **Keep** (Rule B, per trigger post) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --post-id <post_id> --url <topic_url> --title <title> --notes <summary>` (the note is the `summary`).
      Creates the reminder AND records the post seen (kept=1); do **not** pass `--is-op`.
    - **Drop** (Rule B, per trigger post) → `feed-filter forum-mark-seen --site-id <id> --topic-id <topic_id> --post-id <post_id> --url <topic_url> --title <title>`.
      Records the post seen (kept=0); no reminder.
@@ -118,4 +129,4 @@ Always keep the fuller breakdown as the run's text output (the transcript), rega
   It is two-stage: judge from `op_text` first; `WebFetch` the topic page (the HTML, for content) only when the snippet is too thin, so prose topics whose RSS description is the full OP need no fetch at all.
 - Rule B uses pre-fetched `text` directly — no per-post `WebFetch` (FRM-CON-004).
 - The like-count short-circuit in `forum-new` (FRM-CON-004) already skips deep Rule-B scanning when a topic's aggregate like count is unchanged since the last poll (after the first poll); the cost saving is already baked into the candidates you receive.
-- One **haiku** subagent per candidate post; per-topic parallelism is fine.
+- Rule A judges on a **Sonnet** subagent (the cross-domain call is too subtle for haiku, per the model split above); Rule B judges on **haiku** (a local per-post value call). One subagent per candidate; per-topic parallelism is fine. A steady-state run judges only a few new topics, so the Sonnet cost is small; the global cap bounds the cold-start worst case.

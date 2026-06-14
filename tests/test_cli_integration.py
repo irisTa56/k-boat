@@ -38,6 +38,17 @@ from feed_filter.seen import is_seen, open_db
 from feed_filter.sites import load_sites
 
 
+@pytest.fixture(autouse=True)
+def _no_open_reminder_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default ``cmd_forum_remind``'s open-reminder lookup to empty (hermetic).
+
+    Keeps forum-remind from shelling out to the real Reminders store via
+    ``rem list`` (FRM-006 dedupe). The suppression end-to-end test overrides this
+    with a stateful stub backed by the same fake ``rem`` store.
+    """
+    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set())
+
+
 def _rss(*links: tuple[str, str]) -> bytes:
     """Build a minimal RSS 2.0 body from (title, link) pairs."""
     items = "".join(
@@ -432,8 +443,11 @@ def _discourse_rss(topic_id: int, slug: str, title: str, description: str) -> by
 
 
 _LATEST_RSS = _discourse_rss(1234, "my-topic", "My Forum Topic", "OP text summary")
-_TOP_DAILY_RSS = b'<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>top</title></channel></rss>'
-_TOP_WEEKLY_RSS = _TOP_DAILY_RSS
+# Topic 1234 also appears in the daily top feed so it is poll-eligible (FRM-001):
+# only top-feed topics are JSON-polled for Rule B, so the end-to-end Rule-B path
+# requires 1234 in a top feed, not latest.rss alone.
+_TOP_DAILY_RSS = _discourse_rss(1234, "my-topic", "My Forum Topic", "OP text summary")
+_TOP_WEEKLY_RSS = b'<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>top</title></channel></rss>'
 
 
 def _forum_transport() -> httpx.Client:
@@ -480,16 +494,23 @@ def test_forum_end_to_end(
 ) -> None:
     """Full forum run: add-forum → forum-new → Rule-A keep of the OP (verdict
     only) + Rule-B keep of the same OP (post-grain seen) → forum-poll-done.
-    Asserts the two dedupe axes are written independently (FRM-006), the OP is
-    reminded once per axis (FRM-005), and 'Filtered Forums' is the list target.
+    Asserts the two dedupe axes are written independently (FRM-006), 'Filtered
+    Forums' is the list target, and the second open reminder for the same topic
+    URL is suppressed (FRM-006) — one open reminder per topic, both axes recorded.
     """
     monkeypatch.setattr(cli, "build_client", _forum_transport)
 
     rem_calls: list[list[str]] = []
+    open_urls: list[str] = []  # stateful fake Reminders store: URLs of open items
 
     def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
         rem_calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
+        # A successful `rem add` makes that URL an open reminder.
+        if len(argv) > 1 and argv[1] == "add" and "--url" in argv:
+            open_urls.append(argv[argv.index("--url") + 1])
+        return SimpleNamespace(
+            returncode=0, stdout=json.dumps({"id": f"FR-{len(rem_calls)}"}), stderr=""
+        )
 
     # Inject the forum-aware rem runner (accepts list_name kwarg).
     monkeypatch.setattr(
@@ -499,6 +520,9 @@ def test_forum_end_to_end(
             title, url, notes, list_name=list_name, runner=fake_runner
         ),
     )
+    # The open-reminder lookup reflects what has been added, so a second remind
+    # of the same topic URL is suppressed (FRM-006). Overrides the autouse stub.
+    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set(open_urls))
 
     # --- Step 1: register the forum site (config only, no snapshot) -----------
     rc = cli.main(
@@ -560,6 +584,9 @@ def test_forum_end_to_end(
         ]
     )
     assert rc == 0
+    a_out = _out(capsys)
+    assert a_out["suppressed"] is False  # first reminder for this URL → created
+    assert a_out["id"] is not None
 
     # rem was called with --list "Filtered Forums", not "Filtered Feeds".
     assert len(rem_calls) == 1
@@ -574,8 +601,9 @@ def test_forum_end_to_end(
 
     # --- Step 4: Rule-B keep of the same OP (trigger post 5001) ---------------
     # The OP is also a Rule-B trigger (10 likes ≥ 6).  Independent axis: pass
-    # `--post-id`, NO `--is-op`.  This records the post-grain seen (FRM-006), so
-    # the same OP is reminded once per axis — two items, same topic (FRM-005).
+    # `--post-id`, NO `--is-op`.  An open reminder for this topic URL already
+    # exists (Step 3), so the `rem add` is SUPPRESSED — but the post-grain seen
+    # is still recorded (FRM-006): one open reminder per topic, both axes written.
     rc = cli.main(
         [
             "forum-remind",
@@ -594,9 +622,13 @@ def test_forum_end_to_end(
         ]
     )
     assert rc == 0
-    assert len(rem_calls) == 2  # one item per axis (FRM-005 / FRM-006)
+    b_out = _out(capsys)
+    assert b_out["suppressed"] is True  # same URL already open → suppressed
+    assert b_out["id"] is None  # no reminder created
+    assert len(rem_calls) == 1  # no second `rem add` (FRM-006 open-reminder dedupe)
 
     with contextlib.closing(open_db(db_path())) as conn:
+        # Post-grain seen IS still recorded despite the suppressed reminder.
         assert is_post_seen(conn, _FORUM_SITE_ID, 5001)
 
     # --- Step 5: forum-poll-done (last call for topic 1234) -------------------

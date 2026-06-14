@@ -199,9 +199,13 @@ def admit_from_feeds(
     text (FRM-002).
 
     Calls ``forum_store.admit_topic`` for each topic in the union; this is the
-    **only** write in the ``forum-new`` path (FRM-CON-005).  Emits a
-    ``RuleACandidate`` for each admitted topic whose ``op_interest_kept`` is
-    still ``NULL`` — Rule A is judged once and needs no JSON fetch (FRM-002).
+    **only** write in the ``forum-new`` path (FRM-CON-005).  A topic is admitted
+    ``poll_eligible`` iff it was surfaced by a top feed (daily ∪ weekly): only
+    those are JSON-polled for Rule B, so a ``latest.rss``-only topic is judged
+    once under Rule A but never enters the poll sweep (FRM-001 — this bounds the
+    sweep to the top-N and is what keeps the run under the forum's rate limit).
+    Emits a ``RuleACandidate`` for each admitted topic whose ``op_interest_kept``
+    is still ``NULL`` — Rule A is judged once and needs no JSON fetch (FRM-002).
 
     Feed-level ``FetchError`` is absorbed into ``error``; surviving feeds are
     still processed to maximise admission (never-lost, FRM-CON-005).
@@ -259,6 +263,17 @@ def admit_from_feeds(
     except FetchError as exc:
         errors.append(str(exc))
 
+    # --- Poll-eligible set: topics surfaced by the top feeds (FRM-001) ---
+    # Only daily/weekly top topics are JSON-polled for Rule B; a latest.rss-only
+    # topic is admitted for Rule-A judged-once tracking but not enrolled in the
+    # poll schedule, bounding the per-run poll sweep to the top-N (the prior
+    # all-latest sweep tripped the forum's anonymous rate limit, 429).
+    top_topic_ids: set[int] = set()
+    for entry in [*daily_entries, *weekly_entries]:
+        tid = topic_id_from_url(entry.canonical_url)
+        if tid is not None:
+            top_topic_ids.add(tid)
+
     # --- Build admission union deduped by topic id ---
     # Iteration order: latest first, then daily top, then weekly top.
     # First entry seen for a given topic id supplies the OP text (FRM-002).
@@ -275,7 +290,13 @@ def admit_from_feeds(
     # --- Admit each topic (idempotent INSERT-OR-IGNORE, FRM-CON-005) ---
     candidates: list[RuleACandidate] = []
     for topic_id, title, summary, topic_url in ordered:
-        forum_store.admit_topic(conn, site.id, topic_id, first_seen_at=now)
+        forum_store.admit_topic(
+            conn,
+            site.id,
+            topic_id,
+            first_seen_at=now,
+            poll_eligible=topic_id in top_topic_ids,
+        )
 
         # Emit a Rule-A candidate only when op_interest_kept is still NULL
         # (topic not yet judged under Rule A). FRM-002: Rule A is judged once.

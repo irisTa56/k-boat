@@ -24,7 +24,7 @@ Pure primitives:
 
 Deterministic httpx ingestion:
 
-- `fetch.py` — sync `httpx` fetch.
+- `fetch.py` — sync `httpx` fetch; retries throttling statuses (`429`/`503`) up to a bounded count, honoring `Retry-After`, so the forum gather loop survives Discourse rate limits instead of shedding topics to the next run.
 - `feeds.py` — feed parsing (`feedparser`).
 - `scrape.py` — index-page scraping (`selectolax`).
 
@@ -58,11 +58,15 @@ New modules:
 
 State store (v2 migration in `seen.py`, colocated for shared `user_version`):
 
-- `forum_watch` — `(site_id, topic_id)` PK; tracks `first_seen_at`, `op_interest_kept`, `completed_polls`, `last_like_count`, `retired`.
+- `forum_watch` — `(site_id, topic_id)` PK; tracks `first_seen_at`, `op_interest_kept`, `completed_polls`, `last_like_count`, `retired`, `poll_eligible` (v3).
   Admission is idempotent (`INSERT-OR-IGNORE`); retirement is offset-only (FRM-007).
 - `forum_post_seen` — `(site_id, post_id)` PK; tracks `topic_id`, `kept`, `seen_at`.
 
-Watch/poll schedule (FRM-007): each topic is polled only at `poll_offsets_days` (default `[0, 1, 7]`) from first-seen.
+Poll set is bounded to the top-N (FRM-001): only a topic surfaced by a top feed (`top.rss` daily ∪ weekly) is admitted `poll_eligible=1` and JSON-polled for Rule B.
+A `latest.rss`-only topic is admitted for Rule-A judged-once tracking but never polled, so the per-run JSON sweep is the top-N, not every latest topic — the prior all-latest sweep tripped the forum's anonymous rate limit (429).
+A topic first seen in `latest.rss` is upgraded to poll-eligible (one-directional) if it later appears in a top feed.
+
+Watch/poll schedule (FRM-007): each poll-eligible topic is polled only at `poll_offsets_days` (default `[0, 1, 7]`) from first-seen.
 A missed/offline run is caught up at the next run; several elapsed offsets collapse into one poll.
 A topic retires after its last offset (`completed_polls >= len(offsets)`).
 
@@ -75,7 +79,8 @@ The two rules (FRM-002/003):
   Effective threshold = `interest_like_threshold` when Rule A kept the topic, else `like_threshold`.
   Emitted by `gather_forum` from the topic JSON (`/t/<id>.json`).
 
-Reminders land in the separate `Filtered Forums` list (FRM-005, `REMINDER_LIST_FORUM` in `config.py`); each re-remind is a fresh item targeting the topic top.
+Reminders land in the separate `Filtered Forums` list (FRM-005, `REMINDER_LIST_FORUM` in `config.py`); each reminder targets the topic top.
+A reminder is suppressed when an *incomplete* reminder for the same topic URL already exists in the list (`open_reminder_urls`, FRM-006): two open reminders for one topic are redundant pointers to the same page, so at most one open reminder exists per topic — the disposition is still recorded, and once the reader completes that reminder a later qualifying post re-reminds.
 The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds as new posts qualify, which is why it dedupes in its own tables rather than `seen.py` (see the dedupe-authority carve-out under Behavioral invariants, FRM-CON-001).
 
 ## CLI subcommands (the JSON contract)
@@ -105,7 +110,7 @@ The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds a
 - `feed-filter-add-site` — main-model registration: discover → pick cluster → `add-site`.
 - `feed-filter-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
 - `feed-filter-manage-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
-- `feed-filter-forum-run` — the periodic forum run: `forum-new` → haiku Rule-A/B judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`.
+- `feed-filter-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
 
@@ -114,8 +119,8 @@ The user-facing narrative of the observable behavior is README's "Failure and se
 
 - **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) reminds *then* records seen, recording only on success; `add_reminder` raises `ReminderError` on a non-zero `rem` exit (`reminders.py`) so a failed remind is never recorded as seen. A judging error still reminds (title or URL fallback) before recording. The only duplicate window is a crash in the gap between remind and record, accepted to guarantee no loss.
 - **Never-lost at post grain (forum).** `cmd_forum_remind` mirrors the above for forum posts: `rem add` *then* the DB write, only on success (FRM-CON-005). `cmd_forum_poll_done` must be the **last** call for a topic in a run, after every candidate is dispositioned — advancing the watch before disposition can cause a loss (FRM-CON-005 / FRM-PAT-001). A crash before `forum-poll-done` costs at most one re-poll; `forum_post_seen` dedups the already-seen posts so no duplicate remind results.
-- **Two independent dedupe axes (forum, FRM-006).** Rule A and Rule B dedupe separately, and the OP may be taken up under both. A Rule-A disposition writes only the **topic-grain** verdict `forum_watch.op_interest_kept` (via `--is-op`); a Rule-B disposition writes only the **post-grain** `forum_post_seen` (via `--post-id`). The two flags are orthogonal in `cmd_forum_remind`/`cmd_forum_mark_seen`. Because Rule A reads the OP from RSS and never holds its `post_id` (FRM-002), it never marks the OP seen at post grain — so an OP dropped for interest under Rule A is still re-judged by Rule B if it later gains likes, and an OP that is both interesting and popular is reminded once per axis.
-- **Seen-store is the sole dedupe authority (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; `rem` does not dedupe. A gather-time fetch failure records nothing, so the next run retries — there is no backoff.
+- **Two independent dedupe axes (forum, FRM-006).** Rule A and Rule B dedupe separately, and the OP may be taken up under both. A Rule-A disposition writes only the **topic-grain** verdict `forum_watch.op_interest_kept` (via `--is-op`); a Rule-B disposition writes only the **post-grain** `forum_post_seen` (via `--post-id`). The two flags are orthogonal in `cmd_forum_remind`/`cmd_forum_mark_seen`. Because Rule A reads the OP from RSS and never holds its `post_id` (FRM-002), it never marks the OP seen at post grain — so an OP dropped for interest under Rule A is still re-judged by Rule B if it later gains likes. An OP that is both interesting and popular is recorded under **both** axes, but reminded **once**: the second `forum-remind` for the same topic URL is suppressed when an open reminder already exists (`open_reminder_urls`), since both point to the same topic top — at most one open reminder per topic, the disposition still recorded.
+- **Seen-store is the sole dedupe authority (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; `rem` does not dedupe. A gather-time fetch failure records nothing, so the next run retries — there is no *cross-run* backoff (within a single fetch, `fetch.py` does retry transient `429`/`503` throttling per `Retry-After`).
   **Forum carve-out:** the forum adapter is a second, post-grain dedupe authority in `forum_store.py` / `forum_post_seen`.
   Post-grain re-reminding is deliberate (a later post on a watched topic crosses the like bar); this suspends the "seen is final" invariant for forum sources only, leaving `seen.py` and every non-forum path untouched (FRM-CON-001).
 - **Operational notices never enter the list.** The `Filtered Feeds` list and the `Filtered Forums` list both hold only user-facing items (`reminders.py`); self-heal and per-site errors are reported in the run's push summary, not as list reminders.

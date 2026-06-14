@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from feed_filter.reminders import ReminderError, add_reminder
+from feed_filter.reminders import ReminderError, add_reminder, open_reminder_urls
 
 
 @dataclass
@@ -122,3 +122,60 @@ def test_missing_binary_raises_reminder_error() -> None:
         add_reminder("T", "https://e.example.com/a", "n", runner=boom)
     assert excinfo.value.returncode == 127
     assert "could not execute" in str(excinfo.value)
+
+
+# --- open_reminder_urls (FRM-006 open-reminder dedupe) ----------------------
+
+
+def _list_proc(items: object) -> FakeProc:
+    import json
+
+    return FakeProc(returncode=0, stdout=json.dumps(items))
+
+
+def test_open_reminder_urls_collects_urls() -> None:
+    runner = FakeRunner(
+        _list_proc(
+            [
+                {"id": "1", "name": "A", "url": "https://f.example.com/t/a/1", "completed": False},
+                {"id": "2", "name": "B", "url": "https://f.example.com/t/b/2", "completed": False},
+                {"id": "3", "name": "C", "url": "", "completed": False},  # blank url ignored
+                {"id": "4", "name": "D", "completed": False},  # no url key ignored
+            ]
+        )
+    )
+    urls = open_reminder_urls("Filtered Forums", runner=runner)
+    assert urls == {"https://f.example.com/t/a/1", "https://f.example.com/t/b/2"}
+    # Queried the incomplete reminders of the named list as JSON.
+    argv = runner.calls[0][0]
+    assert argv == ["rem", "list", "--list", "Filtered Forums", "--incomplete", "-o", "json"]
+
+
+def test_open_reminder_urls_empty_list() -> None:
+    runner = FakeRunner(_list_proc([]))
+    assert open_reminder_urls("Filtered Forums", runner=runner) == set()
+
+
+def test_open_reminder_urls_fails_open_on_nonzero() -> None:
+    # A rem failure must NOT raise: suppression simply does not fire and the
+    # caller reminds as usual (never-lost over never-duplicated, FRM-CON-005).
+    runner = FakeRunner(FakeProc(returncode=1, stderr="list not found"))
+    assert open_reminder_urls("Filtered Forums", runner=runner) == set()
+
+
+def test_open_reminder_urls_fails_open_on_bad_json() -> None:
+    runner = FakeRunner(FakeProc(returncode=0, stdout="not json"))
+    assert open_reminder_urls("Filtered Forums", runner=runner) == set()
+
+
+def test_open_reminder_urls_fails_open_on_unexpected_shape() -> None:
+    # A JSON object instead of an array must degrade to empty, not crash.
+    runner = FakeRunner(_list_proc({"unexpected": "shape"}))
+    assert open_reminder_urls("Filtered Forums", runner=runner) == set()
+
+
+def test_open_reminder_urls_fails_open_on_missing_binary() -> None:
+    def boom(*_a: Any, **_k: Any) -> FakeProc:
+        raise FileNotFoundError(2, "No such file or directory", "rem")
+
+    assert open_reminder_urls("Filtered Forums", runner=boom) == set()

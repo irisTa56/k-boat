@@ -71,6 +71,18 @@ _MIGRATIONS: list[str] = [
         PRIMARY KEY (site_id, post_id)
     );
     """,
+    # v3: bound the Rule-B poll set to top-feed topics (FRM-001 reconciliation).
+    # ``poll_eligible`` marks a watched topic as one to JSON-poll for Rule B.
+    # Only topics surfaced by ``top.rss`` (daily/weekly) are poll-eligible; a
+    # ``latest.rss``-only topic is still admitted (so its Rule-A OP verdict is
+    # tracked once) but is never JSON-polled, so the per-run poll sweep is bounded
+    # to the top-N instead of every latest topic — the prior behavior tripped the
+    # forum's anonymous rate limit (429). Existing rows default to 0 (not polled)
+    # and re-upgrade to 1 on their next top-feed admission (one-directional, see
+    # ``forum_store.admit_topic``).
+    """
+    ALTER TABLE forum_watch ADD COLUMN poll_eligible INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

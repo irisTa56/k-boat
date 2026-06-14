@@ -87,6 +87,69 @@ def test_admit_topic_idempotent(conn: sqlite3.Connection) -> None:
     assert row[1] == 1, "completed_polls must not be reset"
 
 
+def test_admit_topic_defaults_not_poll_eligible(conn: sqlite3.Connection) -> None:
+    """admit_topic defaults to poll_eligible=0 — a topic must opt into polling (FRM-001)."""
+    forum_store.admit_topic(conn, SITE, 42, first_seen_at=1000)
+    flag = conn.execute(
+        "SELECT poll_eligible FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+        (SITE, 42),
+    ).fetchone()[0]
+    assert flag == 0
+
+
+def test_admit_topic_poll_eligible_set(conn: sqlite3.Connection) -> None:
+    """A top-feed admission sets poll_eligible=1 (FRM-001)."""
+    forum_store.admit_topic(conn, SITE, 43, first_seen_at=1000, poll_eligible=True)
+    flag = conn.execute(
+        "SELECT poll_eligible FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+        (SITE, 43),
+    ).fetchone()[0]
+    assert flag == 1
+
+
+def test_admit_topic_upgrades_latest_only_to_poll_eligible(conn: sqlite3.Connection) -> None:
+    """A latest-only topic later seen in a top feed is upgraded to poll_eligible=1 (FRM-001).
+
+    INSERT-OR-IGNORE cannot touch the existing row, so admit_topic runs an
+    explicit one-directional UPDATE when poll_eligible=True.
+    """
+    forum_store.admit_topic(conn, SITE, 44, first_seen_at=1000)  # latest-only → 0
+    forum_store.admit_topic(conn, SITE, 44, first_seen_at=2000, poll_eligible=True)  # top → 1
+
+    row = conn.execute(
+        "SELECT first_seen_at, poll_eligible FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+        (SITE, 44),
+    ).fetchone()
+    assert row[0] == 1000, "first_seen_at must not be reset by the upgrade"
+    assert row[1] == 1, "poll_eligible must be upgraded to 1"
+
+
+def test_admit_topic_poll_eligible_not_downgraded(conn: sqlite3.Connection) -> None:
+    """A top topic re-seen only in latest.rss keeps poll_eligible=1 (one-directional)."""
+    forum_store.admit_topic(conn, SITE, 45, first_seen_at=1000, poll_eligible=True)  # top → 1
+    forum_store.admit_topic(conn, SITE, 45, first_seen_at=2000)  # latest re-admit, default False
+
+    flag = conn.execute(
+        "SELECT poll_eligible FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+        (SITE, 45),
+    ).fetchone()[0]
+    assert flag == 1, "a False admission must never downgrade an eligible topic"
+
+
+def test_due_topics_excludes_not_poll_eligible(conn: sqlite3.Connection) -> None:
+    """A latest-only topic (poll_eligible=0) is never due, however much time elapsed (FRM-001).
+
+    This is the bound that keeps the Rule-B sweep to the top-N: latest.rss topics
+    are admitted for Rule-A tracking but never JSON-polled.
+    """
+    forum_store.admit_topic(conn, SITE, 70, first_seen_at=0)  # latest-only, default False
+    forum_store.admit_topic(conn, SITE, 71, first_seen_at=0, poll_eligible=True)  # top
+
+    due_ids = {r["topic_id"] for r in forum_store.due_topics(conn, SITE, OFFSETS, now=999999)}
+    assert 70 not in due_ids, "latest-only topic must never be due"
+    assert 71 in due_ids, "top-feed topic must be due"
+
+
 def test_set_op_verdict_round_trip(conn: sqlite3.Connection) -> None:
     """set_op_verdict writes and op_interest_kept can be read back (FRM-002)."""
     forum_store.admit_topic(conn, SITE, 10, first_seen_at=500)
@@ -168,7 +231,7 @@ def test_not_due_before_first_offset(conn: sqlite3.Connection) -> None:
     """
     offsets = (1, 7)  # must wait at least 1 day before the first poll
     admitted_at = 0
-    forum_store.admit_topic(conn, SITE, 1, first_seen_at=admitted_at)
+    forum_store.admit_topic(conn, SITE, 1, first_seen_at=admitted_at, poll_eligible=True)
 
     # 23 hours elapsed — not yet 1 day
     now = admitted_at + 23 * 3600
@@ -180,7 +243,7 @@ def test_due_at_first_offset(conn: sqlite3.Connection) -> None:
     """A topic is due exactly at offset[0] (FRM-007)."""
     offsets = (1, 7)
     admitted_at = 0
-    forum_store.admit_topic(conn, SITE, 1, first_seen_at=admitted_at)
+    forum_store.admit_topic(conn, SITE, 1, first_seen_at=admitted_at, poll_eligible=True)
 
     now = admitted_at + 1 * 86400  # exactly 1 day elapsed
     due = forum_store.due_topics(conn, SITE, offsets, now)
@@ -191,7 +254,7 @@ def test_due_at_first_offset(conn: sqlite3.Connection) -> None:
 
 def test_due_offset_zero(conn: sqlite3.Connection) -> None:
     """Offset 0 means the topic is due immediately on admission (OFFSETS default)."""
-    forum_store.admit_topic(conn, SITE, 7, first_seen_at=1000)
+    forum_store.admit_topic(conn, SITE, 7, first_seen_at=1000, poll_eligible=True)
     # now == first_seen_at → elapsed = 0 >= 0 * 86400 = 0
     due = forum_store.due_topics(conn, SITE, OFFSETS, now=1000)
     assert any(r["topic_id"] == 7 for r in due)
@@ -206,7 +269,7 @@ def test_offline_catchup_collapses_to_one_poll(conn: sqlite3.Connection) -> None
     """
     offsets = (0, 1, 7)
     admitted_at = 0
-    forum_store.admit_topic(conn, SITE, 3, first_seen_at=admitted_at)
+    forum_store.admit_topic(conn, SITE, 3, first_seen_at=admitted_at, poll_eligible=True)
 
     # 10 days elapsed — offsets 0, 1, and 7 have all elapsed.
     now = admitted_at + 10 * 86400
@@ -234,7 +297,7 @@ def test_retirement_at_last_offset(conn: sqlite3.Connection) -> None:
     """A topic is retired when completed_polls >= len(offsets), not before (FRM-007)."""
     offsets = (0, 1, 7)
     admitted_at = 0
-    forum_store.admit_topic(conn, SITE, 20, first_seen_at=admitted_at)
+    forum_store.admit_topic(conn, SITE, 20, first_seen_at=admitted_at, poll_eligible=True)
     now = admitted_at + 30 * 86400  # well past all offsets
 
     # Poll 0 → 1 → 2 → retired
@@ -257,7 +320,7 @@ def test_retirement_at_last_offset(conn: sqlite3.Connection) -> None:
 def test_due_topics_excludes_retired(conn: sqlite3.Connection) -> None:
     """due_topics never returns a retired topic regardless of elapsed time (FRM-007)."""
     offsets = (0,)  # single poll → retires immediately after finalize
-    forum_store.admit_topic(conn, SITE, 50, first_seen_at=0)
+    forum_store.admit_topic(conn, SITE, 50, first_seen_at=0, poll_eligible=True)
     forum_store.finalize_poll(conn, SITE, 50, like_count=0, offsets=offsets)
 
     due = forum_store.due_topics(conn, SITE, offsets, now=999999)
@@ -274,7 +337,7 @@ def test_due_topics_survives_shortened_offsets(conn: sqlite3.Connection) -> None
     and simply drop the topic from the due set.
     """
     # Poll twice under a 3-offset schedule → completed_polls=2, not retired.
-    forum_store.admit_topic(conn, SITE, 30, first_seen_at=0)
+    forum_store.admit_topic(conn, SITE, 30, first_seen_at=0, poll_eligible=True)
     now = 30 * 86400
     forum_store.finalize_poll(conn, SITE, 30, like_count=0, offsets=(0, 1, 7))
     forum_store.finalize_poll(conn, SITE, 30, like_count=0, offsets=(0, 1, 7))
@@ -292,7 +355,7 @@ def test_due_topics_survives_shortened_offsets(conn: sqlite3.Connection) -> None
 
 def test_due_topics_returns_op_interest_and_like_count(conn: sqlite3.Connection) -> None:
     """due_topics rows include op_interest_kept and last_like_count (FRM-CON-004)."""
-    forum_store.admit_topic(conn, SITE, 11, first_seen_at=0)
+    forum_store.admit_topic(conn, SITE, 11, first_seen_at=0, poll_eligible=True)
     forum_store.set_op_verdict(conn, SITE, 11, kept=1)
     forum_store.finalize_poll(conn, SITE, 11, like_count=7, offsets=OFFSETS)
 
@@ -313,7 +376,7 @@ def test_due_topics_deterministic_order_on_first_seen_tie(conn: sqlite3.Connecti
     """
     # Admit out of id order, all at the same first_seen_at.
     for topic_id in (30, 10, 20):
-        forum_store.admit_topic(conn, SITE, topic_id, first_seen_at=0)
+        forum_store.admit_topic(conn, SITE, topic_id, first_seen_at=0, poll_eligible=True)
 
     due = forum_store.due_topics(conn, SITE, OFFSETS, now=0)
     assert [r["topic_id"] for r in due] == [10, 20, 30]
