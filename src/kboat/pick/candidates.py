@@ -1,10 +1,11 @@
 """Select the active web inbox — the candidate pool for a daily pick.
 
 A candidate is a readable, undispositioned web-page source: the same set the
-Reading Inbox "Web" view shows. The daily pick only ever surfaces web pages (a
-PDF you are mid-read already appears in the Today view via `reading`), so PDFs
-are excluded here. Each candidate carries the durable `summary`/`topics` the
-ranker reads to judge relevance against the day's questions.
+Reading Inbox "Web" view shows. The daily pick only ever surfaces web pages
+(anything you are already mid-read appears in the Today view via `reading`,
+whatever its type), so PDFs are excluded here. Each candidate carries the
+durable `summary`/`topics` the ranker reads to judge relevance against the
+day's questions.
 """
 
 from __future__ import annotations
