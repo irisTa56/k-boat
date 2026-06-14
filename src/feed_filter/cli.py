@@ -373,8 +373,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     # Finalize worklists: list of (site_id, topic_id, like_count) from gather_forum.
     finalize_worklists: list[tuple[str, int, int]] = []
     site_status: list[dict[str, Any]] = []
-    # Total Discourse HTTP calls this run made (RSS + topic JSON, across sites);
-    # a coarse politeness metric the skill surfaces in its run summary.
+    # Accumulated across sites; emitted as discourse_fetches (see docstring).
     discourse_fetches = 0
 
     with contextlib.closing(open_db(db_path())) as conn, build_client() as client:

@@ -876,6 +876,36 @@ def test_forum_new_emits_topics_and_polls(
     assert out["sites"] == [{"site_id": FORUM_SITE_ID, "error": None}]
 
 
+def test_forum_new_sums_discourse_fetches_across_sites(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """discourse_fetches accumulates across every forum site, not reset per-site."""
+    _no_client(monkeypatch)
+    _add_forum_site()  # id "ef"
+    _add_forum_site(site_id="ef2")
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(fetch_count=3),
+    )
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda conn, site, *, client, now: _fake_gather_result(
+            fetch_count=2 if site.id == "ef2" else 1
+        ),
+    )
+
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    out = _out(capsys)
+
+    # Both sites processed: ef → admit 3 + gather 1, ef2 → admit 3 + gather 2 ⇒ 9.
+    assert {s["site_id"] for s in out["sites"]} == {FORUM_SITE_ID, "ef2"}
+    assert out["discourse_fetches"] == 9
+
+
 def test_forum_new_absorbs_per_site_errors(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
