@@ -361,6 +361,10 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     for that ``(site_id, topic_id)`` pair survived the cap.  A topic truncated
     by the cap is withheld from ``polls`` so it re-polls next run and no post
     is finalized before it is dispositioned (never-lost, FRM-CON-005).
+
+    The emitted ``discourse_fetches`` is the total Discourse HTTP calls this run
+    made (RSS feeds + topic JSON, summed across sites) — a coarse politeness
+    metric the skill reports; it excludes the judging subagents' ``WebFetch``.
     """
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind == "forum"]
     now = int(time.time())
@@ -369,11 +373,15 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     # Finalize worklists: list of (site_id, topic_id, like_count) from gather_forum.
     finalize_worklists: list[tuple[str, int, int]] = []
     site_status: list[dict[str, Any]] = []
+    # Total Discourse HTTP calls this run made (RSS + topic JSON, across sites);
+    # a coarse politeness metric the skill surfaces in its run summary.
+    discourse_fetches = 0
 
     with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
         for site in sites:
             admit_result = admit_from_feeds(conn, site, client=client, now=now)
             gather_result = gather_forum(conn, site, client=client, now=now)
+            discourse_fetches += admit_result.fetch_count + gather_result.fetch_count
 
             # Serialize Rule-A candidates.
             rule_a = [
@@ -447,7 +455,14 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
         if after[key] == before[key]:
             polls.append({"site_id": site_id, "topic_id": topic_id, "like_count": like_count})
 
-    _emit({"topics": topics, "polls": polls, "sites": site_status})
+    _emit(
+        {
+            "topics": topics,
+            "polls": polls,
+            "sites": site_status,
+            "discourse_fetches": discourse_fetches,
+        }
+    )
     return 0
 
 

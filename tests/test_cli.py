@@ -773,9 +773,12 @@ def test_add_forum_duplicate_id_exits_nonzero(
 
 
 def _fake_admit_result(
-    *, candidates: list[RuleACandidate] | None = None, error: str | None = None
+    *,
+    candidates: list[RuleACandidate] | None = None,
+    error: str | None = None,
+    fetch_count: int = 0,
 ) -> AdmitResult:
-    return AdmitResult(candidates=candidates or [], error=error)
+    return AdmitResult(candidates=candidates or [], error=error, fetch_count=fetch_count)
 
 
 def _fake_gather_result(
@@ -783,8 +786,14 @@ def _fake_gather_result(
     candidates: list[RuleBCandidate] | None = None,
     polled: list[PolledTopic] | None = None,
     error: str | None = None,
+    fetch_count: int = 0,
 ) -> GatherForumResult:
-    return GatherForumResult(candidates=candidates or [], polled_topics=polled or [], error=error)
+    return GatherForumResult(
+        candidates=candidates or [],
+        polled_topics=polled or [],
+        error=error,
+        fetch_count=fetch_count,
+    )
 
 
 def _rule_a(topic_id: int, *, site_id: str = FORUM_SITE_ID) -> RuleACandidate:
@@ -822,19 +831,24 @@ def test_forum_new_emits_topics_and_polls(
     monkeypatch.setattr(
         cli,
         "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(candidates=[rule_a_cand]),
+        lambda conn, site, *, client, now: _fake_admit_result(
+            candidates=[rule_a_cand], fetch_count=3
+        ),
     )
     monkeypatch.setattr(
         cli,
         "gather_forum",
         lambda conn, site, *, client, now: _fake_gather_result(
-            candidates=[rule_b_cand], polled=polled
+            candidates=[rule_b_cand], polled=polled, fetch_count=1
         ),
     )
 
     rc = cli.main(["forum-new"])
     assert rc == 0
     out = _out(capsys)
+
+    # discourse_fetches sums the per-path fetch counts across sites (3 RSS + 1 JSON).
+    assert out["discourse_fetches"] == 4
 
     topics = out["topics"]
     rules = {t["rule"] for t in topics}

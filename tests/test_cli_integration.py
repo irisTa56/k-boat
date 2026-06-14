@@ -537,6 +537,11 @@ def test_forum_end_to_end(
     assert any(p["topic_id"] == 1234 for p in polls)
     poll = next(p for p in polls if p["topic_id"] == 1234)
 
+    # discourse_fetches: 3 RSS feeds + one topic-JSON per polled topic. With no
+    # fetch failure and nothing cap-truncated, polled == len(polls), so the run's
+    # Discourse-call total is exactly 3 + len(polls).
+    assert new_out["discourse_fetches"] == 3 + len(polls)
+
     # --- Step 3: Rule-A keep of the OP — `--is-op`, NO `--post-id` ------------
     # Rule A holds no OP post_id (it reads RSS, FRM-002); it records only the
     # topic-grain interest verdict and never touches the post-grain seen store.

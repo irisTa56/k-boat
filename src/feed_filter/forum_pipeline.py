@@ -130,10 +130,15 @@ class AdmitResult:
     ``candidates`` are Rule-A topics whose OP has not yet been judged.
     ``error`` is a combined message from any feed-level ``FetchError``(s),
     or ``None`` if all three feeds fetched successfully.
+    ``fetch_count`` is the number of Discourse HTTP requests this call attempted
+    (one per RSS feed, so at most three) — counted whether or not each succeeded,
+    so the CLI can surface a per-run Discourse-call total for politeness
+    observability (see ``cmd_forum_new``).  Default 0 keeps test fakes terse.
     """
 
     candidates: list[RuleACandidate]
     error: str | None
+    fetch_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -162,11 +167,15 @@ class GatherForumResult:
     topic whose JSON was successfully fetched and parsed (FRM-007 / FRM-CON-005).
     ``error`` is a combined message from any topic-level ``FetchError``(s),
     or ``None`` if every due topic fetched successfully.
+    ``fetch_count`` is the number of Discourse topic-JSON requests this call
+    attempted (one per due topic, counted whether or not each succeeded), so the
+    CLI can report a per-run Discourse-call total.  Default 0 keeps fakes terse.
     """
 
     candidates: list[RuleBCandidate]
     polled_topics: list[PolledTopic]
     error: str | None
+    fetch_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +224,9 @@ def admit_from_feeds(
     )
 
     errors: list[str] = []
+    # Count every Discourse HTTP request attempted (incremented before each
+    # fetch, so a FetchError still counts the call we made — politeness metric).
+    fetch_count = 0
 
     # --- Fetch all three feeds independently; absorb per-feed FetchErrors ---
 
@@ -222,6 +234,7 @@ def admit_from_feeds(
     # though for latest the order does not matter — we take all topics, not top-N).
     latest_entries = []
     try:
+        fetch_count += 1
         result = fetch(latest_feed_url(forum_url), client=client)
         latest_entries = parse_feed(result.content, result.final_url, sort=False)
     except FetchError as exc:
@@ -231,6 +244,7 @@ def admit_from_feeds(
     # parse_feed with sort=False preserves the feed's rank order (FRM-GUD-002).
     daily_entries = []
     try:
+        fetch_count += 1
         result = fetch(top_feed_url(forum_url, "daily"), client=client)
         daily_entries = parse_feed(result.content, result.final_url, sort=False)[:daily_count]
     except FetchError as exc:
@@ -239,6 +253,7 @@ def admit_from_feeds(
     # top.rss?period=weekly: rank order, truncated to weekly_count (FRM-001).
     weekly_entries = []
     try:
+        fetch_count += 1
         result = fetch(top_feed_url(forum_url, "weekly"), client=client)
         weekly_entries = parse_feed(result.content, result.final_url, sort=False)[:weekly_count]
     except FetchError as exc:
@@ -277,6 +292,7 @@ def admit_from_feeds(
     return AdmitResult(
         candidates=candidates,
         error="; ".join(errors) if errors else None,
+        fetch_count=fetch_count,
     )
 
 
@@ -352,11 +368,15 @@ def gather_forum(
     errors: list[str] = []
     candidates: list[RuleBCandidate] = []
     polled_topics: list[PolledTopic] = []
+    # One Discourse topic-JSON request per due topic; counted before the fetch so
+    # a FetchError still counts the attempted call (politeness metric).
+    fetch_count = 0
 
     for row in forum_store.due_topics(conn, site.id, offsets, now):
         topic_id = row["topic_id"]
 
         try:
+            fetch_count += 1
             json_bytes = fetch(topic_json_url(forum_url, topic_id), client=client).content
         except FetchError as exc:
             # Absorb per-topic failure; nothing recorded (FRM-CON-005).
@@ -430,4 +450,5 @@ def gather_forum(
         candidates=candidates,
         polled_topics=polled_topics,
         error="; ".join(errors) if errors else None,
+        fetch_count=fetch_count,
     )

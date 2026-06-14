@@ -29,7 +29,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Procedure
 
 1. **Gather candidates.** Run `eval "$(mise env)" && feed-filter forum-new`.
-   The output is `{topics: [...], polls: [...], sites: [{site_id, error}]}`.
+   The output is `{topics: [...], polls: [...], sites: [{site_id, error}], discourse_fetches: <int>}`.
    - `topics` are Rule-A and Rule-B candidates, already round-robin-interleaved across sites (and Rule-A/B interleaved within each site) and clamped to the global cap.
      Candidates dropped by the cap are absent; they are re-derived next run without any loss (FRM-CON-005).
    - Each candidate entry has shape `{site_id, topic_id, topic_url, title, rule: "A"|"B", ...}`; Rule-A adds `op_text`; Rule-B adds `effective_threshold` and `trigger_posts: [{post_id, post_number, like_count, text}]`.
@@ -37,6 +37,8 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      Each entry represents a polled topic that is cap-safe — every candidate for that `(site_id, topic_id)` pair survived the cap.
      A topic truncated by the cap is withheld and re-polls next run (FRM-CON-005).
      Zero-candidate topics (short-circuited by the like-count check, or no qualifying posts) are trivially cap-safe and also appear in `polls`.
+   - `discourse_fetches` is the count of Discourse HTTP calls this gather made — one per RSS feed (three per site) plus one per due topic's JSON (FRM-CON-004).
+     It is a coarse politeness/rate metric for the run summary; it does not include the judging subagents' `WebFetch` calls, which are not Discourse-API requests.
    - Keep `polls` and `sites` aside for steps 3–4.
 
 2. **Judge each candidate** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
@@ -105,7 +107,7 @@ Lead with what's actionable and name the offending sites.
 Example: `forum-filter: 1 site error (erlang-forum 429), 3 topics kept`.
 Always keep the fuller breakdown as the run's text output (the transcript), regardless of whether a push was sent.
 
-- Counts: sites gathered, topics with Rule-A candidates, topics with Rule-B candidates, posts kept (reminded), posts dropped, posts error-fallback reminded.
+- Counts: sites gathered, topics with Rule-A candidates, topics with Rule-B candidates, posts kept (reminded), posts dropped, posts error-fallback reminded, and `discourse_fetches` (total Discourse HTTP calls this run made).
 - Poll advances: topics finalized (advanced poll counter), topics withheld (cap-truncated, re-poll next run).
 - Errors: each site with a gather `error`, and any `forum-remind` or `forum-poll-done` non-zero exit.
 

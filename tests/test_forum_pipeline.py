@@ -145,6 +145,8 @@ def test_admission_union_admits_all_three_feeds(conn: sqlite3.Connection) -> Non
     # latest.rss: 101, 102, 103; top.rss (daily+weekly both use same fixture): 201, 202, 203
     admitted_ids = {c.topic_id for c in result.candidates}
     assert {101, 102, 103, 201, 202, 203} == admitted_ids
+    # Three RSS fetches (latest + daily + weekly), all successful (FRM-001).
+    assert result.fetch_count == 3
 
 
 def test_admission_union_dedupes_overlapping_topics(conn: sqlite3.Connection) -> None:
@@ -286,6 +288,9 @@ def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connecti
 
     assert result.error is not None
     assert result.candidates == []
+    # All three RSS calls were attempted and counted even though each failed —
+    # fetch_count is a metric of calls made, not calls that succeeded.
+    assert result.fetch_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +328,8 @@ def test_gather_forum_emits_rule_b_candidates(conn: sqlite3.Connection) -> None:
         result = gather_forum(conn, site, client=client, now=NOW)
 
     assert result.error is None
+    # One due topic → one topic-JSON fetch counted.
+    assert result.fetch_count == 1
     assert len(result.candidates) == 1
     cand = result.candidates[0]
     assert isinstance(cand, RuleBCandidate)
@@ -590,6 +597,9 @@ def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Conne
     assert all(c.topic_id != 1111 for c in result.candidates), (
         "failed topic must not produce a candidate"
     )
+    # Both due topics were fetched (the failed 1111 and the succeeding 1234), so
+    # both calls are counted even though one raised.
+    assert result.fetch_count == 2
 
 
 def test_gather_forum_no_qualifying_posts_emits_no_candidate(conn: sqlite3.Connection) -> None:
