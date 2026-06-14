@@ -95,3 +95,34 @@ def test_undated_entries_sort_to_tail_and_bad_links_drop() -> None:
     ]
     assert entries[0].published_at is not None
     assert entries[1].published_at is None
+
+
+# Feed with entries in non-date order (oldest first) to verify sort=False.
+# The Jun 01 item is first in source but would be last under date-desc sort.
+_RANK_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Rank</title>
+  <item><title>Oldest</title><link>https://example.com/oldest</link>
+    <pubDate>Mon, 01 Jun 2026 10:00:00 GMT</pubDate></item>
+  <item><title>Middle</title><link>https://example.com/middle</link>
+    <pubDate>Fri, 12 Jun 2026 10:00:00 GMT</pubDate></item>
+  <item><title>Newest</title><link>https://example.com/newest</link>
+    <pubDate>Sun, 14 Jun 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def test_sort_false_preserves_feed_source_order() -> None:
+    entries = parse_feed(_RANK_RSS, "https://example.com/", sort=False)
+    assert [e.canonical_url for e in entries] == [
+        "https://example.com/oldest",
+        "https://example.com/middle",
+        "https://example.com/newest",
+    ]
+
+
+def test_sort_true_orders_by_date_descending() -> None:
+    entries = parse_feed(_RANK_RSS, "https://example.com/", sort=True)
+    assert [e.canonical_url for e in entries] == [
+        "https://example.com/newest",
+        "https://example.com/middle",
+        "https://example.com/oldest",
+    ]

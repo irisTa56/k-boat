@@ -49,8 +49,8 @@ def _published_at(entry: object) -> int | None:
     return None
 
 
-def parse_feed(body: bytes, base_url: str) -> list[Entry]:
-    """Parse an RSS/Atom body into ``Entry`` objects, newest first.
+def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
+    """Parse an RSS/Atom body into ``Entry`` objects.
 
     ``body`` is raw bytes (CON-002), never ``str``: ``feedparser.parse`` treats a
     ``str`` that looks like a URL or path as a fetch/file-open instruction, so a
@@ -62,9 +62,13 @@ def parse_feed(body: bytes, base_url: str) -> list[Entry]:
     recover any entry from yields ``[]`` rather than raising — a dead feed is an
     empty observation, not a crash (REQ-007/REQ-008 handle it downstream).
 
-    Ordering: dated entries by ``published_at`` descending, undated entries in
-    source order at the tail. The per-site cap downstream then keeps the newest
-    (CON-005), and the discover preview shows the same order a run would ingest.
+    Ordering (``sort=True``, default): dated entries by ``published_at``
+    descending, undated entries in source order at the tail. The per-site cap
+    downstream then keeps the newest (CON-005).
+
+    ``sort=False``: entries are returned in feed source order with no date sort.
+    Used by ``discourse.discover_topic_ids`` so a top-feed preserves rank order
+    rather than being re-sorted by date (FRM-GUD-002 / FRM-001).
     """
     parsed = feedparser.parse(body)
     raw_entries = getattr(parsed, "entries", []) or []
@@ -87,6 +91,9 @@ def parse_feed(body: bytes, base_url: str) -> list[Entry]:
                 kind="feed",
             )
         )
+
+    if not sort:
+        return out
 
     # Two-pass split (rather than an ``or 0`` sort key) so an entry dated at the
     # epoch is not sorted alongside the genuinely undated tail.
