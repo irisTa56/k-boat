@@ -1,0 +1,186 @@
+---
+goal: Add a Discourse forum-watching adapter to feed-filter as an organic extension of the existing core
+version: 1.0
+date_created: 2026-06-14
+last_updated: 2026-06-14
+owner: irisTa56
+status: 'Planned'
+tags: [feature, architecture, forum]
+---
+
+# Introduction
+
+![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+
+This plan adds a Discourse forum-watching adapter to feed-filter.
+The agreed behavioral design is recorded in the memory note `feed-filter-forum-adapter-design.md`; this plan is the code-level execution of it.
+
+A forum is a source kind whose unit of interest is the **post** (a comment), not the page.
+Value accrues as posts gain likes over time, so the adapter tracks posts and re-reminds a topic when a fresh post crosses a like bar — deliberately suspending the "seen is final" invariant *for forum sources only*, while leaving the existing `seen` table and every non-forum path untouched.
+
+The guiding constraint is **organic optimization, not a bolted-on parallel world**: the forum kind extends the existing abstractions (`SiteConfig.kind`, the seen-store migration framework, `parse_feed`/`Entry`, the already-parameterized `add_reminder(list_name=…)`, the CLI's emit/round-robin/exception mapping) and adds only the genuinely new surface (a Discourse JSON client, a post-grain state store, and a watch/poll pipeline).
+
+## 1. Requirements & Constraints
+
+### Functional requirements (forum behavior)
+
+- **FRM-001**: Discovery seeds the watch set from three RSS feeds derived from a site's `forum_url`: `latest.rss` (new topics, Rule A), `top.rss?period=daily` top `daily_watch_count` ∪ `top.rss?period=weekly` top `weekly_watch_count` (popular topics, Rule B). Period is fixed at daily+weekly for all sites (no per-site branch). The top feeds are rank-ordered (most popular first), so "top-N" must read the feed in **source order** — see FRM-GUD-002, since `parse_feed` re-sorts by date by default.
+- **FRM-002**: Rule A — the topic OP (post #1) is judged once for cross-domain interest against the active selection criteria, with the forum's own subject (`forum_subject`) excluded as a match reason. Rule A is emitted from the discovery feed (the OP `title`/`summary` in the RSS entry), so it needs **no JSON fetch**. The RSS `description` is the full OP for prose topics but only a snippet for link/video topics, so the Rule-A judge reuses the article path's **two-stage** pattern: judge from the snippet, and `WebFetch` the topic page only when the snippet is too thin to decide. Do not assume the feed carries the full OP.
+- **FRM-003**: Rule B — any post (OP included) whose like count ≥ the topic's effective threshold is judged once for "contains worth-reading information"; native subject is not excluded. Effective threshold = `interest_like_threshold` when Rule A kept the topic, else `like_threshold`.
+- **FRM-004**: Per-post like counts come from the public, no-auth Discourse topic JSON (`/t/<id>.json`), read from each post's `actions_summary` entry with `id == 2`.
+- **FRM-005**: A topic is reminded when either rule keeps a post. Reminders land in a separate Reminders list, `Filtered Forums` (user-created). Each re-remind is a fresh reminder item; the target is the topic top (no per-post deep-link in v1).
+- **FRM-006**: Post-grain dedupe — a post is evaluated at most once. The two rules dedupe independently (the OP may qualify under A and, later, under B).
+- **FRM-007**: Fixed sparse poll schedule — each topic is polled only at `poll_offsets_days` (default `[0, 1, 7]`) from first-seen. Offsets are "due if elapsed and not yet polled," not wall-clock appointments: a missed/offline run is caught up at the next run, and several offsets elapsed during downtime collapse into a single poll. **Retirement is offset-only**: a topic retires once it has completed its last offset, so the effective horizon is `poll_offsets_days[-1]` (7 days by default). This supersedes the design memo's earlier fixed "last activity > 10 days" rule (which the memo itself notes the schedule subsumes); there is no separate stale-activity check and no `last_activity` field, which avoids depending on the topic JSON's `last_posted_at` (an ISO-8601 string, not the unix ints used everywhere else).
+
+### Constraints
+
+- **FRM-CON-001**: The existing `seen` table and all non-forum gather/judge/remind paths are not modified in behavior. The forum adapter is a second, post-grain dedupe authority living in its own tables and module.
+- **FRM-CON-002**: No new runtime dependency. The Discourse client uses the existing `httpx` client plus the standard-library `json`; RSS parsing reuses `feedparser` via `parse_feed`.
+- **FRM-CON-003**: Synchronous throughout (a sequential CLI batch over the sync `httpx.Client`), matching the rest of the core; no `asyncio`.
+- **FRM-CON-004**: Fetch minimization — one JSON fetch per scheduled poll of the first ~20-post chunk (no pagination); posts beyond the first chunk are not evaluated. Skip the JSON fetch when the topic-level `like_count` is unchanged since the last poll — but **only after the first poll** (`completed_polls > 0`), so the first poll always fetches and no Rule-B post is missed on a topic admitted with `last_like_count` still unset.
+- **FRM-CON-005**: Never-lost over never-duplicated, at post grain. `forum-new`'s only write is `admit_topic` — an idempotent `INSERT-OR-IGNORE` of the `forum_watch` row that anchors the poll schedule; the never-lost-relevant state (`forum_post_seen` and `completed_polls`) is written only by the record/finalize path. Each qualifying post is recorded seen only after a successful remind (`forum-remind` mirrors the article path's remind-then-record). The topic-level watch advance (`forum-poll-done`) must be the **last** call for a topic, after every candidate post it surfaced has been dispositioned. Then a crash anywhere costs at most one re-poll (`post_seen` dedups; gather re-derives candidates from live JSON), never a loss — the only way to lose a post is to violate the ordering (advance the watch before dispositioning), which the skill contract forbids and the integration test pins.
+
+### Guidelines — reuse & sharing strategy (existing → forum)
+
+- **FRM-GUD-001**: Reuse `fetch.build_client` / `fetch.fetch` / `FetchError` for every forum HTTP call (RSS and JSON). No new network boundary.
+- **FRM-GUD-002**: Reuse `feeds.parse_feed` + `feeds.Entry` for forum discovery: a forum feed parses into `Entry` objects from which the adapter reads `canonical_url` (→ topic id), `title`, and `summary` (the OP for Rule A, as HTML). One minimal, backward-compatible generalization of the shared primitive is justified: add an optional `sort: bool = True` parameter to `parse_feed` (default preserves today's date-descending behavior; forum top-feed parsing passes `sort=False` to keep the feed's rank order, per FRM-001). This is an organic improvement to `feeds.py`, not a forum-only fork.
+- **FRM-GUD-003**: Reuse `canonical.canonical_url` to build the topic reminder URL and to extract the topic id from a Discourse topic URL.
+- **FRM-GUD-004**: Reuse the seen-store migration framework: append the forum tables as a v2 migration in `seen._MIGRATIONS` (its docstring already anticipates append-only migrations) and reuse `seen.open_db` for the same DB/connection. Forum table *queries* live in a new `forum_store.py`, so `seen.py` stays the authority for the `seen` table only.
+- **FRM-GUD-005**: Reuse `reminders.add_reminder` verbatim via its existing `list_name` parameter (`list_name=REMINDER_LIST_FORUM`). `reminders.py` is not modified — the wrapper was already parameterized for multiple lists.
+- **FRM-GUD-006**: Reuse the CLI scaffolding: `_emit`, `_round_robin`, `_select_sites`, `open_db`, and the `main()` exception→exit-1 mapping (forum errors reuse `FetchError`/`ValueError`/`KeyError`/`OSError`/`ReminderError`; no new top-level exception types unless a forum-specific one earns its keep).
+- **FRM-GUD-007**: Extend `SiteConfig` in place (a forum kind), not a parallel config type; reuse the emit-only-when-non-default TOML serialization and the strict-parse helpers (`_opt_str`/`_opt_bool`, plus new `_opt_int`/`_opt_int_list`).
+- **FRM-GUD-008**: Tests are added in the same PR as the code they cover, matched to the actual implementation (not transcribed from this plan), and the per-PR completion gate is a green `mise run pre-commit` (ruff lint+format, `ty`, pytest with coverage ≥ 80%, rumdl, gitleaks).
+
+### Patterns
+
+- **FRM-PAT-001**: Mirror the read-only-gather / write-on-record split: `forum-new` is read-only (like `new-entries`); `forum-remind`/`forum-mark-seen` write `forum_post_seen` per post; a topic-level `forum-poll-done` advances the `forum_watch` throttle after a topic's posts are dispositioned.
+- **FRM-PAT-002**: Inject `now` (current unix time) and the `httpx.Client` / a Discourse-client seam into the deterministic functions so scheduling and parsing are unit-tested without real time or network (mirrors the injected `runner` in `reminders.py` and `client` in `pipeline.py`).
+- **FRM-PAT-003**: Reference these `FRM-…` identifiers in new-module docstrings and comments, exactly as the existing modules reference `REQ-…`/`CON-…`, so the rationale lives next to the code.
+
+## 2. Implementation Steps
+
+### Implementation Phase 1 — Site schema & config vocabulary (PR1)
+
+- GOAL-001: Introduce the forum source kind in configuration with no runtime behavior yet, so later phases have a stable vocabulary.
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-001 | `config.py`: add `REMINDER_LIST_FORUM = "Filtered Forums"`, `DEFAULT_LIKE_THRESHOLD = 6`, `DEFAULT_INTEREST_LIKE_THRESHOLD = 3`, `DEFAULT_DAILY_WATCH_COUNT = 3`, `DEFAULT_WEEKLY_WATCH_COUNT = 5`, `DEFAULT_POLL_OFFSETS_DAYS = (0, 1, 7)`, each with a comment citing the relevant FRM id. | | |
+| TASK-002 | `sites.py`: add `forum_url`, `forum_subject`, `like_threshold`, `interest_like_threshold`, `daily_watch_count`, `weekly_watch_count`, `poll_offsets_days` to `SiteConfig` (numeric tuning fields `int \| None`, offsets `tuple[int, …] \| None`, defaulting to None so "unset" falls back to the config defaults at use time). | | |
+| TASK-003 | `sites.py`: extend the exactly-one-of invariant in `__post_init__` to `{feed_url, article_url_pattern, forum_url}`; add `kind == "forum"`; validate that the forum tuning fields are only set when `forum_url` is set (else `ValueError`). Audit the two existing `kind`-binary consumers (`pipeline.fetch_entries`'s `assert index_url is not None`, `gather_new`'s `zero_links = site.kind == "scrape"`): a forum site must never reach them, enforced by the kind filters in TASK-021. | | |
+| TASK-004 | `sites.py`: extend `load_sites`/`add_site` to parse and emit the forum fields (add `_opt_int`/`_opt_int_list` helpers; emit only populated fields, matching the existing minimal-row serialization). | | |
+| TASK-005 | Tests (`test_sites.py`, `test_config.py`): a case per new validation branch (three-way exactly-one-of, tuning-without-`forum_url` rejection, blank normalization) and per new helper (`_opt_int`, `_opt_int_list`), round-trip add→load of a forum site with and without tuning overrides, `kind == "forum"`, and the new config constants/defaults — so PR1's branch coverage holds even before any runtime consumer exists. | | |
+
+### Implementation Phase 2 — Discourse client & parsing (PR2)
+
+- GOAL-002: A pure, fully-tested Discourse module: URL derivation, topic-JSON parsing, and topic-id extraction. No state, no pipeline.
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-006 | `discourse.py`: URL builders from `forum_url` — `latest_feed_url`, `top_feed_url(period)`, `topic_json_url(topic_id)`; tolerant of a trailing slash on `forum_url`. | | |
+| TASK-007 | `discourse.py`: `topic_id_from_url(url) -> int \| None` — parse the numeric topic id from a Discourse topic URL (`/t/<slug>/<id>`, `/t/<id>`, optional trailing `/<post_number>`), via `canonical_url` + a path regex. | | |
+| TASK-008 | `discourse.py`: dataclasses `ForumTopic` (id, slug, title, `like_count` — the topic-level total, for the FRM-CON-004 short-circuit) and `ForumPost` (id, number, like_count, text); `parse_topic(json_bytes) -> ForumTopic, list[ForumPost]` reading the first-chunk `post_stream.posts`, taking each post's likes from `actions_summary` (`id == 2`, absent → 0) and `text` from `cooked` (rendered HTML) stripped to plain text via the already-present `selectolax` (`HTMLParser(html).text(separator=" ", strip=True)` so adjacent blocks don't fuse; cheaper for the haiku judge than raw markup). No `last_activity_at`/`closed`/`archived` fields (retirement is offset-only, FRM-007). Read every field with `.get(...)` defaults so a malformed/lite payload degrades to empty posts rather than leaking an incidental `KeyError` into `main()` (FRM-GUD-006). | | |
+| TASK-009 | `feeds.py`: add `sort: bool = True` to `parse_feed`; when `sort=False`, return entries in source order (the loop's append order — skip the dated/undated split, do not return `dated + undated`), default unchanged. `discourse.py`: `discover_topic_ids(feed_bytes, base_url) -> list[int]` — call `parse_feed(..., sort=False)` (source order, so a top feed keeps rank order; FRM-001) then map entries through `topic_id_from_url`, dropping non-topic links, preserving order. Cover the `sort=False` source-order branch directly in `test_feeds.py`. | | |
+| TASK-010 | Tests (`test_discourse.py`): URL derivation; id extraction across URL shapes (with/without slug, trailing `/<post_number>` returns the topic id not the post number, non-topic URLs → None); `parse_topic` on a captured `t/<id>.json` fixture (per-post likes present, likes absent → 0, topic `like_count`, `cooked`-HTML stripped to text, lite/empty payload → no posts); `discover_topic_ids` on captured `latest.rss`/`top.rss` fixtures asserting rank order is preserved. | | |
+
+### Implementation Phase 3 — Forum state store (PR3)
+
+- GOAL-003: The post-grain dedupe authority and the watch/poll throttle, in their own module and a v2 migration.
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-011 | `seen.py`: append a v2 migration creating `forum_watch` (PK `(site_id, topic_id)`: `first_seen_at`, `op_interest_kept`, `completed_polls`, `last_like_count`, `retired`) and `forum_post_seen` (PK `(site_id, post_id)`: `topic_id`, `kept`, `seen_at`); comment that these are the forum adapter's tables, colocated only because migrations share one `user_version`. `test_seen.py::test_migration_stamps_user_version` reads `len(_MIGRATIONS)`, so it adapts automatically — confirm it still passes; `test_migration_creates_schema` (the `seen` table) stays valid. | | |
+| TASK-012 | `forum_store.py`: admission — `admit_topic(conn, site_id, topic_id, first_seen_at)` (INSERT-OR-IGNORE, admit once); `set_op_verdict(conn, site_id, topic_id, kept)`. | | |
+| TASK-013 | `forum_store.py`: post dedupe — `is_post_seen(conn, site_id, post_id)`, `record_post(conn, site_id, topic_id, post_id, kept)` (upsert + commit). | | |
+| TASK-014 | `forum_store.py`: scheduling — `due_topics(conn, site_id, offsets, now)` (not retired, `now - first_seen_at >= offsets[completed_polls]`); `finalize_poll(conn, site_id, topic_id, like_count, offsets, now)` (increment `completed_polls`, store `like_count`, set `retired` when `completed_polls >= len(offsets)`; offset-only retirement, FRM-007); `last_like_count(conn, …)` for the FRM-CON-004 short-circuit. | | |
+| TASK-015 | Tests (`test_forum_store.py`): admit-once idempotence; post_seen upsert and membership; `due_topics` across the offset schedule including the offline catch-up collapse (several offsets elapsed → one due poll); retirement at the last offset (`completed_polls >= len(offsets)`); `op_interest_kept` round-trip. Use an injected `now`. | | |
+
+### Implementation Phase 4 — Forum pipeline (PR4)
+
+- GOAL-004: Deterministic orchestration that turns due topics into judge-ready candidates, mirroring `gather_new`'s read-only, error-absorbing shape.
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-016 | `forum_pipeline.py`: `admit_from_feeds(conn, site, *, client)` — fetch the three feeds (top feeds via `discover_topic_ids` in rank order, TASK-009), take daily/weekly top-N and all latest topics, `admit_topic` each (dedup by topic id). Emit **Rule-A candidates** here, straight from the feed entry's OP `title`/`summary`, for each admitted topic whose `op_interest_kept` is unset — Rule A needs no JSON (FRM-002). Absorb a feed `FetchError` into a per-site error without aborting the run. | | |
+| TASK-017 | `forum_pipeline.py`: candidate dataclasses (`ForumCandidate`: topic id/url/title; a Rule-A variant carrying the OP text; a Rule-B variant carrying the trigger posts with text+likes and the effective threshold) and `gather_forum(conn, site, *, client, now)` for the **Rule-B** path only — for each due topic: short-circuit when `completed_polls > 0` and the stored `last_like_count` is unchanged (FRM-CON-004) before any fetch; else fetch+parse JSON, compute qualifying posts (like ≥ effective threshold, not in `forum_post_seen`), emit Rule-B candidates. A topic-level fetch failure absorbs into a per-site error (FRM-CON-005: nothing recorded, re-polls next run). | | |
+| TASK-018 | `forum_pipeline.py`: effective-threshold resolution from `op_interest_kept` + the per-site/default thresholds. `gather_forum` (the Rule-B JSON pass) performs no writes; the only write in the `forum-new` path is `admit_from_feeds`'s idempotent `admit_topic` (FRM-CON-005), so a crash re-polls without loss. | | |
+| TASK-019 | Tests (`test_forum_pipeline.py`): admission union and dedupe; top-feed rank order preserved through `sort=False` (top-N is the popular-N, not newest-N); Rule-A candidates emitted from the feed without any JSON fetch; due-topic Rule-B assembly with a fake Discourse client and in-memory store; effective-threshold switch on interest verdict; `last_like_count` short-circuit only firing after the first poll; per-site error absorption on feed and JSON failures; verification that no DB writes occur during gather. | | |
+
+### Implementation Phase 5 — CLI surface (PR5)
+
+- GOAL-005: The JSON contract the skill consumes, slotted into the existing dispatcher and reusing its primitives.
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-020 | `cli.py`: `cmd_add_forum` — register a forum site via a new `_forum_site_from_args` builder (validate via `SiteConfig`, write through `add_site`); reuse the add-site emit pattern. The `add-forum` subparser carries `--id`, `--name`, `--forum-url`, and optional tuning flags (`--forum-subject`, `--like-threshold`, `--interest-like-threshold`, `--daily-watch-count`, `--weekly-watch-count`, `--poll-offsets-days`). Snapshot semantics: admission is per-poll, so registration only writes config (no back-catalog snapshot needed; document why this differs from `add-site`). | | |
+| TASK-021 | `cli.py`: add the kind split — `cmd_new_entries` filters to non-forum sites and `cmd_forum_new` filters to `kind == "forum"` sites, so neither path ever sees the other's sites (closes the `fetch_entries` assert / `parallel-world` leak, finding #8). `cmd_forum_new`: for each enabled forum site, `admit_from_feeds` then `gather_forum`; round-robin-interleave the Rule-A and Rule-B candidates across sites and apply the global cap (reuse `_round_robin`); emit `{topics: [...], sites: [{site_id, error}]}`. The only write is admission's idempotent `forum_watch` rows; `forum_post_seen`/`completed_polls` are written only by the record path (FRM-CON-005). | | |
+| TASK-022 | `cli.py`: `cmd_forum_remind` (remind via `add_reminder(..., list_name=REMINDER_LIST_FORUM)` — pass `list_name` explicitly, since `cmd_remind` omits it; THEN `record_post(kept=1)` and, for an OP, `set_op_verdict(kept=1)`) and `cmd_forum_mark_seen` (`record_post(kept=0)`, `set_op_verdict(kept=0)` for an OP); preserve remind-then-record (FRM-CON-005). The rem-runner test fake must accept the `list_name` kwarg (the article path's fake is positional-only). | | |
+| TASK-023 | `cli.py`: `cmd_forum_poll_done` — `finalize_poll` for one topic, called by the skill as the **last** step for that topic, after all its candidate posts are dispositioned (FRM-CON-005 / FRM-PAT-001). Add all subparsers in `build_parser` (the `add-forum` flags per TASK-020; `forum-remind`/`forum-mark-seen` take `--site-id`/`--topic-id`/`--post-id`/`--url`/`--title`/`--notes` as needed; `forum-poll-done` takes `--site-id`/`--topic-id`); confirm `main()`'s existing exception mapping covers the new commands. | | |
+| TASK-024 | Tests (`test_cli.py`, `test_cli_integration.py`): each forum subcommand's JSON contract and exit codes with injected fakes (rem runner accepting `list_name`, MockTransport client, tmp DB/sites); an end-to-end forum run (add-forum → forum-new → forum-remind/mark-seen → forum-poll-done) asserting post_seen/watch state and that `Filtered Forums` is the reminder target. Pin the never-lost ordering (FRM-CON-005): (a) a run that disposition posts but is interrupted before `forum-poll-done` re-polls and re-derives the same posts as already-seen (no duplicate remind, clean retire); (b) a forum site in the registry is excluded from `new-entries` and an article site from `forum-new` (finding #8). | | |
+
+### Implementation Phase 6 — Runtime skill & documentation (PR6)
+
+- GOAL-006: The operator-facing run skill and the documentation/invariant updates; docs/skill only (no Python).
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-025 | `.claude/skills/feed-filter-forum-run/SKILL.md`: a new skill driving the forum subcommands — gather candidates; judge Rule A (native-subject excluded, two-stage: OP snippet first, `WebFetch` the topic only when too thin — FRM-002) and Rule B (worth-read) on haiku subagents; remind/mark-seen per post; call `forum-poll-done` per topic **only after all that topic's candidates are dispositioned** (FRM-CON-005, the never-lost ordering contract); push summary. Mirror `feed-filter-run`'s structure and cost framing. | | |
+| TASK-026 | `prompts/selection.example.md` (and a note for the local `selection.md`): document the forum native-subject exclusion and how `forum_subject` enters the Rule-A judgment. | | |
+| TASK-027 | `ARCHITECTURE.md`: add a "Discourse forum adapter" section (modules, the two state tables, the watch/poll schedule, the two rules) and re-scope the affected invariants ("seen-store is the sole dedupe authority" / "seen is final") to "for non-forum sources," with the forum carve-out stated explicitly. | | |
+| TASK-028 | `CLAUDE.md` and `README.md`: add the `Filtered Forums` list to the environment gotchas, the forum commands, and the user-facing behavior; keep all three docs consistent. | | |
+| TASK-029 | Verify `mise run pre-commit` plus `mise run check:links` (the forum URLs in docs are network-checked out of band) are green for the docs PR. | | |
+
+## 3. Alternatives
+
+- **ALT-001**: A separate `forum-watcher` repository. Rejected — it would duplicate the seen-store/migration, canonical, `rem` wrapper, CLI scaffold, QA gate, and the keep/drop loop for the same job; the adapter shares all of these.
+- **ALT-002**: Put forum behavior in k-boat. Rejected — k-boat is the post-commitment reading/distillation stage; forum-watching is intake triage, the feed-filter concern. The two stay joined by the Reminders handoff.
+- **ALT-003**: Per-site `top_period` (daily vs weekly by velocity). Rejected for v1 in favor of a uniform daily∪weekly union (branch-free); reintroduce only if a real low-velocity forum needs it (YAGNI).
+- **ALT-004**: A post watermark / pagination to scan long topics fully. Dropped as too complex; v1 evaluates only the first JSON chunk (FRM-CON-004).
+- **ALT-005**: Store forum dedupe in the existing `seen` table. Rejected — post-grain re-reminding contradicts "seen is final"; a separate authority keeps the non-forum invariant literally intact.
+- **ALT-006**: Extract a shared `db.py` for `open_db`/migrations now. Deferred — appending a v2 migration in `seen.py` is the smaller, lower-risk reuse; factor out only if a third consumer appears.
+
+## 4. Dependencies
+
+- **DEP-001**: No new runtime package — `httpx`, `feedparser`, stdlib `json`, and `tomlkit` are already present (FRM-CON-002).
+- **DEP-002**: A user-created `Filtered Forums` Reminders list (the wrapper never creates lists, mirroring `Filtered Feeds`).
+- **DEP-003**: The `rem` CLI and the local-routine constraint (CON-001), unchanged from the article path.
+- **DEP-004**: The public Discourse read-only JSON (`/t/<id>.json`) and the `latest.rss` / `top.rss` feeds of each registered forum.
+
+## 5. Files
+
+- **FILE-001**: `src/feed_filter/config.py` — forum constants/defaults (changed, Phase 1).
+- **FILE-002**: `src/feed_filter/sites.py` — forum kind + tuning fields on `SiteConfig` (changed, Phase 1).
+- **FILE-003**: `src/feed_filter/discourse.py` — Discourse URL derivation, topic-JSON parsing, topic-id extraction (new, Phase 2).
+- **FILE-004**: `src/feed_filter/seen.py` — v2 migration adding the two forum tables (changed, Phase 3).
+- **FILE-005**: `src/feed_filter/forum_store.py` — `forum_watch` / `forum_post_seen` queries: admit, dedupe, schedule, finalize (new, Phase 3).
+- **FILE-006**: `src/feed_filter/forum_pipeline.py` — admission union, due-topic candidate assembly, Rule-B filter, error absorption (new, Phase 4).
+- **FILE-007**: `src/feed_filter/cli.py` — `add-forum` / `forum-new` / `forum-remind` / `forum-mark-seen` / `forum-poll-done` (changed, Phase 5).
+- **FILE-008**: `tests/test_*.py` — new `test_discourse.py`, `test_forum_store.py`, `test_forum_pipeline.py`; additions to `test_sites.py`, `test_config.py`, `test_feeds.py` (the `sort=False` branch), `test_seen.py` (migration adapts), `test_cli.py`, `test_cli_integration.py` (new/changed, per phase).
+- **FILE-009**: `.claude/skills/feed-filter-forum-run/SKILL.md` — the run skill (new, Phase 6).
+- **FILE-010**: `ARCHITECTURE.md`, `CLAUDE.md`, `README.md`, `prompts/selection.example.md` — docs + invariant carve-out (changed, Phase 6).
+- **FILE-011**: `src/feed_filter/feeds.py` — backward-compatible `sort` parameter on `parse_feed` (changed, Phase 2).
+
+## 6. Testing
+
+- **TEST-001**: Site schema — exactly-one-of across `{feed, scrape, forum}`, tuning-without-`forum_url` rejection, blank normalization, forum round-trip with/without overrides (Phase 1).
+- **TEST-002**: Discourse parsing — topic-id extraction across URL shapes (incl. trailing post-number); `parse_topic` over a real `t/<id>.json` fixture (per-post likes present/absent, topic `like_count`, `cooked`→text, lite payload); `discover_topic_ids` preserving rank order over `latest.rss`/`top.rss` fixtures (Phase 2).
+- **TEST-003**: State store — admit-once, post_seen membership/upsert, `due_topics` offset schedule including the offline catch-up collapse, retirement (offset-only: `completed_polls >= len(offsets)`), `op_interest_kept` round-trip, injected `now` (Phase 3).
+- **TEST-004**: Pipeline — admission union/dedupe, candidate assembly with a fake client + in-memory store, effective-threshold switch on interest, `last_like_count` short-circuit, per-site error absorption, and a no-writes-during-gather assertion (Phase 4).
+- **TEST-005**: CLI — per-subcommand JSON/exit contracts with injected fakes; an end-to-end forum run asserting post_seen/watch transitions and that `Filtered Forums` is the reminder target (Phase 5).
+- **TEST-006**: Coverage — each PR fully exercises the code it adds with in-PR tests, so the package stays ≥ 80% (the existing `--cov-fail-under=80` gate) without leaning on pragmas: PR2/PR3/PR4 ship self-tested standalone modules, and PR1's forum `SiteConfig` branches + config constants are covered by direct validation/round-trip/constant assertions even before a runtime consumer exists. A `# pragma: no cover` is used only for a genuinely unreachable arm, never as a blanket exclude (per the `pyproject.toml` convention). Cross-PR test touch-ups are part of the owning PR: `test_seen.py`'s migration-count assertion (PR3) and the rem-runner fake's `list_name` kwarg (PR5).
+
+## 7. Risks & Assumptions
+
+- **RISK-001**: The Discourse `t/<id>.json` shape (`post_stream.posts`, `actions_summary` id 2, `like_count`) is an undocumented-but-stable surface; pin behavior to captured fixtures and keep `parse_topic` defensive so a shape change degrades to "no posts," not a crash.
+- **RISK-002**: Whether Discourse sets ETag/Last-Modified on the JSON is unverified; the `last_like_count` short-circuit (FRM-CON-004) is the primary politeness lever regardless, and conditional-request support in `fetch` is an optional later optimization, not in scope here.
+- **RISK-003**: Anonymous rate limits (429) — keep the watch set bounded (FRM-007) and pace requests; surface a 429 as a per-site error like any `FetchError`.
+- **RISK-004**: The post-grain never-lost ordering (FRM-CON-005 / FRM-PAT-001) is the subtle invariant of this feature. It is isolated to Phases 3–5 and pinned by the end-to-end CLI test, including the crash-before-`poll-done` re-poll case. The one residual loss requires violating the ordering contract (advancing the watch before dispositioning a topic's posts); the skill owns that contract and the test forbids the order.
+- **RISK-005**: For link/video topics the RSS `description` is only a snippet, so Rule A may judge a stub. Mitigated by the two-stage judge (`WebFetch` the topic when the snippet is too thin) and by Rule B catching a topic that later draws likes. Accepted: a topic whose stub reads out-of-scope is dropped without the full OP — the same bias the article feed path already takes. Likewise, a topic admitted (its `forum_watch` row written) but evicted from both `latest.rss` and `top.rss` before its first Rule-A disposition has its OP judgment skipped (`op_interest_kept` stays unset, but the topic is no longer re-emitted); accepted by the same bias, and Rule B still catches it if it later draws likes.
+- **ASSUMPTION-001**: Registered forums run Discourse and expose public (no-auth) JSON and RSS; erlangforums, elixirforum, and users.rust-lang.org were verified to do so (2026-06).
+- **ASSUMPTION-002**: A pure-accumulation topic that never reaches daily or weekly top-N is acceptably left unsurfaced (it is not popular by any measure), per the recorded design.
+
+## 8. Related Specifications / Further Reading
+
+- Memory design note: `feed-filter-forum-adapter-design.md` (the agreed behavioral design this plan executes).
+- `ARCHITECTURE.md` — the module map and the invariants being re-scoped.
+- Verified forums: <https://erlangforums.com>, <https://elixirforum.com>, <https://users.rust-lang.org>.
