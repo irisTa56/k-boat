@@ -3,7 +3,7 @@
 This is the version-controlled **template**. Copy it to `prompts/selection.md` (gitignored, your personal criteria) — that copy is what the run routine reads, so your interests never enter version control. Override the path with `FEED_FILTER_SELECTION` if you keep it elsewhere.
 
 This file is the keep/drop prompt the run routine hands to each judging subagent.
-A subagent sees one candidate page at a time and decides whether it belongs in the **`Filtered Feeds`** Reminders list.
+A subagent sees one candidate page at a time and decides whether it belongs in the **`Filtered Feeds`** or **`Filtered Forums`** Reminders list.
 Replace the placeholders below with your own interests; the routine reloads `prompts/selection.md` every run, so edits take effect on the next run with no code change.
 
 A per-site override may live in `sites.toml` (`selection = "..."` on a `[[site]]`); when present it replaces the **Topics** section below for that site only, while the **Output** and **Heuristics** sections still apply.
@@ -33,6 +33,23 @@ When in doubt, prefer to **keep** — a stray extra reminder is cheaper to dismi
 - Judge the article itself, not the site's general reputation — a good site still publishes off-topic pieces.
 - A title alone can be misleading; if the title is ambiguous, read the body before deciding (see the run routine's two-stage judgment).
 - Length is not quality: a short focused post can be worth keeping, a long SEO page is not.
+
+## Forum posts (Rule A and Rule B)
+
+When judging a **forum candidate** (from the `feed-filter-forum-run` skill), two rules apply.
+
+**Rule A** — cross-domain interest, judged on the topic OP:
+The forum's own native subject (`forum_subject`, e.g. "Erlang" for an Erlang forum) must be **excluded as a match reason** (FRM-002).
+A topic about Erlang on an Erlang forum is not cross-domain; it is the forum's home territory.
+Ask: would this topic interest a reader from *outside* that community?
+Judge from the `op_text` first; fall back to a `WebFetch` of the topic page only when the snippet is too thin to decide.
+
+**Rule B** — worth-reading information, judged per trigger post:
+The native subject exclusion does **not** apply (FRM-003).
+A technically deep post in the forum's own domain may still be worth reading.
+Judge from the pre-fetched `text` field; no `WebFetch` is needed.
+
+Copy this section verbatim into your local `prompts/selection.md` and add any forum-specific topics or quality bars you want applied.
 
 ## Walls and unreadable pages
 

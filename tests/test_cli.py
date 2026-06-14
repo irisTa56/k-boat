@@ -199,11 +199,48 @@ def test_list_sites_shape(state_dir: Path, capsys: pytest.CaptureFixture[str]) -
             "feed_url": "https://e.example.com/f.xml",
             "index_url": None,
             "article_url_pattern": None,
+            "forum_url": None,
+            "forum_subject": None,
+            "like_threshold": None,
+            "interest_like_threshold": None,
+            "daily_watch_count": None,
+            "weekly_watch_count": None,
+            "poll_offsets_days": None,
             "selection": None,
             "requires_browser": False,
             "enabled": True,
         }
     ]
+
+
+def test_list_sites_projects_forum_config(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A forum site must be faithfully projected so the forum-run skill can read
+    # forum_subject for the Rule-A native-subject exclusion (FRM-002) via the CLI
+    # contract, never by reading sites.toml directly.
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="ef",
+            name="Elixir Forum",
+            forum_url="https://elixirforum.com",
+            forum_subject="Elixir",
+            like_threshold=8,
+            poll_offsets_days=(0, 2, 9),
+        ),
+    )
+    assert cli.main(["list-sites"]) == 0
+    row = _out(capsys)[0]
+    assert row["kind"] == "forum"
+    assert row["forum_url"] == "https://elixirforum.com"
+    assert row["forum_subject"] == "Elixir"
+    assert row["like_threshold"] == 8
+    assert row["poll_offsets_days"] == [0, 2, 9]
+    # Unset tuning fields project as None (the config default applies at use time).
+    assert row["interest_like_threshold"] is None
+    assert row["daily_watch_count"] is None
+    assert row["weekly_watch_count"] is None
 
 
 def test_list_sites_surfaces_requires_browser(
@@ -1073,19 +1110,24 @@ def test_forum_remind_adds_then_records(
     list_idx = argv.index("--list")
     assert argv[list_idx + 1] == "Filtered Forums"
 
-    # Post is recorded seen in forum_post_seen.
+    # Post is recorded seen in forum_post_seen; the topic-grain interest verdict
+    # is NOT touched (a Rule-B keep carries no --is-op, FRM-006 independence).
     with contextlib.closing(open_db(db_path())) as conn:
-        from feed_filter.forum_store import is_post_seen
+        from feed_filter.forum_store import is_post_seen, op_interest_kept
 
         assert is_post_seen(conn, FORUM_SITE_ID, 5001)
+        assert op_interest_kept(conn, FORUM_SITE_ID, 1234) is None
 
 
-def test_forum_remind_with_is_op_records_verdict(
+def test_forum_remind_rule_a_keep_records_verdict_only(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """forum-remind --is-op also calls set_op_verdict(kept=1)."""
+    """A Rule-A keep is ``--is-op`` with no ``--post-id``: it records the
+    topic-grain interest verdict but writes NO post-grain seen, so a later
+    Rule-B pass can still re-judge the OP (FRM-006, the two axes are independent).
+    """
     import feed_filter.reminders as rem_mod
-    from feed_filter.forum_store import admit_topic, op_interest_kept
+    from feed_filter.forum_store import admit_topic, is_post_seen, op_interest_kept
 
     _add_forum_site()
 
@@ -1108,8 +1150,6 @@ def test_forum_remind_with_is_op_records_verdict(
             FORUM_SITE_ID,
             "--topic-id",
             "1234",
-            "--post-id",
-            "5001",
             "--url",
             f"{FORUM_URL}/t/topic/1234",
             "--title",
@@ -1120,9 +1160,12 @@ def test_forum_remind_with_is_op_records_verdict(
         ]
     )
     assert rc == 0
+    assert _out(capsys)["post_id"] is None  # no post-grain key on a Rule-A keep
 
     with contextlib.closing(open_db(db_path())) as conn:
         assert op_interest_kept(conn, FORUM_SITE_ID, 1234) == 1
+        # No post-grain seen written: the OP id is not even known to Rule A.
+        assert not is_post_seen(conn, FORUM_SITE_ID, 5001)
 
 
 def test_forum_remind_does_not_record_when_add_raises(
@@ -1193,11 +1236,14 @@ def test_forum_mark_seen_records_drop(state_dir: Path, capsys: pytest.CaptureFix
         assert is_post_seen(conn, FORUM_SITE_ID, 5001)
 
 
-def test_forum_mark_seen_with_is_op_records_verdict(
+def test_forum_mark_seen_rule_a_drop_records_verdict_only(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """forum-mark-seen --is-op calls set_op_verdict(kept=0)."""
-    from feed_filter.forum_store import admit_topic, op_interest_kept
+    """A Rule-A drop is ``--is-op`` with no ``--post-id``: it records the
+    interest verdict (kept=0) but writes NO post-grain seen, so if the OP later
+    gains likes Rule B re-judges it (FRM-006, the user-confirmed behaviour).
+    """
+    from feed_filter.forum_store import admit_topic, is_post_seen, op_interest_kept
 
     _add_forum_site()
 
@@ -1211,8 +1257,6 @@ def test_forum_mark_seen_with_is_op_records_verdict(
             FORUM_SITE_ID,
             "--topic-id",
             "1234",
-            "--post-id",
-            "5001",
             "--url",
             f"{FORUM_URL}/t/topic/1234",
             "--title",
@@ -1221,9 +1265,11 @@ def test_forum_mark_seen_with_is_op_records_verdict(
         ]
     )
     assert rc == 0
+    assert _out(capsys)["post_id"] is None
 
     with contextlib.closing(open_db(db_path())) as conn:
         assert op_interest_kept(conn, FORUM_SITE_ID, 1234) == 0
+        assert not is_post_seen(conn, FORUM_SITE_ID, 5001)  # OP not seen at post grain
 
 
 # --- forum-poll-done ---------------------------------------------------------

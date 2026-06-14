@@ -3,6 +3,7 @@
 A simplified, Claude-Code-native reimplementation of the sibling project `loose-feeds` (a local checkout at `../loose-feeds`, not a public repo).
 
 A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against a prompt using cheap subagents, and pushes the survivors into the macOS Reminders list **`Filtered Feeds`** via the [`rem`](https://github.com/BRO3886/rem) CLI.
+A second routine does the same for registered Discourse forums, judging topics and popular posts on a sparse poll schedule and pushing keeps into **`Filtered Forums`**.
 
 ## Design
 
@@ -16,6 +17,7 @@ See [plan/feature-feed-filter-1.md](plan/feature-feed-filter-1.md) for the full 
 ## Prerequisites
 
 - macOS with the **`Filtered Feeds`** Reminders list already created. The routine never auto-creates lists; a missing or renamed list makes a remind fail loudly rather than silently dropping kept entries.
+- If you register any Discourse forum sites, the **`Filtered Forums`** Reminders list must also exist (user-created). Forum reminders land there, not in `Filtered Feeds`.
 - The [`rem`](https://github.com/BRO3886/rem) CLI on `PATH` (e.g. `/opt/homebrew/bin/rem`).
 - `mise` for the toolchain and tasks.
 
@@ -97,8 +99,41 @@ A body behind the same gate the browser gather passed is therefore unreadable to
 
 ### Run the filter
 
-Use the `feed-filter-run` skill. One pass gathers new entries across all sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
+Use the `feed-filter-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
+
+### Register a Discourse forum
+
+Use the `feed-filter-add-site` skill, or register directly:
+
+```sh
+# Register a Discourse forum (no back-catalog snapshot — admission is per-poll):
+feed-filter add-forum --id erlang-forum --name "Erlang Forums" \
+  --forum-url https://erlangforums.com \
+  --forum-subject "Erlang"
+
+# Optional tuning (all flags default to the values in config.py):
+#   --like-threshold N           (default 6)  — Rule-B threshold when Rule A dropped the topic
+#   --interest-like-threshold N  (default 3)  — Rule-B threshold when Rule A kept the topic
+#   --daily-watch-count N        (default 3)  — how many daily-top topics to watch
+#   --weekly-watch-count N       (default 5)  — how many weekly-top topics to watch
+#   --poll-offsets-days N [N …]  (default "0 1 7") — days from first-seen at which to poll
+```
+
+Forum registration writes config only — no snapshot.
+Unlike article sites (where a snapshot on registration prevents flooding the back-catalog on the first run), forum topics are admitted at poll time, so registration is safe without a snapshot.
+
+### Run the forum filter
+
+Use the `feed-filter-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, reminds the keeps into `Filtered Forums`, and advances each topic's poll counter.
+
+- **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
+- **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
+
+The two rules are independent axes. An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is reminded once under each rule.
+
+Topics are polled on a sparse schedule (`--poll-offsets-days`, default 0, 1, and 7 days from first-seen) and retire after the last offset.
+A re-reminded topic produces a fresh reminder item in `Filtered Forums`; unlike article keeps, the same topic may appear more than once if multiple posts qualify across polls or under both rules.
 
 ## Scheduling
 
@@ -119,6 +154,8 @@ The design favors **never-lost over never-duplicated**:
 
 - An entry that errors during judging is reminded anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
 - A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
-- The seen-store is the sole dedupe authority (`rem` does not dedupe). The remind-then-record pair runs in one process; the only duplicate window is a crash in the sub-millisecond gap between them, accepted to guarantee no loss.
+- The seen-store is the sole dedupe authority for article sources (`rem` does not dedupe). The remind-then-record pair runs in one process; the only duplicate window is a crash in the sub-millisecond gap between them, accepted to guarantee no loss.
+- For forum sources, the post-grain dedupe authority is `forum_store.py` (`forum_post_seen` table), which is a second authority deliberately scoped to posts and independent of the article `seen` table.
+  The `forum-poll-done` call advances each topic's poll counter and must be the **last** action for a topic in a run, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post (the already-seen posts are deduped on re-poll).
 
 When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's push summary. The heal files no reminder into the list, which holds only pages; operational notices go to the push channel.

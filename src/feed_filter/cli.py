@@ -81,6 +81,13 @@ def _candidate_to_dict(c: DiscoveryCandidate) -> dict[str, Any]:
 
 
 def _site_to_dict(s: SiteConfig) -> dict[str, Any]:
+    # list-sites is the JSON projection of the full model the skills read, so a
+    # forum site must be as faithfully represented as a feed/scrape one. The
+    # forum-run skill needs ``forum_subject`` to exclude the native subject from
+    # the Rule-A judgment (FRM-002); it reaches it here, never by reading
+    # sites.toml directly (the CLI is the only contract). The tuning fields are
+    # included for the same faithful-projection reason (None when unset → the
+    # config default applies at use time).
     return {
         "id": s.id,
         "name": s.name,
@@ -88,6 +95,15 @@ def _site_to_dict(s: SiteConfig) -> dict[str, Any]:
         "feed_url": s.feed_url,
         "index_url": s.index_url,
         "article_url_pattern": s.article_url_pattern,
+        "forum_url": s.forum_url,
+        "forum_subject": s.forum_subject,
+        "like_threshold": s.like_threshold,
+        "interest_like_threshold": s.interest_like_threshold,
+        "daily_watch_count": s.daily_watch_count,
+        "weekly_watch_count": s.weekly_watch_count,
+        "poll_offsets_days": (
+            list(s.poll_offsets_days) if s.poll_offsets_days is not None else None
+        ),
         "selection": s.selection,
         "requires_browser": s.requires_browser,
         "enabled": s.enabled,
@@ -436,21 +452,33 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_remind(args: argparse.Namespace) -> int:
-    """Create a forum reminder, then record the post seen (kept=1) (TASK-022).
+    """Create a forum reminder, then record the disposition (kept=1) (TASK-022).
 
     Mirrors the article path's ``cmd_remind`` ordering: ``rem add`` *first*,
-    ``record_post`` only on success (FRM-CON-005 / FRM-PAT-001).  Passes
+    the DB writes only on success (FRM-CON-005 / FRM-PAT-001).  Passes
     ``list_name=REMINDER_LIST_FORUM`` explicitly so forum reminders land in
     ``Filtered Forums``, not ``Filtered Feeds`` (FRM-005 / FRM-GUD-005).
 
-    When ``--is-op`` is set (the post is the OP, i.e. post_number == 1),
-    also calls ``set_op_verdict(kept=1)`` to record the Rule-A judgment.
+    The two dedupe axes are written independently (FRM-006, the two rules
+    dedupe per axis; the OP may be taken up under both A and B):
+
+    - ``--post-id`` present (a Rule-B disposition) → ``record_post(kept=1)``
+      marks that post seen in the post-grain store (``forum_post_seen``).
+    - ``--is-op`` present (the Rule-A OP disposition) → ``set_op_verdict(kept=1)``
+      records the topic-grain interest verdict (``forum_watch.op_interest_kept``).
+
+    A Rule-A keep carries ``--is-op`` and **no** ``--post-id``: Rule A reads the
+    OP from RSS and never holds its ``post_id`` (FRM-002), so it writes only the
+    topic-grain verdict and never touches the post-grain seen store. This keeps
+    Rule A fetch-free and lets a later Rule-B pass re-judge the OP if it gains
+    likes (FRM-006).
     """
     reminder_id = add_reminder(
         args.title, args.url, args.notes, list_name=REMINDER_LIST_FORUM
     )  # ReminderError → exit 1, no record (FRM-CON-005)
     with contextlib.closing(open_db(db_path())) as conn:
-        record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
+        if args.post_id is not None:
+            record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
         if args.is_op:
             set_op_verdict(conn, args.site_id, args.topic_id, kept=1)
     _emit(
@@ -466,13 +494,23 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_mark_seen(args: argparse.Namespace) -> int:
-    """Record a dropped forum post seen (kept=0); no reminder (TASK-022).
+    """Record a dropped forum disposition (kept=0); no reminder (TASK-022).
 
-    When ``--is-op`` is set, also calls ``set_op_verdict(kept=0)`` to record
-    the Rule-A drop verdict (FRM-002 / FRM-CON-005).
+    The two dedupe axes are written independently (FRM-006), exactly as in
+    ``cmd_forum_remind`` but with no ``rem add``:
+
+    - ``--post-id`` present (a Rule-B drop) → ``record_post(kept=0)`` marks the
+      post seen so it is not re-judged.
+    - ``--is-op`` present (a Rule-A OP drop) → ``set_op_verdict(kept=0)`` records
+      the topic-grain interest verdict; it writes **no** post-grain seen, so a
+      later Rule-B pass can still re-judge the OP if it gains likes (FRM-006).
+
+    A Rule-A drop therefore carries ``--is-op`` and no ``--post-id`` (Rule A holds
+    no OP ``post_id``, FRM-002), and never marks the OP seen at post grain.
     """
     with contextlib.closing(open_db(db_path())) as conn:
-        record_post(conn, args.site_id, args.topic_id, args.post_id, kept=0)
+        if args.post_id is not None:
+            record_post(conn, args.site_id, args.topic_id, args.post_id, kept=0)
         if args.is_op:
             set_op_verdict(conn, args.site_id, args.topic_id, kept=0)
     _emit(
@@ -607,7 +645,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_forum_remind.add_argument("--site-id", dest="site_id", required=True)
     p_forum_remind.add_argument("--topic-id", dest="topic_id", type=int, required=True)
-    p_forum_remind.add_argument("--post-id", dest="post_id", type=int, required=True)
+    # --post-id is optional: a Rule-B disposition passes it (records the post at
+    # post grain); a Rule-A OP disposition omits it (records only the topic-grain
+    # verdict via --is-op, since Rule A holds no OP post_id — FRM-002 / FRM-006).
+    p_forum_remind.add_argument("--post-id", dest="post_id", type=int, default=None)
     p_forum_remind.add_argument("--url", required=True)
     p_forum_remind.add_argument("--title", required=True)
     p_forum_remind.add_argument("--notes", required=True)
@@ -615,7 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--is-op",
         dest="is_op",
         action="store_true",
-        help="the post is the OP (post_number==1); also records the Rule-A verdict",
+        help="this is the Rule-A OP disposition; records the topic-grain interest verdict",
     )
     p_forum_remind.set_defaults(handler=cmd_forum_remind)
 
@@ -625,14 +666,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_forum_mark.add_argument("--site-id", dest="site_id", required=True)
     p_forum_mark.add_argument("--topic-id", dest="topic_id", type=int, required=True)
-    p_forum_mark.add_argument("--post-id", dest="post_id", type=int, required=True)
+    # --post-id optional, mirroring forum-remind: a Rule-B drop passes it; a
+    # Rule-A OP drop omits it and records only the topic-grain verdict (--is-op).
+    p_forum_mark.add_argument("--post-id", dest="post_id", type=int, default=None)
     p_forum_mark.add_argument("--url", required=True)
     p_forum_mark.add_argument("--title", required=True)
     p_forum_mark.add_argument(
         "--is-op",
         dest="is_op",
         action="store_true",
-        help="the post is the OP; also records the Rule-A drop verdict",
+        help="this is the Rule-A OP disposition; records the topic-grain drop verdict",
     )
     p_forum_mark.set_defaults(handler=cmd_forum_mark_seen)
 

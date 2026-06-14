@@ -478,9 +478,10 @@ def test_forum_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Full forum run: add-forum → forum-new → forum-remind (OP) + forum-mark-seen
-    (reply) → forum-poll-done.  Asserts state transitions and 'Filtered Forums'
-    as the reminder list target (FRM-005 / FRM-CON-005).
+    """Full forum run: add-forum → forum-new → Rule-A keep of the OP (verdict
+    only) + Rule-B keep of the same OP (post-grain seen) → forum-poll-done.
+    Asserts the two dedupe axes are written independently (FRM-006), the OP is
+    reminded once per axis (FRM-005), and 'Filtered Forums' is the list target.
     """
     monkeypatch.setattr(cli, "build_client", _forum_transport)
 
@@ -536,7 +537,42 @@ def test_forum_end_to_end(
     assert any(p["topic_id"] == 1234 for p in polls)
     poll = next(p for p in polls if p["topic_id"] == 1234)
 
-    # --- Step 3: forum-remind for the OP (post 5001, is-op) -------------------
+    # --- Step 3: Rule-A keep of the OP — `--is-op`, NO `--post-id` ------------
+    # Rule A holds no OP post_id (it reads RSS, FRM-002); it records only the
+    # topic-grain interest verdict and never touches the post-grain seen store.
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            _FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--url",
+            f"{_FORUM_URL}/t/my-topic/1234",
+            "--title",
+            "My Forum Topic",
+            "--notes",
+            "Cross-domain interesting",
+            "--is-op",
+        ]
+    )
+    assert rc == 0
+
+    # rem was called with --list "Filtered Forums", not "Filtered Feeds".
+    assert len(rem_calls) == 1
+    argv = rem_calls[0]
+    list_idx = argv.index("--list")
+    assert argv[list_idx + 1] == "Filtered Forums"
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert op_interest_kept(conn, _FORUM_SITE_ID, 1234) == 1  # Rule-A kept
+        # Rule A wrote no post-grain seen: the OP stays re-judgeable by Rule B.
+        assert not is_post_seen(conn, _FORUM_SITE_ID, 5001)
+
+    # --- Step 4: Rule-B keep of the same OP (trigger post 5001) ---------------
+    # The OP is also a Rule-B trigger (10 likes ≥ 6).  Independent axis: pass
+    # `--post-id`, NO `--is-op`.  This records the post-grain seen (FRM-006), so
+    # the same OP is reminded once per axis — two items, same topic (FRM-005).
     rc = cli.main(
         [
             "forum-remind",
@@ -551,42 +587,14 @@ def test_forum_end_to_end(
             "--title",
             "My Forum Topic",
             "--notes",
-            "Great OP",
-            "--is-op",
+            "Popular and worth reading",
         ]
     )
     assert rc == 0
-
-    # rem was called with --list "Filtered Forums", not "Filtered Feeds".
-    assert len(rem_calls) == 1
-    argv = rem_calls[0]
-    list_idx = argv.index("--list")
-    assert argv[list_idx + 1] == "Filtered Forums"
+    assert len(rem_calls) == 2  # one item per axis (FRM-005 / FRM-006)
 
     with contextlib.closing(open_db(db_path())) as conn:
         assert is_post_seen(conn, _FORUM_SITE_ID, 5001)
-        assert op_interest_kept(conn, _FORUM_SITE_ID, 1234) == 1  # Rule-A kept
-
-    # --- Step 4: forum-mark-seen for the reply (post 5002, not OP) ------------
-    rc = cli.main(
-        [
-            "forum-mark-seen",
-            "--site-id",
-            _FORUM_SITE_ID,
-            "--topic-id",
-            "1234",
-            "--post-id",
-            "5002",
-            "--url",
-            f"{_FORUM_URL}/t/my-topic/1234",
-            "--title",
-            "My Forum Topic",
-        ]
-    )
-    assert rc == 0
-
-    with contextlib.closing(open_db(db_path())) as conn:
-        assert is_post_seen(conn, _FORUM_SITE_ID, 5002)
 
     # --- Step 5: forum-poll-done (last call for topic 1234) -------------------
     rc = cli.main(
@@ -661,7 +669,7 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
     cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
     _out(capsys)
 
-    # Disposition the OP.
+    # Disposition the OP as a Rule-B trigger (post-grain seen; no --is-op).
     cli.main(
         [
             "forum-remind",
@@ -677,7 +685,6 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
             "My Forum Topic",
             "--notes",
             "first run",
-            "--is-op",
         ]
     )
     _out(capsys)
@@ -733,6 +740,74 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
         # With poll_offsets_days=(0,), one poll retires the topic.
         assert row[0] == 1
         assert row[1] == 1  # retired
+
+
+def test_forum_rule_a_drop_resurfaces_under_rule_b(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The headline FRM-006 behaviour: an OP dropped under Rule A is NOT marked
+    post-grain seen (only the topic-grain verdict is set), so it is still
+    re-judged under Rule B if it crosses the like bar.  This is the mirror of
+    ``test_forum_never_lost_ordering_reruns_find_seen_posts`` (where a post-grain
+    *seen* post does NOT resurface).
+    """
+    monkeypatch.setattr(cli, "build_client", _forum_transport)
+
+    # Register with offsets=(0,) so the topic stays due each run until poll-done.
+    rc = cli.main(
+        [
+            "add-forum",
+            "--id",
+            _FORUM_SITE_ID,
+            "--name",
+            "Test Forum",
+            "--forum-url",
+            _FORUM_URL,
+            "--poll-offsets-days",
+            "0",
+        ]
+    )
+    assert rc == 0
+    _out(capsys)
+
+    # Run 1: forum-new admits topic 1234 and emits its Rule-A candidate.
+    cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
+    _out(capsys)
+
+    # Drop the OP under Rule A: --is-op, NO --post-id (verdict only).
+    rc = cli.main(
+        [
+            "forum-mark-seen",
+            "--site-id",
+            _FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--url",
+            f"{_FORUM_URL}/t/my-topic/1234",
+            "--title",
+            "My Forum Topic",
+            "--is-op",
+        ]
+    )
+    assert rc == 0
+    _out(capsys)  # drain the mark-seen output
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert op_interest_kept(conn, _FORUM_SITE_ID, 1234) == 0  # Rule-A dropped
+        # The OP was NOT marked post-grain seen — that is what lets Rule B reopen it.
+        assert not is_post_seen(conn, _FORUM_SITE_ID, 5001)
+
+    # Run 2: the OP (post 5001, 10 likes ≥ threshold) still surfaces under Rule B,
+    # because the Rule-A drop did not record it seen at post grain (FRM-006).
+    cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
+    new2 = _out(capsys)
+    rule_b_for_topic = [t for t in new2["topics"] if t["rule"] == "B" and t["topic_id"] == 1234]
+    assert rule_b_for_topic, "a dropped-by-A OP must remain eligible for Rule B"
+    assert any(p["post_id"] == 5001 for t in rule_b_for_topic for p in t["trigger_posts"]), (
+        "the A-dropped OP (post 5001) must resurface as a Rule-B trigger"
+    )
 
 
 def test_forum_site_excluded_from_new_entries_and_vice_versa(
