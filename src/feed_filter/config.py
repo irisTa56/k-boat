@@ -15,6 +15,17 @@ from pathlib import Path
 # one-line change (RISK-005).
 REMINDER_LIST = "Filtered Feeds"
 
+# Reminders list for forum posts; user-created, never auto-created (FRM-005).
+REMINDER_LIST_FORUM = "Filtered Forums"
+
+# Forum adapter defaults (FRM-003, FRM-001, FRM-007). Applied at use time when
+# the per-site tuning fields are unset (None).
+DEFAULT_LIKE_THRESHOLD = 6  # FRM-003: Rule-B threshold for non-interest topics
+DEFAULT_INTEREST_LIKE_THRESHOLD = 3  # FRM-003: Rule-B threshold when Rule-A kept the topic
+DEFAULT_DAILY_WATCH_COUNT = 3  # FRM-001: top-N from daily top feed
+DEFAULT_WEEKLY_WATCH_COUNT = 5  # FRM-001: top-N from weekly top feed
+DEFAULT_POLL_OFFSETS_DAYS: tuple[int, ...] = (0, 1, 7)  # FRM-007: poll schedule offsets
+
 # Per-run cost / volume bounds (CON-005). Per-site clamps each site's new-entry
 # list; global clamps the round-robin-interleaved aggregate (REQ-010).
 DEFAULT_PER_SITE_CAP = 20

@@ -1,10 +1,13 @@
 """Site registry — the version-controlled ``sites.toml`` config (PAT-003).
 
-A site is either a *feed* (``feed_url``) or a *scrape* (``article_url_pattern``
-matched against links on an ``index_url``); exactly one of the two, validated at
-construction. Site ids are unique (the seen-store and self-heal route by id).
-Writes are atomic and durable (temp file + fsync + ``os.replace`` + dir fsync,
-REQ-002) and go through tomlkit so existing entries keep their formatting.
+A site is a *feed* (``feed_url``), a *scrape* (``article_url_pattern`` matched
+against links on an ``index_url``), or a *forum* (``forum_url`` pointing at a
+Discourse instance); exactly one of the three, validated at construction. Forum
+sites carry optional tuning fields (FRM-GUD-007); the per-site values override
+the config-level defaults at use time. Site ids are unique (the seen-store and
+self-heal route by id). Writes are atomic and durable (temp file + fsync +
+``os.replace`` + dir fsync, REQ-002) and go through tomlkit so existing entries
+keep their formatting.
 """
 
 from __future__ import annotations
@@ -18,9 +21,30 @@ from pathlib import Path
 import tomlkit
 from tomlkit.items import Table
 
-# Optional fields that participate in shape validation / serialization. ``id``
-# and ``name`` are required and handled separately.
-_OPTIONAL_FIELDS = ("feed_url", "index_url", "article_url_pattern", "selection")
+# String optional fields: blank-normalized and emitted as strings. ``id`` and
+# ``name`` are required and handled separately.
+_OPTIONAL_FIELDS = (
+    "feed_url",
+    "index_url",
+    "article_url_pattern",
+    "selection",
+    # Forum string fields (FRM-GUD-007):
+    "forum_url",
+    "forum_subject",
+)
+
+# Forum integer tuning fields: absent → None (falls back to config defaults at
+# use time). Not in _OPTIONAL_FIELDS because they are ints, not strings.
+_FORUM_INT_FIELDS = (
+    "like_threshold",
+    "interest_like_threshold",
+    "daily_watch_count",
+    "weekly_watch_count",
+)
+
+# All forum-only tuning fields (int + the offsets tuple). Used to validate that
+# none are set unless forum_url is also set (FRM-GUD-007).
+_FORUM_TUNING_FIELDS = (*_FORUM_INT_FIELDS, "poll_offsets_days")
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -52,10 +76,22 @@ class SiteConfig:
     # are preserved, so re-enabling resumes without a back-catalog flood. The lever
     # a user reaches for when a site is chronically broken or temporarily unwanted.
     enabled: bool = True
+    # --- Forum kind (FRM-GUD-007) ---
+    # Base URL of the Discourse forum (e.g. "https://elixirforum.com"). Set iff
+    # kind == "forum"; mutually exclusive with feed_url / article_url_pattern.
+    forum_url: str | None = None
+    # Native subject excluded from Rule-A cross-domain judgment (FRM-002).
+    forum_subject: str | None = None
+    # Per-site tuning overrides; None falls back to the config-level defaults.
+    like_threshold: int | None = None  # FRM-003
+    interest_like_threshold: int | None = None  # FRM-003
+    daily_watch_count: int | None = None  # FRM-001
+    weekly_watch_count: int | None = None  # FRM-001
+    poll_offsets_days: tuple[int, ...] | None = None  # FRM-007
 
     def __post_init__(self) -> None:
-        # Normalize blank/whitespace-only optionals to None so a half-written
-        # config row doesn't read as "set" and trip the exactly-one check.
+        # Normalize blank/whitespace-only string optionals to None so a
+        # half-written config row doesn't read as "set" and trip the checks.
         for field in _OPTIONAL_FIELDS:
             object.__setattr__(self, field, _blank_to_none(getattr(self, field)))
 
@@ -66,16 +102,26 @@ class SiteConfig:
 
         has_feed = self.feed_url is not None
         has_pattern = self.article_url_pattern is not None
-        if has_feed == has_pattern:
+        has_forum = self.forum_url is not None
+        if sum([has_feed, has_pattern, has_forum]) != 1:
             raise ValueError(
-                f"exactly one of feed_url / article_url_pattern must be set (site {self.id!r})"
+                "exactly one of feed_url / article_url_pattern / forum_url must be set"
+                f" (site {self.id!r})"
             )
         if has_pattern and self.index_url is None:
             raise ValueError(f"index_url is required with article_url_pattern (site {self.id!r})")
+        if not has_forum:
+            for field in _FORUM_TUNING_FIELDS:
+                if getattr(self, field) is not None:
+                    raise ValueError(
+                        f"{field} can only be set when forum_url is set (site {self.id!r})"
+                    )
 
     @property
     def kind(self) -> str:
-        """``"scrape"`` iff a pattern is set, else ``"feed"``."""
+        """``"forum"`` / ``"scrape"`` / ``"feed"`` depending on which URL field is set."""
+        if self.forum_url is not None:
+            return "forum"
         return "scrape" if self.article_url_pattern else "feed"
 
 
@@ -126,6 +172,34 @@ def _opt_bool(table: Table, key: str, *, default: bool = False) -> bool:
     return raw
 
 
+def _opt_int(table: Table, key: str) -> int | None:
+    """Strict int parse: absent → None, bool → ValueError, non-int → ValueError.
+
+    Mirrors ``_opt_bool``'s loud-failure contract: a hand-edited
+    ``like_threshold = "6"`` (a string) must fail rather than silently default.
+    ``bool`` is a subclass of ``int`` in Python, so it is explicitly excluded.
+    """
+    val = table.get(key)
+    if val is None:
+        return None
+    if isinstance(val, bool) or not isinstance(val, int):
+        raise ValueError(f"{key} must be an integer, got {val!r}")
+    return int(val)
+
+
+def _opt_int_list(table: Table, key: str) -> tuple[int, ...] | None:
+    """Strict int-array parse: absent → None, any non-int element → ValueError."""
+    val = table.get(key)
+    if val is None:
+        return None
+    if not isinstance(val, list):
+        raise ValueError(f"{key} must be an array of integers, got {val!r}")
+    for item in val:
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise ValueError(f"{key} items must be integers, got {item!r}")
+    return tuple(int(i) for i in val)
+
+
 def _req_str(table: Table, key: str, path: Path) -> str:
     # Uniform ValueError (not tomlkit's NonExistentKey) for a malformed row, so
     # load_sites/add_site keep their documented "ValueError on bad entry" contract.
@@ -160,6 +234,13 @@ def load_sites(path: Path) -> list[SiteConfig]:
             selection=_opt_str(table, "selection"),
             requires_browser=_opt_bool(table, "requires_browser"),
             enabled=_opt_bool(table, "enabled", default=True),
+            forum_url=_opt_str(table, "forum_url"),
+            forum_subject=_opt_str(table, "forum_subject"),
+            like_threshold=_opt_int(table, "like_threshold"),
+            interest_like_threshold=_opt_int(table, "interest_like_threshold"),
+            daily_watch_count=_opt_int(table, "daily_watch_count"),
+            weekly_watch_count=_opt_int(table, "weekly_watch_count"),
+            poll_offsets_days=_opt_int_list(table, "poll_offsets_days"),
         )
         if site.id in seen_ids:
             raise ValueError(f"duplicate site id {site.id!r} in {path}")
@@ -194,6 +275,14 @@ def add_site(path: Path, site: SiteConfig) -> None:
     # minimal, and a disabled one carries an explicit ``enabled = false``.
     if not site.enabled:
         table["enabled"] = False
+    # Emit forum int tuning fields only when set (emit-only-when-non-default,
+    # FRM-GUD-007). forum_url / forum_subject are already handled by _OPTIONAL_FIELDS.
+    for key in _FORUM_INT_FIELDS:
+        value = getattr(site, key)
+        if value is not None:
+            table[key] = value
+    if site.poll_offsets_days is not None:
+        table["poll_offsets_days"] = list(site.poll_offsets_days)
 
     aot = doc.get("site")
     if aot is None:
@@ -207,16 +296,19 @@ def add_site(path: Path, site: SiteConfig) -> None:
 def update_pattern(path: Path, site_id: str, pattern: str) -> None:
     """Rewrite only ``site_id``'s ``article_url_pattern`` (self-heal, REQ-006).
 
-    Raises ``KeyError`` if the id is absent, ``ValueError`` if it names a feed
-    site (writing a pattern there would corrupt the exactly-one-of invariant and
-    break ``load_sites`` for the whole file).
+    Raises ``KeyError`` if the id is absent, ``ValueError`` if it names a non-scrape
+    site (feed or forum): writing a pattern there would corrupt the exactly-one-of
+    invariant and break ``load_sites`` for the whole file.
     """
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     for table in _iter_site_tables(doc):
         if _req_str(table, "id", path) == site_id:
-            # Match load_sites' notion of "feed site": a blank feed_url is unset,
-            # so a half-written scrape row stays healable (REQ-006).
-            if _opt_str(table, "feed_url") is not None:
+            # Reject any non-scrape row, matching load_sites' notion of "scrape
+            # site": neither feed_url nor forum_url set (a blank value is unset, so
+            # a half-written scrape row stays healable, REQ-006). The exactly-one-of
+            # invariant is three-way (feed / scrape / forum), so this guard must
+            # exclude both other kinds, not just feed.
+            if _opt_str(table, "feed_url") is not None or _opt_str(table, "forum_url") is not None:
                 raise ValueError(f"update_pattern targets scrape sites only (site {site_id!r})")
             table["article_url_pattern"] = pattern
             _atomic_write(path, tomlkit.dumps(doc))

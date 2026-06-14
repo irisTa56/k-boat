@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-06-14
 last_updated: 2026-06-14
 owner: irisTa56
-status: 'Planned'
+status: 'In progress'
 tags: [feature, architecture, forum]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: In progress](https://img.shields.io/badge/status-In_progress-yellow)
 
 This plan adds a Discourse forum-watching adapter to feed-filter.
 The agreed behavioral design is recorded in the memory note `feed-filter-forum-adapter-design.md`; this plan is the code-level execution of it.
@@ -65,11 +65,11 @@ The guiding constraint is **organic optimization, not a bolted-on parallel world
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | `config.py`: add `REMINDER_LIST_FORUM = "Filtered Forums"`, `DEFAULT_LIKE_THRESHOLD = 6`, `DEFAULT_INTEREST_LIKE_THRESHOLD = 3`, `DEFAULT_DAILY_WATCH_COUNT = 3`, `DEFAULT_WEEKLY_WATCH_COUNT = 5`, `DEFAULT_POLL_OFFSETS_DAYS = (0, 1, 7)`, each with a comment citing the relevant FRM id. | | |
-| TASK-002 | `sites.py`: add `forum_url`, `forum_subject`, `like_threshold`, `interest_like_threshold`, `daily_watch_count`, `weekly_watch_count`, `poll_offsets_days` to `SiteConfig` (numeric tuning fields `int \| None`, offsets `tuple[int, …] \| None`, defaulting to None so "unset" falls back to the config defaults at use time). | | |
-| TASK-003 | `sites.py`: extend the exactly-one-of invariant in `__post_init__` to `{feed_url, article_url_pattern, forum_url}`; add `kind == "forum"`; validate that the forum tuning fields are only set when `forum_url` is set (else `ValueError`). Audit the two existing `kind`-binary consumers (`pipeline.fetch_entries`'s `assert index_url is not None`, `gather_new`'s `zero_links = site.kind == "scrape"`): a forum site must never reach them, enforced by the kind filters in TASK-021. | | |
-| TASK-004 | `sites.py`: extend `load_sites`/`add_site` to parse and emit the forum fields (add `_opt_int`/`_opt_int_list` helpers; emit only populated fields, matching the existing minimal-row serialization). | | |
-| TASK-005 | Tests (`test_sites.py`, `test_config.py`): a case per new validation branch (three-way exactly-one-of, tuning-without-`forum_url` rejection, blank normalization) and per new helper (`_opt_int`, `_opt_int_list`), round-trip add→load of a forum site with and without tuning overrides, `kind == "forum"`, and the new config constants/defaults — so PR1's branch coverage holds even before any runtime consumer exists. | | |
+| TASK-001 | `config.py`: add `REMINDER_LIST_FORUM = "Filtered Forums"`, `DEFAULT_LIKE_THRESHOLD = 6`, `DEFAULT_INTEREST_LIKE_THRESHOLD = 3`, `DEFAULT_DAILY_WATCH_COUNT = 3`, `DEFAULT_WEEKLY_WATCH_COUNT = 5`, `DEFAULT_POLL_OFFSETS_DAYS = (0, 1, 7)`, each with a comment citing the relevant FRM id. | ✅ | 2026-06-14 |
+| TASK-002 | `sites.py`: add `forum_url`, `forum_subject`, `like_threshold`, `interest_like_threshold`, `daily_watch_count`, `weekly_watch_count`, `poll_offsets_days` to `SiteConfig` (numeric tuning fields `int \| None`, offsets `tuple[int, …] \| None`, defaulting to None so "unset" falls back to the config defaults at use time). | ✅ | 2026-06-14 |
+| TASK-003 | `sites.py`: extend the exactly-one-of invariant in `__post_init__` to `{feed_url, article_url_pattern, forum_url}`; add `kind == "forum"`; validate that the forum tuning fields are only set when `forum_url` is set (else `ValueError`). Audit the three `kind`-binary consumers. Two are gather-path reads guarded by the kind filters in TASK-021 (a forum site must never reach them): `pipeline.fetch_entries`'s `assert index_url is not None` and `gather_new`'s `zero_links = site.kind == "scrape"`. The third is `sites.update_pattern`'s scrape-only guard, which encoded "non-scrape" as `feed_url is not None` — silently admitting a forum row once a third kind exists, then writing `article_url_pattern` alongside `forum_url` and corrupting the invariant for the whole file. Because it lives in the PR1-owned file and protects the same exactly-one-of invariant, it is hardened here (reject `forum_url` too), not deferred to TASK-021. | ✅ | 2026-06-14 |
+| TASK-004 | `sites.py`: extend `load_sites`/`add_site` to parse and emit the forum fields (add `_opt_int`/`_opt_int_list` helpers; emit only populated fields, matching the existing minimal-row serialization). | ✅ | 2026-06-14 |
+| TASK-005 | Tests (`test_sites.py`, `test_config.py`): a case per new validation branch (three-way exactly-one-of, tuning-without-`forum_url` rejection, blank normalization) and per new helper (`_opt_int`, `_opt_int_list`), round-trip add→load of a forum site with and without tuning overrides, `kind == "forum"`, the `update_pattern` forum-rejection guard, and the new config constants/defaults — so PR1's branch coverage holds even before any runtime consumer exists. | ✅ | 2026-06-14 |
 
 ### Implementation Phase 2 — Discourse client & parsing (PR2)
 

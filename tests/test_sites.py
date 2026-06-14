@@ -5,8 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tomlkit.items import Table
 
-from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
+from feed_filter.sites import (
+    SiteConfig,
+    _opt_int,
+    _opt_int_list,
+    add_site,
+    load_sites,
+    set_enabled,
+    update_pattern,
+)
 
 
 def _feed(site_id: str = "f1") -> SiteConfig:
@@ -367,3 +376,262 @@ def test_update_pattern_rejects_feed_site(tmp_path: Path) -> None:
         update_pattern(path, "f1", r"^/a/")
     # The feed site is left intact and the file still loads.
     assert load_sites(path)[0].kind == "feed"
+
+
+# ---------------------------------------------------------------------------
+# Forum kind — TASK-005
+# ---------------------------------------------------------------------------
+
+
+def _forum(site_id: str = "fr1") -> SiteConfig:
+    return SiteConfig(id=site_id, name="Forum Site", forum_url="https://elixirforum.com")
+
+
+def _forum_full(site_id: str = "fr2") -> SiteConfig:
+    return SiteConfig(
+        id=site_id,
+        name="Forum Full",
+        forum_url="https://erlangforums.com",
+        forum_subject="Erlang",
+        like_threshold=8,
+        interest_like_threshold=4,
+        daily_watch_count=5,
+        weekly_watch_count=10,
+        poll_offsets_days=(0, 2, 14),
+    )
+
+
+def test_forum_kind_property() -> None:
+    assert _forum().kind == "forum"
+
+
+def test_three_way_exactly_one_of_rejects_feed_plus_forum() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        SiteConfig(
+            id="x",
+            name="X",
+            feed_url="https://e.example.com/feed",
+            forum_url="https://forum.example.com",
+        )
+
+
+def test_three_way_exactly_one_of_rejects_scrape_plus_forum() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        SiteConfig(
+            id="x",
+            name="X",
+            index_url="https://e.example.com",
+            article_url_pattern="^/a/",
+            forum_url="https://forum.example.com",
+        )
+
+
+def test_three_way_exactly_one_of_rejects_all_three() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        SiteConfig(
+            id="x",
+            name="X",
+            feed_url="https://e.example.com/feed",
+            index_url="https://e.example.com",
+            article_url_pattern="^/a/",
+            forum_url="https://forum.example.com",
+        )
+
+
+def test_three_way_exactly_one_of_rejects_none_set() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        SiteConfig(id="x", name="X")
+
+
+def test_forum_tuning_without_forum_url_raises() -> None:
+    base_url = "https://e.example.com/feed"
+    with pytest.raises(ValueError, match="like_threshold can only be set when forum_url"):
+        SiteConfig(id="x", name="X", feed_url=base_url, like_threshold=6)
+    with pytest.raises(ValueError, match="interest_like_threshold can only be set when forum_url"):
+        SiteConfig(id="x", name="X", feed_url=base_url, interest_like_threshold=3)
+    with pytest.raises(ValueError, match="daily_watch_count can only be set when forum_url"):
+        SiteConfig(id="x", name="X", feed_url=base_url, daily_watch_count=3)
+    with pytest.raises(ValueError, match="weekly_watch_count can only be set when forum_url"):
+        SiteConfig(id="x", name="X", feed_url=base_url, weekly_watch_count=5)
+    with pytest.raises(ValueError, match="poll_offsets_days can only be set when forum_url"):
+        SiteConfig(id="x", name="X", feed_url=base_url, poll_offsets_days=(0, 1, 7))
+
+
+def test_forum_url_blank_normalization() -> None:
+    site = SiteConfig(
+        id="x",
+        name="X",
+        feed_url="https://e.example.com/feed",
+        forum_url="   ",
+    )
+    assert site.forum_url is None
+    assert site.kind == "feed"
+
+
+def test_forum_subject_blank_normalization() -> None:
+    site = SiteConfig(
+        id="x",
+        name="X",
+        forum_url="https://forum.example.com",
+        forum_subject="",
+    )
+    assert site.forum_subject is None
+
+
+def test_forum_round_trip_minimal(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    add_site(path, _forum())
+    loaded = load_sites(path)
+    assert len(loaded) == 1
+    s = loaded[0]
+    assert s.id == "fr1"
+    assert s.forum_url == "https://elixirforum.com"
+    assert s.kind == "forum"
+    assert s.forum_subject is None
+    assert s.like_threshold is None
+    assert s.poll_offsets_days is None
+
+
+def test_forum_round_trip_with_all_tuning_overrides(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    add_site(path, _forum_full())
+    s = load_sites(path)[0]
+    assert s.forum_url == "https://erlangforums.com"
+    assert s.forum_subject == "Erlang"
+    assert s.like_threshold == 8
+    assert s.interest_like_threshold == 4
+    assert s.daily_watch_count == 5
+    assert s.weekly_watch_count == 10
+    assert s.poll_offsets_days == (0, 2, 14)
+    assert s.kind == "forum"
+
+
+def test_forum_minimal_row_has_no_tuning_keys(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    add_site(path, _forum())
+    text = path.read_text(encoding="utf-8")
+    for key in (
+        "like_threshold",
+        "interest_like_threshold",
+        "daily_watch_count",
+        "weekly_watch_count",
+        "poll_offsets_days",
+        "forum_subject",
+    ):
+        assert key not in text
+
+
+def test_forum_mixed_registry_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed())
+    add_site(path, _forum())
+    add_site(path, _scrape())
+    by_id = {s.id: s for s in load_sites(path)}
+    assert by_id["f1"].kind == "feed"
+    assert by_id["fr1"].kind == "forum"
+    assert by_id["s1"].kind == "scrape"
+
+
+def test_update_pattern_rejects_forum_site(tmp_path: Path) -> None:
+    # Self-heal targets scrape sites only; writing a pattern onto a forum site
+    # would set both forum_url and article_url_pattern, corrupting the three-way
+    # exactly-one-of invariant and breaking load_sites for the whole file.
+    path = tmp_path / "sites.toml"
+    add_site(path, _forum(site_id="fr1"))
+    with pytest.raises(ValueError, match="scrape sites only"):
+        update_pattern(path, "fr1", r"^/a/")
+    # The forum site is left intact and the file still loads.
+    assert load_sites(path)[0].kind == "forum"
+
+
+# ---------------------------------------------------------------------------
+# _opt_int / _opt_int_list helpers — TASK-005
+# ---------------------------------------------------------------------------
+
+
+def _table_from_dict(d: dict) -> Table:
+    # The _opt_* helpers only use the mapping ``.get`` interface, which a
+    # top-level TOMLDocument satisfies, so we cast one to Table rather than build
+    # a nested ``[[site]]`` table just to reach the helpers' element-level branches.
+    from typing import cast
+
+    import tomlkit
+
+    doc = tomlkit.parse("")
+    for k, v in d.items():
+        doc.add(k, v)  # type: ignore[arg-type]
+    return cast(Table, doc)
+
+
+def test_opt_int_absent_returns_none() -> None:
+    t = _table_from_dict({})
+    assert _opt_int(t, "x") is None  # type: ignore[arg-type]
+
+
+def test_opt_int_valid_returns_int() -> None:
+    t = _table_from_dict({"x": 6})
+    assert _opt_int(t, "x") == 6  # type: ignore[arg-type]
+
+
+def test_opt_int_string_raises() -> None:
+    t = _table_from_dict({"x": "6"})
+    with pytest.raises(ValueError, match="must be an integer"):
+        _opt_int(t, "x")  # type: ignore[arg-type]
+
+
+def test_opt_int_bool_raises() -> None:
+    t = _table_from_dict({"x": True})
+    with pytest.raises(ValueError, match="must be an integer"):
+        _opt_int(t, "x")  # type: ignore[arg-type]
+
+
+def test_opt_int_list_absent_returns_none() -> None:
+    t = _table_from_dict({})
+    assert _opt_int_list(t, "x") is None  # type: ignore[arg-type]
+
+
+def test_opt_int_list_valid_returns_tuple() -> None:
+    t = _table_from_dict({"x": [0, 1, 7]})
+    assert _opt_int_list(t, "x") == (0, 1, 7)  # type: ignore[arg-type]
+
+
+def test_opt_int_list_non_list_raises() -> None:
+    t = _table_from_dict({"x": 7})
+    with pytest.raises(ValueError, match="must be an array"):
+        _opt_int_list(t, "x")  # type: ignore[arg-type]
+
+
+def test_opt_int_list_non_int_element_raises() -> None:
+    t = _table_from_dict({"x": [0, "1", 7]})
+    with pytest.raises(ValueError, match="items must be integers"):
+        _opt_int_list(t, "x")  # type: ignore[arg-type]
+
+
+def test_opt_int_list_bool_element_raises() -> None:
+    t = _table_from_dict({"x": [0, True, 7]})
+    with pytest.raises(ValueError, match="items must be integers"):
+        _opt_int_list(t, "x")  # type: ignore[arg-type]
+
+
+def test_load_rejects_non_int_like_threshold(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    path.write_text(
+        '[[site]]\nid = "fr"\nname = "F"\n'
+        'forum_url = "https://forum.example.com"\n'
+        'like_threshold = "6"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must be an integer"):
+        load_sites(path)
+
+
+def test_load_rejects_non_array_poll_offsets(tmp_path: Path) -> None:
+    path = tmp_path / "sites.toml"
+    path.write_text(
+        '[[site]]\nid = "fr"\nname = "F"\n'
+        'forum_url = "https://forum.example.com"\n'
+        "poll_offsets_days = 7\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must be an array"):
+        load_sites(path)

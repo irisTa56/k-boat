@@ -15,6 +15,15 @@ def test_constants() -> None:
     assert config.DEFAULT_GLOBAL_CAP == 80
 
 
+def test_forum_constants() -> None:
+    assert config.REMINDER_LIST_FORUM == "Filtered Forums"
+    assert config.DEFAULT_LIKE_THRESHOLD == 6
+    assert config.DEFAULT_INTEREST_LIKE_THRESHOLD == 3
+    assert config.DEFAULT_DAILY_WATCH_COUNT == 3
+    assert config.DEFAULT_WEEKLY_WATCH_COUNT == 5
+    assert config.DEFAULT_POLL_OFFSETS_DAYS == (0, 1, 7)
+
+
 def test_repo_root_contains_pyproject() -> None:
     # REPO_ROOT must point at the project root, not src/ or the package dir.
     assert (config.REPO_ROOT / "pyproject.toml").is_file()
