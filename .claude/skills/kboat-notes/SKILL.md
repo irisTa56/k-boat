@@ -364,15 +364,15 @@ The step only reads the Daily note — it never writes one, so the Daily note st
 - **Tier 2 — same-field learning, to fill the cap.** If Tier 1 yields fewer than two, top up with candidates that, while not a direct answer, would teach you something in the field or theme of the in-window questions — newest-question-first again. This is the deliberate relaxation: the pick should not stay empty when a genuinely on-topic read is sitting in the inbox.
 
 Two is a cap, not a quota: stop at two, and if even Tier 2 finds nothing in the questions' field, take fewer rather than pad with an unrelated read — an honest short list beats a forced one. A candidate is picked at most once (Tier 1 wins over Tier 2 for the same source).
-PDFs are never picked: a PDF you are mid-read already surfaces in the Today view via `reading`, and a pick is for choosing the next web read.
+PDFs are never picked: a pick is for choosing the next web read, while anything you are already mid-read — PDF or web — surfaces in the Today view via `reading` instead.
 Each run `kboat-pick set --slugs` first resets `picked` to `false` on every source, then sets it `true` on the new choices, so yesterday's spotlight never lingers.
 
-The result is read in the Today view of the reading-inbox Base, not in the Daily note — web picks and started PDFs side by side, which works on mobile where the project CLIs do not.
+The result is read in the Today view of the reading-inbox Base, not in the Daily note — web picks and started reads side by side, which works on mobile where the project CLIs do not.
 
 ## Reading inbox Base
 
 A single standalone Base at the vault root, `Reading Inbox.base`, gives seven views over all sources: a **Today** view (the daily-pick shortlist plus what you are mid-read), three to-read inboxes — a **Web** view, an **All** view, and a **PDF** view — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources that could not be fetched. The **Today** view is listed first so it is the default Obsidian opens (a Base shows its first view on open, as noted for the Kindle Base).
-The Today view is the reading entry point, mobile included: it filters `distill != true && keep != true && dismiss != true && blocked != true` and then `picked == true || (source_type == "pdf" && reading == true)`, so it shows the day's at-most-two web picks (set by the daily-pick step, see "Daily pick") next to every PDF you have started (`reading`) but not yet filed. Both halves are plain booleans plus `source_type ==`, staying within the filter rules below; it carries `summary` so the two picks are legible at a glance, and sorts by `added_date` newest-first like the other inboxes (`picked` is hidden, so it is not a stable sort key).
+The Today view is the reading entry point, mobile included: it filters `distill != true && keep != true && dismiss != true && blocked != true` and then `picked == true || reading == true`, so it shows the day's at-most-two web picks (set by the daily-pick step, see "Daily pick") next to every source you have started (`reading`) but not yet filed, whatever its `source_type`. Both halves are plain booleans, staying within the filter rules below; it carries `summary` so the two picks are legible at a glance, and sorts by `added_date` newest-first like the other inboxes (`picked` is hidden, so it is not a stable sort key).
 The to-read inboxes filter `distill != true && keep != true && dismiss != true && blocked != true` — readable, undispositioned sources only (a blocked source has no content to read, so it belongs in the DLQ, not the inbox). The All inbox adds no type filter, so it is exhaustive over that set: every readable, undispositioned source appears whatever its `source_type`. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish.
 The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `reading`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
 The Ambiguous view (`dismiss && (keep || distill)`, and `blocked != true`) lists the contradictory sources the routine refuses to process, so they can be fixed. It is kept separate from Holding because it is an error state, not a resting one; like every non-DLQ view it excludes `blocked`, so a blocked source never leaks out of the DLQ.
@@ -399,9 +399,7 @@ views:
         - blocked != true
         - or:
             - picked == true
-            - and:
-                - source_type == "pdf"
-                - reading == true
+            - reading == true
     order:
       - reading
       - distill
