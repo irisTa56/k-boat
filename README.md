@@ -140,11 +140,12 @@ A re-reminded topic produces a fresh reminder item in `Filtered Forums`; unlike 
 The run **must execute locally** — `rem` writes the local Reminders.app, so a cloud routine cannot push reminders (CON-001).
 The Mac must be awake and the Claude runtime idle when the task fires.
 
-Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the `feed-filter-run` skill against this repo.
+Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `feed-filter-run` for the article sites, `feed-filter-forum-run` for the Discourse forums.
+The two are independent routines; register whichever you use, on whatever schedule you choose.
 Guidance:
 
 - Schedule it on an **off-:00 minute** (e.g. `17 * * * *` or a few times a day) to avoid the top-of-hour congestion when many routines fire at once.
-- The task starts fresh each run with no memory of prior runs; the seen-store (`feed-filter.db`) is what carries state across runs, so the prompt only needs to point at this repo and the `feed-filter-run` skill.
+- The task starts fresh each run with no memory of prior runs; the seen-store (`feed-filter.db`) is what carries state across runs, so the prompt only needs to point at this repo and the run skill.
 - Ensure the task's `PATH` includes Homebrew (`/opt/homebrew/bin`) so `rem` resolves; an absent `rem` surfaces as a non-zero exit, not a silent drop.
 - A scheduled task runs only while the Claude app is open; if the app was closed when the task was due, it runs on next launch.
 
@@ -155,7 +156,7 @@ The design favors **never-lost over never-duplicated**:
 - An entry that errors during judging is reminded anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
 - A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
 - The seen-store is the sole dedupe authority for article sources (`rem` does not dedupe). The remind-then-record pair runs in one process; the only duplicate window is a crash in the sub-millisecond gap between them, accepted to guarantee no loss.
-- For forum sources, the post-grain dedupe authority is `forum_store.py` (`forum_post_seen` table), which is a second authority deliberately scoped to posts and independent of the article `seen` table.
-  The `forum-poll-done` call advances each topic's poll counter and must be the **last** action for a topic in a run, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post (the already-seen posts are deduped on re-poll).
+- Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-remind as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
+  The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
 
 When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's push summary. The heal files no reminder into the list, which holds only pages; operational notices go to the push channel.
