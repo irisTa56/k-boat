@@ -251,10 +251,11 @@ def last_like_count(
 ) -> int | None:
     """Return the stored topic-level like count, or ``None`` if unset.
 
-    Used by the Rule-B pipeline for the FRM-CON-004 short-circuit: skip the
-    JSON fetch when ``completed_polls > 0`` and this value is unchanged.
-    Returns ``None`` on the first poll (``last_like_count`` is ``NULL`` until
-    ``finalize_poll`` runs at least once).
+    Standalone accessor for the FRM-CON-004 value for callers that do not
+    already hold a ``due_topics`` ``WatchRow`` (which exposes the same field
+    inline — ``forum_pipeline.gather_forum`` reads it from there and does not
+    call this). Returns ``None`` on the first poll (``last_like_count`` is
+    ``NULL`` until ``finalize_poll`` runs at least once).
     """
     row = conn.execute(
         "SELECT last_like_count FROM forum_watch WHERE site_id = ? AND topic_id = ?",
@@ -263,3 +264,25 @@ def last_like_count(
     if row is None:
         return None
     return row[0]  # may be None if last_like_count column is NULL
+
+
+def op_interest_kept(
+    conn: sqlite3.Connection,
+    site_id: str,
+    topic_id: int,
+) -> int | None:
+    """Return the stored Rule-A OP interest verdict, or ``None`` if unset.
+
+    Returns ``1`` (kept), ``0`` (dropped), or ``None`` (not yet judged).
+    Used by ``forum_pipeline.admit_from_feeds`` to determine which admitted
+    topics still need a Rule-A candidate emitted (FRM-002 / FRM-GUD-004).
+    The forum tables are the SQL authority (FRM-GUD-004); ``forum_pipeline``
+    must not query them directly.
+    """
+    row = conn.execute(
+        "SELECT op_interest_kept FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+        (site_id, topic_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return row[0]  # may be None if op_interest_kept column is NULL
