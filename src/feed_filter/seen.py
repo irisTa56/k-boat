@@ -34,6 +34,43 @@ _MIGRATIONS: list[str] = [
         seen_at       INTEGER
     );
     """,
+    # v2: forum adapter tables (FRM-GUD-004).
+    # These are the Discourse adapter's post-grain dedupe authority and
+    # watch/poll throttle.  They are colocated here only because migrations
+    # share one ``user_version`` counter; all queries against them live in
+    # ``forum_store.py``, which keeps ``seen.py`` the sole authority for the
+    # ``seen`` table.
+    #
+    # ``forum_watch``: one row per admitted topic, anchoring the poll schedule
+    # (FRM-007).  ``op_interest_kept`` and ``last_like_count`` are nullable so
+    # "unset" (not yet judged / not yet polled) is distinguishable from 0
+    # (FRM-CON-004, FRM-003).  ``completed_polls`` counts finalized polls;
+    # ``retired`` is set when ``completed_polls >= len(poll_offsets_days)``
+    # (offset-only retirement, FRM-007).
+    #
+    # ``forum_post_seen``: one row per dispositioned post (kept or dropped),
+    # enforcing post-grain dedupe (FRM-006 / FRM-CON-005).
+    """
+    CREATE TABLE IF NOT EXISTS forum_watch (
+        site_id          TEXT    NOT NULL,
+        topic_id         INTEGER NOT NULL,
+        first_seen_at    INTEGER NOT NULL,
+        op_interest_kept INTEGER,
+        completed_polls  INTEGER NOT NULL DEFAULT 0,
+        last_like_count  INTEGER,
+        retired          INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (site_id, topic_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS forum_post_seen (
+        site_id  TEXT    NOT NULL,
+        post_id  INTEGER NOT NULL,
+        topic_id INTEGER NOT NULL,
+        kept     INTEGER NOT NULL,
+        seen_at  INTEGER NOT NULL,
+        PRIMARY KEY (site_id, post_id)
+    );
+    """,
 ]
 
 
