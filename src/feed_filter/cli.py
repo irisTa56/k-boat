@@ -17,6 +17,13 @@ Ordering invariants enforced here, not in the skills:
 - **new-entries**: interleave entries round-robin across sites *before* the global
   cap (REQ-010) so a noisy site can't starve the others; truncated entries are
   omitted and left unseen, so they reappear next run.
+- **forum-new**: only forum sites (``kind == "forum"``); **new-entries** only
+  non-forum sites — neither path ever sees the other's sites (FRM-CON-001, finding
+  #8 in the PR4 review).
+- **forum-remind**: ``rem add`` *then* ``record_post`` (and ``set_op_verdict`` for
+  the OP), record only on successful add (FRM-CON-005 / FRM-PAT-001).
+- **forum-poll-done**: must be the **last** call for a topic in a run, after every
+  candidate post has been dispositioned (FRM-CON-005 / FRM-PAT-001).
 """
 
 from __future__ import annotations
@@ -25,6 +32,8 @@ import argparse
 import contextlib
 import json
 import sys
+import time
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import replace
 from itertools import zip_longest
@@ -38,9 +47,17 @@ from feed_filter.browser import (
     require_playwright_if_needed,
 )
 from feed_filter.canonical import canonical_url
-from feed_filter.config import DEFAULT_GLOBAL_CAP, db_path, sites_path
+from feed_filter.config import (
+    DEFAULT_GLOBAL_CAP,
+    DEFAULT_POLL_OFFSETS_DAYS,
+    REMINDER_LIST_FORUM,
+    db_path,
+    sites_path,
+)
 from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.fetch import FetchError, build_client
+from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
+from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import fetch_entries, gather_new
 from feed_filter.reminders import ReminderError, add_reminder
 from feed_filter.seen import open_db, record, snapshot
@@ -156,10 +173,16 @@ def cmd_list_sites(_args: argparse.Namespace) -> int:
 
 
 def cmd_new_entries(args: argparse.Namespace) -> int:
-    """Gather new entries across sites, interleave, then apply the global cap (REQ-010)."""
+    """Gather new entries across non-forum sites, interleave, apply global cap (REQ-010).
+
+    Forum sites (``kind == "forum"``) are excluded so the article-path gather
+    never reaches ``fetch_entries``'s ``assert index_url is not None`` guard or
+    ``gather_new``'s scrape flag on a forum row (FRM-CON-001, finding #8).
+    """
     # Skip disabled sites entirely (no fetch, no error, no push) — they stay in the
     # registry with their seen-store intact for a later enable-site.
-    sites = [s for s in _select_sites(args.site_id) if s.enabled]
+    # Exclude forum sites: their gather path is ``cmd_forum_new`` (FRM-CON-001).
+    sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind != "forum"]
     # Fail fast before any fetch if a registered site needs the browser but the
     # extra is missing (REQ-006), so a misconfigured run errors cleanly up front.
     require_playwright_if_needed(sites_path())
@@ -267,6 +290,225 @@ def cmd_enable_site(args: argparse.Namespace) -> int:
     return 0
 
 
+def _forum_site_from_args(args: argparse.Namespace) -> SiteConfig:
+    """Build (and shape-validate) a SiteConfig for a forum site from add-forum args."""
+    return SiteConfig(
+        id=args.id,
+        name=args.name,
+        forum_url=args.forum_url,
+        forum_subject=getattr(args, "forum_subject", None),
+        like_threshold=getattr(args, "like_threshold", None),
+        interest_like_threshold=getattr(args, "interest_like_threshold", None),
+        daily_watch_count=getattr(args, "daily_watch_count", None),
+        weekly_watch_count=getattr(args, "weekly_watch_count", None),
+        poll_offsets_days=(
+            tuple(args.poll_offsets_days)
+            if getattr(args, "poll_offsets_days", None) is not None
+            else None
+        ),
+    )
+
+
+def cmd_add_forum(args: argparse.Namespace) -> int:
+    """Register a forum site by writing config only (TASK-020).
+
+    Unlike ``cmd_add_site``, there is NO back-catalog snapshot here.  Article
+    sites must snapshot first to avoid flooding on the first run (REQ-002).
+    Forum sites do not have this risk: admission writes ``forum_watch`` rows at
+    run time (``admit_from_feeds``), so registration only writes config and the
+    watch set is built incrementally each run.  Snapshotting a forum back-catalog
+    eagerly would silently discard every topic that was due for Rule-A judgment on
+    the first run — a loss, not a safety measure.
+    """
+    site = _forum_site_from_args(args)  # shape validation first (ValueError propagates)
+    add_site(sites_path(), site)
+    _emit({"site_id": site.id, "kind": site.kind, "forum_url": site.forum_url})
+    return 0
+
+
+def cmd_forum_new(args: argparse.Namespace) -> int:
+    """Gather Rule-A and Rule-B candidates for forum sites (TASK-021).
+
+    Filters to ``kind == "forum"`` sites so article sites are never passed to
+    ``admit_from_feeds`` / ``gather_forum`` (FRM-CON-001, finding #8).
+
+    For each enabled forum site:
+    - ``admit_from_feeds``: fetch the three RSS feeds, admit topics, emit Rule-A
+      candidates for topics whose OP has not yet been judged (the only write is
+      an idempotent INSERT-OR-IGNORE into ``forum_watch``, FRM-CON-005).
+    - ``gather_forum``: for each due topic, fetch its JSON, assemble Rule-B
+      candidates from qualifying unseen posts.  Performs no writes.
+
+    Candidates from all sites are interleaved round-robin before the global cap
+    (reusing ``_round_robin``, REQ-010).  After capping, the ``polls`` worklist
+    is emitted for every polled topic that is cap-safe — i.e. every candidate
+    for that ``(site_id, topic_id)`` pair survived the cap.  A topic truncated
+    by the cap is withheld from ``polls`` so it re-polls next run and no post
+    is finalized before it is dispositioned (never-lost, FRM-CON-005).
+    """
+    sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind == "forum"]
+    now = int(time.time())
+
+    groups: list[list[dict[str, Any]]] = []
+    # Finalize worklists: list of (site_id, topic_id, like_count) from gather_forum.
+    finalize_worklists: list[tuple[str, int, int]] = []
+    site_status: list[dict[str, Any]] = []
+
+    with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
+        for site in sites:
+            admit_result = admit_from_feeds(conn, site, client=client, now=now)
+            gather_result = gather_forum(conn, site, client=client, now=now)
+
+            # Serialize Rule-A candidates.
+            rule_a = [
+                {
+                    "site_id": site.id,
+                    "topic_id": c.topic_id,
+                    "topic_url": c.topic_url,
+                    "title": c.title,
+                    "rule": "A",
+                    "op_text": c.op_text,
+                }
+                for c in admit_result.candidates
+            ]
+
+            # Serialize Rule-B candidates.
+            rule_b = [
+                {
+                    "site_id": site.id,
+                    "topic_id": c.topic_id,
+                    "topic_url": c.topic_url,
+                    "title": c.title,
+                    "rule": "B",
+                    "effective_threshold": c.effective_threshold,
+                    "trigger_posts": [
+                        {
+                            "post_id": p.post_id,
+                            "post_number": p.post_number,
+                            "like_count": p.like_count,
+                            "text": p.text,
+                        }
+                        for p in c.trigger_posts
+                    ],
+                }
+                for c in gather_result.candidates
+            ]
+
+            # Interleave Rule-A and Rule-B within this site so neither starves
+            # the other; cross-site interleaving happens via _round_robin below.
+            groups.append(_round_robin([rule_a, rule_b]))
+
+            # Collect the finalize worklist from gather_forum for cap-safety check.
+            for pt in gather_result.polled_topics:
+                finalize_worklists.append((site.id, pt.topic_id, pt.like_count))
+
+            # Combine per-path errors into one status entry per site.
+            errors = [e for e in [admit_result.error, gather_result.error] if e is not None]
+            site_status.append(
+                {
+                    "site_id": site.id,
+                    "error": "; ".join(errors) if errors else None,
+                }
+            )
+
+    # Round-robin interleave across sites, then apply the global cap (REQ-010).
+    all_candidates = _round_robin(groups)
+    topics = all_candidates[: args.global_cap]
+
+    # Cap-safety: emit a poll record for a topic iff every candidate entry bearing
+    # its (site_id, topic_id) key survived the cap (FRM-CON-005 / never-lost).
+    # Count candidates before and after the cap; a key is safe iff the counts match.
+    # Topics with zero candidates (short-circuited or no qualifying posts) have
+    # count_before == count_after == 0, so they are trivially safe.
+    before: Counter[tuple[str, int]] = Counter(
+        (c["site_id"], c["topic_id"]) for c in all_candidates
+    )
+    after: Counter[tuple[str, int]] = Counter((c["site_id"], c["topic_id"]) for c in topics)
+
+    polls: list[dict[str, Any]] = []
+    for site_id, topic_id, like_count in finalize_worklists:
+        key = (site_id, topic_id)
+        if after[key] == before[key]:
+            polls.append({"site_id": site_id, "topic_id": topic_id, "like_count": like_count})
+
+    _emit({"topics": topics, "polls": polls, "sites": site_status})
+    return 0
+
+
+def cmd_forum_remind(args: argparse.Namespace) -> int:
+    """Create a forum reminder, then record the post seen (kept=1) (TASK-022).
+
+    Mirrors the article path's ``cmd_remind`` ordering: ``rem add`` *first*,
+    ``record_post`` only on success (FRM-CON-005 / FRM-PAT-001).  Passes
+    ``list_name=REMINDER_LIST_FORUM`` explicitly so forum reminders land in
+    ``Filtered Forums``, not ``Filtered Feeds`` (FRM-005 / FRM-GUD-005).
+
+    When ``--is-op`` is set (the post is the OP, i.e. post_number == 1),
+    also calls ``set_op_verdict(kept=1)`` to record the Rule-A judgment.
+    """
+    reminder_id = add_reminder(
+        args.title, args.url, args.notes, list_name=REMINDER_LIST_FORUM
+    )  # ReminderError → exit 1, no record (FRM-CON-005)
+    with contextlib.closing(open_db(db_path())) as conn:
+        record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
+        if args.is_op:
+            set_op_verdict(conn, args.site_id, args.topic_id, kept=1)
+    _emit(
+        {
+            "id": reminder_id,
+            "site_id": args.site_id,
+            "topic_id": args.topic_id,
+            "post_id": args.post_id,
+            "kept": True,
+        }
+    )
+    return 0
+
+
+def cmd_forum_mark_seen(args: argparse.Namespace) -> int:
+    """Record a dropped forum post seen (kept=0); no reminder (TASK-022).
+
+    When ``--is-op`` is set, also calls ``set_op_verdict(kept=0)`` to record
+    the Rule-A drop verdict (FRM-002 / FRM-CON-005).
+    """
+    with contextlib.closing(open_db(db_path())) as conn:
+        record_post(conn, args.site_id, args.topic_id, args.post_id, kept=0)
+        if args.is_op:
+            set_op_verdict(conn, args.site_id, args.topic_id, kept=0)
+    _emit(
+        {
+            "site_id": args.site_id,
+            "topic_id": args.topic_id,
+            "post_id": args.post_id,
+            "kept": False,
+        }
+    )
+    return 0
+
+
+def cmd_forum_poll_done(args: argparse.Namespace) -> int:
+    """Advance the poll counter for one topic after all its posts are dispositioned (TASK-023).
+
+    This is the **last** call for a topic in a run (FRM-CON-005 / FRM-PAT-001).
+    Resolves ``poll_offsets_days`` from the site config (per-site override else
+    the config default loaded by ``SiteConfig`` at construction time).
+    """
+    site = _select_sites(args.site_id)[0]  # KeyError if absent — before any side effect
+    offsets = (
+        site.poll_offsets_days if site.poll_offsets_days is not None else DEFAULT_POLL_OFFSETS_DAYS
+    )
+    with contextlib.closing(open_db(db_path())) as conn:
+        finalize_poll(conn, args.site_id, args.topic_id, args.like_count, offsets)
+    _emit(
+        {
+            "site_id": args.site_id,
+            "topic_id": args.topic_id,
+            "like_count": args.like_count,
+        }
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="feed-filter")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -325,6 +567,83 @@ def build_parser() -> argparse.ArgumentParser:
     p_enable = sub.add_parser("enable-site", help="resume gathering a disabled site")
     p_enable.add_argument("--site-id", dest="site_id", required=True)
     p_enable.set_defaults(handler=cmd_enable_site)
+
+    # --- Forum subcommands (Phase 5 / TASK-020 through TASK-023) ---
+
+    p_add_forum = sub.add_parser(
+        "add-forum", help="register a Discourse forum site (writes config only, no snapshot)"
+    )
+    p_add_forum.add_argument("--id", required=True)
+    p_add_forum.add_argument("--name", required=True)
+    p_add_forum.add_argument("--forum-url", dest="forum_url", required=True)
+    # Optional tuning overrides (all None → config defaults apply at run time).
+    p_add_forum.add_argument("--forum-subject", dest="forum_subject")
+    p_add_forum.add_argument("--like-threshold", dest="like_threshold", type=int)
+    p_add_forum.add_argument("--interest-like-threshold", dest="interest_like_threshold", type=int)
+    p_add_forum.add_argument("--daily-watch-count", dest="daily_watch_count", type=int)
+    p_add_forum.add_argument("--weekly-watch-count", dest="weekly_watch_count", type=int)
+    p_add_forum.add_argument(
+        "--poll-offsets-days",
+        dest="poll_offsets_days",
+        type=int,
+        nargs="+",
+        help="poll offsets in days (e.g. --poll-offsets-days 0 1 7)",
+    )
+    p_add_forum.set_defaults(handler=cmd_add_forum)
+
+    p_forum_new = sub.add_parser(
+        "forum-new",
+        help="gather Rule-A and Rule-B forum candidates across forum sites",
+    )
+    p_forum_new.add_argument("--site-id", dest="site_id")
+    p_forum_new.add_argument(
+        "--global-cap", dest="global_cap", type=int, default=DEFAULT_GLOBAL_CAP
+    )
+    p_forum_new.set_defaults(handler=cmd_forum_new)
+
+    p_forum_remind = sub.add_parser(
+        "forum-remind",
+        help="create a forum reminder and record the post seen (kept=1)",
+    )
+    p_forum_remind.add_argument("--site-id", dest="site_id", required=True)
+    p_forum_remind.add_argument("--topic-id", dest="topic_id", type=int, required=True)
+    p_forum_remind.add_argument("--post-id", dest="post_id", type=int, required=True)
+    p_forum_remind.add_argument("--url", required=True)
+    p_forum_remind.add_argument("--title", required=True)
+    p_forum_remind.add_argument("--notes", required=True)
+    p_forum_remind.add_argument(
+        "--is-op",
+        dest="is_op",
+        action="store_true",
+        help="the post is the OP (post_number==1); also records the Rule-A verdict",
+    )
+    p_forum_remind.set_defaults(handler=cmd_forum_remind)
+
+    p_forum_mark = sub.add_parser(
+        "forum-mark-seen",
+        help="record a dropped forum post seen (kept=0); no reminder",
+    )
+    p_forum_mark.add_argument("--site-id", dest="site_id", required=True)
+    p_forum_mark.add_argument("--topic-id", dest="topic_id", type=int, required=True)
+    p_forum_mark.add_argument("--post-id", dest="post_id", type=int, required=True)
+    p_forum_mark.add_argument("--url", required=True)
+    p_forum_mark.add_argument("--title", required=True)
+    p_forum_mark.add_argument(
+        "--is-op",
+        dest="is_op",
+        action="store_true",
+        help="the post is the OP; also records the Rule-A drop verdict",
+    )
+    p_forum_mark.set_defaults(handler=cmd_forum_mark_seen)
+
+    p_forum_poll_done = sub.add_parser(
+        "forum-poll-done",
+        help="advance the poll counter for one topic (call LAST, after all posts are dispositioned)",
+    )
+    p_forum_poll_done.add_argument("--site-id", dest="site_id", required=True)
+    p_forum_poll_done.add_argument("--topic-id", dest="topic_id", type=int, required=True)
+    p_forum_poll_done.add_argument("--like-count", dest="like_count", type=int, required=True)
+    p_forum_poll_done.set_defaults(handler=cmd_forum_poll_done)
 
     return parser
 

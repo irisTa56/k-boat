@@ -1,4 +1,4 @@
-"""End-to-end CLI smoke over real state files (TASK-038, TEST-011).
+"""End-to-end CLI smoke over real state files (TASK-038 / TASK-024).
 
 Exercises the actual pipeline — fetch → parse → seen-store → round-robin/cap —
 not the monkeypatched core fns of ``test_cli.py``. The only fakes are the network
@@ -11,6 +11,9 @@ state:
   so ``new-entries`` returns only entries that appeared *after* registration;
 - ``remind`` creates the reminder *and* records seen in one process (REQ-009),
   so a second ``new-entries`` no longer yields the reminded entry — no duplicate.
+- Forum: ``forum-remind`` / ``forum-mark-seen`` record posts, ``forum-poll-done``
+  finalizes per-topic; re-running ``forum-new`` after partial disposition still
+  finds the already-seen posts and produces no duplicates (FRM-CON-005).
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from feed_filter import browser, cli
 from feed_filter import reminders as reminders_mod
 from feed_filter.canonical import canonical_url
 from feed_filter.config import db_path, sites_path
+from feed_filter.forum_store import is_post_seen, op_interest_kept
 from feed_filter.seen import is_seen, open_db
 from feed_filter.sites import load_sites
 
@@ -374,3 +378,400 @@ def test_heal_site_browser_scrape_succeeds(
     assert site.article_url_pattern == "^/posts/[^/]+/?$"  # config rewritten last
     assert site.requires_browser is True  # replace() preserved the flag through the heal
     assert _seen("https://js.example.com/posts/a")  # newly-matched URLs snapshotted
+
+
+# =============================================================================
+# Forum end-to-end (TASK-024 / TEST-005)
+# =============================================================================
+
+# Hand-authored minimal Discourse fixtures for the integration tests.
+# topic 1234: slug "my-topic", like_count=15, two posts (OP post_id=5001 with
+# 10 likes, reply post_id=5002 with 0 likes).  Threshold=6 → OP qualifies.
+
+_FORUM_URL = "https://forum.example.com"
+_FORUM_SITE_ID = "intf"
+
+_DISCOURSE_TOPIC_JSON = json.dumps(
+    {
+        "id": 1234,
+        "slug": "my-topic",
+        "title": "My Forum Topic",
+        "like_count": 15,
+        "post_stream": {
+            "posts": [
+                {
+                    "id": 5001,
+                    "post_number": 1,
+                    "cooked": "<p>Hello world, this is the OP.</p>",
+                    "actions_summary": [{"id": 2, "count": 10}],
+                },
+                {
+                    "id": 5002,
+                    "post_number": 2,
+                    "cooked": "<p>A reply with no likes.</p>",
+                    "actions_summary": [],
+                },
+            ]
+        },
+    }
+).encode()
+
+
+def _discourse_rss(topic_id: int, slug: str, title: str, description: str) -> bytes:
+    """Build a minimal Discourse-style RSS 2.0 body with one topic entry."""
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<rss version="2.0"><channel><title>Forum</title>'
+        f"<item><title>{title}</title>"
+        f"<link>{_FORUM_URL}/t/{slug}/{topic_id}</link>"
+        f"<description>{description}</description>"
+        f"<pubDate>Sun, 14 Jun 2026 10:00:00 GMT</pubDate></item>"
+        "</channel></rss>"
+    )
+    return body.encode("utf-8")
+
+
+_LATEST_RSS = _discourse_rss(1234, "my-topic", "My Forum Topic", "OP text summary")
+_TOP_DAILY_RSS = b'<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>top</title></channel></rss>'
+_TOP_WEEKLY_RSS = _TOP_DAILY_RSS
+
+
+def _forum_transport() -> httpx.Client:
+    """MockTransport that routes forum requests by path and query string."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        # httpx stores the raw query as bytes; decode for string matching.
+        query = (
+            request.url.query.decode("utf-8")
+            if isinstance(request.url.query, bytes)
+            else str(request.url.query)
+        )
+
+        if path == "/latest.rss":
+            return httpx.Response(
+                200, content=_LATEST_RSS, headers={"content-type": "application/rss+xml"}
+            )
+        if path == "/top.rss" and "daily" in query:
+            return httpx.Response(
+                200,
+                content=_TOP_DAILY_RSS,
+                headers={"content-type": "application/rss+xml"},
+            )
+        if path == "/top.rss" and "weekly" in query:
+            return httpx.Response(
+                200,
+                content=_TOP_WEEKLY_RSS,
+                headers={"content-type": "application/rss+xml"},
+            )
+        if path.startswith("/t/") and path.endswith(".json"):
+            return httpx.Response(
+                200, content=_DISCOURSE_TOPIC_JSON, headers={"content-type": "application/json"}
+            )
+        return httpx.Response(404, text="not found")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_forum_end_to_end(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Full forum run: add-forum → forum-new → forum-remind (OP) + forum-mark-seen
+    (reply) → forum-poll-done.  Asserts state transitions and 'Filtered Forums'
+    as the reminder list target (FRM-005 / FRM-CON-005).
+    """
+    monkeypatch.setattr(cli, "build_client", _forum_transport)
+
+    rem_calls: list[list[str]] = []
+
+    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
+        rem_calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
+
+    # Inject the forum-aware rem runner (accepts list_name kwarg).
+    monkeypatch.setattr(
+        cli,
+        "add_reminder",
+        lambda title, url, notes, *, list_name, **kw: reminders_mod.add_reminder(
+            title, url, notes, list_name=list_name, runner=fake_runner
+        ),
+    )
+
+    # --- Step 1: register the forum site (config only, no snapshot) -----------
+    rc = cli.main(
+        [
+            "add-forum",
+            "--id",
+            _FORUM_SITE_ID,
+            "--name",
+            "Test Forum",
+            "--forum-url",
+            _FORUM_URL,
+            "--poll-offsets-days",
+            "0",
+            "7",
+        ]
+    )
+    assert rc == 0
+    _out(capsys)
+
+    # --- Step 2: forum-new → topic 1234 admitted, Rule-A candidate emitted ----
+    rc = cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
+    assert rc == 0
+    new_out = _out(capsys)
+
+    topics = new_out["topics"]
+    # Rule-A candidate for topic 1234 should appear (op_interest_kept=NULL).
+    rule_a_topics = [t for t in topics if t["rule"] == "A"]
+    assert any(t["topic_id"] == 1234 for t in rule_a_topics)
+
+    # Rule-B: topic 1234 is due (offset 0 elapsed) and post 5001 qualifies (10 likes ≥ 6).
+    rule_b_topics = [t for t in topics if t["rule"] == "B"]
+    assert any(t["topic_id"] == 1234 for t in rule_b_topics)
+
+    # Polls worklist contains topic 1234.
+    polls = new_out["polls"]
+    assert any(p["topic_id"] == 1234 for p in polls)
+    poll = next(p for p in polls if p["topic_id"] == 1234)
+
+    # --- Step 3: forum-remind for the OP (post 5001, is-op) -------------------
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            _FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{_FORUM_URL}/t/my-topic/1234",
+            "--title",
+            "My Forum Topic",
+            "--notes",
+            "Great OP",
+            "--is-op",
+        ]
+    )
+    assert rc == 0
+
+    # rem was called with --list "Filtered Forums", not "Filtered Feeds".
+    assert len(rem_calls) == 1
+    argv = rem_calls[0]
+    list_idx = argv.index("--list")
+    assert argv[list_idx + 1] == "Filtered Forums"
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert is_post_seen(conn, _FORUM_SITE_ID, 5001)
+        assert op_interest_kept(conn, _FORUM_SITE_ID, 1234) == 1  # Rule-A kept
+
+    # --- Step 4: forum-mark-seen for the reply (post 5002, not OP) ------------
+    rc = cli.main(
+        [
+            "forum-mark-seen",
+            "--site-id",
+            _FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5002",
+            "--url",
+            f"{_FORUM_URL}/t/my-topic/1234",
+            "--title",
+            "My Forum Topic",
+        ]
+    )
+    assert rc == 0
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert is_post_seen(conn, _FORUM_SITE_ID, 5002)
+
+    # --- Step 5: forum-poll-done (last call for topic 1234) -------------------
+    rc = cli.main(
+        [
+            "forum-poll-done",
+            "--site-id",
+            _FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--like-count",
+            str(poll["like_count"]),
+        ]
+    )
+    assert rc == 0
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        row = conn.execute(
+            "SELECT completed_polls, last_like_count, retired FROM forum_watch "
+            "WHERE site_id = ? AND topic_id = ?",
+            (_FORUM_SITE_ID, 1234),
+        ).fetchone()
+    assert row[0] == 1  # completed_polls advanced
+    assert row[1] == poll["like_count"]  # like_count stored
+    # Not retired yet (has offset 7 remaining).
+    assert row[2] == 0
+
+
+def test_forum_never_lost_ordering_reruns_find_seen_posts(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Never-lost ordering: a run that disposes posts but is interrupted before
+    forum-poll-done can re-run forum-new and re-derive the same posts as
+    already-seen.  No duplicate remind; after poll-done the topic advances cleanly
+    (FRM-CON-005).
+    """
+    monkeypatch.setattr(cli, "build_client", _forum_transport)
+
+    rem_calls: list[list[str]] = []
+
+    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
+        rem_calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
+
+    monkeypatch.setattr(
+        cli,
+        "add_reminder",
+        lambda title, url, notes, *, list_name, **kw: reminders_mod.add_reminder(
+            title, url, notes, list_name=list_name, runner=fake_runner
+        ),
+    )
+
+    # Register the forum site.
+    rc = cli.main(
+        [
+            "add-forum",
+            "--id",
+            _FORUM_SITE_ID,
+            "--name",
+            "Test Forum",
+            "--forum-url",
+            _FORUM_URL,
+            "--poll-offsets-days",
+            "0",
+        ]
+    )
+    assert rc == 0
+    _out(capsys)
+
+    # --- Run 1: forum-new → remind post 5001 → CRASH (poll-done never called) -
+    cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
+    _out(capsys)
+
+    # Disposition the OP.
+    cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            _FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{_FORUM_URL}/t/my-topic/1234",
+            "--title",
+            "My Forum Topic",
+            "--notes",
+            "first run",
+            "--is-op",
+        ]
+    )
+    _out(capsys)
+    assert len(rem_calls) == 1
+
+    # poll-done is NOT called (simulated crash).
+    with contextlib.closing(open_db(db_path())) as conn:
+        row = conn.execute(
+            "SELECT completed_polls FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+            (_FORUM_SITE_ID, 1234),
+        ).fetchone()
+    assert row[0] == 0  # poll not advanced
+
+    # --- Run 2: forum-new again — post 5001 is already seen, no new Rule-B candidate ----
+    cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
+    new2 = _out(capsys)
+
+    # Post 5001 is already seen, so Rule-B produces no trigger_posts for it.
+    rule_b_topics = [t for t in new2["topics"] if t["rule"] == "B"]
+    # If a Rule-B candidate exists for topic 1234, it must not include post 5001.
+    for t in rule_b_topics:
+        if t["topic_id"] == 1234:
+            assert not any(p["post_id"] == 5001 for p in t["trigger_posts"]), (
+                "post 5001 is already seen; it must not appear as a trigger post again"
+            )
+
+    # No new rem call from run 2 (no new candidates to remind).
+    assert len(rem_calls) == 1  # still just one from run 1
+
+    # --- After re-run, complete the cycle with forum-poll-done ---------------
+    polls2 = new2["polls"]
+    if polls2:
+        poll = polls2[0]
+        cli.main(
+            [
+                "forum-poll-done",
+                "--site-id",
+                _FORUM_SITE_ID,
+                "--topic-id",
+                str(poll["topic_id"]),
+                "--like-count",
+                str(poll["like_count"]),
+            ]
+        )
+        _out(capsys)
+
+        with contextlib.closing(open_db(db_path())) as conn:
+            row = conn.execute(
+                "SELECT completed_polls, retired FROM forum_watch "
+                "WHERE site_id = ? AND topic_id = ?",
+                (_FORUM_SITE_ID, 1234),
+            ).fetchone()
+        # With poll_offsets_days=(0,), one poll retires the topic.
+        assert row[0] == 1
+        assert row[1] == 1  # retired
+
+
+def test_forum_site_excluded_from_new_entries_and_vice_versa(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Finding #8 (FRM-CON-001): forum sites never enter new-entries; article sites
+    never enter forum-new.  Verified end-to-end with real transport stubs.
+    """
+    # Article site mock.
+    article_site = _MockSite(_rss(A, B))
+    monkeypatch.setattr(cli, "build_client", article_site.client)
+
+    # Register both kinds.
+    assert cli.main(["add-site", "--id", "art", "--name", "Art", "--feed-url", FEED_URL]) == 0
+    _out(capsys)
+    # Forum site registration doesn't need a transport.
+    assert (
+        cli.main(["add-forum", "--id", "foru", "--name", "Forum", "--forum-url", _FORUM_URL]) == 0
+    )
+    _out(capsys)
+
+    # new-entries: only the article site should be gathered.
+    # Swap to the article client so the feed can be fetched.
+    article_site.body = _rss(A, B, C)
+    rc = cli.main(["new-entries"])
+    assert rc == 0
+    ne_out = _out(capsys)
+    site_ids = {s["site_id"] for s in ne_out["sites"]}
+    assert "art" in site_ids
+    assert "foru" not in site_ids
+
+    # forum-new: only the forum site should be gathered.
+    # We need a transport that answers forum requests.
+    monkeypatch.setattr(cli, "build_client", _forum_transport)
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    fn_out = _out(capsys)
+    forum_site_ids = {s["site_id"] for s in fn_out["sites"]}
+    assert "foru" in forum_site_ids
+    assert "art" not in forum_site_ids

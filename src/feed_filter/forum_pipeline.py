@@ -17,7 +17,15 @@ Two public entry points:
 ``gather_forum(conn, site, *, client, now)`` — **Rule-B path (TASK-017/018)**:
     For each due topic (``forum_store.due_topics``), fetches its JSON, evaluates
     qualifying posts against the effective like threshold, and emits a
-    ``RuleBCandidate`` carrying the trigger posts and threshold.  Performs **no
+    ``RuleBCandidate`` carrying the trigger posts and threshold.  Also returns a
+    **finalize worklist** (``GatherForumResult.polled_topics``) — one
+    ``PolledTopic`` per due topic whose JSON was successfully fetched and parsed,
+    including short-circuited topics and topics with no qualifying posts (but NOT
+    topics whose fetch raised ``FetchError``).  This worklist is the seam the CLI
+    needs to call ``finalize_poll`` after candidates are dispositioned, without
+    ever calling ``finalize_poll`` for a topic whose fetch failed (FRM-CON-005 /
+    FRM-007 — see Phase 5 review note: topics whose poll records are not advanced
+    would re-poll every run, growing the watch set unboundedly).  Performs **no
     writes** to the DB (FRM-CON-005 / FRM-PAT-001); the record/finalize path
     (Phase 5 CLI) writes ``forum_post_seen`` and advances ``completed_polls``
     after all posts are dispositioned.  A topic-level ``FetchError`` is absorbed
@@ -29,6 +37,8 @@ Design constraints honoured here:
 - FRM-CON-003: synchronous throughout; no asyncio.
 - FRM-CON-004: fetch-minimization short-circuit documented inline.
 - FRM-CON-005: never-lost over never-duplicated; error absorbing; no writes in gather.
+- FRM-007: ``polled_topics`` worklist enables offset-only retirement without
+  advancing polls for topics whose JSON fetch failed.
 - FRM-GUD-001: all HTTP calls through ``fetch.fetch`` / ``FetchError``.
 - FRM-GUD-002: ``parse_feed(sort=False)`` keeps top-feed rank order.
 - FRM-GUD-003: ``canonical.canonical_url`` for topic URLs.
@@ -127,15 +137,35 @@ class AdmitResult:
 
 
 @dataclass(frozen=True)
+class PolledTopic:
+    """A due topic whose JSON was successfully fetched and parsed (FRM-007).
+
+    Carried in ``GatherForumResult.polled_topics``; this is the **finalize
+    worklist** the Phase 5 CLI uses to call ``forum_store.finalize_poll`` after
+    all of a topic's candidates are dispositioned (FRM-CON-005).  Topics whose
+    fetch raised ``FetchError`` are excluded — their polls must not be advanced
+    (they will re-poll next run).  Short-circuited topics and topics with no
+    qualifying posts ARE included: they still need ``finalize_poll`` so
+    ``completed_polls`` advances and they eventually retire (FRM-007).
+    """
+
+    topic_id: int
+    like_count: int  # freshly parsed topic.like_count, stored by finalize_poll (FRM-CON-004)
+
+
+@dataclass(frozen=True)
 class GatherForumResult:
     """Outcome of one ``gather_forum`` call (TASK-017/018).
 
     ``candidates`` are Rule-B topics with qualifying unseen posts.
+    ``polled_topics`` is the finalize worklist — one ``PolledTopic`` per due
+    topic whose JSON was successfully fetched and parsed (FRM-007 / FRM-CON-005).
     ``error`` is a combined message from any topic-level ``FetchError``(s),
     or ``None`` if every due topic fetched successfully.
     """
 
     candidates: list[RuleBCandidate]
+    polled_topics: list[PolledTopic]
     error: str | None
 
 
@@ -291,6 +321,13 @@ def gather_forum(
         AND NOT ``forum_store.is_post_seen(conn, site.id, post.id)`` (FRM-003 /
         FRM-006).  If any qualify, emit one ``RuleBCandidate``.
 
+    After a successful ``parse_topic`` (whether or not the topic is short-
+    circuited or has qualifying posts), append a ``PolledTopic`` to the
+    ``GatherForumResult.polled_topics`` finalize worklist (FRM-007 / FRM-CON-005
+    — Phase 5 review seam: the CLI needs the freshly-parsed ``like_count`` to
+    call ``finalize_poll``; topics that raised ``FetchError`` are excluded so
+    their poll is not advanced, and they re-poll next run without loss).
+
     A topic-level ``FetchError`` is absorbed into ``error`` and records nothing
     (FRM-CON-005: the topic will be re-polled next run).  Processing continues
     for remaining due topics.
@@ -314,6 +351,7 @@ def gather_forum(
 
     errors: list[str] = []
     candidates: list[RuleBCandidate] = []
+    polled_topics: list[PolledTopic] = []
 
     for row in forum_store.due_topics(conn, site.id, offsets, now):
         topic_id = row["topic_id"]
@@ -322,10 +360,18 @@ def gather_forum(
             json_bytes = fetch(topic_json_url(forum_url, topic_id), client=client).content
         except FetchError as exc:
             # Absorb per-topic failure; nothing recorded (FRM-CON-005).
+            # Do NOT append to polled_topics — the poll must not be advanced for
+            # a topic whose JSON fetch failed (it will re-poll next run).
             errors.append(str(exc))
             continue
 
         topic, posts = parse_topic(json_bytes)
+
+        # Append to the finalize worklist for every topic that was successfully
+        # fetched and parsed — including short-circuited topics and topics with
+        # no qualifying posts.  The CLI uses this list to call finalize_poll
+        # after candidates are dispositioned (FRM-007 / FRM-CON-005).
+        polled_topics.append(PolledTopic(topic_id=topic_id, like_count=topic.like_count))
 
         # FRM-CON-004 short-circuit: when this is not the first poll AND the
         # topic-level like_count is unchanged since the last poll, skip the
@@ -382,5 +428,6 @@ def gather_forum(
 
     return GatherForumResult(
         candidates=candidates,
+        polled_topics=polled_topics,
         error="; ".join(errors) if errors else None,
     )

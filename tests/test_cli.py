@@ -1,9 +1,10 @@
-"""Dispatch + JSON-shape + ordering-invariant tests for the CLI (TASK-032).
+"""Dispatch + JSON-shape + ordering-invariant tests for the CLI (TASK-032 / TASK-024).
 
 Network and Reminders.app are monkeypatched at the ``cli`` module boundary; the
 seen-store and ``sites.toml`` are real tmp files (``state_dir`` fixture) so the
 ordering invariants — snapshot-before-config, remind-then-record, snapshot the
-exact healed URLs — are asserted against actual persisted state.
+exact healed URLs, forum record-then-poll — are asserted against actual persisted
+state.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import contextlib
 import json
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -23,6 +25,14 @@ from feed_filter.config import db_path, sites_path
 from feed_filter.discover import DiscoveryCandidate, DiscoveryRejection, DiscoveryResult
 from feed_filter.feeds import Entry, EntryKind
 from feed_filter.fetch import FetchError
+from feed_filter.forum_pipeline import (
+    AdmitResult,
+    GatherForumResult,
+    PolledTopic,
+    RuleACandidate,
+    RuleBCandidate,
+    TriggerPost,
+)
 from feed_filter.pipeline import GatherResult
 from feed_filter.reminders import ReminderError
 from feed_filter.seen import count, is_seen, open_db
@@ -623,3 +633,684 @@ def test_no_subcommand_errors() -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli.main([])
     assert excinfo.value.code == 2  # argparse: required subcommand missing
+
+
+# =============================================================================
+# Forum subcommands (TASK-024)
+# =============================================================================
+
+FORUM_URL = "https://forum.example.com"
+FORUM_SITE_ID = "ef"
+
+
+def _forum_site(*, site_id: str = FORUM_SITE_ID) -> SiteConfig:
+    return SiteConfig(id=site_id, name="Example Forum", forum_url=FORUM_URL)
+
+
+def _add_forum_site(*, site_id: str = FORUM_SITE_ID) -> SiteConfig:
+    """Add a forum site to sites.toml; returns the config object."""
+    site = _forum_site(site_id=site_id)
+    add_site(sites_path(), site)
+    return site
+
+
+# Fake rem runner that accepts list_name kwarg (the article path's fake is
+# positional-only, so forum commands need their own fake).
+def _fake_rem_runner(argv: list[str], **_: Any) -> SimpleNamespace:
+    return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
+
+
+# --- add-forum ---------------------------------------------------------------
+
+
+def test_add_forum_writes_config_no_snapshot(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """add-forum writes config only; no seen-store rows (no back-catalog snapshot)."""
+    rc = cli.main(
+        ["add-forum", "--id", FORUM_SITE_ID, "--name", "Example Forum", "--forum-url", FORUM_URL]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out == {"site_id": FORUM_SITE_ID, "kind": "forum", "forum_url": FORUM_URL}
+
+    # Config written.
+    sites = load_sites(sites_path())
+    assert len(sites) == 1
+    assert sites[0].id == FORUM_SITE_ID
+    assert sites[0].kind == "forum"
+    assert sites[0].forum_url == FORUM_URL
+
+    # No seen-store rows (admission is per-poll, not at registration).
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert count(conn) == 0
+
+
+def test_add_forum_with_tuning_flags(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """add-forum persists per-site tuning overrides."""
+    rc = cli.main(
+        [
+            "add-forum",
+            "--id",
+            FORUM_SITE_ID,
+            "--name",
+            "Example Forum",
+            "--forum-url",
+            FORUM_URL,
+            "--like-threshold",
+            "4",
+            "--interest-like-threshold",
+            "2",
+            "--daily-watch-count",
+            "5",
+            "--weekly-watch-count",
+            "10",
+            "--poll-offsets-days",
+            "0",
+            "3",
+            "14",
+        ]
+    )
+    assert rc == 0
+    sites = load_sites(sites_path())
+    s = sites[0]
+    assert s.like_threshold == 4
+    assert s.interest_like_threshold == 2
+    assert s.daily_watch_count == 5
+    assert s.weekly_watch_count == 10
+    assert s.poll_offsets_days == (0, 3, 14)
+
+
+def test_add_forum_duplicate_id_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """add-forum rejects a duplicate site id."""
+    cli.main(["add-forum", "--id", FORUM_SITE_ID, "--name", "F", "--forum-url", FORUM_URL])
+    capsys.readouterr()
+    rc = cli.main(["add-forum", "--id", FORUM_SITE_ID, "--name", "F2", "--forum-url", FORUM_URL])
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
+
+
+# --- forum-new ---------------------------------------------------------------
+
+
+def _fake_admit_result(
+    *, candidates: list[RuleACandidate] | None = None, error: str | None = None
+) -> AdmitResult:
+    return AdmitResult(candidates=candidates or [], error=error)
+
+
+def _fake_gather_result(
+    *,
+    candidates: list[RuleBCandidate] | None = None,
+    polled: list[PolledTopic] | None = None,
+    error: str | None = None,
+) -> GatherForumResult:
+    return GatherForumResult(candidates=candidates or [], polled_topics=polled or [], error=error)
+
+
+def _rule_a(topic_id: int, *, site_id: str = FORUM_SITE_ID) -> RuleACandidate:
+    return RuleACandidate(
+        topic_id=topic_id,
+        topic_url=f"{FORUM_URL}/t/topic-{topic_id}/{topic_id}",
+        title=f"Topic {topic_id}",
+        op_text=f"OP text for {topic_id}",
+    )
+
+
+def _rule_b(topic_id: int, *, site_id: str = FORUM_SITE_ID) -> RuleBCandidate:
+    return RuleBCandidate(
+        topic_id=topic_id,
+        topic_url=f"{FORUM_URL}/t/topic-{topic_id}/{topic_id}",
+        title=f"Topic {topic_id}",
+        trigger_posts=[
+            TriggerPost(post_id=topic_id * 10, post_number=2, like_count=8, text="Nice post")
+        ],
+        effective_threshold=6,
+    )
+
+
+def test_forum_new_emits_topics_and_polls(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-new emits both Rule-A and Rule-B candidates, plus polls worklist."""
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    rule_a_cand = _rule_a(101)
+    rule_b_cand = _rule_b(201)
+    polled = [PolledTopic(topic_id=201, like_count=15)]
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(candidates=[rule_a_cand]),
+    )
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda conn, site, *, client, now: _fake_gather_result(
+            candidates=[rule_b_cand], polled=polled
+        ),
+    )
+
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    out = _out(capsys)
+
+    topics = out["topics"]
+    rules = {t["rule"] for t in topics}
+    assert "A" in rules
+    assert "B" in rules
+
+    # Rule-A entry shape.
+    a_entry = next(t for t in topics if t["rule"] == "A")
+    assert a_entry["site_id"] == FORUM_SITE_ID
+    assert a_entry["topic_id"] == 101
+    assert a_entry["op_text"] == "OP text for 101"
+
+    # Rule-B entry shape.
+    b_entry = next(t for t in topics if t["rule"] == "B")
+    assert b_entry["site_id"] == FORUM_SITE_ID
+    assert b_entry["topic_id"] == 201
+    assert b_entry["effective_threshold"] == 6
+    assert len(b_entry["trigger_posts"]) == 1
+    assert b_entry["trigger_posts"][0]["post_id"] == 2010
+
+    # Polls worklist: topic 201 has exactly one candidate, which survived the cap.
+    assert out["polls"] == [{"site_id": FORUM_SITE_ID, "topic_id": 201, "like_count": 15}]
+
+    # Site status.
+    assert out["sites"] == [{"site_id": FORUM_SITE_ID, "error": None}]
+
+
+def test_forum_new_absorbs_per_site_errors(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-new absorbs errors from admit_from_feeds and gather_forum into site status."""
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(error="feed fetch failed"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda conn, site, *, client, now: _fake_gather_result(error="json fetch failed"),
+    )
+
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    out = _out(capsys)
+    status = out["sites"][0]
+    assert status["site_id"] == FORUM_SITE_ID
+    # Both errors joined.
+    assert "feed fetch failed" in status["error"]
+    assert "json fetch failed" in status["error"]
+
+
+def test_forum_new_excludes_article_sites(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-new ignores article (feed/scrape) sites — finding #8 (FRM-CON-001)."""
+    _no_client(monkeypatch)
+    # Register an article site and a forum site.
+    add_site(
+        sites_path(), SiteConfig(id="art", name="Art", feed_url="https://art.example.com/f.xml")
+    )
+    _add_forum_site()
+
+    gathered_ids: list[str] = []
+
+    def fake_admit(
+        conn: sqlite3.Connection, site: SiteConfig, *, client: object, now: int
+    ) -> AdmitResult:
+        gathered_ids.append(site.id)
+        return _fake_admit_result()
+
+    monkeypatch.setattr(cli, "admit_from_feeds", fake_admit)
+    monkeypatch.setattr(cli, "gather_forum", lambda *a, **k: _fake_gather_result())
+
+    cli.main(["forum-new"])
+    # Only the forum site was gathered.
+    assert gathered_ids == [FORUM_SITE_ID]
+
+
+def test_new_entries_excludes_forum_sites(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """new-entries ignores forum sites — finding #8 (FRM-CON-001)."""
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(), SiteConfig(id="art", name="Art", feed_url="https://art.example.com/f.xml")
+    )
+    _add_forum_site()
+
+    gathered_ids: list[str] = []
+
+    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+        gathered_ids.append(site.id)
+        return GatherResult(entries=[], index_matches=0, zero_links=False, error=None)
+
+    monkeypatch.setattr(cli, "gather_new", fake_gather)
+
+    cli.main(["new-entries"])
+    # Only the article site was gathered.
+    assert gathered_ids == ["art"]
+
+
+def test_forum_new_cap_safety_withholds_truncated_topic(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A topic whose candidate is truncated by the global cap is excluded from polls.
+
+    Never-lost invariant (FRM-CON-005): do not finalize a topic until all its
+    candidates are dispositioned.  With global-cap=1 and two topics (each with
+    one candidate), the second topic's candidate is truncated and must not appear
+    in polls.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    # Two Rule-B topics; each has exactly one candidate.
+    b1 = _rule_b(201)
+    b2 = _rule_b(202)
+    polled = [PolledTopic(topic_id=201, like_count=10), PolledTopic(topic_id=202, like_count=5)]
+
+    monkeypatch.setattr(cli, "admit_from_feeds", lambda *a, **k: _fake_admit_result())
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda *a, **k: _fake_gather_result(candidates=[b1, b2], polled=polled),
+    )
+
+    rc = cli.main(["forum-new", "--global-cap", "1"])
+    assert rc == 0
+    out = _out(capsys)
+
+    # Only one topic survived the cap.
+    assert len(out["topics"]) == 1
+    surviving_topic_id = out["topics"][0]["topic_id"]
+    # Only the surviving topic is in polls; the truncated one is withheld.
+    poll_topic_ids = {p["topic_id"] for p in out["polls"]}
+    assert surviving_topic_id in poll_topic_ids
+    other_topic_id = 202 if surviving_topic_id == 201 else 201
+    assert other_topic_id not in poll_topic_ids
+
+
+def test_forum_new_cap_safety_includes_zero_candidate_topics(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A short-circuited / no-qualifying-post topic (zero candidates) IS included in polls.
+
+    A topic with zero candidates has before_count == after_count == 0, so it is
+    trivially cap-safe.  The cap cannot have truncated it because it never produced
+    a candidate to begin with.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    # No candidates; polled topic still in the finalize worklist.
+    polled = [PolledTopic(topic_id=999, like_count=3)]
+
+    monkeypatch.setattr(cli, "admit_from_feeds", lambda *a, **k: _fake_admit_result())
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda *a, **k: _fake_gather_result(candidates=[], polled=polled),
+    )
+
+    rc = cli.main(["forum-new", "--global-cap", "1"])
+    assert rc == 0
+    out = _out(capsys)
+
+    # No topics (no candidates).
+    assert out["topics"] == []
+    # But the zero-candidate topic IS finalize-safe.
+    assert out["polls"] == [{"site_id": FORUM_SITE_ID, "topic_id": 999, "like_count": 3}]
+
+
+def test_forum_new_cap_safety_withholds_topic_split_between_rule_a_and_b(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A single topic yielding BOTH a Rule-A and a Rule-B candidate is withheld from
+    polls when the cap truncates either one (FRM-CON-005).
+
+    This is the subtlest branch of the cap-safe predicate: the same ``(site_id,
+    topic_id)`` produces two candidate entries (before_count == 2). With
+    global-cap=1 the cap falls *between* them, so exactly one survives
+    (after_count == 1) and the topic must NOT be finalized — its other candidate
+    was never dispositioned, so finalizing would advance the watch past an
+    unjudged post (never-lost). It re-polls next run instead.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    # One topic (201) surfaced by BOTH rules in the same run: newly admitted (Rule
+    # A) and already due with a qualifying post (Rule B).
+    a = _rule_a(201)
+    b = _rule_b(201)
+    polled = [PolledTopic(topic_id=201, like_count=15)]
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda *a_, **k: _fake_admit_result(candidates=[a]),
+    )
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda *a_, **k: _fake_gather_result(candidates=[b], polled=polled),
+    )
+
+    rc = cli.main(["forum-new", "--global-cap", "1"])
+    assert rc == 0
+    out = _out(capsys)
+
+    # The cap kept exactly one of the topic's two candidates...
+    assert len(out["topics"]) == 1
+    assert out["topics"][0]["topic_id"] == 201
+    # ...so the topic is NOT finalize-safe and must be withheld from polls.
+    assert out["polls"] == []
+
+
+# --- forum-remind ------------------------------------------------------------
+
+
+def test_forum_remind_adds_then_records(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-remind: rem add first, record_post second (FRM-CON-005)."""
+    import feed_filter.reminders as rem_mod
+
+    _add_forum_site()
+
+    rem_calls: list[list[str]] = []
+
+    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
+        rem_calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
+
+    monkeypatch.setattr(
+        cli,
+        "add_reminder",
+        lambda title, url, notes, *, list_name, **kw: rem_mod.add_reminder(
+            title, url, notes, list_name=list_name, runner=fake_runner
+        ),
+    )
+
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{FORUM_URL}/t/topic/1234",
+            "--title",
+            "My Topic",
+            "--notes",
+            "Great post",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out["id"] == "FR-1"
+    assert out["kept"] is True
+    assert out["post_id"] == 5001
+
+    # rem was invoked with --list "Filtered Forums".
+    assert len(rem_calls) == 1
+    argv = rem_calls[0]
+    assert "--list" in argv
+    list_idx = argv.index("--list")
+    assert argv[list_idx + 1] == "Filtered Forums"
+
+    # Post is recorded seen in forum_post_seen.
+    with contextlib.closing(open_db(db_path())) as conn:
+        from feed_filter.forum_store import is_post_seen
+
+        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
+
+
+def test_forum_remind_with_is_op_records_verdict(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-remind --is-op also calls set_op_verdict(kept=1)."""
+    import feed_filter.reminders as rem_mod
+    from feed_filter.forum_store import admit_topic, op_interest_kept
+
+    _add_forum_site()
+
+    monkeypatch.setattr(
+        cli,
+        "add_reminder",
+        lambda title, url, notes, *, list_name, **kw: rem_mod.add_reminder(
+            title, url, notes, list_name=list_name, runner=_fake_rem_runner
+        ),
+    )
+
+    # Pre-admit so set_op_verdict has a row to update.
+    with contextlib.closing(open_db(db_path())) as conn:
+        admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
+
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{FORUM_URL}/t/topic/1234",
+            "--title",
+            "My Topic",
+            "--notes",
+            "Great OP",
+            "--is-op",
+        ]
+    )
+    assert rc == 0
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert op_interest_kept(conn, FORUM_SITE_ID, 1234) == 1
+
+
+def test_forum_remind_does_not_record_when_add_raises(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """forum-remind: if rem add fails, the post must stay unseen (FRM-CON-005)."""
+    _add_forum_site()
+
+    def boom(*_a: object, **_k: object) -> str:
+        raise ReminderError(["rem"], 1, "list not found")
+
+    monkeypatch.setattr(cli, "add_reminder", boom)
+
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{FORUM_URL}/t/topic/1234",
+            "--title",
+            "T",
+            "--notes",
+            "N",
+        ]
+    )
+    assert rc == 1
+    with contextlib.closing(open_db(db_path())) as conn:
+        from feed_filter.forum_store import is_post_seen
+
+        assert not is_post_seen(conn, FORUM_SITE_ID, 5001)
+
+
+# --- forum-mark-seen ---------------------------------------------------------
+
+
+def test_forum_mark_seen_records_drop(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """forum-mark-seen records kept=0 for the post; no reminder."""
+    _add_forum_site()
+
+    rc = cli.main(
+        [
+            "forum-mark-seen",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{FORUM_URL}/t/topic/1234",
+            "--title",
+            "T",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out["kept"] is False
+    assert out["post_id"] == 5001
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        from feed_filter.forum_store import is_post_seen
+
+        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
+
+
+def test_forum_mark_seen_with_is_op_records_verdict(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-mark-seen --is-op calls set_op_verdict(kept=0)."""
+    from feed_filter.forum_store import admit_topic, op_interest_kept
+
+    _add_forum_site()
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
+
+    rc = cli.main(
+        [
+            "forum-mark-seen",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{FORUM_URL}/t/topic/1234",
+            "--title",
+            "T",
+            "--is-op",
+        ]
+    )
+    assert rc == 0
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert op_interest_kept(conn, FORUM_SITE_ID, 1234) == 0
+
+
+# --- forum-poll-done ---------------------------------------------------------
+
+
+def test_forum_poll_done_advances_counter(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-poll-done increments completed_polls and stores like_count."""
+    from feed_filter.forum_store import admit_topic
+
+    _add_forum_site()
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
+
+    rc = cli.main(
+        [
+            "forum-poll-done",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--like-count",
+            "15",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out["site_id"] == FORUM_SITE_ID
+    assert out["topic_id"] == 1234
+    assert out["like_count"] == 15
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        row = conn.execute(
+            "SELECT completed_polls, last_like_count, retired FROM forum_watch "
+            "WHERE site_id = ? AND topic_id = ?",
+            (FORUM_SITE_ID, 1234),
+        ).fetchone()
+    assert row[0] == 1  # completed_polls advanced
+    assert row[1] == 15  # like_count stored
+
+
+def test_forum_poll_done_retires_at_last_offset(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-poll-done sets retired=1 when all offsets are consumed (FRM-007)."""
+    from feed_filter.forum_store import admit_topic
+
+    # Register with a single-offset schedule so one poll retires the topic.
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id=FORUM_SITE_ID,
+            name="F",
+            forum_url=FORUM_URL,
+            poll_offsets_days=(0,),
+        ),
+    )
+    with contextlib.closing(open_db(db_path())) as conn:
+        admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
+
+    rc = cli.main(
+        [
+            "forum-poll-done",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--like-count",
+            "10",
+        ]
+    )
+    assert rc == 0
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        row = conn.execute(
+            "SELECT retired FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+            (FORUM_SITE_ID, 1234),
+        ).fetchone()
+    assert row[0] == 1  # retired after last offset
+
+
+def test_forum_poll_done_unknown_site_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-poll-done exits non-zero when the site id is not registered."""
+    rc = cli.main(["forum-poll-done", "--site-id", "nope", "--topic-id", "1", "--like-count", "0"])
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
