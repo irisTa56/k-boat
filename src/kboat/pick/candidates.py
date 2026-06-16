@@ -5,7 +5,7 @@ Reading Inbox "Web" view shows. The daily pick only ever surfaces web pages
 (anything you are already mid-read appears in the Today view via `reading`,
 whatever its type), so PDFs are excluded here. Each candidate carries the
 durable `summary`/`topics` the ranker reads to judge relevance against the
-day's questions.
+interests inferred from the recent Daily notes.
 """
 
 from __future__ import annotations

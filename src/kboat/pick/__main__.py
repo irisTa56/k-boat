@@ -3,9 +3,9 @@
 Two deterministic subcommands behind the daily pick (the relevance ranking is the
 LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
 
-- `candidates` — read the Daily-note `## 明日への問い` questions (newest-first,
-  within a `--lookback-days` window) and the active web inbox, and print both as
-  JSON for the ranker.
+- `candidates` — read the recent Daily-note bodies (newest-first, within a
+  `--lookback-days` window) and the active web inbox, and print both as JSON for
+  the ranker, which infers the human's current interests from the note content.
 - `set --slugs a,b` — reset `picked` to false on every source, then set it true on
   the chosen slugs (at most two). An empty `--slugs` just clears the spotlight.
 
@@ -23,7 +23,7 @@ from datetime import date
 from pathlib import Path
 
 from .candidates import candidate_from, is_active_web
-from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_questions
+from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_daily_notes
 from .notes import FrontmatterError, Value, parse_frontmatter, set_picked
 
 
@@ -50,20 +50,19 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
     candidates = [
         candidate_from(slug, rel, fm).to_json() for slug, rel, fm in notes if is_active_web(fm)
     ]
-    questions = [
-        {"date": dq.date, "items": dq.items}
-        for dq in extract_questions(vault / "Daily", today, lookback_days)
+    daily_notes = [
+        {"date": dn.date, "body": dn.body}
+        for dn in extract_daily_notes(vault / "Daily", today, lookback_days)
     ]
     return {
         "today": today.isoformat(),
         "vault": str(vault),
         "lookback_days": lookback_days,
-        "questions": questions,
+        "daily_notes": daily_notes,
         "candidates": candidates,
         "counts": {
             "candidates_total": len(candidates),
-            "question_days": len(questions),
-            "question_items": sum(len(q["items"]) for q in questions),
+            "daily_note_days": len(daily_notes),
         },
         "anomalies": anomalies,
     }
@@ -102,7 +101,7 @@ def _cmd_set(vault: Path, slugs: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kboat-pick",
-        description="Daily-pick mechanics: gather questions + web candidates, and set the picked flag.",
+        description="Daily-pick mechanics: gather recent Daily notes + web candidates, and set the picked flag.",
     )
     parser.add_argument(
         "--vault",
@@ -112,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_cand = sub.add_parser(
-        "candidates", help="Print Daily-note questions and the active web inbox as JSON."
+        "candidates", help="Print recent Daily-note bodies and the active web inbox as JSON."
     )
     p_cand.add_argument(
         "--today",
@@ -124,8 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_LOOKBACK_DAYS,
         help=(
-            "Days of Daily-note questions to consider, counting back from today, "
-            f"inclusive (default {DEFAULT_LOOKBACK_DAYS}). Older questions are out of scope."
+            "Days of Daily notes to consider, counting back from today, "
+            f"inclusive (default {DEFAULT_LOOKBACK_DAYS}). Older notes are out of scope."
         ),
     )
 
