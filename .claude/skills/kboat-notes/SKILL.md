@@ -32,7 +32,7 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 
 - `Sources/` — one note per source. Each tracks one piece of content and its 1:1 notebook.
 - `PDFs/` — the downloaded file for each PDF source, named `<slug>.pdf` by the same URL-hash slug as its note. Only PDF sources have one; web-page sources do not. It is the reading copy (opened in Obsidian) and the file uploaded to NotebookLM.
-- `Reviews/` — one `YYYY-MM-DD.md` per distillation run, the review report read for memory consolidation. Covers both source and Kindle distillation.
+- `Reviews/` — one `YYYY-MM-DD.md` per run that distilled something, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary. A run that distilled nothing writes no file. Covers both source and Kindle distillation. See kboat-distill "Review report".
 - `Reading Inbox.base` — a top-level standalone Base listing sources still to read (see below).
 - `Kindles/` — one `type: kindle` note per Kindle book, named by ASIN. No notebook; read on a Kindle and distilled from highlights pasted into the note body. See "Kindle note".
 - `Kindles.base` — a top-level standalone Base listing Kindle books (see "Kindle note").
