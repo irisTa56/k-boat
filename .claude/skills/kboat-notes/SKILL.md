@@ -51,11 +51,20 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 
 ## One notebook per source (1:1)
 
-Every source has exactly one NotebookLM notebook, created when the source is ingested.
+Every source has exactly one NotebookLM notebook (1:1), created when the source is ingested — "exactly one" counts notebooks per source, not sources per notebook (a notebook can hold more; see below).
 The notebook's coordinates (`notebooklm_id`, `gemini_url`, `notebooklm_url`) live on the source note, so the source note is self-contained — there are no notebook notes, no wikilinks between notebooks and sources, and no backlink-based reverse lookup.
-Reading-time questions go to the notebook's `gemini_url`, and because the notebook holds only this one source, the answers are never diluted by unrelated content.
+Reading-time questions go to the notebook's `gemini_url`, and because the notebook holds only this one piece of source content (plus whatever reading-time dialogue you save back into it), the answers are never diluted by unrelated content.
 
-The NotebookLM source id is not stored. It is a per-notebook attribute resolved on demand by matching the source's `url` (then `title`) in `notebooklm source list` (see the discard and distill procedures). A file-uploaded PDF source has no `url` (it is `null`), so for a PDF the match is by `title` — which is why the PDF upload passes `--title` set to the note's `title`. Because each notebook is 1:1 there is exactly one source either way, so this is really a sanity-check on that single source.
+The NotebookLM source id is not stored. It is a per-notebook attribute resolved on demand by matching the source's `url` (then `title`) in `notebooklm source list` (see the discard and distill procedures). A file-uploaded PDF source has no `url` (it is `null`), so for a PDF the match is by `title` — which is why the PDF upload passes `--title` set to the note's `title`. The notebook starts with this one original source, but reading-time dialogue saved back as a NotebookLM note becomes an additional source, so `source list` may return more than one (see "Saved dialogue as extra sources" below): the **original** is the one matching the note's `url` (web) or `title` (PDF, `url: null`), and every other source is saved dialogue.
+
+### Saved dialogue as extra sources
+
+The notebook is a reading-and-dialogue workspace, so reading-time dialogue is part of what it holds.
+A useful Gemini exchange can be **saved back into the notebook as a NotebookLM note**, which then appears in `notebooklm source list` as an *additional* source — typically `url: null` and a note / "unknown" type, with a topic-style `title` distinct from the original.
+This is expected and not a 1:1 violation: the 1:1 invariant is one notebook per *original* source, and the original is always identifiable by the `url`/`title` match above, so every other source in the notebook is saved dialogue.
+
+Distillation treats the two differently (see kboat-distill): the original source's content is the `#grounded` authority, and each saved dialogue note is `#dialogue` — vetted before keeping and keyed to the **original** source's `url` for provenance (the two roots can't resolve a wikilink, and the dialogue happened over that source).
+The whole notebook — original plus any saved dialogue — is discarded last, after the original is distilled and the report is written, so nothing distillable is lost before it is recorded; a dialogue note that failed to extract is the accepted exception, reported and discarded with the notebook.
 
 ## Schema authority and validation
 
