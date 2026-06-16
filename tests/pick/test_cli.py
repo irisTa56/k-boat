@@ -47,11 +47,13 @@ def vault(tmp_path: Path) -> Path:
     (sources / "doc.md").write_text(_source("doc", source_type="pdf"), encoding="utf-8")
     daily = tmp_path / "Daily"
     daily.mkdir()
-    (daily / "2026-06-04.md").write_text("## 明日への問い\n- a question\n", encoding="utf-8")
+    (daily / "2026-06-04.md").write_text(
+        "---\ntags: [daily]\n---\n\ncurious about agentic workflows\n", encoding="utf-8"
+    )
     return tmp_path
 
 
-def test_candidates_lists_only_active_web_plus_questions(
+def test_candidates_lists_only_active_web_plus_daily_notes(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
@@ -59,20 +61,22 @@ def test_candidates_lists_only_active_web_plus_questions(
     slugs = {c["slug"] for c in out["candidates"]}
     assert slugs == {"web1", "web2"}  # kept (disposition) and doc (pdf) excluded
     assert out["counts"]["candidates_total"] == 2
-    assert out["questions"] == [{"date": "2026-06-04", "items": ["a question"]}]
+    # Frontmatter is stripped; the body carries the human's interest signal.
+    assert out["daily_notes"] == [{"date": "2026-06-04", "body": "curious about agentic workflows"}]
+    assert out["counts"]["daily_note_days"] == 1
     assert out["candidates"][0]["topics"] == ["topic-web1"]
     assert out["lookback_days"] == 14  # default window
 
 
-def test_candidates_lookback_window_drops_stale_questions(
+def test_candidates_lookback_window_drops_stale_notes(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The fixture's only question is dated 2026-06-04; an 8-day-back date with a
-    # 3-day window is out of scope, so no questions surface (candidates still do).
+    # The fixture's only note is dated 2026-06-04; an 8-day-back date with a
+    # 3-day window is out of scope, so no daily notes surface (candidates still do).
     args = ["--vault", str(vault), "candidates", "--today", "2026-06-12", "--lookback-days", "3"]
     assert main(args) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["questions"] == []
+    assert out["daily_notes"] == []
     assert out["lookback_days"] == 3
     assert {c["slug"] for c in out["candidates"]} == {"web1", "web2"}
 

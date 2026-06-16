@@ -1,6 +1,6 @@
 ---
 name: kboat-recall
-description: Find shelved "read later" sources by a natural-language question, and run the routine's daily pick. Use when the user asks whether they saved something to read on a topic, wants to surface kept sources matching a question, or says things like "do I have anything about X to read", "find that paper I shelved", "what's on my read-later shelf about Y" — and when the kboat-routine runs the daily pick after distillation (the write-capable "Daily pick mode" below: surface up to two web sources for today from the Daily-note `## 明日への問い`, via the kboat-pick package). Searches source-note title/summary/topics; defers to kboat-notes for the schema.
+description: Find shelved "read later" sources by a natural-language question, and run the routine's daily pick. Use when the user asks whether they saved something to read on a topic, wants to surface kept sources matching a question, or says things like "do I have anything about X to read", "find that paper I shelved", "what's on my read-later shelf about Y" — and when the kboat-routine runs the daily pick after distillation (the write-capable "Daily pick mode" below: surface up to two web sources for today by inferring the reader's interests from their recent Daily notes, via the kboat-pick package). Searches source-note title/summary/topics; defers to kboat-notes for the schema.
 ---
 
 # K-Boat recall
@@ -31,16 +31,16 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. The s
 
 ## Daily pick mode
 
-A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today from the questions you wrote, and is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool. The spec is kboat-notes "Daily pick".
+A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today by inferring what the reader is currently interested in from their recent Daily notes, and is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool. The spec is kboat-notes "Daily pick".
 
-1. `eval "$(mise env)"`, then `kboat-pick candidates` → JSON with `questions` (Daily-note `## 明日への問い`, newest-first, within the look-back window — the last two weeks by default; the window used is echoed as `lookback_days`) and `candidates` (the active web inbox, each with `summary`/`topics`).
-2. If there are no questions or no candidates, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.
-3. Rank by relevance from the candidates' `summary`/`topics`, newest question first (delegate to a cheap subagent when the inbox is large, lexically pre-filtering first to keep it cheap), in two tiers — see kboat-notes "Daily pick":
-   - **Tier 1 — direct answers**: candidates that directly answer a question. Accumulate distinct picks until two.
-   - **Tier 2 — same-field learning**: only if Tier 1 yields fewer than two, top up with candidates that would teach something in the field or theme of the in-window questions (not a direct answer, but genuinely on-topic), newest-question-first.
-   Stop at two; a candidate is picked at most once (Tier 1 over Tier 2). If even Tier 2 finds nothing in the questions' field, take fewer — never pad with an unrelated read (an honest short list is the goal, not a strict miss).
+1. `eval "$(mise env)"`, then `kboat-pick candidates` → JSON with `daily_notes` (the recent Daily-note bodies, newest-first, within the look-back window — the last two weeks by default; the window used is echoed as `lookback_days`) and `candidates` (the active web inbox, each with `summary`/`topics`).
+2. If there are no `daily_notes` or no `candidates`, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.
+3. **Infer the interests, then rank.** Read the `daily_notes` bodies (newest first) and infer what the reader wants to read or learn about now: an explicitly written question or wish is the strongest signal, but also take the topics, problems, and themes they are engaging with; ignore logbook noise (done tasks, schedules, unrelated journaling). Then rank the candidates against those interests from their `summary`/`topics` (delegate to a cheap subagent when the inbox or the notes are large, lexically pre-filtering first to keep it cheap — a Japanese note leans on the Japanese `summary`, since `topics` is English), in two tiers — see kboat-notes "Daily pick":
+   - **Tier 1 — direct interest**: candidates that directly match an interest the notes express (an explicit question, or a clear current topic). Accumulate distinct picks until two.
+   - **Tier 2 — same-field learning**: only if Tier 1 yields fewer than two, top up with candidates in the broader field or theme of the recent notes (not a direct match, but genuinely on-topic), newest-note-first.
+   Stop at two; a candidate is picked at most once (Tier 1 over Tier 2). If even Tier 2 finds nothing in the notes' field, take fewer — never pad with an unrelated read (an honest short list is the goal, not a strict miss).
 4. `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices. Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
-5. Report the picks — each with the question it answers — and that they are read in the Today view of the reading-inbox Base (kboat-notes "Reading inbox Base").
+5. Report the picks — each with the inferred interest and the dated note it came from, so the otherwise-implicit inference is visible and checkable — and that they are read in the Today view of the reading-inbox Base (kboat-notes "Reading inbox Base").
 
 This mode never writes the Daily note and never touches NotebookLM. The picks are a spotlight, replaced each run.
 
