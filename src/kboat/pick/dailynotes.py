@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from kboat.frontmatter import strip_frontmatter
+
 DEFAULT_LOOKBACK_DAYS = 14
 
 
@@ -30,19 +32,6 @@ def _parse_date(stem: str) -> date | None:
         return date.fromisoformat(stem)
     except ValueError:
         return None
-
-
-def _strip_frontmatter(text: str) -> str:
-    """Drop a leading YAML frontmatter block (a `---` line, then content, then a
-    closing `---` line), returning the body. Text whose first line is not `---`, or
-    that has no closing fence, is returned unchanged."""
-    lines = text.splitlines(keepends=True)
-    if not lines or lines[0].rstrip("\r\n") != "---":
-        return text
-    for i in range(1, len(lines)):
-        if lines[i].rstrip("\r\n") == "---":
-            return "".join(lines[i + 1 :])
-    return text  # no closing fence — not frontmatter
 
 
 def extract_daily_notes(
@@ -63,7 +52,7 @@ def extract_daily_notes(
         d = _parse_date(path.stem)
         if d is None or d > today or d < earliest:
             continue
-        body = _strip_frontmatter(path.read_text(encoding="utf-8")).strip()
+        body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
         if body:
             days.append(DailyNote(date=d.isoformat(), body=body))
     days.sort(key=lambda dn: dn.date, reverse=True)

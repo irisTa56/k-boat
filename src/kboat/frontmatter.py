@@ -145,6 +145,18 @@ def body_after_frontmatter(text: str) -> str:
     return "".join(lines[end + 1 :])
 
 
+def strip_frontmatter(text: str) -> str:
+    """Return the note body, or `text` unchanged if it has no frontmatter block.
+
+    The lenient counterpart to `body_after_frontmatter`: text that does not open
+    with a `---` fence, or whose fence is never closed, is not frontmatter and is
+    returned whole. Used where a leading block is optional (e.g. Daily notes)."""
+    try:
+        return body_after_frontmatter(text)
+    except FrontmatterError:
+        return text
+
+
 # --------- writing ---------
 
 
