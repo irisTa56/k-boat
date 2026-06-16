@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from feed_filter.feeds import _published_at, parse_feed
+from feed_filter.feeds import _published_at, html_to_text, parse_feed
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -56,6 +56,40 @@ def test_atom_resolves_relative_links() -> None:
 
 def test_malformed_feed_returns_empty() -> None:
     assert parse_feed(b"<<< this is not a feed", "https://example.com/") == []
+
+
+def test_html_to_text_flattens_strips_and_passes_plain_text_through() -> None:
+    # Block boundaries become whitespace; inline byline links stay intact.
+    html = "<p>By <a href='x'>Ann</a>, <a href='y'>Bob</a></p><p>Intro &amp; body.</p>"
+    assert html_to_text(html) == "By Ann, Bob Intro & body."
+    # script/style content is dropped, not flattened into the text.
+    assert html_to_text("<style>.a{}</style><p>Real</p><script>x=1</script>") == "Real"
+    # Markup-free, entity-free plain text passes through unchanged (the common
+    # plain-description RSS case); this is the only "unchanged" guarantee — text
+    # carrying literal < > or & is HTML by contract and may be rewritten.
+    assert html_to_text("Summary of first post.") == "Summary of first post."
+    # Empty / tag-only / None collapse to None so downstream sees "no summary".
+    assert html_to_text("") is None
+    assert html_to_text("<p></p>") is None
+    assert html_to_text(None) is None
+
+
+# RSS whose item body is HTML in <content:encoded> (Medium/Substack shape): the
+# parser must hand downstream plain prose, not the raw markup.
+_HTML_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>Full-text</title>
+  <item><title>Deep Dive</title><link>https://example.com/deep</link>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate>
+    <content:encoded><![CDATA[<p>By <a href="/a">Author</a></p><p>Real architectural prose here.</p>]]></content:encoded>
+  </item>
+</channel></rss>"""
+
+
+def test_html_content_summary_is_flattened_to_text() -> None:
+    entries = parse_feed(_HTML_RSS, "https://example.com/")
+    assert len(entries) == 1
+    assert entries[0].summary == "By Author Real architectural prose here."
 
 
 # A feed mixing a dated entry, an undated entry, and an unresolvable

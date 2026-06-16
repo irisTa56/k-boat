@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Literal
 
 import feedparser
@@ -19,6 +20,96 @@ import feedparser
 from feed_filter.canonical import CanonicalUrl, canonical_url, resolve_link
 
 EntryKind = Literal["feed", "scrape"]
+
+# Block-level tags whose boundaries become whitespace so prose does not run
+# together once tags are dropped; inline tags (a, em, strong, code, span) add
+# nothing, so a byline like ``<a>Name</a>, <a>Name</a>`` stays intact.
+_BLOCK_TAGS = frozenset(
+    {
+        "p",
+        "div",
+        "br",
+        "hr",
+        "li",
+        "ul",
+        "ol",
+        "tr",
+        "td",
+        "th",
+        "table",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "blockquote",
+        "pre",
+        "section",
+        "article",
+        "header",
+        "footer",
+        "figure",
+        "figcaption",
+        "aside",
+        "dl",
+        "dt",
+        "dd",
+    }
+)
+
+
+class _TextExtractor(HTMLParser):
+    """Collect visible text from an HTML fragment, dropping script/style.
+
+    ``convert_charrefs=True`` unescapes entities inside text, so callers get
+    ``&amp;`` as ``&``. Block boundaries emit a space; the caller collapses runs.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._skip = 0
+
+    def handle_starttag(self, tag: str, attrs: object) -> None:
+        if tag in ("script", "style"):
+            self._skip += 1
+        elif tag in _BLOCK_TAGS:
+            self._parts.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style"):
+            self._skip = max(0, self._skip - 1)
+        elif tag in _BLOCK_TAGS:
+            self._parts.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self._parts.append(data)
+
+    def text(self) -> str:
+        return "".join(self._parts)
+
+
+def html_to_text(raw: str | None) -> str | None:
+    """Flatten an HTML feed summary to whitespace-collapsed plain text.
+
+    Feeds carry the summary as HTML (Medium/Substack ship the full article in
+    ``content:encoded``, whose head is a byline of author links); handed to the
+    judge raw, that reads as "no usable summary" and forces a doomed full-page
+    fetch (Cloudflare wall) when the prose was in the feed all along. Stripping
+    tags here lets the title+summary stage judge from the feed body directly.
+
+    The input is a feed ``summary``, HTML by contract; plain text with no markup
+    or character references passes through unchanged, and empty/blank input (or
+    a body that is all tags) returns ``None`` so downstream sees "no summary".
+    """
+    if not raw:
+        return None
+    extractor = _TextExtractor()
+    extractor.feed(raw)
+    text = " ".join(extractor.text().split())
+    return text or None
 
 
 @dataclass(frozen=True)
@@ -86,7 +177,7 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
             Entry(
                 canonical_url=canonical_url(absolute),
                 title=getattr(entry, "title", None) or None,
-                summary=getattr(entry, "summary", None) or None,
+                summary=html_to_text(getattr(entry, "summary", None)),
                 published_at=_published_at(entry),
                 kind="feed",
             )

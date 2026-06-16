@@ -251,6 +251,50 @@ def test_rule_a_candidate_carries_op_text(conn: sqlite3.Connection) -> None:
         assert "topic" in cand.op_text.lower() or "OP" in cand.op_text
 
 
+# A Discourse latest feed whose item <description> is cooked HTML — the real
+# shape Discourse serves, unlike the plain-text fixtures above.
+_HTML_LATEST_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>Test Forum - Latest topics</title>
+  <link>https://forum.example.com/latest</link>
+  <item>
+    <title>HTML-bodied topic</title>
+    <link>https://forum.example.com/t/html-bodied-topic/777</link>
+    <description><![CDATA[<p>First <strong>paragraph</strong> of the OP.</p><p>Second line &amp; more.</p>]]></description>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate>
+  </item>
+</channel></rss>"""
+
+
+def _html_latest_handler(request: httpx.Request) -> httpx.Response:
+    """Serve an HTML-bodied latest feed; reuse the plain top fixture for /top.rss."""
+    path = request.url.path
+    if path == "/latest.rss":
+        return httpx.Response(
+            200, content=_HTML_LATEST_RSS, headers={"content-type": "application/rss+xml"}
+        )
+    if path == "/top.rss":
+        return httpx.Response(
+            200, content=_TOP_RSS, headers={"content-type": "application/rss+xml"}
+        )
+    raise AssertionError(f"unexpected path {path}")
+
+
+def test_rule_a_op_text_flattens_html_description(conn: sqlite3.Connection) -> None:
+    """A Discourse RSS post body (cooked HTML) reaches op_text as plain prose.
+
+    Discourse serves HTML in <description>; the shared parse_feed seam flattens
+    it (html_to_text) so the Rule-A judge reads prose, not markup — the same
+    benefit the feed path gets, exercised through the forum admission path.
+    """
+    site = _forum_site(daily_watch_count=0, weekly_watch_count=0)
+    with _client_from_handler(_html_latest_handler) as client:
+        result = admit_from_feeds(conn, site, client=client, now=NOW)
+
+    cand = next(c for c in result.candidates if c.topic_id == 777)
+    assert cand.op_text == "First paragraph of the OP. Second line & more."
+
+
 def test_admit_error_absorption_continues_on_feed_failure(conn: sqlite3.Connection) -> None:
     """A FetchError on one feed is absorbed; the other feeds still produce candidates (FRM-CON-005)."""
 

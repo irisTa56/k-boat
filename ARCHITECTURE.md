@@ -25,7 +25,7 @@ Pure primitives:
 Deterministic httpx ingestion:
 
 - `fetch.py` — sync `httpx` fetch; retries throttling statuses (`429`/`503`) up to a bounded count, honoring `Retry-After`, so the forum gather loop survives Discourse rate limits instead of shedding topics to the next run.
-- `feeds.py` — feed parsing (`feedparser`).
+- `feeds.py` — feed parsing (`feedparser`). The entry `summary` is flattened from HTML to plain text (`html_to_text`): feeds that ship the full article in `content:encoded` (Medium/Substack) carry a byline-link preamble that, handed to the judge raw, reads as "no usable summary" and forces a doomed full-page fetch behind a wall — flattening lets the title+summary stage judge from the feed body directly.
 - `scrape.py` — index-page scraping (`selectolax`).
 
 Discovery:
