@@ -15,10 +15,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from selectolax.parser import HTMLParser
-
 from feed_filter.canonical import canonical_url
-from feed_filter.feeds import parse_feed
+from feed_filter.feeds import html_to_text, parse_feed
 
 # ---------------------------------------------------------------------------
 # URL builders (TASK-006)
@@ -95,8 +93,10 @@ class ForumTopic:
 class ForumPost:
     """A single post from the first JSON chunk (FRM-CON-004 / FRM-004).
 
-    ``text`` is the ``cooked`` HTML stripped to plain text via selectolax so
-    the haiku judge receives prose rather than markup (TASK-008).
+    ``text`` is the ``cooked`` HTML flattened to plain text via the shared
+    ``feeds.html_to_text`` so the haiku judge receives prose rather than markup
+    (TASK-008) — the same flattening the feed path applies to RSS summaries, so
+    Rule-A (RSS) and Rule-B (topic JSON) text are produced by one implementation.
     """
 
     id: int
@@ -137,15 +137,6 @@ def _as_list(value: object) -> list[Any]:
 
 def _as_dict(value: object) -> dict[Any, Any]:
     return value if isinstance(value, dict) else {}
-
-
-def _cooked_to_text(html: str) -> str:
-    """Strip Discourse ``cooked`` HTML to plain text via selectolax.
-
-    ``separator=" "`` prevents adjacent block elements from fusing into a
-    single run-on word.
-    """
-    return HTMLParser(html).text(separator=" ", strip=True)
 
 
 def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
@@ -190,7 +181,9 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
                 id=_as_int(raw.get("id")),
                 number=_as_int(raw.get("post_number")),
                 like_count=likes,
-                text=_cooked_to_text(cooked) if cooked else "",
+                # html_to_text returns None for empty/blank (or all-markup) input;
+                # the post-grain store wants "" for "no text", so coalesce.
+                text=html_to_text(cooked) or "",
             )
         )
 

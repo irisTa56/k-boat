@@ -130,17 +130,26 @@ def test_parse_topic_cooked_html_stripped_to_text() -> None:
                 {
                     "id": 10,
                     "post_number": 1,
-                    "cooked": "<p>First paragraph.</p><p>Second paragraph.</p>",
+                    "cooked": (
+                        "<style>.a{color:red}</style>"
+                        "<p>First paragraph.</p><p>Second paragraph.</p>"
+                        "<script>var x=1;</script>"
+                    ),
                     "actions_summary": [],
                 }
             ]
         },
     }
     _, posts = parse_topic(json.dumps(data).encode())
-    # selectolax separator=" " must prevent adjacent blocks from fusing
-    assert "First paragraph." in posts[0].text
-    assert "Second paragraph." in posts[0].text
+    # The cooked path flattens through the shared feeds.html_to_text: block
+    # boundaries keep adjacent paragraphs from fusing, tags are dropped, and
+    # script/style content is removed (not flattened into the prose).
+    # One substring asserts both presence AND the separating space, so a
+    # regression that fused the blocks ("paragraph.Second") would fail here.
+    assert "First paragraph. Second paragraph." in posts[0].text
     assert "<p>" not in posts[0].text
+    assert "var x=1" not in posts[0].text
+    assert ".a{color" not in posts[0].text
 
 
 def test_parse_topic_absent_likes_default_to_zero() -> None:
@@ -244,7 +253,8 @@ def test_parse_topic_wrong_typed_actions_summary_degrades(actions_summary: objec
 
 @pytest.mark.parametrize("cooked", [7, ["a"], {"k": "v"}, None])
 def test_parse_topic_wrong_typed_cooked_degrades(cooked: object) -> None:
-    """A non-string ``cooked`` must not reach ``HTMLParser`` (it raises on non-str)."""
+    """A non-string ``cooked`` is coerced to "" by ``_as_str`` before flattening,
+    so ``html_to_text`` never sees a non-str and the post degrades to empty text."""
     data = {
         "id": 1,
         "post_stream": {
