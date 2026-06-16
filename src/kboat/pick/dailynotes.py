@@ -37,10 +37,10 @@ def _strip_frontmatter(text: str) -> str:
     closing `---` line), returning the body. Text whose first line is not `---`, or
     that has no closing fence, is returned unchanged."""
     lines = text.splitlines(keepends=True)
-    if not lines or lines[0].rstrip("\n") != "---":
+    if not lines or lines[0].rstrip("\r\n") != "---":
         return text
     for i in range(1, len(lines)):
-        if lines[i].rstrip("\n") == "---":
+        if lines[i].rstrip("\r\n") == "---":
             return "".join(lines[i + 1 :])
     return text  # no closing fence — not frontmatter
 

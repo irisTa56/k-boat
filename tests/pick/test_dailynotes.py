@@ -44,6 +44,24 @@ def test_body_without_frontmatter_kept_whole(tmp_path: Path) -> None:
     assert out[0].body == "just a plain line about geospatial indexing"
 
 
+def test_first_closing_fence_ends_frontmatter(tmp_path: Path) -> None:
+    daily = tmp_path / "Daily"
+    # A `---` thematic break inside the body must not be mistaken for the closing
+    # fence: only the first `---` after the opener ends the frontmatter.
+    _write(daily, "2026-06-04.md", "---\ntags: [daily]\n---\nintro\n\n---\n\nmore\n")
+    out = extract_daily_notes(daily, date(2026, 6, 12))
+    assert out[0].body == "intro\n\n---\n\nmore"
+
+
+def test_crlf_frontmatter_is_stripped(tmp_path: Path) -> None:
+    daily = tmp_path / "Daily"
+    # CRLF line endings (a note edited on another platform) must still be parsed.
+    (daily).mkdir(parents=True, exist_ok=True)
+    (daily / "2026-06-04.md").write_bytes(b"---\r\ntags: [daily]\r\n---\r\ncurious about RAG\r\n")
+    out = extract_daily_notes(daily, date(2026, 6, 12))
+    assert out[0].body == "curious about RAG"
+
+
 def test_unclosed_frontmatter_is_not_stripped(tmp_path: Path) -> None:
     daily = tmp_path / "Daily"
     # A leading `---` with no closing fence is not frontmatter; keep the text whole.
