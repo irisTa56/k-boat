@@ -165,7 +165,7 @@ The note **write is owned by `kboat-note write`** (`kboat-note write --type kind
 | `distill` | Checkbox, set by the human. Opt-in to distil this book into the knowledge graph (from the body). |
 | `distilled_date` | Date, stamped by the routine when distillation completes. Empty until then. Terminal marker. |
 | `added_date` | Date the note was created. |
-| `tags` | `kindle`. |
+| `tags` | Empty for now. |
 
 There is deliberately no `isbn` field: a Kindle product page shows the ASIN, not an ISBN, so it would be empty for almost every Kindle title.
 
