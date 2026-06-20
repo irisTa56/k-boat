@@ -33,6 +33,34 @@ CASES: list[tuple[str, str | None, str]] = [
     ("https://example.com/a?fbclid=abc&mc_cid=1", None, "https://example.com/a"),
     # ref is content-bearing and deliberately NOT stripped (REQ-009 never-lost)
     ("https://example.com/a?ref=twitter", None, "https://example.com/a?ref=twitter"),
+    # Medium's RSS attribution shape (source=rss----...) is stripped so the same
+    # article dedupes whether or not the feed serves the link with it.
+    (
+        "https://medium.com/netflix-techblog/a-slug-abc?source=rss----2615bd06b42e---4",
+        None,
+        "https://medium.com/netflix-techblog/a-slug-abc",
+    ),
+    ("https://medium.com/a?source=rss----abc---0&id=5", None, "https://medium.com/a?id=5"),
+    # Medium's @user feed uses a different field layout but the same rss- prefix.
+    (
+        "https://medium.com/google-earth/a-slug-xyz?source=rss-5995184886b6------2",
+        None,
+        "https://medium.com/google-earth/a-slug-xyz",
+    ),
+    # ...but a bare ``source`` (not the rss- shape) may be content-bearing and
+    # is kept, like ``ref`` (REQ-009 never-lost).
+    (
+        "https://example.com/a?source=newsletter&id=5",
+        None,
+        "https://example.com/a?id=5&source=newsletter",
+    ),
+    # Boundary cases pinning that ``rss-`` (with the hyphen) is the exact marker:
+    # ``rss`` alone, an uppercase value, and a valueless flag are all kept.
+    ("https://example.com/a?source=rss", None, "https://example.com/a?source=rss"),
+    ("https://example.com/a?source=RSS-digest", None, "https://example.com/a?source=RSS-digest"),
+    ("https://example.com/a?source", None, "https://example.com/a?source="),
+    # the degenerate exact-prefix value (rss- with nothing after) still strips
+    ("https://example.com/a?source=rss-", None, "https://example.com/a"),
     # query params sorted so order can't fork the key
     ("https://example.com/a?b=2&a=1", None, "https://example.com/a?a=1&b=2"),
     # percent-encoding hex upper-cased
@@ -69,6 +97,22 @@ def test_query_order_dedupes_identically() -> None:
     assert canonical_url("https://example.com/a?x=1&y=2") == canonical_url(
         "https://example.com/a?y=2&x=1"
     )
+
+
+def test_medium_source_param_dedupes_identically() -> None:
+    # The bug this fixes: Medium's feed flips the same article link between the
+    # bare URL and one carrying ``?source=rss----...`` across fetches.
+    base = "https://medium.com/netflix-techblog/the-data-canary-18b699d58e36"
+    assert canonical_url(f"{base}?source=rss----2615bd06b42e---4") == canonical_url(base)
+
+
+def test_non_medium_source_param_stays_distinct() -> None:
+    # The never-lost direction (REQ-009): a bare ``source`` is not Medium's
+    # rss---- attribution, so it is kept and two values must not collide.
+    a = canonical_url("https://example.com/a?source=variant-a")
+    b = canonical_url("https://example.com/a?source=variant-b")
+    assert a != b
+    assert a == "https://example.com/a?source=variant-a"
 
 
 def test_distinct_articles_stay_distinct() -> None:

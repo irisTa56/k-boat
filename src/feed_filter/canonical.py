@@ -28,15 +28,37 @@ CanonicalUrl = NewType("CanonicalUrl", str)
 _TRACKING_EXACT = frozenset({"gclid", "fbclid"})
 _TRACKING_PREFIXES = ("utm_", "mc_")
 
+# Keys that are tracking *only* for a specific value shape — stripped when the
+# value matches (case-sensitively, as the source emits it), kept otherwise. Maps
+# a lowercased key to value prefixes. Host-agnostic, like the sets above: the
+# match is on the key+value, not the site, so any host serving the shape is
+# normalized the same way.
+#
+# ``source``: Medium appends an RSS-click attribution value to every feed link
+# — ``rss----<publicationId>---<N>`` for a publication feed, ``rss-<userId>---
+# ---<N>`` for an ``@user`` feed — but serves the same article without it across
+# fetches; a retained value then forks the dedupe key and re-reminds the article
+# each time the form flips. Both shapes share the ``rss-`` prefix, which is what
+# we match. A bare ``source`` is, like ``ref``, potentially content-bearing
+# elsewhere (a CMS may route on it), and unlike ``ref``'s git usage has no
+# common content-bearing form — but the never-lost bias (REQ-009) still says
+# keep it rather than collapse two genuinely distinct pages. Matching the value
+# case-sensitively (Medium emits lowercase ``rss-``) keeps the strip narrow: a
+# value like ``RSS-digest`` is left alone rather than risk a never-lost collapse.
+_TRACKING_VALUE_PREFIXES: dict[str, tuple[str, ...]] = {"source": ("rss-",)}
+
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 _DUP_SLASH = re.compile(r"/{2,}")
 _PCT = re.compile(r"%[0-9a-fA-F]{2}")
 
 
-def _is_tracking(key: str) -> bool:
+def _is_tracking(key: str, value: str) -> bool:
     k = key.lower()
-    return k in _TRACKING_EXACT or k.startswith(_TRACKING_PREFIXES)
+    if k in _TRACKING_EXACT or k.startswith(_TRACKING_PREFIXES):
+        return True
+    prefixes = _TRACKING_VALUE_PREFIXES.get(k)
+    return prefixes is not None and value.startswith(prefixes)
 
 
 def _normalize_netloc(parts: SplitResult, scheme: str) -> str:
@@ -61,7 +83,7 @@ def _normalize_netloc(parts: SplitResult, scheme: str) -> str:
 def _strip_tracking(query: str) -> str:
     # keep_blank_values so a valueless ``?foo`` survives (as ``foo=``) rather
     # than vanishing. Sorted so param order can't fork the dedupe key.
-    kept = [(k, v) for k, v in parse_qsl(query, keep_blank_values=True) if not _is_tracking(k)]
+    kept = [(k, v) for k, v in parse_qsl(query, keep_blank_values=True) if not _is_tracking(k, v)]
     kept.sort()
     return urlencode(kept)
 
