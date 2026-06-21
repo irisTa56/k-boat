@@ -13,7 +13,7 @@ Follow the kboat-notes skill for the note schema, naming, and file writing.
 
 - Run `eval "$(mise env)"` at the top of every shell block (see kboat-notes "Environment"): it loads `.env` and puts the venv on `PATH`, so `notebooklm` and `$OBSIDIAN_VAULT_PATH` resolve bare. Re-run it in each block — the Bash tool keeps no shell state.
 - Run `notebooklm auth refresh` before the batch, since NotebookLM cookies expire.
-- Read the queue with [`rem`](https://github.com/bro3886/rem-cli): `rem list --list "K-Boat Queue" --incomplete --output json`.
+- Read the queue with [`rem`](https://github.com/BRO3886/rem): `rem list --list "K-Boat Queue" --incomplete --output json`.
 
 ## Per-item procedure
 
