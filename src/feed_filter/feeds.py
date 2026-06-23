@@ -11,6 +11,7 @@ supplies a title for any keep (REQ-005). ``canonical_url`` is the dedupe key
 from __future__ import annotations
 
 import calendar
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Literal
@@ -140,6 +141,36 @@ def _published_at(entry: object) -> int | None:
     return None
 
 
+# Medium serves the same article under shifting link hosts — ``medium.com/<pub>/``
+# vs a publication's custom domain (e.g. ``netflixtechblog.com``) — so the link
+# forks the dedupe key (PAT-002) and the article re-reminds every time the host
+# flips. (The other historical fork, a volatile ``?source=`` param, is already
+# neutralized in ``canonical.py``; the host shift is the residual cause.) Every
+# Medium item also carries ``<guid isPermaLink="false">https://medium.com/p/
+# <hash></guid>``, invariant across host, slug, and query, which 302-redirects
+# to the live article — so it is the durable dedupe identity (and a usable
+# reminder link). Non-Medium feeds are unaffected: their guids don't match, so
+# they keep deduping on the resolved link.
+#
+# The hash class is ``[0-9a-z]`` (wider than the hex Medium emits today) on
+# purpose: with the host + ``/p/`` + ``fullmatch`` anchoring already rejecting
+# every non-Medium guid, erring wide only risks keying a hypothetical non-hex
+# ``/p/`` id on its own stable guid (still collision-free), whereas erring
+# narrow could miss a real guid and silently re-remind (never-lost, REQ-009).
+_MEDIUM_GUID = re.compile(r"https?://medium\.com/p/[0-9a-z]+/?", re.IGNORECASE)
+
+
+def _dedupe_url(entry: object, absolute: str) -> CanonicalUrl:
+    """Canonical dedupe key: Medium's stable ``/p/<hash>`` guid when present,
+    else the resolved entry link."""
+    guid = getattr(entry, "id", None)
+    if isinstance(guid, str):
+        g = guid.strip()
+        if _MEDIUM_GUID.fullmatch(g):
+            return canonical_url(g)
+    return canonical_url(absolute)
+
+
 def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     """Parse an RSS/Atom body into ``Entry`` objects.
 
@@ -175,7 +206,7 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
             continue
         out.append(
             Entry(
-                canonical_url=canonical_url(absolute),
+                canonical_url=_dedupe_url(entry, absolute),
                 title=getattr(entry, "title", None) or None,
                 summary=html_to_text(getattr(entry, "summary", None)),
                 published_at=_published_at(entry),

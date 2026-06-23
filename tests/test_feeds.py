@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from feed_filter.feeds import _published_at, html_to_text, parse_feed
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -90,6 +92,97 @@ def test_html_content_summary_is_flattened_to_text() -> None:
     entries = parse_feed(_HTML_RSS, "https://example.com/")
     assert len(entries) == 1
     assert entries[0].summary == "By Author Real architectural prose here."
+
+
+# Medium item: the link is a publication custom domain carrying a ?source= param,
+# while the stable identity lives in the <guid> as medium.com/p/<hash>.
+_MEDIUM_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Netflix TechBlog</title>
+  <item><title>The Data Canary</title>
+    <link>https://netflixtechblog.com/the-data-canary-18b699d58e36?source=rss----2615bd06b42e---4</link>
+    <guid isPermaLink="false">https://medium.com/p/18b699d58e36</guid>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+# Same article a later fetch serves under the medium.com path host and no param;
+# its dedupe key must match the custom-domain fetch above (same guid).
+_MEDIUM_RSS_OTHER_HOST = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Netflix TechBlog</title>
+  <item><title>The Data Canary</title>
+    <link>https://medium.com/netflix-techblog/the-data-canary-18b699d58e36</link>
+    <guid isPermaLink="false">https://medium.com/p/18b699d58e36</guid>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+# Same article whose <link> already IS the medium.com/p/<hash> permalink (guid
+# and link identical): the key is that permalink, unchanged.
+_MEDIUM_RSS_LINK_IS_PERMALINK = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Netflix TechBlog</title>
+  <item><title>The Data Canary</title>
+    <link>https://medium.com/p/18b699d58e36</link>
+    <guid isPermaLink="false">https://medium.com/p/18b699d58e36</guid>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def _one_item_rss(guid: str) -> bytes:
+    return f"""<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Other</title>
+  <item><title>Post</title><link>https://blog.example.com/post-one</link>
+    <guid isPermaLink="false">{guid}</guid>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>""".encode()
+
+
+# RSS item with no <guid> at all: the resolved link is the dedupe key.
+_NO_GUID_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Other</title>
+  <item><title>Post</title><link>https://blog.example.com/post-two</link>
+    <pubDate>Mon, 02 Jun 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def test_medium_entry_dedupes_on_guid_not_volatile_link() -> None:
+    # Medium flips the link host (custom domain vs medium.com path) and appends a
+    # ?source= param; the stable /p/<hash> guid is the dedupe key instead.
+    entries = parse_feed(_MEDIUM_RSS, "https://medium.com/feed/netflix-techblog")
+    assert len(entries) == 1
+    assert entries[0].canonical_url == "https://medium.com/p/18b699d58e36"
+    assert entries[0].title == "The Data Canary"
+
+
+def test_medium_guid_dedupes_same_article_across_link_hosts() -> None:
+    # The bug this fixes: the two link forms of one article must produce one key.
+    (a,) = parse_feed(_MEDIUM_RSS, "https://medium.com/feed/netflix-techblog")
+    (b,) = parse_feed(_MEDIUM_RSS_OTHER_HOST, "https://medium.com/feed/netflix-techblog")
+    assert a.canonical_url == b.canonical_url
+
+
+def test_medium_guid_equal_to_link_is_stable() -> None:
+    (e,) = parse_feed(_MEDIUM_RSS_LINK_IS_PERMALINK, "https://medium.com/feed/netflix-techblog")
+    assert e.canonical_url == "https://medium.com/p/18b699d58e36"
+
+
+def test_entry_without_guid_keys_on_link() -> None:
+    (e,) = parse_feed(_NO_GUID_RSS, "https://blog.example.com/")
+    assert e.canonical_url == "https://blog.example.com/post-two"
+
+
+@pytest.mark.parametrize(
+    "guid",
+    [
+        "tag:blog.example.com,2026:/p/999",  # opaque tag: URI, not a URL
+        "https://blog.medium.com/p/18b699d58e36",  # subdomain, not medium.com
+        "https://example.com/p/18b699d58e36",  # wrong host
+        "https://medium.com/p/18b699d58e36/extra",  # extra path segment
+        "https://medium.com/netflix-techblog/the-slug-18b699d58e36",  # article link, not /p/
+    ],
+)
+def test_non_medium_guid_keeps_link_as_key(guid: str) -> None:
+    # fullmatch + host/path anchoring: anything but a bare medium.com/p/<hash>
+    # falls through to the resolved link, guarding against a future loosening.
+    (e,) = parse_feed(_one_item_rss(guid), "https://blog.example.com/")
+    assert e.canonical_url == "https://blog.example.com/post-one"
 
 
 # A feed mixing a dated entry, an undated entry, and an unresolvable

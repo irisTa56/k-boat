@@ -25,7 +25,7 @@ Pure primitives:
 Deterministic httpx ingestion:
 
 - `fetch.py` — sync `httpx` fetch; retries throttling statuses (`429`/`503`) up to a bounded count, honoring `Retry-After`, so the forum gather loop survives Discourse rate limits instead of shedding topics to the next run.
-- `feeds.py` — feed parsing (`feedparser`). The entry `summary` is flattened from HTML to plain text (`html_to_text`): feeds that ship the full article in `content:encoded` (Medium/Substack) carry a byline-link preamble that, handed to the judge raw, reads as "no usable summary" and forces a doomed full-page fetch behind a wall — flattening lets the title+summary stage judge from the feed body directly.
+- `feeds.py` — feed parsing (`feedparser`). The entry `summary` is flattened from HTML to plain text (`html_to_text`): feeds that ship the full article in `content:encoded` (Medium/Substack) carry a byline-link preamble that, handed to the judge raw, reads as "no usable summary" and forces a doomed full-page fetch behind a wall — flattening lets the title+summary stage judge from the feed body directly. The dedupe key is normally the resolved entry link, but a Medium item (`<guid>` of the form `medium.com/p/<hash>`) keys on that guid instead (`_dedupe_url`): Medium serves the same article under shifting link hosts (`medium.com/<pub>/` vs a publication custom domain like `netflixtechblog.com`), so the link forks the key and re-reminds when the host flips, while the `/p/<hash>` guid is invariant and 302-redirects to the live article. (The other historical fork, a `?source=` attribution param, is handled separately by `canonical.py`'s tracking-param stripping; the host shift is the residual cause the guid addresses.)
 - `scrape.py` — index-page scraping (`selectolax`).
 
 Discovery:

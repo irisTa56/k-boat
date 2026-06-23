@@ -3,6 +3,10 @@ feed-filter.db
 feed-filter.db-wal
 feed-filter.db-shm
 
+# Local seen-store backups (e.g. feed-filter.db.bak-YYYYMMDD plus their sqlite
+# -wal/-shm sidecars) — ad-hoc local snapshots, never committed.
+feed-filter.db.bak*
+
 # Python
 .venv/
 __pycache__/
