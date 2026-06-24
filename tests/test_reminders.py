@@ -106,10 +106,19 @@ def test_nonzero_exit_raises_unknown_list() -> None:
     assert "list not found" in excinfo.value.stderr
 
 
-def test_unparseable_output_raises() -> None:
-    runner = FakeRunner(FakeProc(returncode=0, stdout="not json"))
-    with pytest.raises(ReminderError, match="unparseable"):
-        add_reminder("T", "https://e.example.com/a", "n", runner=runner)
+def test_zero_exit_unparseable_output_returns_empty_id() -> None:
+    # A zero exit means the reminder was created; a body that is not JSON (rem
+    # add emits invalid JSON for an ASCII-double-quote title) must NOT raise —
+    # else the caller skips the seen-record and the next run re-creates it.
+    runner = FakeRunner(FakeProc(returncode=0, stdout='{"id": "x", "name": "a "b"}'))
+    assert add_reminder("T", "https://e.example.com/a", "n", runner=runner) == ""
+
+
+def test_zero_exit_missing_id_returns_empty_id() -> None:
+    # Valid JSON but no ``id`` key is likewise a created reminder with an
+    # unrecoverable id, not a failure.
+    runner = FakeRunner(FakeProc(returncode=0, stdout='{"name": "a"}'))
+    assert add_reminder("T", "https://e.example.com/a", "n", runner=runner) == ""
 
 
 def test_missing_binary_raises_reminder_error() -> None:

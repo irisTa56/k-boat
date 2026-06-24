@@ -8,9 +8,12 @@ Two invariants the rest of the pipeline relies on:
 - **A reminder always has a non-empty title.** ``rem add`` rejects an empty name,
   so a missing/blank title falls back to the source ``url`` (REQ-005). Scrape
   keeps and error fallbacks lean on this.
-- **A failed ``rem`` surfaces, never swallows.** A non-zero exit (e.g. the
-  ``Filtered Feeds`` list was renamed away, CON-004) raises ``ReminderError`` so
-  the caller does NOT then record the entry seen and silently lose it.
+- **The exit code is the success authority, not stdout.** A non-zero exit (e.g.
+  the ``Filtered Feeds`` list was renamed away, CON-004) raises ``ReminderError``
+  so the caller does NOT record the entry seen and silently lose it. A *zero*
+  exit means the reminder was created even when its stdout is unparseable: only
+  the id is lost, not the reminder, so the caller still records it seen rather
+  than re-creating it on a retry (the never-duplicated half). See ``add_reminder``.
 
 ``runner`` is injected (defaults to ``subprocess.run``) so tests assert the exact
 argv without touching Reminders.app. The ``Filtered Feeds`` list holds **only
@@ -38,10 +41,13 @@ Runner = Callable[..., Any]
 
 
 class ReminderError(Exception):
-    """A non-zero ``rem`` exit or unparseable output for one ``add``.
+    """A non-zero ``rem`` exit (or a ``rem`` that could not be executed) for one
+    ``add``.
 
     Carries the failing argv and captured stderr so the run summary can report
     *why* an entry could not be reminded (the list vanished, ``rem`` is missing).
+    A zero exit never raises this — an unparseable body there is a created
+    reminder with a lost id, not a failure (see ``add_reminder``).
     """
 
     def __init__(self, argv: list[str], returncode: int, stderr: str) -> None:
@@ -68,6 +74,16 @@ def add_reminder(
     channel can pass a bare title). A non-zero ``rem`` exit raises
     ``ReminderError`` (CON-004) — the caller must not record the entry seen.
 
+    The exit code, **not** stdout parseability, is the success signal: a zero
+    exit means ``rem`` already created the reminder (the side effect is done),
+    so a stdout that does not parse to an id is not a failure — it just costs us
+    the id. ``rem add -o json`` has been observed to emit invalid JSON when the
+    title carries an ASCII double quote (it does not escape it), which made the
+    parse raise *after* the reminder existed; the caller then skipped the
+    seen-record and the next run re-created the reminder — the very duplicate
+    this wrapper exists to prevent. So on a zero exit the id is parsed
+    best-effort and falls back to ``""`` (still a success), never raising.
+
     Arguments are passed as separate argv elements (never a shell string), so a
     title or note containing shell metacharacters is inert.
     """
@@ -92,12 +108,13 @@ def add_reminder(
         raise ReminderError(argv, 127, f"could not execute {REM_BINARY!r}: {exc}") from exc
     if proc.returncode != 0:
         raise ReminderError(argv, proc.returncode, proc.stderr or "")
+    # Zero exit = the reminder exists; never raise past here (see docstring). The
+    # id is best-effort: an unparseable body or a missing ``id`` key yields ``""``
+    # so the caller still records the entry seen and does not re-create it.
     try:
         return str(json.loads(proc.stdout)["id"])
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise ReminderError(
-            argv, proc.returncode, f"unparseable rem output: {proc.stdout!r}"
-        ) from exc
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return ""
 
 
 def open_reminder_urls(

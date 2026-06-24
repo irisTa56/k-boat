@@ -407,6 +407,46 @@ def test_remind_adds_then_records_atomically(
         assert is_seen(conn, canonical_url("https://e.example.com/a"))
 
 
+def test_remind_records_seen_when_rem_emits_unparseable_json(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The original duplicate bug: ``rem add`` created the reminder (exit 0) but
+    # emitted invalid JSON for a quote-bearing title, so the wrapper raised and
+    # ``cmd_remind`` skipped ``record`` — the next run re-created the reminder.
+    # Drive the real ``add_reminder`` through a runner whose stdout cannot be
+    # parsed, and assert the entry is still recorded seen (so it is not re-judged
+    # and re-reminded, REQ-009). The emitted id is empty (it was unrecoverable).
+    import feed_filter.reminders as rem_mod
+
+    def fake_runner(_argv: list[str], **_: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0, stdout='{"id": "x", "name": "a "b"}', stderr="")
+
+    monkeypatch.setattr(
+        cli,
+        "add_reminder",
+        lambda title, url, notes, **kw: rem_mod.add_reminder(title, url, notes, runner=fake_runner),
+    )
+
+    rc = cli.main(
+        [
+            "remind",
+            "--site-id",
+            "f1",
+            "--url",
+            "https://e.example.com/a",
+            "--title",
+            'T "quoted"',
+            "--notes",
+            "N",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out == {"id": "", "url": "https://e.example.com/a", "kept": True}
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert is_seen(conn, canonical_url("https://e.example.com/a"))
+
+
 def test_remind_does_not_record_when_add_raises(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1173,6 +1213,55 @@ def test_forum_remind_adds_then_records(
 
         assert is_post_seen(conn, FORUM_SITE_ID, 5001)
         assert op_interest_kept(conn, FORUM_SITE_ID, 1234) is None
+
+
+def test_forum_remind_records_post_when_rem_emits_unparseable_json(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The forum path shares the ``add_reminder`` contract: a zero-exit ``rem``
+    with unparseable stdout is a created reminder, so the post is still recorded
+    seen (FRM-CON-005) and is not re-reminded — the same duplicate guard as the
+    article path, on the second caller."""
+    import feed_filter.reminders as rem_mod
+
+    _add_forum_site()
+
+    def fake_runner(_argv: list[str], **_: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0, stdout='{"id": "x", "name": "a "b"}', stderr="")
+
+    monkeypatch.setattr(
+        cli,
+        "add_reminder",
+        lambda title, url, notes, *, list_name, **kw: rem_mod.add_reminder(
+            title, url, notes, list_name=list_name, runner=fake_runner
+        ),
+    )
+
+    rc = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            f"{FORUM_URL}/t/topic/1234",
+            "--title",
+            'My Topic "quoted"',
+            "--notes",
+            "Great post",
+        ]
+    )
+    assert rc == 0
+    out = _out(capsys)
+    assert out["id"] == ""
+    assert out["kept"] is True
+    with contextlib.closing(open_db(db_path())) as conn:
+        from feed_filter.forum_store import is_post_seen
+
+        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
 
 
 def test_forum_remind_suppresses_when_url_already_open(
