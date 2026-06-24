@@ -97,6 +97,18 @@ The review report is the durable, **user-facing** record of what each distillati
 So it carries **only the distillation knowledge** below, and is **written only on a run that distilled at least one source or Kindle book** (Phase B/C).
 A run that distilled nothing writes no report: there is nothing to consolidate, and its operational outcome (the Phase A lifecycle counts, dismissed discards and notebook retentions, anomalies, the "nothing ripe" status) lives in the run summary, not the vault.
 
+The first write of the run **creates the file with its frontmatter block** (see kboat-notes "Review note"), then appends the first `###` section; later writes in the same run append further sections only.
+
+```yaml
+---
+type: review
+date: <YYYY-MM-DD>
+read: false
+---
+```
+
+The block is **mandatory**: `type: review` is what `Reviews.base` filters on, so a report written without it drops out of the Base entirely. `read: false` is the human's read-tracking flag for the Base's Unread view; set `date` to the run date (the same as the filename). On a **replay** where the file already exists (a crash left it after the first section was written), append sections only — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
+
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
 ```markdown
