@@ -32,7 +32,8 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 
 - `Sources/` — one note per source. Each tracks one piece of content and its 1:1 notebook.
 - `PDFs/` — the downloaded file for each PDF source, named `<slug>.pdf` by the same URL-hash slug as its note. Only PDF sources have one; web-page sources do not. It is the reading copy (opened in Obsidian) and the file uploaded to NotebookLM.
-- `Reviews/` — one `YYYY-MM-DD.md` per run that distilled something, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary. A run that distilled nothing writes no file. Covers both source and Kindle distillation. See kboat-distill "Review report".
+- `Reviews/` — one `YYYY-MM-DD.md` per run that distilled something, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary. A run that distilled nothing writes no file. Covers both source and Kindle distillation. Carries a small `type: review`/`date`/`read` frontmatter block for the read-tracking Base (see "Review note"); the body layout is kboat-distill "Review report".
+- `Reviews.base` — a top-level standalone Base listing the review reports with their read flag (see "Review note").
 - `Reading Inbox.base` — a top-level standalone Base listing sources still to read (see below).
 - `Kindles/` — one `type: kindle` note per Kindle book, named by ASIN. No notebook; read on a Kindle and distilled from highlights pasted into the note body. See "Kindle note".
 - `Kindles.base` — a top-level standalone Base listing Kindle books (see "Kindle note").
@@ -352,6 +353,55 @@ views:
       - last_commit
     sort:
       - property: last_commit
+        direction: DESC
+```
+
+Column widths and other cosmetics are per-vault tweaks, as with the other Bases.
+
+## Review note (`Reviews/*.md`)
+
+A review report (`Reviews/YYYY-MM-DD.md`, written by kboat-distill — see its "Review report" for the body) is a plain Markdown document, not a schema'd note: it sits outside `kboat.schema`, so `kboat-note` never writes it and `kboat-validate` never checks it.
+It carries only a small frontmatter block, written once when the run first creates the file, to drive the read-tracking Base:
+
+```yaml
+---
+type: review
+date: <YYYY-MM-DD>
+read: false
+---
+```
+
+- `type: review` — the Base filter key, parallel to `source`/`kindle`/`repo`. It is also what keeps a report *in* the Base: the Base's top filter is `type == "review"`, so a report written without this block drops out of the Base entirely (not just the `read` column) — which is why the block is mandatory, see kboat-distill "Review report".
+- `date` — the run date, the same value as the filename; the Base's sort key (the filename is already a date, so date and filename order are identical, but a typed property is the explicit, robust key).
+- `read` — the **human's** read-tracking flag, the always-present boolean here. The routine writes it `false` and never reads or rewrites it; you toggle it (inline in the Base or in the note) once you have read the report. It is always present so the Base can filter `read != true` for an unread view, the same always-present-boolean rule the other Bases follow.
+
+### Review Base
+
+A standalone Base at the vault root, `Reviews.base`, over `type == "review"`, leading with an **Unread** view (`read != true`) so the default view on open is exactly "reports I have not read yet", followed by an **All** view. Both sort by the `date` property descending — newest first — and carry the `read` checkbox as the first column so the report can be ticked off inline. The reports are named by date, so the file name itself is the readable link column (no `title_link` formula needed) and `date` is the sort key only, not a second column.
+
+```yaml
+filters:
+  and:
+    - type == "review"
+views:
+  - type: table
+    name: Unread
+    filters:
+      and:
+        - read != true
+    order:
+      - read
+      - file.name
+    sort:
+      - property: date
+        direction: DESC
+  - type: table
+    name: All
+    order:
+      - read
+      - file.name
+    sort:
+      - property: date
         direction: DESC
 ```
 
