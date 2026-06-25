@@ -85,6 +85,9 @@ def test_ambiguous_dispositions() -> None:
 def test_blocked_must_have_no_notebook() -> None:
     assert "blocked_has_notebook" in _codes("source", _source(blocked=True, notebooklm_id="id"))
     assert "blocked_has_notebook" not in _codes("source", _source(blocked=True, notebooklm_id=None))
+    # A discarded notebook leaves `notebooklm_id: ""` (a blank string, not None);
+    # that is the empty/tombstone state, so a blocked source carrying it is clean.
+    assert "blocked_has_notebook" not in _codes("source", _source(blocked=True, notebooklm_id=""))
 
 
 def test_picked_is_web_only() -> None:
@@ -94,6 +97,14 @@ def test_picked_is_web_only() -> None:
 
 def test_web_page_needs_a_url() -> None:
     assert "web_missing_url" in _codes("source", _source(url=None))
+    # A blank url is as missing as a null one for a web page.
+    assert "web_missing_url" in _codes("source", _source(url="  "))
+
+
+def test_blank_string_in_required_field_is_empty() -> None:
+    # A required scalar hand-edited to a blank string is empty, not a valid value.
+    assert "empty_required" in _codes("source", _source(title=""))
+    assert "empty_required" in _codes("source", _source(source_type="  "))
 
 
 def test_valid_kindle_and_repo() -> None:

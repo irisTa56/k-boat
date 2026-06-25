@@ -48,6 +48,12 @@ class TestCooldown:
     def test_none_never_elapsed(self):
         assert cooldown_elapsed(None, TODAY) is False
 
+    def test_blank_never_elapsed(self):
+        # A blank string is no clock at all; it must not sort before the cutoff
+        # and read as instantly elapsed (which would discard a notebook early).
+        assert cooldown_elapsed("", TODAY) is False
+        assert cooldown_elapsed("   ", TODAY) is False
+
     def test_boundary_matches_constant(self):
         cutoff = date(2026, 6, 15)
         on_the_day = date(2026, 6, 15 - COOLDOWN_DAYS).isoformat()
@@ -250,6 +256,73 @@ class TestEmptinessFromFrontmatter:
         # hand-edit (an accepted trade-off, noted in core.py).
         assert self.from_fm(topics="[a, b]").topics_empty is True
 
+    def test_empty_string_notebooklm_id_parses_as_none(self):
+        # A discarded notebook clears the field to an empty string (`""`); the
+        # parser must normalise that (and a whitespace-only or bare value) to None
+        # so the `is None` predicates see "no live notebook". A real id survives.
+        assert (
+            Source.from_frontmatter("x", "Sources/x.md", {"notebooklm_id": ""}).notebooklm_id
+            is None
+        )
+        assert (
+            Source.from_frontmatter("x", "Sources/x.md", {"notebooklm_id": "   "}).notebooklm_id
+            is None
+        )
+        assert (
+            Source.from_frontmatter("x", "Sources/x.md", {"notebooklm_id": "nb-x"}).notebooklm_id
+            == "nb-x"
+        )
+
+
+class TestEmptyNotebookIdThroughParser:
+    """The dismiss/needs_summary work sets, exercised through `from_frontmatter`
+    with an empty-string `notebooklm_id` — the on-disk tombstone state (`""`) the
+    `make` helper cannot reproduce, since it sets the field directly. This is the
+    regression: a discarded dismiss tombstone was re-listed every run because the
+    parser kept `""` distinct from None."""
+
+    def from_fm(self, slug: str, **fields: Value) -> Source:
+        fm: dict[str, Value] = {"type": "source", "title": slug, **fields}
+        return Source.from_frontmatter(slug, f"Sources/{slug}.md", fm)
+
+    def test_dismiss_tombstone_counted_not_listed(self):
+        s = self.from_fm("a", dismiss=True, filed_date=RIPE_FILED, notebooklm_id="")
+        plan = compute_plan([s], TODAY)
+        assert plan.dismiss_discard == []
+        assert plan.counts["dismiss_discard"] == 0
+        assert plan.counts["dismiss_already_discarded"] == 1
+
+    def test_dismiss_with_live_notebook_still_listed(self):
+        s = self.from_fm("a", dismiss=True, filed_date=RIPE_FILED, notebooklm_id="nb-a")
+        plan = compute_plan([s], TODAY)
+        assert [s.slug for s in plan.dismiss_discard] == ["a"]
+        assert plan.counts["dismiss_already_discarded"] == 0
+
+    def test_empty_id_excluded_from_needs_summary(self):
+        s = self.from_fm("a", notebooklm_id="", summary="", topics=[])
+        plan = compute_plan([s], TODAY)
+        assert plan.needs_summary == []
+
+    def test_blank_filed_date_enters_cooldown_not_instantly_ripe(self):
+        # A blank `filed_date` is absent, not a date sorting before the cutoff:
+        # the dispositioned source is (re-)stamped by Phase A and awaits the
+        # cooldown, rather than being discarded/distilled immediately.
+        s = self.from_fm("a", distill=True, filed_date="")
+        plan = compute_plan([s], TODAY)
+        assert s.filed_date is None
+        assert plan.ripe == []
+        assert [s.slug for s in plan.phase_a_stamp] == ["a"]
+        assert plan.counts["awaiting_cooldown"] == 1
+
+    def test_blank_distilled_date_is_not_already_distilled(self):
+        # A blank `distilled_date` means not yet distilled; a ripe distill source
+        # carrying it must still be ripe, not silently counted as done.
+        s = self.from_fm("a", distill=True, filed_date=RIPE_FILED, distilled_date="")
+        plan = compute_plan([s], TODAY)
+        assert s.distilled_date is None
+        assert [s.slug for s in plan.ripe] == ["a"]
+        assert plan.counts["already_distilled"] == 0
+
 
 def make_kindle(slug: str, **over: object) -> Kindle:
     base: dict[str, object] = {
@@ -278,6 +351,18 @@ class TestKindle:
     def test_no_cooldown_unlike_source(self):
         # A source filed today is not ripe; a Kindle marked distill is ripe at once.
         assert make_kindle("a", distill=True).is_ripe is True
+
+    def test_blank_distilled_date_through_parser_is_ripe(self):
+        # Re-distilling a Kindle book means a human clears `distilled_date`
+        # (kboat-notes); cleared to a blank string it must read as not-distilled,
+        # so the book is ripe again. `make_kindle` bypasses the parser, so this
+        # goes through `from_frontmatter` where the normalisation lives.
+        kindle = Kindle.from_frontmatter(
+            "a", "Kindles/a.md", {"type": "kindle", "distill": True, "distilled_date": ""}
+        )
+        assert kindle.distilled_date is None
+        assert kindle.is_ripe is True
+        assert select_ripe_kindles([kindle]) == [kindle]
 
 
 class TestCounts:

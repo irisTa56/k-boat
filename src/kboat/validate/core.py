@@ -33,7 +33,12 @@ class Violation:
 
 
 def _is_empty(value: Value) -> bool:
-    return value is None or value == []
+    # A blank string counts as empty, matching how a cleared field reads back
+    # elsewhere (e.g. lifecycle's `notebooklm_id`/`summary` emptiness): a
+    # discarded notebook leaves `notebooklm_id: ""`, which must still satisfy the
+    # blocked-source invariant (empty notebook) and trip `empty_required` for a
+    # required field hand-edited to "".
+    return value is None or value == [] or (isinstance(value, str) and not value.strip())
 
 
 def _kind_violation(f: Field, value: Value) -> str | None:

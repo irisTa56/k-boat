@@ -31,6 +31,22 @@ from .notes import Value
 COOLDOWN_DAYS = 7
 
 
+def _nonblank(value: Value) -> str | None:
+    """A frontmatter scalar treated as absent unless it is a string carrying
+    non-whitespace, so every downstream `is None` predicate agrees on emptiness.
+
+    A cleared field can read back as a blank string rather than a bare key — the
+    project parser preserves a quoted/whitespace empty (`notebooklm_id: ""` left
+    by a discarded notebook; a `filed_date`/`distilled_date` hand-cleared to re-run
+    the lifecycle) — which a plain `is None` test would miss: wrongly keeping a
+    tombstone as a live notebook (`dismiss_already_discarded`, `needs_summary`), or
+    making a blank date sort before the cooldown cutoff and read as instantly ripe
+    / already distilled. Shared by `Source` and `Kindle` so the two kinds cannot
+    drift on what "empty" means.
+    """
+    return value if isinstance(value, str) and bool(value.strip()) else None
+
+
 @dataclass(frozen=True)
 class Source:
     slug: str
@@ -74,9 +90,9 @@ class Source:
             keep=boolean("keep"),
             dismiss=boolean("dismiss"),
             blocked=boolean("blocked"),
-            filed_date=text("filed_date"),
-            distilled_date=text("distilled_date"),
-            notebooklm_id=text("notebooklm_id"),
+            filed_date=_nonblank(fm.get("filed_date")),
+            distilled_date=_nonblank(fm.get("distilled_date")),
+            notebooklm_id=_nonblank(fm.get("notebooklm_id")),
             summary_empty=not (isinstance(summary, str) and bool(summary.strip())),
             topics_empty=not (
                 isinstance(topics, list) and any(isinstance(t, str) and t.strip() for t in topics)
@@ -111,9 +127,12 @@ def cooldown_elapsed(filed_date: str | None, today: date) -> bool:
     """True once `filed_date` is at least COOLDOWN_DAYS old.
 
     ISO `YYYY-MM-DD` strings compare lexicographically in chronological order,
-    so a string compare against the cutoff is exact.
+    so a string compare against the cutoff is exact. A missing or blank
+    `filed_date` is no clock at all — the cooldown has not elapsed (a blank
+    string would otherwise sort before any cutoff and read as instantly ripe,
+    discarding the notebook before the cooldown ever ran).
     """
-    if filed_date is None:
+    if filed_date is None or not filed_date.strip():
         return False
     cutoff = (today - timedelta(days=COOLDOWN_DAYS)).isoformat()
     return filed_date <= cutoff
@@ -226,7 +245,10 @@ class Kindle:
             path=path,
             title=text("title"),
             distill=fm.get("distill") is True,
-            distilled_date=text("distilled_date"),
+            # `distilled_date` gates `is_ripe`/`kindles_already_distilled` via an
+            # `is None` check; a human clears it to re-distill (kboat-notes), so a
+            # blank `""` must normalise to None like the source dates above.
+            distilled_date=_nonblank(fm.get("distilled_date")),
         )
 
     @property
