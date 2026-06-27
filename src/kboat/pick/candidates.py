@@ -4,10 +4,11 @@ A candidate is a readable, undispositioned web-page source: the same set the
 Reading Inbox "Web" view shows. The daily pick only ever surfaces web pages
 (anything you are already mid-read appears in the Today view via `reading`,
 whatever its type), so PDFs are excluded here. Each candidate carries the
-durable `summary`/`topics` the ranker reads to judge relevance against the
-interests inferred from the recent Daily notes, plus `added_date` for the daily
-pick's diversification preference (one older + one newer — see kboat-notes
-"Daily pick").
+durable `summary`/`topics` the ranker reads for the local pre-filter, plus
+`added_date` for the diversification preference (one older + one newer) and
+`notebooklm_id` so the ranker can fetch the shortlist's NotebookLM fulltext for
+the body-read final judgment (see kboat-notes "Daily pick"). The id may be empty
+(a candidate whose notebook is gone), which the ranker treats as un-fetchable.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ class Candidate:
     summary: str
     topics: list[str]
     added_date: str
+    notebooklm_id: str
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -50,6 +52,7 @@ class Candidate:
             "summary": self.summary,
             "topics": self.topics,
             "added_date": self.added_date,
+            "notebooklm_id": self.notebooklm_id,
         }
 
 
@@ -71,4 +74,5 @@ def candidate_from(slug: str, rel_path: str, fm: dict[str, Value]) -> Candidate:
         summary=_as_str(fm.get("summary")),
         topics=_as_list(fm.get("topics")),
         added_date=_as_str(fm.get("added_date")),
+        notebooklm_id=_as_str(fm.get("notebooklm_id")),
     )
