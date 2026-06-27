@@ -41,6 +41,7 @@ def test_candidate_extraction_defaults_missing_fields() -> None:
         summary="S",
         topics=["a", "b"],
         added_date="2026-06-01",
+        notebooklm_id="nb-1",
     )
     c = candidate_from("slug1", "Sources/slug1.md", fm)
     assert c.to_json() == {
@@ -52,7 +53,10 @@ def test_candidate_extraction_defaults_missing_fields() -> None:
         "summary": "S",
         "topics": ["a", "b"],
         "added_date": "2026-06-01",  # the diversification key (one older + one newer)
+        "notebooklm_id": "nb-1",  # Stage 2 resolves the fulltext through this notebook
     }
-    # Missing optional fields coerce to empty, never None, so the JSON is stable.
+    # Missing optional fields coerce to empty, never None, so the JSON is stable. An
+    # empty notebooklm_id (notebook gone) is the ranker's "un-fetchable" signal.
     bare = candidate_from("s", "Sources/s.md", _fm())
     assert bare.summary == "" and bare.topics == [] and bare.added_date == ""
+    assert bare.notebooklm_id == ""
