@@ -34,7 +34,14 @@ def test_rejects_any_disposition_or_blocked() -> None:
 
 
 def test_candidate_extraction_defaults_missing_fields() -> None:
-    fm = _fm(title="T", url="https://x", reading_link="https://x", summary="S", topics=["a", "b"])
+    fm = _fm(
+        title="T",
+        url="https://x",
+        reading_link="https://x",
+        summary="S",
+        topics=["a", "b"],
+        added_date="2026-06-01",
+    )
     c = candidate_from("slug1", "Sources/slug1.md", fm)
     assert c.to_json() == {
         "slug": "slug1",
@@ -44,7 +51,8 @@ def test_candidate_extraction_defaults_missing_fields() -> None:
         "reading_link": "https://x",
         "summary": "S",
         "topics": ["a", "b"],
+        "added_date": "2026-06-01",  # the diversification key (one older + one newer)
     }
     # Missing optional fields coerce to empty, never None, so the JSON is stable.
     bare = candidate_from("s", "Sources/s.md", _fm())
-    assert bare.summary == "" and bare.topics == []
+    assert bare.summary == "" and bare.topics == [] and bare.added_date == ""

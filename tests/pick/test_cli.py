@@ -65,6 +65,9 @@ def test_candidates_lists_only_active_web_plus_daily_notes(
     assert out["daily_notes"] == [{"date": "2026-06-04", "body": "curious about agentic workflows"}]
     assert out["counts"]["daily_note_days"] == 1
     assert out["candidates"][0]["topics"] == ["topic-web1"]
+    # `added_date` (the diversification key) survives the parser → candidate → JSON
+    # round-trip, so the ranker can split the pool into older and newer halves.
+    assert out["candidates"][0]["added_date"] == "2026-06-01"
     assert out["lookback_days"] == 14  # default window
 
 

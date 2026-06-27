@@ -5,7 +5,9 @@ Reading Inbox "Web" view shows. The daily pick only ever surfaces web pages
 (anything you are already mid-read appears in the Today view via `reading`,
 whatever its type), so PDFs are excluded here. Each candidate carries the
 durable `summary`/`topics` the ranker reads to judge relevance against the
-interests inferred from the recent Daily notes.
+interests inferred from the recent Daily notes, plus `added_date` for the daily
+pick's diversification preference (one older + one newer — see kboat-notes
+"Daily pick").
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ class Candidate:
     reading_link: str
     summary: str
     topics: list[str]
+    added_date: str
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -46,6 +49,7 @@ class Candidate:
             "reading_link": self.reading_link,
             "summary": self.summary,
             "topics": self.topics,
+            "added_date": self.added_date,
         }
 
 
@@ -66,4 +70,5 @@ def candidate_from(slug: str, rel_path: str, fm: dict[str, Value]) -> Candidate:
         reading_link=_as_str(fm.get("reading_link")),
         summary=_as_str(fm.get("summary")),
         topics=_as_list(fm.get("topics")),
+        added_date=_as_str(fm.get("added_date")),
     )
