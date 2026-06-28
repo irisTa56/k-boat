@@ -143,6 +143,29 @@ def test_github_fields_handles_missing_optional() -> None:
     assert fields["status"] == "unknown"  # no pushedAt
 
 
+def test_gather_routes_blob_pdf_to_source_file() -> None:
+    # A blob `.pdf` link is a PDF source, not the repo: gather returns the
+    # source-file verdict with the rewritten raw URL, never touching `gh`.
+    out = gather(
+        "https://github.com/junhuihuang/ebooks/blob/master/Ray%20v2%20Architecture.pdf",
+        today=TODAY,
+    )
+    assert out == {
+        "status": "source-file",
+        "source_type": "pdf",
+        "url": "https://raw.githubusercontent.com/junhuihuang/ebooks/master/Ray%20v2%20Architecture.pdf",
+    }
+
+
+def test_gather_routes_blob_md_to_web_source_file() -> None:
+    out = gather("https://github.com/o/r/blob/main/README.md", today=TODAY)
+    assert out == {
+        "status": "source-file",
+        "source_type": "web_page",
+        "url": "https://github.com/o/r/blob/main/README.md",
+    }
+
+
 def test_gather_injects_today_into_status(monkeypatch) -> None:
     # pushedAt is 2026-06-01; against a far-future `today` the same payload is
     # `dormant`, proving `gather` uses the injected date, not the wall clock.

@@ -20,7 +20,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 - Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke them bare (`notebooklm`, `kboat-lifecycle`, `kboat-repos`): it loads `.env` over `mise.toml`'s defaults and puts both the venv (the `kboat-*` scripts) and the mise tools (`notebooklm`) on `PATH`. Re-run it per block — the Bash tool keeps no state. See kboat-notes "Environment" for the full mechanism.
 - Reminders are read with the `rem` CLI (macOS Reminders).
-  - The ingest queue is the `K-Boat Queue` list. A GitHub repo URL in it is routed to the repo catalogue, not the source path.
+  - The ingest queue is the `K-Boat Queue` list. A GitHub repo URL in it is routed to the repo catalogue, not the source path — except a blob/raw link to a readable file (`.pdf` or `.md`), which `gather` carves out to the source path as a `source-file` (a `.pdf` rewritten to its raw download URL and ingested as a PDF, a `.md` normalized to its rendered blob page and read as a web page).
   - The daily pick's open-questions backlog is the `K-Boat Queue`-parallel `K-Boat Questions` list; the pick reads its unresolved items, never writes them.
 - GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
 - Distillation writes to a Basic Memory project (`k-boat-knowledge`) rooted at `KBOAT_KNOWLEDGE_PATH`, via its MCP tools.
@@ -49,7 +49,7 @@ Eight skills, all under `.claude/skills/`:
 
 - `kboat-notes` — the single source of truth for note conventions: the source-, Kindle-, and repo-note frontmatter schemas, naming, the lifecycle state machines, the reading inbox, Kindle, and Repos Bases, and where concept notes live.
   - Read this skill before touching any note format.
-- `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos` instead.
+- `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos` instead, but a GitHub blob/raw `.pdf`/`.md` file link stays a source (`gather`'s `source-file` carve-out).
   - It defers to `kboat-notes` for the schema and file writing.
 - `kboat-repos` — non-interactive: catalogues a GitHub repository (`type: repo`) — fetches metadata via `gh`, judges role/domain/summary with a cheap subagent — and refreshes the catalogue's metadata.
   - It defers to `kboat-notes` for the repo schema and to the `kboat-repos` tool for the deterministic fetch/refresh.

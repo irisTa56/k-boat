@@ -34,7 +34,7 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as
 The detailed conventions and procedures live in skills, so they are documented once and reused by every entry point.
 
 - [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — the note schema and conventions: source-, Kindle-, and repo-note frontmatter, naming, the lifecycle state machines, the reading inbox, Kindle, and Repos Bases, and where concept notes live.
-- [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead.
+- [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
 - [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph. It defers to the Basic Memory skills for the concept-note conventions.
