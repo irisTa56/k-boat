@@ -283,6 +283,8 @@ Lists (`language`, `topics`, `domain`) are written **inline** (flow style, `topi
 
 A repo's identity is its `owner/repo`, which GitHub keeps unique. Queued links vary (a `.git` suffix, a trailing slash, a deep link into `/tree`, `/blob`, `/issues`), and GitHub 301-redirects renamed/transferred/wrong-case URLs — so the **authoritative** identity is the one `gh` resolves, not the queued text. `gather`/`refresh` re-key off `gh`'s `owner.login`/`name`. Then:
 
+One carve-out before the repo path: a `blob`/`raw` link to a readable file — a `.pdf` or a `.md` — is a **source**, not the repo. `gather` (via `kboat.repos.identity.github_file_source`) detects it and returns `status: "source-file"` with a `source_type` and the URL to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, since the blob page is HTML; a `.md` normalized to its rendered blob page, read as an article — both canonical, so a `refs/heads/…` permalink and the plain link de-dup to one source), and `kboat-ingest` routes it to the source path instead. Every other deep link (`/tree`, `/issues`, another file extension) still collapses to the repo below.
+
 1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
 2. Slug = first 12 hex of its SHA-256, same recipe as a source: `printf '%s' "<canonical-url>" | shasum -a 256 | cut -c1-12`. The file is `Repos/<slug>.md`.
 
@@ -619,6 +621,8 @@ This is the web-page path. For a PDF source, follow "Procedure: ingest a PDF sou
 ## Procedure: ingest a PDF source
 
 A PDF source is read inside Obsidian (the vault syncs to every device) and uploaded into its own notebook as a file, so neither Google Drive nor Google Play Books is involved — Play Books has no personal-upload API, and adding Drive buys nothing once Play Books is out. The `url` is still the canonical de-dup key, so step 1 below runs the same de-dup as "create or update a source note"; only the later steps differ.
+
+One source reaches this path with its type already decided: a GitHub blob/raw `.pdf` link, which `gather` routes here as `source-file` (`source_type: pdf`) with `url` already rewritten to its `raw.githubusercontent.com` download URL (see "Naming and de-dup" under the repo schema). That rewritten raw URL is the source's `url` throughout — the de-dup slug, the download, and the stored provenance — so the byte-sniff below is confirmation (the raw URL serves `%PDF-`), not the type decision. Every other PDF is decided by the sniff.
 
 A source is a PDF when fetching its `url` yields PDF bytes, not HTML — decide this in kboat-ingest before choosing a path. Do **not** use HEAD: bot-protected hosts answer HEAD with 403/405, and a plain `curl` (default User-Agent) is served an HTML challenge instead of the file. Fetch with a GET (no `Range` header — a range request can itself trigger a challenge) and a browser `User-Agent` (a current Chrome UA string), then judge by the response — the bytes first, and for an HTML body whether it is a real page or a bot challenge:
 

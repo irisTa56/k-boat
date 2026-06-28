@@ -16,7 +16,7 @@ import subprocess
 import sys
 from datetime import date
 
-from .identity import canonical_slug, canonical_url, parse_repo
+from .identity import canonical_slug, canonical_url, github_file_source, parse_repo
 from .status import derive_status
 
 # `gh repo view --json` field set we read. `name`/`owner` echo the resolved repo
@@ -156,6 +156,15 @@ def gather(url: str, *, today: date) -> dict:
     `today` is injected (not read from the clock here) so `status` is reproducible
     and testable — matching `github_fields`, `derive_status`, and `refresh`.
     """
+    # A blob/raw link to a readable file (a `.pdf` or `.md`) is a source, not the
+    # repo: hand it back for the source path with the type already decided and the
+    # URL fixed up (`.pdf` rewritten to its raw download URL). This is checked
+    # before `parse_repo`, which would otherwise truncate the deep link to the
+    # repo and catalogue the whole repository.
+    file_src = github_file_source(url)
+    if file_src:
+        source_type, src_url = file_src
+        return {"url": src_url, "status": "source-file", "source_type": source_type}
     owner, repo = parse_repo(url)
     if not owner or not repo:
         return {"url": url, "status": "skip-not-a-repo"}
