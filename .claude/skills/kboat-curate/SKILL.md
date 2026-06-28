@@ -1,12 +1,12 @@
 ---
 name: kboat-curate
-description: On-demand maintenance of the K-Boat knowledge base (the `k-boat-knowledge` Basic Memory project) — curate the concept graph and check the concept-note tags for drift and gaps. Use when the user wants to tidy or organize the knowledge base, says things like "curate the KB", "整理して", "check the tags", "タグの揺れを確認", "find orphans / duplicates", "are the tags consistent", or otherwise asks for a knowledge-graph health pass. Read-mostly; it writes only on confirmation. Defers to memory-curate for the generic graph mechanics, to the KB's `meta/Tag vocabulary` note for the canonical tags, and to kboat-notes for the concept-note conventions.
+description: On-demand maintenance of the K-Boat knowledge base (the `k-boat-knowledge` Basic Memory project) — curate the concept graph and check the concept-note tags for drift and gaps. Use when the user wants to tidy or organize the knowledge base, says things like "curate the KB", "tidy the knowledge base", "check the tags", "are the tags consistent", "find orphans / duplicates", or otherwise asks for a knowledge-graph health pass. Read-mostly; it writes only on confirmation. Defers to memory-curate for the generic graph mechanics, to the KB's `meta/Tag vocabulary` note for the canonical tags, and to kboat-notes for the concept-note conventions.
 ---
 
 # K-Boat curate
 
 The on-demand maintenance pass for the **knowledge base** — the distilled concept notes in the Basic Memory project `k-boat-knowledge`, rooted at `KBOAT_KNOWLEDGE_PATH`.
-It does two things: curate the concept **graph** (orphans, duplicates, naming, relations, sparse notes) and check the concept-note **tags** for drift (表記揺れ) and gaps (漏れ).
+It does two things: curate the concept **graph** (orphans, duplicates, naming, relations, sparse notes) and check the concept-note **tags** for drift and gaps.
 
 This skill is run by a human when they want to tidy the KB; the unattended `kboat-routine` does not run it.
 It is the agreed home for tag-drift **detection**: the write-time guard in kboat-distill (reuse-first against the vocabulary) prevents most drift, and this pass is the backstop that sweeps what slips through, so the routine carries no separate tag check.
@@ -57,12 +57,12 @@ The canonical tag set and the variant→canonical aliases live in the KB as the 
 
    This assumes the block-style `tags:` form every concept note uses; a note written with an inline array (`tags: [a, b]`) would not be counted, so a surprisingly low total is the cue to check for that form.
 
-2. **Drift (表記揺れ).** Compare the census against the vocabulary note:
+2. **Drift.** Compare the census against the vocabulary note:
    - A tag listed under the vocabulary's **Avoid** column → fold it to its canonical form. When the canonical is already on the same note, just drop the variant; otherwise replace it.
    - A tag **not** in the canonical set and not a known alias → a candidate. Judge by the note's content: a typo or near-duplicate of an existing tag is folded (and added to the Aliases table in `meta/Tag vocabulary`); a genuinely new facet is **adopted** — add it to the vocabulary note under the right family in the same change.
    - Leave the "Distinct by design" tags alone (e.g. the three `distributed-*`; `latency`/`throughput` vs `performance`).
 
-3. **Coverage (漏れ).** List the concept notes with no `tags:` block:
+3. **Coverage.** List the concept notes with no `tags:` block:
 
    ```bash
    for f in "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md; do grep -q '^tags:' "$f" || echo "$f"; done
