@@ -10,6 +10,7 @@ def _fm(**over: Value) -> dict[str, Value]:
     base: dict[str, Value] = {
         "type": "source",
         "source_type": "web_page",
+        "reading": False,
         "distill": False,
         "keep": False,
         "dismiss": False,
@@ -31,6 +32,12 @@ def test_rejects_pdf_and_non_source() -> None:
 def test_rejects_any_disposition_or_blocked() -> None:
     for flag in ("distill", "keep", "dismiss", "blocked"):
         assert is_active_web(_fm(**{flag: True})) is False
+
+
+def test_rejects_in_progress_reading() -> None:
+    # An in-progress read already shows in the Today view via `reading`, so it is
+    # excluded from the pick candidate set (strict subset of the Web inbox view).
+    assert is_active_web(_fm(reading=True)) is False
 
 
 def test_candidate_extraction_defaults_missing_fields() -> None:
