@@ -69,6 +69,8 @@ A topic first seen in `latest.rss` is upgraded to poll-eligible (one-directional
 Watch/poll schedule (FRM-007): each poll-eligible topic is polled only at `poll_offsets_days` (default `[0, 1, 7]`) from first-seen.
 A missed/offline run is caught up at the next run; several elapsed offsets collapse into one poll.
 A topic retires after its last offset (`completed_polls >= len(offsets)`).
+A topic whose JSON returns a permanent 404/410 (deleted/gone) advances its poll anyway, so a dead topic drains toward retirement instead of re-fetching every run; a transient error (throttle/5xx/transport) does not advance and re-polls next run (FRM-CON-005).
+A momentary 404 advances only one offset and self-corrects on the next successful poll, so the default `[0, 1, 7]` schedule tolerates a transient blip; a single-offset schedule (`[0]`) has no such tolerance — one 404 retires the topic, and retirement is not reversible.
 
 The two rules (FRM-002/003):
 

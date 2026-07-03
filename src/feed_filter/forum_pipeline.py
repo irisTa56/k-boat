@@ -20,12 +20,14 @@ Two public entry points:
     ``RuleBCandidate`` carrying the trigger posts and threshold.  Also returns a
     **finalize worklist** (``GatherForumResult.polled_topics``) — one
     ``PolledTopic`` per due topic whose JSON was successfully fetched and parsed,
-    including short-circuited topics and topics with no qualifying posts (but NOT
-    topics whose fetch raised ``FetchError``).  This worklist is the seam the CLI
+    including short-circuited topics and topics with no qualifying posts (and a
+    topic whose fetch raised a *permanent* ``FetchError`` — 404/410 — so a deleted
+    topic retires rather than re-polling forever; but NOT a topic whose fetch
+    raised a *transient* error, which must re-poll).  This worklist is the seam the CLI
     needs to call ``finalize_poll`` after candidates are dispositioned, without
-    ever calling ``finalize_poll`` for a topic whose fetch failed (FRM-CON-005 /
-    FRM-007 — see Phase 5 review note: topics whose poll records are not advanced
-    would re-poll every run, growing the watch set unboundedly).  Performs **no
+    ever calling ``finalize_poll`` for a topic whose fetch failed transiently
+    (FRM-CON-005 / FRM-007 — see Phase 5 review note: topics whose poll records are
+    not advanced would re-poll every run, growing the watch set unboundedly).  Performs **no
     writes** to the DB (FRM-CON-005 / FRM-PAT-001); the record/finalize path
     (Phase 5 CLI) writes ``forum_post_seen`` and advances ``completed_polls``
     after all posts are dispositioned.  A topic-level ``FetchError`` is absorbed
@@ -38,7 +40,8 @@ Design constraints honoured here:
 - FRM-CON-004: fetch-minimization short-circuit documented inline.
 - FRM-CON-005: never-lost over never-duplicated; error absorbing; no writes in gather.
 - FRM-007: ``polled_topics`` worklist enables offset-only retirement without
-  advancing polls for topics whose JSON fetch failed.
+  advancing polls for topics whose JSON fetch failed transiently; a permanent
+  404/410 does advance, so a deleted topic retires instead of re-polling forever.
 - FRM-GUD-001: all HTTP calls through ``fetch.fetch`` / ``FetchError``.
 - FRM-GUD-002: ``parse_feed(sort=False)`` keeps top-feed rank order.
 - FRM-GUD-003: ``canonical.canonical_url`` for topic URLs.
@@ -73,6 +76,23 @@ from feed_filter.discourse import (
 from feed_filter.feeds import parse_feed
 from feed_filter.fetch import FetchError, fetch
 from feed_filter.sites import SiteConfig
+
+# HTTP statuses that mark a topic permanently unfetchable. A deleted Discourse
+# topic returns 404 for its ``/t/<id>.json`` indefinitely (observed in the wild:
+# the same topic 404'd on every run for weeks); 410 Gone is the HTTP-standard
+# "permanently gone" signal. Unlike a throttle / 5xx / transport failure — which
+# must re-poll next run (FRM-CON-005, never-lost) — these advance the poll so the
+# dead topic retires via the offset schedule (FRM-007) instead of being re-fetched
+# and re-dismissed every run in perpetuity.
+#
+# Transient-404 tolerance: a momentary 404 (e.g. a topic briefly unroutable during
+# a Discourse deploy) advances only ONE offset and self-corrects on the next
+# successful poll; wrongly retiring a still-live topic would take its remaining
+# offsets to each 404 in turn. Under the default [0, 1, 7] schedule that tolerance
+# is ample; a single-offset schedule has none (one 404 retires) — see FRM-007 in
+# ARCHITECTURE.md. Retirement is not reversible (``admit_topic`` never un-retires),
+# which is why the multi-offset default matters.
+_PERMANENT_FETCH_STATUSES = frozenset({404, 410})
 
 # ---------------------------------------------------------------------------
 # Candidate dataclasses (TASK-017)
@@ -148,10 +168,14 @@ class PolledTopic:
     Carried in ``GatherForumResult.polled_topics``; this is the **finalize
     worklist** the Phase 5 CLI uses to call ``forum_store.finalize_poll`` after
     all of a topic's candidates are dispositioned (FRM-CON-005).  Topics whose
-    fetch raised ``FetchError`` are excluded — their polls must not be advanced
-    (they will re-poll next run).  Short-circuited topics and topics with no
-    qualifying posts ARE included: they still need ``finalize_poll`` so
-    ``completed_polls`` advances and they eventually retire (FRM-007).
+    fetch raised a *transient* ``FetchError`` are excluded — their polls must not
+    be advanced (they will re-poll next run).  Short-circuited topics and topics
+    with no qualifying posts ARE included: they still need ``finalize_poll`` so
+    ``completed_polls`` advances and they eventually retire (FRM-007).  A topic
+    whose fetch raised a *permanent* ``FetchError`` (404/410 — a deleted/gone
+    topic) is ALSO included, carrying its stored ``like_count`` (no fresh parse),
+    so offset-only retirement drains it instead of re-polling a dead topic every
+    run forever.
     """
 
     topic_id: int
@@ -362,12 +386,15 @@ def gather_forum(
     circuited or has qualifying posts), append a ``PolledTopic`` to the
     ``GatherForumResult.polled_topics`` finalize worklist (FRM-007 / FRM-CON-005
     — Phase 5 review seam: the CLI needs the freshly-parsed ``like_count`` to
-    call ``finalize_poll``; topics that raised ``FetchError`` are excluded so
-    their poll is not advanced, and they re-poll next run without loss).
+    call ``finalize_poll``; topics that raised a *transient* ``FetchError`` are
+    excluded so their poll is not advanced, and they re-poll next run without loss).
 
-    A topic-level ``FetchError`` is absorbed into ``error`` and records nothing
-    (FRM-CON-005: the topic will be re-polled next run).  Processing continues
-    for remaining due topics.
+    A topic-level ``FetchError`` is absorbed into ``error``.  A *permanent* error
+    (``status`` 404/410 — a deleted/gone topic) still appends a ``PolledTopic``
+    (carrying the stored ``last_like_count``, or 0 if never polled) so the topic
+    advances toward offset-only retirement instead of re-fetching a dead topic
+    every run forever.  A *transient* error records nothing (FRM-CON-005: the
+    topic will be re-polled next run).  Processing continues for remaining topics.
 
     Writes nothing to the DB.  The CLI skill calls ``forum-remind`` /
     ``forum-mark-seen`` per post and ``forum-poll-done`` per topic (Phase 5)
@@ -400,9 +427,23 @@ def gather_forum(
             fetch_count += 1
             json_bytes = fetch(topic_json_url(forum_url, topic_id), client=client).content
         except FetchError as exc:
-            # Absorb per-topic failure; nothing recorded (FRM-CON-005).
-            # Do NOT append to polled_topics — the poll must not be advanced for
-            # a topic whose JSON fetch failed (it will re-poll next run).
+            if exc.status in _PERMANENT_FETCH_STATUSES:
+                # A deleted/gone topic (404/410) will never fetch again. Advance
+                # its poll so offset-only retirement (FRM-007) eventually retires
+                # it, instead of re-fetching a dead topic every run forever. There
+                # are no posts to disposition; carry the stored like_count forward
+                # (the FRM-CON-004 short-circuit value is moot once retired). The
+                # message names the topic so a bounded, self-describing retirement
+                # notice is distinguishable from an actionable site outage.
+                last = row["last_like_count"]
+                polled_topics.append(
+                    PolledTopic(topic_id=topic_id, like_count=last if last is not None else 0)
+                )
+                errors.append(f"retiring dead topic {topic_id}: {exc}")
+                continue
+            # Transient failure (throttle / 5xx / transport): absorb and re-poll
+            # next run. Do NOT append to polled_topics — the poll must not advance
+            # for a topic whose fetch may yet succeed (FRM-CON-005, never-lost).
             errors.append(str(exc))
             continue
 

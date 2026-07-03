@@ -659,7 +659,11 @@ def test_gather_forum_short_circuit_does_not_fire_on_first_poll(conn: sqlite3.Co
 
 
 def test_gather_forum_json_error_absorbed(conn: sqlite3.Connection) -> None:
-    """A FetchError on a topic JSON is absorbed into error; other topics continue (FRM-CON-005)."""
+    """A *transient* FetchError is absorbed into error and does NOT advance the poll.
+
+    A 503 is retryable: the topic must re-poll next run, so it is excluded from the
+    finalize worklist (no PolledTopic) — never-lost (FRM-CON-005 / FRM-007).
+    """
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
 
     _admit_and_make_due(conn, 1234)
@@ -672,6 +676,145 @@ def test_gather_forum_json_error_absorbed(conn: sqlite3.Connection) -> None:
 
     assert result.error is not None
     assert result.candidates == []
+    assert result.polled_topics == [], "a transient error must not advance the poll"
+
+
+def test_gather_forum_permanent_404_advances_poll_for_retirement(
+    conn: sqlite3.Connection,
+) -> None:
+    """A *permanent* 404 (deleted topic) advances the poll so it retires (FRM-007).
+
+    Unlike a transient error, a deleted topic will never fetch again — leaving it
+    unadvanced re-fetches it every run forever. It is emitted as a PolledTopic
+    (carrying its stored like_count, or 0 if never polled) so offset-only
+    retirement drains it; it produces no candidate.
+    """
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+
+    _admit_and_make_due(conn, 1234)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")
+
+    with _client_from_handler(handler) as client:
+        result = gather_forum(conn, site, client=client, now=NOW)
+
+    assert result.candidates == []
+    assert result.error is not None, "a retirement notice is still surfaced"
+    assert [pt.topic_id for pt in result.polled_topics] == [1234]
+    assert result.polled_topics[0].like_count == 0, "no stored count → 0"
+
+
+def test_gather_forum_permanent_and_transient_in_one_run_dont_interfere(
+    conn: sqlite3.Connection,
+) -> None:
+    """In one gather, a permanent-404 topic advances but a transient one does not.
+
+    Locks the branch split: only the deleted topic is finalized (retires), while
+    the transiently-failing topic is withheld so it re-polls next run
+    (FRM-CON-005). Both failures are surfaced in ``error``. The transient arm uses
+    a transport error (``FetchError.status is None``) — it both covers the
+    ``None``-status branch and avoids the real retry back-off a 5xx would incur.
+    """
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+
+    # Two due topics; due_topics orders by first_seen_at ASC, topic_id ASC.
+    _admit_and_make_due(conn, 1111)  # permanent 404 (deleted)
+    _admit_and_make_due(conn, 2222)  # transient transport failure (status=None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/t/1111.json":
+            return httpx.Response(404, text="not found")
+        if request.url.path == "/t/2222.json":
+            raise httpx.ConnectError("connection refused")
+        return httpx.Response(404, text="not found")
+
+    with _client_from_handler(handler) as client:
+        result = gather_forum(conn, site, client=client, now=NOW)
+
+    assert [pt.topic_id for pt in result.polled_topics] == [1111], (
+        "only the permanently-deleted topic advances toward retirement"
+    )
+    assert result.candidates == []
+    assert result.error is not None
+    assert "1111" in result.error and "2222" in result.error, "both failures surfaced"
+
+
+def test_gather_forum_permanent_410_advances_poll_for_retirement(
+    conn: sqlite3.Connection,
+) -> None:
+    """A 410 Gone is treated as permanent, like 404 (FRM-007)."""
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+
+    _admit_and_make_due(conn, 1234)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(410, text="gone")
+
+    with _client_from_handler(handler) as client:
+        result = gather_forum(conn, site, client=client, now=NOW)
+
+    assert [pt.topic_id for pt in result.polled_topics] == [1234]
+
+
+def test_gather_forum_permanent_404_carries_stored_like_count(
+    conn: sqlite3.Connection,
+) -> None:
+    """A permanent 404 on an already-polled topic carries its stored like_count forward."""
+    site = _forum_site(poll_offsets_days=(0, 1), like_threshold=5)
+
+    _admit_and_make_due(conn, 1234)
+    # Simulate a prior successful poll: completed_polls=1, last_like_count=15.
+    conn.execute(
+        "UPDATE forum_watch SET completed_polls = 1, last_like_count = 15 "
+        "WHERE site_id = ? AND topic_id = ?",
+        (SITE_ID, 1234),
+    )
+    conn.commit()
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")
+
+    with _client_from_handler(handler) as client:
+        result = gather_forum(conn, site, client=client, now=NOW)
+
+    assert [pt.topic_id for pt in result.polled_topics] == [1234]
+    assert result.polled_topics[0].like_count == 15, "stored count is carried, not reset"
+
+
+def test_dead_topic_retires_after_offsets_consumed(conn: sqlite3.Connection) -> None:
+    """End-to-end: a perpetually-404 topic retires once its offsets are consumed (FRM-007).
+
+    Drives gather_forum + finalize_poll across the offset schedule the way the CLI
+    does, and asserts the dead topic is no longer due (retired) rather than being
+    re-polled forever.
+    """
+    offsets = (0, 1)
+    site = _forum_site(poll_offsets_days=offsets, like_threshold=5)
+    forum_store.admit_topic(conn, SITE_ID, 1234, first_seen_at=0, poll_eligible=True)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")
+
+    # Poll at each offset; the CLI finalizes every PolledTopic the gather surfaces.
+    for offset in offsets:
+        now = offset * 86400
+        assert forum_store.due_topics(conn, SITE_ID, offsets, now), "topic should be due"
+        with _client_from_handler(handler) as client:
+            result = gather_forum(conn, site, client=client, now=now)
+        for pt in result.polled_topics:
+            forum_store.finalize_poll(conn, SITE_ID, pt.topic_id, pt.like_count, offsets)
+
+    # After both offsets are consumed the dead topic is retired: never due again.
+    far_future = 999 * 86400
+    assert forum_store.due_topics(conn, SITE_ID, offsets, far_future) == [], (
+        "a perpetually-404 topic must retire, not re-poll forever"
+    )
+    retired = conn.execute(
+        "SELECT retired FROM forum_watch WHERE site_id = ? AND topic_id = ?",
+        (SITE_ID, 1234),
+    ).fetchone()[0]
+    assert retired == 1
 
 
 def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Connection) -> None:
