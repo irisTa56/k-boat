@@ -123,6 +123,7 @@ Source: <url> (for a Kindle book: ASIN:<asin>)
 - a bulleted consolidation, in the same language as the source `summary` (Japanese)
 - synthesise the original's key points **and the verified dialogue takeaways** (the `kept from dialogue` claims) — the reader's new or noteworthy findings often live in the dialogue, so weave those in rather than copying the source `summary` verbatim (it already lives on the source note)
 - one point per bullet, and mark a dialogue-derived bullet (a trailing `#dialogue`) so it never reads as if the source stated it
+- keep each point legible on its own terms: technical keywords may stay, but do not carry over the source's context-dependent wording for ordinary (non-keyword) points — stripped of the surrounding context that gave it meaning, such borrowed phrasing reads as vague even to a reader who knows the source, so restate the point plainly
 
 #### Basic Memory Report
 
