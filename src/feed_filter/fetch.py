@@ -51,6 +51,13 @@ DEFAULT_MAX_RETRIES = 3
 # hostile or mis-set header (``Retry-After: 86400``) cannot hang a run.
 MAX_RETRY_WAIT = 30.0
 
+# The default back-off sleep, held as a module attribute rather than a parameter
+# default so tests can neuter it without a real delay. Gather paths call ``fetch``
+# without threading a ``sleep``, so this is the only back-off seam they hit; a
+# test patches ``feed_filter.fetch._sleep`` to a no-op, which is scoped to fetch
+# and leaves the global ``time.sleep`` untouched for every other caller.
+_sleep = time.sleep
+
 
 def _retry_after_seconds(resp: httpx.Response, attempt: int) -> float:
     """Seconds to wait before retrying a throttled response.
@@ -118,7 +125,7 @@ def fetch(
     *,
     client: httpx.Client,
     max_retries: int = DEFAULT_MAX_RETRIES,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], None] | None = None,
 ) -> FetchResult:
     """GET ``url`` and return its body, or raise ``FetchError``.
 
@@ -132,9 +139,14 @@ def fetch(
     ``max_retries`` times, waiting ``_retry_after_seconds`` between attempts
     (honoring ``Retry-After``); once the retries are spent the final throttled
     response raises ``FetchError`` like any other status. Non-retryable statuses
-    and transport failures raise on the first attempt, unchanged. ``sleep`` is
-    injected so tests exercise the back-off without real delay.
+    and transport failures raise on the first attempt, unchanged. ``sleep``
+    defaults (when ``None``) to the module-level ``_sleep`` seam, resolved here
+    at call time rather than bound as a parameter default (see ``_sleep`` for
+    why). Callers that pass ``sleep`` explicitly (see ``test_fetch``) exercise
+    the back-off timing directly.
     """
+    if sleep is None:
+        sleep = _sleep
     # Clamp so the loop always runs at least once (a negative max_retries means
     # "no retries", not "no attempt"); this also makes the post-loop line below
     # genuinely unreachable for every input.

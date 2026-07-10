@@ -12,6 +12,22 @@ from pathlib import Path
 
 import pytest
 
+from feed_filter import fetch
+
+
+@pytest.fixture(autouse=True)
+def no_real_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralize ``fetch``'s retry back-off so no test waits in real time.
+
+    Retry-path tests (persistent ``503``/timeout) reach ``fetch`` through the
+    gather pipelines without threading a ``sleep``, so each would otherwise sit
+    through the 1+2+4s exponential back-off per failed feed/topic — a handful of
+    such tests dominated the whole suite's wall clock. Patch the fetch-scoped
+    ``_sleep`` seam to a no-op. Tests that inject their own ``sleep`` (the
+    back-off timing tests in ``test_fetch``) are unaffected.
+    """
+    monkeypatch.setattr(fetch, "_sleep", lambda _seconds: None)
+
 
 @pytest.fixture
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
