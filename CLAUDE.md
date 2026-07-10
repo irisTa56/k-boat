@@ -36,6 +36,7 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 - Always dedupe on `canonical_url`, never the raw URL.
 - Design bias is **never-lost over never-duplicated**: a judging error reminds-then-records anyway; a gather failure records nothing so the next run retries.
 - Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned (FRM-CON-005).
+- Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write; it is telemetry **outside** the never-lost authority, and a `persistent` site is surfaced for a human to investigate — the CLI never auto-disables (SH-CON-002/003).
 
 ## Writing conventions
 

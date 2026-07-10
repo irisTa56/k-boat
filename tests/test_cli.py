@@ -345,12 +345,54 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
     assert urls == ["https://a.example.com/0", "https://b.example.com/0", "https://a.example.com/1"]
     assert "https://a.example.com/2" not in urls
     assert out["sites"] == [
-        {"site_id": "a", "zero_links": False, "error": None},
-        {"site_id": "b", "zero_links": False, "error": None},
+        {
+            "site_id": "a",
+            "zero_links": False,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        },
+        {
+            "site_id": "b",
+            "zero_links": False,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        },
     ]
     # Nothing is recorded by new-entries; the truncated entry reappears next run.
     with contextlib.closing(open_db(db_path())) as conn:
         assert count(conn) == 0
+
+
+def test_new_entries_zero_links_does_not_increment_failure_counter(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A zero_links scrape is a broken pattern (healed by heal-site), not an outage,
+    so it must leave the site-health counter at 0 (SH-REQ-007) — persistence tracks
+    unreachability, not broken patterns. Only a non-None gather error increments.
+    """
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s",
+            name="S",
+            index_url="https://s.example.com/",
+            article_url_pattern="/post/*",
+        ),
+    )
+
+    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+        return GatherResult(entries=[], index_matches=0, zero_links=True, error=None)
+
+    monkeypatch.setattr(cli, "gather_new", fake_gather)
+
+    assert cli.main(["new-entries"]) == 0
+    status = _out(capsys)["sites"][0]
+    assert status["zero_links"] is True
+    assert status["consecutive_failures"] == 0
+    assert status["persistent"] is False
 
 
 def test_new_entries_unknown_site_id_exits_nonzero(

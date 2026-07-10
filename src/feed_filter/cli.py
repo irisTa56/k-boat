@@ -196,6 +196,16 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     Forum sites (``kind == "forum"``) are excluded so the article-path gather
     never reaches ``fetch_entries``'s ``assert index_url is not None`` guard or
     ``gather_new``'s scrape flag on a forum row (FRM-CON-001, finding #8).
+
+    Each ``sites[]`` entry also carries ``consecutive_failures`` (the durable
+    per-site count from ``site_health``) and ``persistent`` (that count has
+    reached ``DEFAULT_PERSISTENT_FAILURE_RUNS``), the article-path mirror of
+    ``cmd_forum_new``. The count increments only when the site's gather errored
+    this run (``gathered.error is not None``) and resets otherwise, so a stateless
+    run can escalate a persistent outage at the threshold instead of re-deriving
+    "transient" every run (SH-REQ-007). A ``zero_links`` scrape does not increment
+    — it is a broken pattern healed by ``heal-site``, not an outage. The CLI never
+    auto-disables — escalation is a skill-side notification (SH-CON-003).
     """
     # Skip disabled sites entirely (no fetch, no error, no push) — they stay in the
     # registry with their seen-store intact for a later enable-site.
@@ -222,8 +232,27 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                         for e in gathered.entries
                     ]
                 )
+                # Site-health escalation (SH-REQ-007), the article-path mirror of
+                # cmd_forum_new. An article site fetches a single feed/index, so
+                # "unreachable this run" is simply a non-None gather error; a
+                # ``zero_links`` scrape (a broken pattern healed by heal-site, not an
+                # outage) is a distinct condition and does NOT increment. Same store,
+                # keyed by site_id (SH-GUD-002).
+                if gathered.error is not None:
+                    failure_count = site_health.record_failure(conn, site.id)
+                else:
+                    site_health.record_success(conn, site.id)
+                    failure_count = 0
                 site_status.append(
-                    {"site_id": site.id, "zero_links": gathered.zero_links, "error": gathered.error}
+                    {
+                        "site_id": site.id,
+                        "zero_links": gathered.zero_links,
+                        "error": gathered.error,
+                        "consecutive_failures": failure_count,
+                        "persistent": site_health.is_persistent(
+                            failure_count, DEFAULT_PERSISTENT_FAILURE_RUNS
+                        ),
+                    }
                 )
     finally:
         close_browser()  # tear down a lazily-launched browser (no-op for httpx-only runs)

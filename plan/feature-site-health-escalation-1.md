@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-07-10
 last_updated: 2026-07-10
 owner: irisTa56
-status: 'In progress'
+status: 'Completed'
 tags: [feature, forum, reliability, observability]
 ---
 
 # Introduction
 
-![Status: In progress](https://img.shields.io/badge/status-In%20progress-yellow)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 Every scheduled `feed-filter` run is stateless.
 When a site's gather fails, the run absorbs the error (never-lost: nothing is recorded so the next run retries) and reports it, but it has no memory of prior runs — so each run independently re-judges a recurring failure as "transient / self-heals" and never escalates.
@@ -81,9 +81,9 @@ All identifiers this plan introduces are namespaced `SH-` (site-health), so they
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-009 | In `cli.cmd_new_entries`, after `gather_new` per site: `record_failure` when `gathered.error is not None`, else `record_success`; add `consecutive_failures`/`persistent` to the emitted `sites[]` entry alongside the existing `zero_links`/`error`. `zero_links` does not increment (SH-REQ-007). | | |
-| TASK-010 | Update `.claude/skills/feed-filter-run/SKILL.md` mirroring TASK-006: CLI-decided persistence, mandatory push at threshold, recommend URL-change check then `disable-site`. | | |
-| TASK-011 | Tests (same PR): `cmd_new_entries` increments on a site whose fetch errors, resets on success, and does not increment on `zero_links`-only. Coverage ≥ 80%. | | |
+| TASK-009 | In `cli.cmd_new_entries`, after `gather_new` per site: `record_failure` when `gathered.error is not None`, else `record_success`; add `consecutive_failures`/`persistent` to the emitted `sites[]` entry alongside the existing `zero_links`/`error`. `zero_links` does not increment (SH-REQ-007). | ✅ | 2026-07-10 |
+| TASK-010 | Update `.claude/skills/feed-filter-run/SKILL.md` mirroring TASK-006: CLI-decided persistence, mandatory push at threshold, recommend URL-change check then `disable-site`. | ✅ | 2026-07-10 |
+| TASK-011 | Tests (same PR): `cmd_new_entries` increments on a site whose fetch errors, resets on success, and does not increment on `zero_links`-only. Coverage ≥ 80%. | ✅ | 2026-07-10 |
 
 ### Implementation Phase 3 — Docs close-out
 
@@ -91,7 +91,7 @@ All identifiers this plan introduces are namespaced `SH-` (site-health), so they
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-012 | Update `CLAUDE.md` if the shipped behavior changes an architecture/command/env gotcha (e.g. note the site-health escalation under Architecture's load-bearing rules). Flip this plan's `status` to `Completed`. | | |
+| TASK-012 | Update `CLAUDE.md` if the shipped behavior changes an architecture/command/env gotcha (e.g. note the site-health escalation under Architecture's load-bearing rules). Flip this plan's `status` to `Completed`. | ✅ | 2026-07-10 |
 
 ## 3. Alternatives
 

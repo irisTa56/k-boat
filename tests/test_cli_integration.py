@@ -138,7 +138,15 @@ def test_add_site_then_run_has_no_duplicate(
     assert cli.main(["new-entries"]) == 0
     gathered = _out(capsys)
     assert [e["url"] for e in gathered["entries"]] == [C[1]]  # only the post-snapshot item
-    assert gathered["sites"] == [{"site_id": "ex", "zero_links": False, "error": None}]
+    assert gathered["sites"] == [
+        {
+            "site_id": "ex",
+            "zero_links": False,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        }
+    ]
 
     # --- remind C: creates the reminder AND records it seen, atomically -------
     assert (
@@ -207,15 +215,34 @@ def test_scrape_site_self_heal_end_to_end(
     assert [e["url"] for e in entry] == ["https://example.com/blog/c"]
     assert entry[0]["kind"] == "scrape"
     assert entry[0]["title"] is None and entry[0]["summary"] is None  # no feed metadata
-    assert gathered["sites"] == [{"site_id": "blg", "zero_links": False, "error": None}]
+    assert gathered["sites"] == [
+        {
+            "site_id": "blg",
+            "zero_links": False,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        }
+    ]
 
     # --- the site is redesigned: links move to /posts, the pattern matches 0 --
     site.body = _index_html("/posts/a", "/posts/b", "/posts/c")
     assert cli.main(["new-entries"]) == 0
     broken = _out(capsys)
     assert broken["entries"] == []  # nothing matches the stale pattern
-    # zero_links fires on a broken pattern (index_matches == 0), NOT a quiet day
-    assert broken["sites"] == [{"site_id": "blg", "zero_links": True, "error": None}]
+    # zero_links fires on a broken pattern (index_matches == 0), NOT a quiet day.
+    # A zero_links scrape is not an outage (error is None), so it must NOT increment
+    # the site-health counter — persistence tracks unreachability, not broken patterns
+    # (SH-REQ-007).
+    assert broken["sites"] == [
+        {
+            "site_id": "blg",
+            "zero_links": True,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        }
+    ]
 
     # --- heal: re-scrape under the new pattern, snapshot, rewrite config (no list reminder)
     assert cli.main(["heal-site", "--site-id", "blg", "--pattern", NEW_PATTERN]) == 0
@@ -229,7 +256,15 @@ def test_scrape_site_self_heal_end_to_end(
     assert cli.main(["new-entries"]) == 0
     after = _out(capsys)
     assert after["entries"] == []
-    assert after["sites"] == [{"site_id": "blg", "zero_links": False, "error": None}]
+    assert after["sites"] == [
+        {
+            "site_id": "blg",
+            "zero_links": False,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        }
+    ]
 
 
 # --- opt-in browser path end-to-end ---------------------------------------
@@ -1012,4 +1047,56 @@ def test_forum_new_dead_topic_retirement_does_not_increment(
     assert status["error"] is not None
     assert "retiring dead topic" in status["error"]
     assert status["consecutive_failures"] == 0, "a dead-topic retirement is not a site failure"
+    assert status["persistent"] is False
+
+
+# ---------------------------------------------------------------------------
+# Site-health escalation, article path (SH-TEST-004): new-entries increments the
+# durable counter when a site's gather errors, resets on a reachable run, and
+# never increments on a zero_links scrape (the last covered by the heal-flow test
+# above, which now asserts consecutive_failures == 0 on the zero_links run).
+# ---------------------------------------------------------------------------
+
+
+def _feed_fail_transport() -> httpx.Client:
+    """Every request fails 503 — the article feed is unreachable (SH-REQ-007)."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="down")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_new_entries_escalates_persistent_then_resets(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An article site whose feed keeps erroring increments the durable counter each
+    run and flips ``persistent`` at the threshold (3); the first reachable run
+    resets it to 0 — the article-path parity of the forum escalation (SH-REQ-007).
+    """
+    feed = _MockSite(_rss(A, B))
+    monkeypatch.setattr(cli, "build_client", feed.client)
+    assert cli.main(["add-site", "--id", "ex", "--name", "Example", "--feed-url", FEED_URL]) == 0
+    capsys.readouterr()  # discard add-site output
+
+    # Three consecutive failed gathers → count 1, 2, 3; persistent at 3. The error
+    # is a hard fetch failure, not a zero_links scrape, so it counts (SH-REQ-007).
+    monkeypatch.setattr(cli, "build_client", _feed_fail_transport)
+    for expected_count in (1, 2, 3):
+        assert cli.main(["new-entries", "--site-id", "ex"]) == 0
+        status = next(s for s in _out(capsys)["sites"] if s["site_id"] == "ex")
+        assert status["error"] is not None, "a failed gather must report an error"
+        assert status["zero_links"] is False
+        assert status["consecutive_failures"] == expected_count
+        assert status["persistent"] is (expected_count >= 3)
+
+    # A reachable run resets the streak: count back to 0, persistent cleared.
+    feed.body = _rss(A, B, C)
+    monkeypatch.setattr(cli, "build_client", feed.client)
+    assert cli.main(["new-entries", "--site-id", "ex"]) == 0
+    status = next(s for s in _out(capsys)["sites"] if s["site_id"] == "ex")
+    assert status["error"] is None
+    assert status["consecutive_failures"] == 0
     assert status["persistent"] is False
