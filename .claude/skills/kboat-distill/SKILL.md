@@ -45,7 +45,7 @@ Phase B runs only when Basic Memory is healthy (see preamble). The tool has alre
 - `phase_b.dismiss_discard` — sources `dismiss`ed (alone), past the cooldown, whose notebook is still present. For each, discard the notebook (see kboat-notes "discard a source's notebook") and record it in the run summary as a dismissed discard. The note and any PDF stay as a de-dup tombstone, excluded from recall. (Dismissed sources whose `notebooklm_id` was already empty are not listed — the discard is idempotent — they are only counted, as `dismiss_already_discarded`.)
 - `phase_b.ripe` — sources marked `distill` (and not `dismiss`), past the cooldown, not yet distilled. Process each with the ordered steps below. Each entry carries its `keep` flag: if `keep` is set, retain the notebook at the end instead of discarding it.
 
-Sources that needed no destructive action — ambiguous (`ambiguous`), `keep`-only (`counts.keep_noop`), already distilled (`counts.already_distilled`), or still inside the cooldown (`counts.awaiting_cooldown`) — are not in either set; surface their counts in the summary. The ripe predicate the tool applied is `distill && !dismiss && !blocked && filed_date <= today - 7 days && distilled_date` empty.
+Sources that needed no destructive action — ambiguous (`ambiguous`), `keep`-only (`counts.keep_noop`), already distilled (`counts.already_distilled`), or still inside the cooldown (`counts.awaiting_cooldown`) — are not in either set; surface their counts in the summary. The ripe predicate the tool applied — `distill`, unambiguous, past the 7-day cooldown, not blocked, not yet distilled — is specified exactly in the source note's "Lifecycle and state" in kboat-notes; this skill does not restate it.
 
 Process each `phase_b.ripe` source in this exact order. The order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
@@ -109,7 +109,7 @@ read: false
 ---
 ```
 
-The block is **mandatory**: `type: review` is what `Reviews.base` filters on, so a report written without it drops out of the Base entirely. `read: false` is the human's read-tracking flag for the Base's Unread view; set `date` to the run date (the same as the filename). On a **replay** where the file already exists (a crash left it after the first section was written), append sections only — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
+The block is **mandatory** and its fields are defined in kboat-notes "Review note" (`type: review` keeps the report in `Reviews.base`, `read: false` is the human's read-tracking flag); set `date` to the run date (the same as the filename). On a **replay** where the file already exists (a crash left it after the first section was written), append sections only — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
