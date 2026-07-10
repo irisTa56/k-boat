@@ -885,3 +885,131 @@ def test_forum_site_excluded_from_new_entries_and_vice_versa(
     forum_site_ids = {s["site_id"] for s in fn_out["sites"]}
     assert "foru" in forum_site_ids
     assert "art" not in forum_site_ids
+
+
+# ---------------------------------------------------------------------------
+# Site-health escalation (SH-TEST-003): forum-new increments the durable
+# consecutive-failure counter on whole-site unreachability, resets on a
+# reachable run, and never increments on a dead-topic retirement alone.
+# ---------------------------------------------------------------------------
+
+
+def _all_feeds_fail_transport() -> httpx.Client:
+    """Every request fails 503 — every discovery feed is unreachable (SH-REQ-003)."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="down")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _dead_topic_transport() -> httpx.Client:
+    """Discovery feeds succeed (site reachable) but the due topic's JSON 404s.
+
+    The site is reachable (all_feeds_failed is False), yet gather_forum emits a
+    benign ``retiring dead topic`` error for the deleted topic — the exact case
+    SH-REQ-006 says must NOT increment the failure counter.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        query = (
+            request.url.query.decode("utf-8")
+            if isinstance(request.url.query, bytes)
+            else str(request.url.query)
+        )
+        if path == "/latest.rss":
+            return httpx.Response(
+                200, content=_LATEST_RSS, headers={"content-type": "application/rss+xml"}
+            )
+        if path == "/top.rss" and "daily" in query:
+            return httpx.Response(
+                200, content=_TOP_DAILY_RSS, headers={"content-type": "application/rss+xml"}
+            )
+        if path == "/top.rss" and "weekly" in query:
+            return httpx.Response(
+                200, content=_TOP_WEEKLY_RSS, headers={"content-type": "application/rss+xml"}
+            )
+        if path.startswith("/t/") and path.endswith(".json"):
+            return httpx.Response(404, text="gone")  # deleted topic → permanent retirement
+        return httpx.Response(404, text="not found")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _register_forum(offsets: tuple[str, ...] = ("0", "7")) -> None:
+    """Register the integration forum site (config only, no snapshot)."""
+    rc = cli.main(
+        [
+            "add-forum",
+            "--id",
+            _FORUM_SITE_ID,
+            "--name",
+            "Test Forum",
+            "--forum-url",
+            _FORUM_URL,
+            "--poll-offsets-days",
+            *offsets,
+        ]
+    )
+    assert rc == 0
+
+
+def _forum_status(out: dict[str, Any]) -> dict[str, Any]:
+    """The single forum site's status entry from a forum-new output."""
+    return next(s for s in out["sites"] if s["site_id"] == _FORUM_SITE_ID)
+
+
+def test_forum_new_escalates_persistent_then_resets(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A wholly-unreachable site increments the durable counter each run and flips
+    ``persistent`` at the threshold (3); the first reachable run resets it to 0.
+
+    This is the cross-run signal the whole feature exists for: stateless runs that
+    would each re-derive "transient" now share one durable count (SH-REQ-001/002).
+    """
+    _register_forum()
+    capsys.readouterr()  # discard add-forum output
+
+    # Three consecutive wholly-unreachable runs → count 1, 2, 3; persistent at 3.
+    monkeypatch.setattr(cli, "build_client", _all_feeds_fail_transport)
+    for expected_count in (1, 2, 3):
+        assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+        status = _forum_status(_out(capsys))
+        assert status["error"] is not None, "an unreachable site must report an error"
+        assert status["consecutive_failures"] == expected_count
+        assert status["persistent"] is (expected_count >= 3)
+
+    # A reachable run resets the streak: count back to 0, persistent cleared.
+    monkeypatch.setattr(cli, "build_client", _forum_transport)
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    status = _forum_status(_out(capsys))
+    assert status["error"] is None
+    assert status["consecutive_failures"] == 0
+    assert status["persistent"] is False
+
+
+def test_forum_new_dead_topic_retirement_does_not_increment(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A reachable run whose only error is a dead-topic retirement must not count
+    as a site failure (SH-REQ-006) — the counter keys on whole-site
+    unreachability, not on the combined error string (SH-ALT-004).
+    """
+    _register_forum(offsets=("0",))  # offset 0 → topic 1234 is due the run it is admitted
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "build_client", _dead_topic_transport)
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    status = _forum_status(_out(capsys))
+
+    # The gather surfaced the benign retirement error, but the site was reachable.
+    assert status["error"] is not None
+    assert "retiring dead topic" in status["error"]
+    assert status["consecutive_failures"] == 0, "a dead-topic retirement is not a site failure"
+    assert status["persistent"] is False

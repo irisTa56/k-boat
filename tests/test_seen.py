@@ -75,6 +75,48 @@ def test_v3_upgrade_defaults_existing_rows_to_not_poll_eligible(tmp_path: Path) 
         conn.close()
 
 
+def test_v4_migration_adds_site_health_table(conn: sqlite3.Connection) -> None:
+    """The v4 migration creates site_health(site_id PK, consecutive_failures) (SH-REQ-001)."""
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(site_health)")}
+    assert cols, "v4 migration must create the site_health table"
+    assert set(cols) == {"site_id", "consecutive_failures"}
+    # PRAGMA table_info columns: (cid, name, type, notnull, dflt_value, pk).
+    assert cols["site_id"][5] == 1, "site_id must be the primary key"
+    assert cols["consecutive_failures"][4] == "0", "consecutive_failures must default to 0"
+
+
+def test_v4_migration_applies_over_v3_without_touching_existing_tables(tmp_path: Path) -> None:
+    """A v3 DB with forum rows gains site_health on the v4 upgrade, losing nothing (SH-TEST-005).
+
+    Builds a v3 DB by hand (migrations 0..2, user_version=3) so the v4 CREATE is
+    exercised as an append over pre-existing data, and asserts the pre-existing
+    forum_watch row survives — the append-only migration must not rebuild tables.
+    """
+    path = tmp_path / "v3.db"
+    raw = sqlite3.connect(path)
+    raw.executescript(seen._MIGRATIONS[0])  # v1: seen
+    raw.executescript(seen._MIGRATIONS[1])  # v2: forum tables
+    raw.executescript(seen._MIGRATIONS[2])  # v3: poll_eligible
+    raw.execute("PRAGMA user_version = 3")
+    raw.execute(
+        "INSERT INTO forum_watch (site_id, topic_id, first_seen_at, completed_polls, retired) "
+        "VALUES ('s1', 42, 1000, 0, 0)"
+    )
+    raw.commit()
+    raw.close()
+
+    conn = seen.open_db(path)  # applies the v4 migration over existing data
+    try:
+        (version,) = conn.execute("PRAGMA user_version").fetchone()
+        assert version == len(seen._MIGRATIONS), "upgrade must advance to the latest version"
+        tables = {row[1] for row in conn.execute("PRAGMA table_info(site_health)")}
+        assert tables == {"site_id", "consecutive_failures"}, "v4 must add site_health"
+        survived = conn.execute("SELECT topic_id FROM forum_watch WHERE site_id = 's1'").fetchone()
+        assert survived is not None and survived[0] == 42, "existing forum rows must survive v4"
+    finally:
+        conn.close()
+
+
 def test_migration_stamps_user_version(tmp_path: Path) -> None:
     # open_db must advance user_version so future migrations are gated, not
     # silently skipped against an existing DB.

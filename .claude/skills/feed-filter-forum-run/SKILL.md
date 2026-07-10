@@ -32,7 +32,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Procedure
 
 1. **Gather candidates.** Run `eval "$(mise env)" && feed-filter forum-new`.
-   The output is `{topics: [...], polls: [...], sites: [{site_id, error}], discourse_fetches: <int>}`.
+   The output is `{topics: [...], polls: [...], sites: [{site_id, error, consecutive_failures, persistent}], discourse_fetches: <int>}`.
    - `topics` are Rule-A and Rule-B candidates, already round-robin-interleaved across sites (and Rule-A/B interleaved within each site) and clamped to the global cap.
      Candidates dropped by the cap are absent; they are re-derived next run without any loss (FRM-CON-005).
    - Each candidate entry has shape `{site_id, topic_id, topic_url, title, rule: "A"|"B", ...}`; Rule-A adds `op_text`; Rule-B adds `effective_threshold` and `trigger_posts: [{post_id, post_number, like_count, text}]`.
@@ -42,6 +42,9 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      Zero-candidate topics (short-circuited by the like-count check, or no qualifying posts) are trivially cap-safe and also appear in `polls`.
    - `discourse_fetches` is the count of Discourse HTTP calls this gather made — one per RSS feed (three per site) plus one per due topic's JSON (FRM-CON-004).
      It is a coarse politeness/rate metric for the run summary; it does not include the judging subagents' `WebFetch` calls, which are not Discourse-API requests.
+   - Each `sites` entry is `{site_id, error, consecutive_failures, persistent}`.
+     `consecutive_failures` is a durable per-site count of consecutive runs the whole site was unreachable (every discovery feed failed), reset to 0 the moment a run reaches it; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
+     `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip (SH-REQ-001).
    - Keep `polls` and `sites` aside for steps 3–4.
 
 2. **Judge each candidate**, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
@@ -107,20 +110,25 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    A non-zero exit means the DB write failed; report it — the topic will re-poll and re-derive the same already-seen posts without a duplicate remind.
 
 5. **Surface errors.** For each site in `sites` with a non-null `error`, the gather fetch failed for that site; nothing was recorded, so it retries naturally next run.
-   Report it in the summary — a persistently broken forum is visible here, by design there is no backoff.
-   Manage persistent failures with `feed-filter disable-site --site-id <id>` (see the `feed-filter-manage-sites` skill).
+   Report it in the summary — a broken forum is visible here, by design there is no backoff.
+   - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next reachable run, so do not escalate on a single bad run.
+   - **`persistent == true`**: the site has been wholly unreachable for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **fire the push** (see Run summary) and, in the summary, recommend the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site (SH-CON-003).
+     1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`. If the forum moved, fixing `forum_url` (see `feed-filter-manage-sites`) restores it with no loss — the seen-store keys on `(site_id, topic_id)`, not the domain.
+     2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `feed-filter-manage-sites` skill).
 
 ## Run summary
 
 Send a push notification (the `PushNotification` tool — one line, ≤200 chars, no markdown) **only when the run produced something that needs your attention beyond the `Filtered Forums` list**: a gather `error` or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
 Routine keeps already land in `Filtered Forums` where you'll see them, so a run whose only outcome is keeps sends **no** push; a no-op run sends none either.
+A `persistent == true` site is **always** such a case: send the push whenever any site is `persistent`, without exception — this is the escalation the durable counter exists to trigger, so it is not a judgment call (SH-REQ-005). Lead the push with the persistent site and the URL-change recommendation from step 5.
 Lead with what's actionable and name the offending sites.
 Example: `forum-filter: 1 site error (erlang-forum 429), 3 topics kept`.
+Persistent example: `forum-filter: elixirforum-com unreachable 3 runs — check for a moved forum URL, else disable-site`.
 Always keep the fuller breakdown as the run's text output (the transcript), regardless of whether a push was sent.
 
 - Counts: sites gathered, topics with Rule-A candidates, topics with Rule-B candidates, posts kept (reminded), posts dropped, posts error-fallback reminded, and `discourse_fetches` (total Discourse HTTP calls this run made).
 - Poll advances: topics finalized (advanced poll counter), topics withheld (cap-truncated, re-poll next run).
-- Errors: each site with a gather `error`, and any `forum-remind` or `forum-poll-done` non-zero exit.
+- Errors: each site with a gather `error` (noting its `consecutive_failures` and whether it is `persistent`), and any `forum-remind` or `forum-poll-done` non-zero exit.
 
 ## Cost controls (state these hold)
 

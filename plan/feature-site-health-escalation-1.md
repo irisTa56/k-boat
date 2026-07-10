@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-07-10
 last_updated: 2026-07-10
 owner: irisTa56
-status: 'Planned'
+status: 'In progress'
 tags: [feature, forum, reliability, observability]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: In progress](https://img.shields.io/badge/status-In%20progress-yellow)
 
 Every scheduled `feed-filter` run is stateless.
 When a site's gather fails, the run absorbs the error (never-lost: nothing is recorded so the next run retries) and reports it, but it has no memory of prior runs — so each run independently re-judges a recurring failure as "transient / self-heals" and never escalates.
@@ -66,14 +66,14 @@ All identifiers this plan introduces are namespaced `SH-` (site-health), so they
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | Add `DEFAULT_PERSISTENT_FAILURE_RUNS = 3` to `src/feed_filter/config.py` with a comment citing SH-REQ-004 and the session-review origin. | | |
-| TASK-002 | Add a **v4** migration to `seen._MIGRATIONS` creating `site_health(site_id TEXT PRIMARY KEY, consecutive_failures INTEGER NOT NULL DEFAULT 0)`. Use `CREATE TABLE IF NOT EXISTS`; document that it is operational telemetry, not dedupe state (SH-CON-002). Store only the counter — a `last_error`/`last_failed_at` column is deferred until a consumer exists (append-only migrations make adding one later a one-line change; the current error is already emitted in `sites[].error` every run). | | |
-| TASK-003 | Create `src/feed_filter/site_health.py` with: `record_failure(conn, site_id) -> int` (upsert: `consecutive_failures = consecutive_failures + 1`, return the new count), `record_success(conn, site_id) -> None` (reset the row to `consecutive_failures = 0`; no-op-safe if absent), and `is_persistent(count, threshold) -> bool` (pure helper). Parameterized SQL, commit on success (SH-GUD-003). | | |
-| TASK-004 | In `forum_pipeline.admit_from_feeds`, add `all_feeds_failed: bool` to `AdmitResult`, set `True` iff all three feed fetches raised `FetchError` (track a success flag alongside the existing `errors` list). Update the docstring (SH-PAT-001 / SH-REQ-003). | | |
-| TASK-005 | In `cli.cmd_forum_new`, after both `admit_from_feeds` and `gather_forum` for a site: if `admit_result.all_feeds_failed`, `count = site_health.record_failure(conn, site.id)`, else `site_health.record_success(conn, site.id)` and `count = 0`. Add `consecutive_failures: count` and `persistent: site_health.is_persistent(count, DEFAULT_PERSISTENT_FAILURE_RUNS)` to the site's `site_status` entry. Do not change the existing `error` field (SH-REQ-002 / SH-REQ-006). | | |
-| TASK-006 | Update `.claude/skills/feed-filter-forum-run/SKILL.md`: in "Surface errors", state that each `sites[]` entry carries `consecutive_failures`/`persistent`, that persistence is decided by the CLI (not re-judged per run), and that `persistent == true` means fire the push and, in the summary, recommend **checking for a moved/renamed forum URL first** (cite the elixirforum subdomain migration as the canonical example), then `disable-site` if truly gone. In "Run summary", make the push mandatory (not discretionary) whenever any site is `persistent`. | | |
-| TASK-007 | Update `ARCHITECTURE.md`: document the `site_health` table, the SH-REQ-001/SH-REQ-003 escalation invariant, and that it is telemetry outside the never-lost dedupe authority (SH-CON-002). | | |
-| TASK-008 | Tests (same PR): `site_health` unit tests (increment accumulates, success resets, absent-row success is a no-op, `is_persistent` boundary at exactly the threshold); `admit_from_feeds` sets `all_feeds_failed` only when all three feeds fail (all-fail vs one-of-three-fails vs all-succeed via `MockTransport`); `cmd_forum_new` emits the correct `consecutive_failures`/`persistent` and that a dead-topic retirement alone does **not** increment (SH-REQ-006). Keep coverage ≥ 80% (SH-CON-004). | | |
+| TASK-001 | Add `DEFAULT_PERSISTENT_FAILURE_RUNS = 3` to `src/feed_filter/config.py` with a comment citing SH-REQ-004 and the session-review origin. | ✅ | 2026-07-10 |
+| TASK-002 | Add a **v4** migration to `seen._MIGRATIONS` creating `site_health(site_id TEXT PRIMARY KEY, consecutive_failures INTEGER NOT NULL DEFAULT 0)`. Use `CREATE TABLE IF NOT EXISTS`; document that it is operational telemetry, not dedupe state (SH-CON-002). Store only the counter — a `last_error`/`last_failed_at` column is deferred until a consumer exists (append-only migrations make adding one later a one-line change; the current error is already emitted in `sites[].error` every run). | ✅ | 2026-07-10 |
+| TASK-003 | Create `src/feed_filter/site_health.py` with: `record_failure(conn, site_id) -> int` (upsert: `consecutive_failures = consecutive_failures + 1`, return the new count), `record_success(conn, site_id) -> None` (reset the row to `consecutive_failures = 0`; no-op-safe if absent), and `is_persistent(count, threshold) -> bool` (pure helper). Parameterized SQL, commit on success (SH-GUD-003). | ✅ | 2026-07-10 |
+| TASK-004 | In `forum_pipeline.admit_from_feeds`, add `all_feeds_failed: bool` to `AdmitResult`, set `True` iff all three feed fetches raised `FetchError` (track a success flag alongside the existing `errors` list). Update the docstring (SH-PAT-001 / SH-REQ-003). | ✅ | 2026-07-10 |
+| TASK-005 | In `cli.cmd_forum_new`, after both `admit_from_feeds` and `gather_forum` for a site: if `admit_result.all_feeds_failed`, `count = site_health.record_failure(conn, site.id)`, else `site_health.record_success(conn, site.id)` and `count = 0`. Add `consecutive_failures: count` and `persistent: site_health.is_persistent(count, DEFAULT_PERSISTENT_FAILURE_RUNS)` to the site's `site_status` entry. Do not change the existing `error` field (SH-REQ-002 / SH-REQ-006). | ✅ | 2026-07-10 |
+| TASK-006 | Update `.claude/skills/feed-filter-forum-run/SKILL.md`: in "Surface errors", state that each `sites[]` entry carries `consecutive_failures`/`persistent`, that persistence is decided by the CLI (not re-judged per run), and that `persistent == true` means fire the push and, in the summary, recommend **checking for a moved/renamed forum URL first** (cite the elixirforum subdomain migration as the canonical example), then `disable-site` if truly gone. In "Run summary", make the push mandatory (not discretionary) whenever any site is `persistent`. | ✅ | 2026-07-10 |
+| TASK-007 | Update `ARCHITECTURE.md`: document the `site_health` table, the SH-REQ-001/SH-REQ-003 escalation invariant, and that it is telemetry outside the never-lost dedupe authority (SH-CON-002). | ✅ | 2026-07-10 |
+| TASK-008 | Tests (same PR): `site_health` unit tests (increment accumulates, success resets, absent-row success is a no-op, `is_persistent` boundary at exactly the threshold); `admit_from_feeds` sets `all_feeds_failed` only when all three feeds fail (all-fail vs one-of-three-fails vs all-succeed via `MockTransport`); `cmd_forum_new` emits the correct `consecutive_failures`/`persistent` and that a dead-topic retirement alone does **not** increment (SH-REQ-006). Keep coverage ≥ 80% (SH-CON-004). | ✅ | 2026-07-10 |
 
 ### Implementation Phase 2 — Article path parity (PR2)
 

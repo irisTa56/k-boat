@@ -154,11 +154,19 @@ class AdmitResult:
     (one per RSS feed, so at most three) — counted whether or not each succeeded,
     so the CLI can surface a per-run Discourse-call total for politeness
     observability (see ``cmd_forum_new``).  Default 0 keeps test fakes terse.
+    ``all_feeds_failed`` is the typed site-unreachability signal (SH-PAT-001 /
+    SH-REQ-003): ``True`` iff **every** discovery feed fetch raised ``FetchError``
+    (latest ∧ daily-top ∧ weekly-top), so the whole site was unreachable this run.
+    It is the trigger the CLI uses to increment the ``site_health`` counter — a
+    typed boolean, not a heuristic parse of ``error`` text. A partial failure
+    (≥1 feed succeeded) leaves it ``False``, so a reachable-but-degraded site
+    resets rather than escalates.  Default ``False`` keeps test fakes terse.
     """
 
     candidates: list[RuleACandidate]
     error: str | None
     fetch_count: int = 0
+    all_feeds_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -252,6 +260,10 @@ def admit_from_feeds(
     )
 
     errors: list[str] = []
+    # Site-unreachability signal (SH-REQ-003): set True by any feed that fetches
+    # successfully. If all three raise FetchError it stays False, so the site was
+    # wholly unreachable this run — the typed trigger for the site_health counter.
+    any_feed_succeeded = False
     # Count every Discourse HTTP request attempted (incremented before each
     # fetch, so a FetchError still counts the call we made — politeness metric).
     fetch_count = 0
@@ -265,6 +277,7 @@ def admit_from_feeds(
         fetch_count += 1
         result = fetch(latest_feed_url(forum_url), client=client)
         latest_entries = parse_feed(result.content, result.final_url, sort=False)
+        any_feed_succeeded = True
     except FetchError as exc:
         errors.append(str(exc))
 
@@ -275,6 +288,7 @@ def admit_from_feeds(
         fetch_count += 1
         result = fetch(top_feed_url(forum_url, "daily"), client=client)
         daily_entries = parse_feed(result.content, result.final_url, sort=False)[:daily_count]
+        any_feed_succeeded = True
     except FetchError as exc:
         errors.append(str(exc))
 
@@ -284,6 +298,7 @@ def admit_from_feeds(
         fetch_count += 1
         result = fetch(top_feed_url(forum_url, "weekly"), client=client)
         weekly_entries = parse_feed(result.content, result.final_url, sort=False)[:weekly_count]
+        any_feed_succeeded = True
     except FetchError as exc:
         errors.append(str(exc))
 
@@ -338,6 +353,7 @@ def admit_from_feeds(
         candidates=candidates,
         error="; ".join(errors) if errors else None,
         fetch_count=fetch_count,
+        all_feeds_failed=not any_feed_succeeded,
     )
 
 

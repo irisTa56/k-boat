@@ -39,6 +39,7 @@ from dataclasses import replace
 from itertools import zip_longest
 from typing import Any
 
+from feed_filter import site_health
 from feed_filter.browser import (
     BrowserFetchError,
     MissingPlaywrightError,
@@ -49,6 +50,7 @@ from feed_filter.browser import (
 from feed_filter.canonical import canonical_url
 from feed_filter.config import (
     DEFAULT_GLOBAL_CAP,
+    DEFAULT_PERSISTENT_FAILURE_RUNS,
     DEFAULT_POLL_OFFSETS_DAYS,
     REMINDER_LIST_FORUM,
     db_path,
@@ -365,6 +367,16 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     The emitted ``discourse_fetches`` is the total Discourse HTTP calls this run
     made (RSS feeds + topic JSON, summed across sites) — a coarse politeness
     metric the skill reports; it excludes the judging subagents' ``WebFetch``.
+
+    Each ``sites[]`` entry also carries ``consecutive_failures`` (the durable
+    per-site count from ``site_health``) and ``persistent`` (that count has
+    reached ``DEFAULT_PERSISTENT_FAILURE_RUNS``). The count increments only when
+    the site was wholly unreachable this run (``admit_result.all_feeds_failed``)
+    and resets on any reachable run, so a stateless run can distinguish a
+    persistent outage from a one-run blip and escalate at the threshold instead of
+    re-deriving "transient" every run (SH-REQ-001/002/005). The CLI never
+    auto-disables — escalation is a skill-side notification, not an action
+    (SH-CON-003).
     """
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind == "forum"]
     now = int(time.time())
@@ -425,12 +437,28 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
             for pt in gather_result.polled_topics:
                 finalize_worklists.append((site.id, pt.topic_id, pt.like_count))
 
+            # Site-health escalation (SH-REQ-002/003): increment the durable
+            # consecutive-failure counter only when the whole site was unreachable
+            # (every discovery feed raised FetchError), else reset it. This keys on
+            # the typed admit signal, NOT the combined error string — a dead-topic
+            # retirement or a partial feed failure leaves ``all_feeds_failed`` False,
+            # so a reachable site never false-escalates (SH-REQ-006 / SH-ALT-004).
+            if admit_result.all_feeds_failed:
+                failure_count = site_health.record_failure(conn, site.id)
+            else:
+                site_health.record_success(conn, site.id)
+                failure_count = 0
+
             # Combine per-path errors into one status entry per site.
             errors = [e for e in [admit_result.error, gather_result.error] if e is not None]
             site_status.append(
                 {
                     "site_id": site.id,
                     "error": "; ".join(errors) if errors else None,
+                    "consecutive_failures": failure_count,
+                    "persistent": site_health.is_persistent(
+                        failure_count, DEFAULT_PERSISTENT_FAILURE_RUNS
+                    ),
                 }
             )
 

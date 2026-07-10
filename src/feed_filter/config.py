@@ -31,6 +31,15 @@ DEFAULT_POLL_OFFSETS_DAYS: tuple[int, ...] = (0, 1, 7)  # FRM-007: poll schedule
 DEFAULT_PER_SITE_CAP = 20
 DEFAULT_GLOBAL_CAP = 80
 
+# Site-health escalation threshold (SH-REQ-004). A site whose discovery feeds are
+# all unreachable for this many consecutive stateless runs is flagged
+# ``persistent`` so the run skill escalates instead of re-deriving "transient"
+# every run. The signal is discovery-feed (admit) unreachability only — a single
+# dead topic's JSON failure never counts (SH-REQ-006). The default of 3 matches
+# the 2026-07-10 session review, which observed an elixirforum-com outage
+# misclassified as transient across 13 runs / 9+ days.
+DEFAULT_PERSISTENT_FAILURE_RUNS = 3
+
 # Repo root = .../feed-filter, two levels above this file (src/feed_filter/).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

@@ -318,6 +318,9 @@ def test_admit_error_absorption_continues_on_feed_failure(conn: sqlite3.Connecti
     assert {201, 202, 203} & admitted_ids, "surviving feed topics must still be admitted"
     # Latest failed → 101/102/103 may not be admitted.
     assert {101, 102, 103}.isdisjoint(admitted_ids), "failed-feed topics must not be admitted"
+    # A partial failure is a reachable site: one feed succeeding must leave
+    # all_feeds_failed False so the site_health counter resets (SH-REQ-003).
+    assert result.all_feeds_failed is False
 
 
 def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connection) -> None:
@@ -335,6 +338,19 @@ def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connecti
     # All three RSS calls were attempted and counted even though each failed —
     # fetch_count is a metric of calls made, not calls that succeeded.
     assert result.fetch_count == 3
+    # Every feed failed → the site was wholly unreachable this run; this is the
+    # typed signal the CLI increments the site_health counter on (SH-REQ-003).
+    assert result.all_feeds_failed is True
+
+
+def test_admit_all_feeds_succeed_not_flagged_unreachable(conn: sqlite3.Connection) -> None:
+    """When every feed fetches, all_feeds_failed is False (the reachable case, SH-REQ-003)."""
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(_no_json_handler) as client:
+        result = admit_from_feeds(conn, site, client=client, now=NOW)
+
+    assert result.error is None, "all feeds succeeding must produce no error"
+    assert result.all_feeds_failed is False
 
 
 def test_admit_marks_only_top_feed_topics_poll_eligible(conn: sqlite3.Connection) -> None:

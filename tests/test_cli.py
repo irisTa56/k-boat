@@ -923,8 +923,16 @@ def test_forum_new_emits_topics_and_polls(
     # Polls worklist: topic 201 has exactly one candidate, which survived the cap.
     assert out["polls"] == [{"site_id": FORUM_SITE_ID, "topic_id": 201, "like_count": 15}]
 
-    # Site status.
-    assert out["sites"] == [{"site_id": FORUM_SITE_ID, "error": None}]
+    # Site status. A reachable gather (the fake's all_feeds_failed defaults False)
+    # resets the site-health counter, so consecutive_failures is 0 / not persistent.
+    assert out["sites"] == [
+        {
+            "site_id": FORUM_SITE_ID,
+            "error": None,
+            "consecutive_failures": 0,
+            "persistent": False,
+        }
+    ]
 
 
 def test_forum_new_sums_discourse_fetches_across_sites(

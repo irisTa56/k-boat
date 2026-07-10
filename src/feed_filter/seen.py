@@ -83,6 +83,26 @@ _MIGRATIONS: list[str] = [
     """
     ALTER TABLE forum_watch ADD COLUMN poll_eligible INTEGER NOT NULL DEFAULT 0;
     """,
+    # v4: per-site consecutive-failure counter for gather-error escalation
+    # (SH-REQ-001). One row per site; ``consecutive_failures`` counts runs where
+    # the site was genuinely unreachable, reset to 0 on any reachable run.
+    #
+    # This is **operational telemetry, not dedupe / never-lost state**
+    # (SH-CON-002): it is explicitly outside the never-lost authority (FRM-CON-005)
+    # that governs ``forum_post_seen`` / ``forum_watch`` / ``completed_polls``. A
+    # crash after this write costs at most one extra increment on a failure that
+    # would recur anyway — never a lost post. All queries against it live in
+    # ``site_health.py`` (SH-GUD-001), keeping ``seen.py`` the authority only for
+    # the ``seen`` table. A ``last_error`` / ``last_failed_at`` column is
+    # deferred until a consumer exists; append-only migrations make adding one
+    # later a one-line change (the current error is already emitted in
+    # ``sites[].error`` every run).
+    """
+    CREATE TABLE IF NOT EXISTS site_health (
+        site_id              TEXT    PRIMARY KEY,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0
+    );
+    """,
 ]
 
 
