@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from feed_filter.feeds import _published_at, html_to_text, parse_feed
+from feed_filter.feeds import MAX_BODY_CHARS, _published_at, html_to_text, parse_feed
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -92,6 +92,75 @@ def test_html_content_summary_is_flattened_to_text() -> None:
     entries = parse_feed(_HTML_RSS, "https://example.com/")
     assert len(entries) == 1
     assert entries[0].summary == "By Author Real architectural prose here."
+
+
+# thenewstack.io shape: a truncated <description> excerpt alongside the full
+# article in <content:encoded>. The judge must receive the full body, not the
+# excerpt, so an in-scope depth call is settled from the feed itself instead of a
+# per-article fetch a Cloudflare-gated site returns as a wall.
+_TRUNCATED_PLUS_FULL_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>Full-text</title>
+  <item><title>Deep Dive</title><link>https://example.com/deep</link>
+    <description><![CDATA[<p>Intro only, truncated&#8230;</p>]]></description>
+    <content:encoded><![CDATA[<p>Intro only.</p><p>The full deep-dive body continues here.</p>]]></content:encoded>
+  </item>
+</channel></rss>"""
+
+
+def test_full_content_preferred_over_truncated_description() -> None:
+    (entry,) = parse_feed(_TRUNCATED_PLUS_FULL_RSS, "https://example.com/")
+    assert entry.summary == "Intro only. The full deep-dive body continues here."
+
+
+def test_oversized_body_is_capped() -> None:
+    # A pathological feed body far exceeding MAX_BODY_CHARS is clamped, not
+    # emitted whole, so a runaway feed cannot bloat the judge's context.
+    body = b"word " * 12_000  # ~60k chars of plain text once flattened
+    rss = (
+        b'<?xml version="1.0"?>\n'
+        b'<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">\n'
+        b"<channel><title>Big</title>\n"
+        b"  <item><title>Huge</title><link>https://example.com/huge</link>\n"
+        b"    <content:encoded><![CDATA[<p>" + body + b"</p>]]></content:encoded>\n"
+        b"  </item>\n</channel></rss>"
+    )
+    (entry,) = parse_feed(rss, "https://example.com/")
+    assert entry.summary is not None
+    assert len(entry.summary) == MAX_BODY_CHARS
+
+
+# An empty <content:encoded> still surfaces as an entry.content item (with a blank
+# value); the parser must skip it and fall back to <description>, not emit "".
+_EMPTY_CONTENT_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title>
+  <item><title>A</title><link>https://example.com/a</link>
+    <description><![CDATA[<p>Clean excerpt.</p>]]></description>
+    <content:encoded></content:encoded>
+  </item>
+</channel></rss>"""
+
+
+def test_empty_content_falls_back_to_description() -> None:
+    (entry,) = parse_feed(_EMPTY_CONTENT_RSS, "https://example.com/")
+    assert entry.summary == "Clean excerpt."
+
+
+# Two <content:encoded> on one item: the first non-empty body is used.
+_MULTI_CONTENT_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title>
+  <item><title>A</title><link>https://example.com/a</link>
+    <content:encoded><![CDATA[<p>First body wins.</p>]]></content:encoded>
+    <content:encoded><![CDATA[<p>Second body.</p>]]></content:encoded>
+  </item>
+</channel></rss>"""
+
+
+def test_first_nonempty_content_is_used() -> None:
+    (entry,) = parse_feed(_MULTI_CONTENT_RSS, "https://example.com/")
+    assert entry.summary == "First body wins."
 
 
 # Medium item: the link is a publication custom domain carrying a ?source= param,

@@ -59,7 +59,7 @@ When `wall = true` the run routine reminds the page for manual review and **igno
 Wall detection only happens once you actually fetch the page: scrape entries are always fetched, but a feed entry you can judge from its title and summary alone is judged normally and never reaches a wall — its metadata is the readable content, so there is nothing to flag.
 Reserve a wall for a page you would plausibly **keep** if you could read it.
 If the title and summary already place the page **outside the Topics**, drop it on that basis — do not fetch an out-of-scope page just to assess its depth, so it cannot become a needless manual-review reminder.
-Escalate to the body (and thus, for a gated site, a wall) only when the page is plausibly in-scope and only its quality or depth is unresolved.
+Escalate to the body only when the page is plausibly in-scope and only its quality or depth is unresolved — fetching an out-of-scope page just to assess depth is what risks a needless wall on a gated site.
 Hard fetch errors (the page would not load at all) are handled by the run routine itself, not here.
 
 ## Output

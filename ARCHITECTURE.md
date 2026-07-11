@@ -21,12 +21,13 @@ Pure primitives:
 - `canonical.py` — URL canonicalization. **Always dedupe on `canonical_url`, never the raw URL.**
 - `seen.py` — the sqlite seen-store; the sole dedupe authority.
 - `site_health.py` — the durable per-site consecutive-failure counter (`site_health` table, v4 migration in `seen.py`); source-kind-agnostic, keyed by `site_id`. Operational telemetry, **not** dedupe/never-lost state (see the site-health invariant below).
+- `body_cache.py` — a transient per-run cache of full feed bodies (`entry_body` table, v5 migration in `seen.py`), rewritten wholesale each `new-entries`. It keeps the full article off the run orchestrator's stdout/context: `new-entries` emits only a preview and the judge pulls the body via `entry-body`. Operational cache, **not** dedupe/never-lost state — a miss just falls the judge back to a `WebFetch`.
 - `sites.py` — `sites.toml` read/write (via `tomlkit`, preserving formatting).
 
 Deterministic httpx ingestion:
 
 - `fetch.py` — sync `httpx` fetch; retries throttling statuses (`429`/`503`) up to a bounded count, honoring `Retry-After`, so the forum gather loop survives Discourse rate limits instead of shedding topics to the next run.
-- `feeds.py` — feed parsing (`feedparser`). The entry `summary` is flattened from HTML to plain text (`html_to_text`): feeds that ship the full article in `content:encoded` (Medium/Substack) carry a byline-link preamble that, handed to the judge raw, reads as "no usable summary" and forces a doomed full-page fetch behind a wall — flattening lets the title+summary stage judge from the feed body directly. The dedupe key is normally the resolved entry link, but a Medium item (`<guid>` of the form `medium.com/p/<hash>`) keys on that guid instead (`_dedupe_url`): Medium serves the same article under shifting link hosts (`medium.com/<pub>/` vs a publication custom domain like `netflixtechblog.com`), so the link forks the key and re-reminds when the host flips, while the `/p/<hash>` guid is invariant and 302-redirects to the live article. (The other historical fork, a `?source=` attribution param, is handled separately by `canonical.py`'s tracking-param stripping; the host shift is the residual cause the guid addresses.)
+- `feeds.py` — feed parsing (`feedparser`). The entry `summary` is the richest available body flattened to plain text (`html_to_text`) and capped at `MAX_BODY_CHARS` (50k): a full-text feed (WordPress/Medium/Substack, e.g. thenewstack.io) ships the whole article in `content:encoded` (exposed by feedparser as `entry.content`) while `<description>` (`entry.summary`) is a truncated excerpt, so `_entry_body` prefers `content:encoded` and falls back to `<description>`. Handing the judge the full body lets it assess depth from the feed itself instead of forcing a per-article fetch that a gated site (Cloudflare) returns as a wall; the cap only guards against a pathological megabyte-scale body, never a normal article. That body reaches the judge through `body_cache` (not the run orchestrator's stdout, which carries only a preview), so the full article lands only in the cheap judge's context. The dedupe key is normally the resolved entry link, but a Medium item (`<guid>` of the form `medium.com/p/<hash>`) keys on that guid instead (`_dedupe_url`): Medium serves the same article under shifting link hosts (`medium.com/<pub>/` vs a publication custom domain like `netflixtechblog.com`), so the link forks the key and re-reminds when the host flips, while the `/p/<hash>` guid is invariant and 302-redirects to the live article. (The other historical fork, a `?source=` attribution param, is handled separately by `canonical.py`'s tracking-param stripping; the host shift is the residual cause the guid addresses.)
 - `scrape.py` — index-page scraping (`selectolax`).
 
 Discovery:
@@ -93,7 +94,8 @@ The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds a
 | `discover` | find feed/scrape candidates for a URL |
 | `add-site` | register a site (snapshots seen, then writes config) |
 | `list-sites` | list registered sites (with enabled/disabled status) |
-| `new-entries` | gather new, unseen entries across non-forum sites |
+| `new-entries` | gather new, unseen entries across non-forum sites (each entry's `summary` is a preview; the full body is cached for `entry-body`) |
+| `entry-body` | print one gathered entry's full cached body (`{url, body}`; `body` is `null` on a cache miss) for the judge |
 | `remind` | create a reminder and record it seen (kept) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
 | `heal-site` | rewrite a scrape pattern and re-snapshot |
@@ -105,6 +107,7 @@ The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds a
 | `forum-poll-done` | advance the poll counter for one topic (call last, after all posts dispositioned) |
 
 `new-entries` filters to `kind != "forum"` and `forum-new` filters to `kind == "forum"` — neither path ever sees the other's sites (FRM-CON-001, finding #8).
+`new-entries` puts only a preview of each entry's body on stdout and caches the full body (`body_cache`); the judge pulls it with `entry-body`, so a full article is loaded into the cheap judging subagent's context, never the run orchestrator's (GUD-003).
 
 ## Skills (the orchestration layer)
 

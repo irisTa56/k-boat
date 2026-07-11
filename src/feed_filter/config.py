@@ -31,6 +31,13 @@ DEFAULT_POLL_OFFSETS_DAYS: tuple[int, ...] = (0, 1, 7)  # FRM-007: poll schedule
 DEFAULT_PER_SITE_CAP = 20
 DEFAULT_GLOBAL_CAP = 80
 
+# Length of the entry-body preview ``new-entries`` puts on stdout. The full body
+# is cached (``body_cache``) and pulled by the judge via ``entry-body`` so it never
+# enters the run orchestrator's context (GUD-003); the preview is what the
+# orchestrator sees, enough to drop a clearly out-of-scope entry from title+preview
+# without fetching the body, and to keep the run transcript legible.
+SUMMARY_PREVIEW_CHARS = 500
+
 # Site-health escalation threshold (SH-REQ-004). A site whose discovery feeds are
 # all unreachable for this many consecutive stateless runs is flagged
 # ``persistent`` so the run skill escalates instead of re-deriving "transient"

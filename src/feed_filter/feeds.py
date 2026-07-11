@@ -93,17 +93,14 @@ class _TextExtractor(HTMLParser):
 
 
 def html_to_text(raw: str | None) -> str | None:
-    """Flatten an HTML feed summary to whitespace-collapsed plain text.
+    """Flatten an HTML feed body to whitespace-collapsed plain text.
 
-    Feeds carry the summary as HTML (Medium/Substack ship the full article in
-    ``content:encoded``, whose head is a byline of author links); handed to the
-    judge raw, that reads as "no usable summary" and forces a doomed full-page
-    fetch (Cloudflare wall) when the prose was in the feed all along. Stripping
-    tags here lets the title+summary stage judge from the feed body directly.
-
-    The input is a feed ``summary``, HTML by contract; plain text with no markup
-    or character references passes through unchanged, and empty/blank input (or
-    a body that is all tags) returns ``None`` so downstream sees "no summary".
+    Feeds carry the body as HTML; stripping tags here lets the title+summary
+    judge stage read the prose directly. The input is a feed ``description`` or
+    ``content:encoded`` (see ``_entry_summary``), HTML by contract; plain text
+    with no markup or character references passes through unchanged, and
+    empty/blank input (or a body that is all tags) returns ``None`` so downstream
+    sees "no summary".
     """
     if not raw:
         return None
@@ -171,6 +168,49 @@ def _dedupe_url(entry: object, absolute: str) -> CanonicalUrl:
     return canonical_url(absolute)
 
 
+# Safety ceiling on the flattened feed body handed to the judge. ``content:encoded``
+# is the full article (often 6-20k chars); shipping it whole is the point (the
+# judge assesses depth without a per-article fetch that a gated site turns into a
+# wall). This cap only guards against a pathological feed shipping a megabyte-scale
+# body — a normal article is never truncated, so the wall-avoidance holds. Applied
+# to the plain text after tag stripping, not the raw HTML.
+MAX_BODY_CHARS = 50_000
+
+
+def _entry_body(entry: object) -> str | None:
+    """The richest HTML body a feed entry carries: ``content:encoded`` if present,
+    else ``<description>``.
+
+    feedparser exposes ``<content:encoded>`` as ``entry.content`` — a list of
+    content objects each with a ``value`` — and ``<description>`` as
+    ``entry.summary``. Full-text feeds (WordPress, Medium, Substack) ship the whole
+    article in ``content:encoded`` while ``<description>`` is a truncated excerpt
+    (e.g. thenewstack.io: a ~700-char intro vs the 6-20k-char body); preferring
+    ``content`` lets the title+summary judge stage decide depth from the feed
+    itself instead of falling through to a per-article fetch that a Cloudflare-gated
+    site returns as a wall. Excerpt-only feeds have no ``content``, so they fall
+    back to ``<description>`` unchanged.
+    """
+    contents = getattr(entry, "content", None)
+    if contents:
+        # feedparser yields ``content`` items as ``FeedParserDict`` (dict-like), so
+        # ``.get`` is always available; take the first with a non-empty ``value``.
+        for c in contents:
+            value = c.get("value")
+            if value:
+                return value
+    return getattr(entry, "summary", None)
+
+
+def _entry_summary(entry: object) -> str | None:
+    """Flattened, capped plain-text body for judging (``_entry_body`` +
+    ``html_to_text``, clamped to ``MAX_BODY_CHARS``)."""
+    text = html_to_text(_entry_body(entry))
+    if text is not None and len(text) > MAX_BODY_CHARS:
+        text = text[:MAX_BODY_CHARS]
+    return text
+
+
 def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     """Parse an RSS/Atom body into ``Entry`` objects.
 
@@ -208,7 +248,7 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
             Entry(
                 canonical_url=_dedupe_url(entry, absolute),
                 title=getattr(entry, "title", None) or None,
-                summary=html_to_text(getattr(entry, "summary", None)),
+                summary=_entry_summary(entry),
                 published_at=_published_at(entry),
                 kind="feed",
             )

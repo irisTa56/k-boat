@@ -21,7 +21,7 @@ import pytest
 from feed_filter import browser, cli
 from feed_filter.browser import BrowserFetchError
 from feed_filter.canonical import CanonicalUrl, canonical_url
-from feed_filter.config import db_path, sites_path
+from feed_filter.config import SUMMARY_PREVIEW_CHARS, db_path, sites_path
 from feed_filter.discover import DiscoveryCandidate, DiscoveryRejection, DiscoveryResult
 from feed_filter.feeds import Entry, EntryKind
 from feed_filter.fetch import FetchError
@@ -363,6 +363,105 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
     # Nothing is recorded by new-entries; the truncated entry reappears next run.
     with contextlib.closing(open_db(db_path())) as conn:
         assert count(conn) == 0
+
+
+def test_new_entries_caches_full_body_and_emits_only_preview(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The full feed body is stashed in the body cache (pulled later via
+    ``entry-body``); stdout carries only a bounded preview, so the run orchestrator
+    never sees the body (GUD-003)."""
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    body = "Full article body. " + "x" * 1000  # longer than SUMMARY_PREVIEW_CHARS
+    url = "https://a.example.com/deep"
+
+    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+        ents = [Entry(canonical_url(url), "Deep", body, None, "feed")]
+        return GatherResult(entries=ents, index_matches=1, zero_links=False, error=None)
+
+    monkeypatch.setattr(cli, "gather_new", fake_gather)
+
+    assert cli.main(["new-entries"]) == 0
+    entry = _out(capsys)["entries"][0]
+    # stdout summary is a bounded preview (with an ellipsis), not the full body.
+    assert entry["summary"] == body[:SUMMARY_PREVIEW_CHARS] + "…"
+    assert len(entry["summary"]) == SUMMARY_PREVIEW_CHARS + 1
+
+    # entry-body pulls the full body back from the cache for the judge.
+    assert cli.main(["entry-body", "--url", url]) == 0
+    assert _out(capsys) == {"url": url, "body": body}
+
+
+def test_entry_body_cache_miss_returns_null(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A url not cached by ``new-entries`` (a scrape entry, or a stale/interrupted
+    run) returns ``body: null``, so the judge falls back to a WebFetch (REQ-007)."""
+    url = "https://x.example.com/gone"
+    assert cli.main(["entry-body", "--url", url]) == 0
+    assert _out(capsys) == {"url": url, "body": None}
+
+
+def test_new_entries_caches_duplicate_canonical_url_without_crashing(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two feeds carrying the same article emit two entries with one canonical URL;
+    the body cache must tolerate the duplicate (keeping the longer body; equal length
+    keeps the first), not wedge the run on the PRIMARY KEY — nothing is recorded seen
+    during ``new-entries`` to collapse them, and the never-lost bias keeps both on
+    stdout (dedupe is downstream)."""
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    add_site(sites_path(), SiteConfig(id="b", name="B", feed_url="https://b.example.com/f.xml"))
+
+    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+        ents = [
+            Entry(
+                canonical_url("https://shared.example.com/post"),
+                "Shared",
+                f"body {site.id}",
+                None,
+                "feed",
+            )
+        ]
+        return GatherResult(entries=ents, index_matches=1, zero_links=False, error=None)
+
+    monkeypatch.setattr(cli, "gather_new", fake_gather)
+
+    assert cli.main(["new-entries"]) == 0
+    urls = [e["url"] for e in _out(capsys)["entries"]]
+    assert len(urls) == 2 and len(set(urls)) == 1  # both emitted, one canonical URL
+
+    assert cli.main(["entry-body", "--url", urls[0]]) == 0
+    assert _out(capsys)["body"] in {"body a", "body b"}
+
+
+def test_new_entries_does_not_cache_capped_entries(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the emitted (post global-cap) set is cached; an entry truncated by the
+    cap has no cached body, so ``entry-body`` misses and the judge would WebFetch."""
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+
+    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+        ents = [
+            Entry(canonical_url(f"https://a.example.com/{i}"), f"T{i}", f"body {i}", None, "feed")
+            for i in range(3)
+        ]
+        return GatherResult(entries=ents, index_matches=3, zero_links=False, error=None)
+
+    monkeypatch.setattr(cli, "gather_new", fake_gather)
+
+    assert cli.main(["new-entries", "--global-cap", "2"]) == 0
+    emitted = [e["url"] for e in _out(capsys)["entries"]]
+    assert len(emitted) == 2
+    dropped = str(canonical_url("https://a.example.com/2"))
+    assert dropped not in emitted
+
+    assert cli.main(["entry-body", "--url", dropped]) == 0
+    assert _out(capsys)["body"] is None
 
 
 def test_new_entries_zero_links_does_not_increment_failure_counter(

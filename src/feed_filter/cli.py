@@ -39,7 +39,7 @@ from dataclasses import replace
 from itertools import zip_longest
 from typing import Any
 
-from feed_filter import site_health
+from feed_filter import body_cache, site_health
 from feed_filter.browser import (
     BrowserFetchError,
     MissingPlaywrightError,
@@ -53,6 +53,7 @@ from feed_filter.config import (
     DEFAULT_PERSISTENT_FAILURE_RUNS,
     DEFAULT_POLL_OFFSETS_DAYS,
     REMINDER_LIST_FORUM,
+    SUMMARY_PREVIEW_CHARS,
     db_path,
     sites_path,
 )
@@ -69,6 +70,16 @@ from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, upd
 def _emit(obj: Any) -> None:
     """Write one JSON document to stdout (unicode preserved for readable titles)."""
     print(json.dumps(obj, ensure_ascii=False))
+
+
+def _preview(text: str | None, limit: int) -> str | None:
+    """First ``limit`` chars of ``text`` with an ellipsis when truncated, else
+    ``text`` unchanged (``None`` passes through). The stdout ``summary`` for a feed
+    entry whose full body is cached (``body_cache``); the judge pulls the full body
+    via ``entry-body`` (GUD-003)."""
+    if text is None or len(text) <= limit:
+        return text
+    return text[:limit] + "…"
 
 
 def _candidate_to_dict(c: DiscoveryCandidate) -> dict[str, Any]:
@@ -216,6 +227,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     require_playwright_if_needed(sites_path())
     groups: list[list[dict[str, Any]]] = []
     site_status: list[dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     try:
         with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
             for site in sites:
@@ -226,6 +238,8 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                             "site_id": site.id,
                             "url": str(e.canonical_url),
                             "title": e.title,
+                            # Full body here; capped to a preview after the global
+                            # clamp below, once the emitted set is known.
                             "summary": e.summary,
                             "kind": e.kind,
                         }
@@ -254,10 +268,34 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                         ),
                     }
                 )
+            # Interleave + global clamp (REQ-010) *before* caching so only the
+            # emitted set is cached. Then stash each emitted feed entry's full body
+            # in the transient cache and replace the stdout ``summary`` with a short
+            # preview, so the full body reaches only the judging haiku (via
+            # ``entry-body``), never this run's orchestrator context (GUD-003).
+            entries = _round_robin(groups)[: args.global_cap]
+            body_cache.replace(conn, [(d["url"], d["summary"]) for d in entries if d["summary"]])
+            for d in entries:
+                d["summary"] = _preview(d["summary"], SUMMARY_PREVIEW_CHARS)
     finally:
         close_browser()  # tear down a lazily-launched browser (no-op for httpx-only runs)
-    entries = _round_robin(groups)[: args.global_cap]
     _emit({"entries": entries, "sites": site_status})
+    return 0
+
+
+def cmd_entry_body(args: argparse.Namespace) -> int:
+    """Emit one gathered entry's full cached body for the judging subagent.
+
+    ``new-entries`` caches each emitted feed entry's full body and puts only a
+    preview on stdout (GUD-003); the judge fetches the full body here so it lands
+    only in the cheap judge's context. Output is ``{url, body}``; ``body`` is
+    ``null`` on a cache miss — a non-feed entry (scrape entries carry no body), an
+    interrupted run, or a body evicted by a later ``new-entries`` — and the judge
+    falls back to a full-page WebFetch, so never-lost holds (REQ-007).
+    """
+    with contextlib.closing(open_db(db_path())) as conn:
+        body = body_cache.get(conn, args.url)
+    _emit({"url": args.url, "body": body})
     return 0
 
 
@@ -668,6 +706,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("--site-id", dest="site_id")
     p_new.add_argument("--global-cap", dest="global_cap", type=int, default=DEFAULT_GLOBAL_CAP)
     p_new.set_defaults(handler=cmd_new_entries)
+
+    p_body = sub.add_parser(
+        "entry-body", help="print one gathered entry's full cached body (for the judge)"
+    )
+    p_body.add_argument("--url", required=True)
+    p_body.set_defaults(handler=cmd_entry_body)
 
     p_remind = sub.add_parser("remind", help="create a reminder and record it seen (kept)")
     p_remind.add_argument("--site-id", dest="site_id", required=True)
