@@ -1,19 +1,19 @@
 ---
 name: kboat-rescue
-description: Rescue a blocked (DLQ) K-Boat source — pull a bot-protected PDF or a walled web page through the real browser and finish ingesting it. Use when the user wants to complete a source that ingest could not fetch, or says things like "rescue this blocked source", "the scispace PDF is in the DLQ", "the Medium article is walled", "fetch <slug>", "complete the blocked one". Interactive and Mac-only: it drives the user's Chrome via Claude in Chrome and may ask them to solve a CAPTCHA or sign in. Defers to kboat-notes for the note schema and the rescue transitions.
+description: Rescue a blocked (DLQ) K-Boat source — pull a bot-protected PDF or a walled web page through the real browser and finish ingesting it. Use when the user wants to complete a source that ingest left blocked, or says things like "rescue this blocked source", "the scispace PDF is in the DLQ", "the Medium article is walled", "fetch <slug>", "complete the blocked one". Interactive and Mac-only: it drives the user's Chrome via Claude in Chrome and may ask them to solve a CAPTCHA or sign in. Defers to kboat-notes for the note schema and the rescue transitions.
 ---
 
 # K-Boat rescue (DLQ → ingested)
 
-Some sources cannot be fetched unattended: a bot-protected PDF behind an AWS WAF / Cloudflare CAPTCHA, or a walled web page (a member-only or paywalled article NotebookLM fetched as a login page). Ingest parks these in the **DLQ** as source notes with `blocked: true` and an empty `notebooklm_id` (see kboat-notes "The DLQ (blocked sources)"). This skill completes one: it obtains the content through the user's real browser — where a human can solve any CAPTCHA or sign in — builds the 1:1 notebook, and clears `blocked`, keeping the same note and `url`.
+Some sources cannot be fetched unattended — a bot-protected PDF behind an AWS WAF / Cloudflare CAPTCHA is the motivating case, and kboat-notes "Procedure: record a blocked source (DLQ)" lists them all. Ingest parks these in the **DLQ** as source notes with `blocked: true` and an empty `notebooklm_id`. This skill completes one: it obtains the content through the user's real browser — where a human can solve any CAPTCHA or sign in — builds the 1:1 notebook, and clears `blocked`, keeping the same note and `url`.
 
 Follow kboat-notes for the schema and "Procedure: rescue a blocked source"; this skill adds the browser mechanics. It is **interactive and Mac-only** — it needs the user present and their Chrome connected. Do not run it from the unattended routine.
 
 ## Scope
 
-Both blocked kinds are handled; they differ only in how the content is obtained and where the reading copy lives.
+Both `source_type`s are handled — whatever sent the source to the DLQ, the note's `source_type` selects the branch — and they differ only in how the content is obtained and where the reading copy lives.
 
-- **PDF** (`source_type: pdf`): the motivating case (scispace and similar `.pdf` URLs). A blocked PDF has a `url` and no local file yet; rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it.
+- **PDF** (`source_type: pdf`): a blocked PDF has a `url` and no local file yet; rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it.
 - **Web page** (`source_type: web_page`): a member-only or otherwise walled article. Rescue captures the rendered article text from the logged-in browser and ingests it as a NotebookLM text source; there is no local file — the reading copy stays the live `url`.
 
 ## Procedure
