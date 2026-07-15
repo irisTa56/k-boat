@@ -27,7 +27,7 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. The s
 ## What the user does with a result
 
 - **Just read it:** open `reading_link` — a web URL, or for a PDF the Obsidian/PDF++ link to `PDFs/<slug>.pdf`. No notebook is needed to read.
-- **Chat with it or distil it:** decide by the result's `notebooklm_id`, not its disposition. If `notebooklm_id` is present (always for a `keep` source, and for anything whose notebook has not been discarded), open `gemini_url` to chat or check `distill` to have the routine distil it. If it is empty (a distilled `distill`-only source, or a `dismiss`ed one), the notebook is gone — reactivate it first via kboat-notes "Procedure: reactivate a discarded source's notebook".
+- **Chat with it or distil it:** decide by the result's `notebooklm_id`, not its disposition. If it is empty the source has no notebook — kboat-notes "Procedure: reactivate a source's notebook" is the way back, and its opener says which sources it takes and which are already on their way to one. If it is present, open `gemini_url` to chat or check `distill` to have the routine distil it. A present id is not proof the notebook can answer, though, and no property marks the difference — a notebook whose text some check condemned is kept deliberately, and one deleted out of band leaves its id behind — so the chat is where you find out. What to do then is that same opener's business; `distill` is not the answer either way, since it would go ripe and abort every run.
 
 ## Daily pick mode
 
