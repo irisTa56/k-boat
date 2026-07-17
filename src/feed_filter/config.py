@@ -31,6 +31,16 @@ DEFAULT_POLL_OFFSETS_DAYS: tuple[int, ...] = (0, 1, 7)  # FRM-007: poll schedule
 DEFAULT_PER_SITE_CAP = 20
 DEFAULT_GLOBAL_CAP = 80
 
+# Bounded concurrency for the article-path gather (``cmd_new_entries``): the max
+# number of distinct hosts fetched in parallel. The gather is otherwise a slow
+# sequential sum over ~80 sites (each up to ``fetch.DEFAULT_TIMEOUT``), which
+# pushed a run past the foreground timeout; fetching independent hosts
+# concurrently collapses the wall-clock toward the slowest host. Bounded (not
+# unbounded) so a run opens at most this many simultaneous connections. Same-host
+# sites are grouped into one worker and fetched in turn, so no host ever sees two
+# concurrent requests (crawler politeness) — concurrency is across hosts only.
+DEFAULT_GATHER_CONCURRENCY = 16
+
 # Length of the entry-body preview ``new-entries`` puts on stdout. The full body
 # is cached (``body_cache``) and pulled by the judge via ``entry-body`` so it never
 # enters the run orchestrator's context (GUD-003); the preview is what the

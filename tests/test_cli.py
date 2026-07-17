@@ -12,9 +12,11 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -33,7 +35,7 @@ from feed_filter.forum_pipeline import (
     RuleBCandidate,
     TriggerPost,
 )
-from feed_filter.pipeline import GatherResult
+from feed_filter.pipeline import FetchOutcome
 from feed_filter.reminders import ReminderError
 from feed_filter.seen import count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
@@ -305,11 +307,11 @@ def test_new_entries_skips_disabled_site(
 
     gathered_ids: list[str] = []
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
         gathered_ids.append(site.id)
-        return GatherResult(entries=[], index_matches=0, zero_links=False, error=None)
+        return FetchOutcome(entries=[], error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     assert cli.main(["new-entries"]) == 0
     out = _out(capsys)
@@ -327,14 +329,14 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
     add_site(sites_path(), SiteConfig(id="b", name="B", feed_url="https://b.example.com/f.xml"))
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
         if site.id == "a":
             ents = [_entry(f"https://a.example.com/{i}") for i in range(3)]
         else:
             ents = [_entry("https://b.example.com/0")]
-        return GatherResult(entries=ents, index_matches=len(ents), zero_links=False, error=None)
+        return FetchOutcome(entries=ents, error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     rc = cli.main(["new-entries", "--global-cap", "3"])
     assert rc == 0
@@ -376,11 +378,11 @@ def test_new_entries_caches_full_body_and_emits_only_preview(
     body = "Full article body. " + "x" * 1000  # longer than SUMMARY_PREVIEW_CHARS
     url = "https://a.example.com/deep"
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
         ents = [Entry(canonical_url(url), "Deep", body, None, "feed")]
-        return GatherResult(entries=ents, index_matches=1, zero_links=False, error=None)
+        return FetchOutcome(entries=ents, error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     assert cli.main(["new-entries"]) == 0
     entry = _out(capsys)["entries"][0]
@@ -415,7 +417,7 @@ def test_new_entries_caches_duplicate_canonical_url_without_crashing(
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
     add_site(sites_path(), SiteConfig(id="b", name="B", feed_url="https://b.example.com/f.xml"))
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
         ents = [
             Entry(
                 canonical_url("https://shared.example.com/post"),
@@ -425,9 +427,9 @@ def test_new_entries_caches_duplicate_canonical_url_without_crashing(
                 "feed",
             )
         ]
-        return GatherResult(entries=ents, index_matches=1, zero_links=False, error=None)
+        return FetchOutcome(entries=ents, error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     assert cli.main(["new-entries"]) == 0
     urls = [e["url"] for e in _out(capsys)["entries"]]
@@ -445,14 +447,14 @@ def test_new_entries_does_not_cache_capped_entries(
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
         ents = [
             Entry(canonical_url(f"https://a.example.com/{i}"), f"T{i}", f"body {i}", None, "feed")
             for i in range(3)
         ]
-        return GatherResult(entries=ents, index_matches=3, zero_links=False, error=None)
+        return FetchOutcome(entries=ents, error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     assert cli.main(["new-entries", "--global-cap", "2"]) == 0
     emitted = [e["url"] for e in _out(capsys)["entries"]]
@@ -482,16 +484,97 @@ def test_new_entries_zero_links_does_not_increment_failure_counter(
         ),
     )
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
-        return GatherResult(entries=[], index_matches=0, zero_links=True, error=None)
+    # A scrape site whose live index yields no pattern match: fetch returns zero
+    # entries, so filter_gathered derives zero_links (index_matches == 0) itself.
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
+        return FetchOutcome(entries=[], error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     assert cli.main(["new-entries"]) == 0
     status = _out(capsys)["sites"][0]
     assert status["zero_links"] is True
     assert status["consecutive_failures"] == 0
     assert status["persistent"] is False
+
+
+def test_new_entries_fetches_hosts_concurrently_but_serializes_same_host(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bounded per-host concurrency: distinct hosts fetch in parallel, but two sites
+    on one host never fetch concurrently (crawler politeness).
+
+    Two hosts each carry two sites. A ``Barrier(2)`` rendezvous inside the fake
+    fetch forces the two *hosts* to be in flight simultaneously — a serial gather
+    would deadlock on the first wait and hit the timeout, so the run completing at
+    all proves cross-host concurrency. A per-host in-flight counter proves the two
+    same-host sites are fetched one at a time (max concurrency per host == 1).
+    """
+    for host in ("a", "b"):
+        for n in (1, 2):
+            add_site(
+                sites_path(),
+                SiteConfig(
+                    id=f"{host}{n}",
+                    name=f"{host}{n}",
+                    feed_url=f"https://{host}.example.com/{n}.xml",
+                ),
+            )
+    _no_client(monkeypatch)
+
+    barrier = threading.Barrier(2, timeout=5)  # two hosts must rendezvous per wave
+    lock = threading.Lock()
+    active: dict[str, int] = {}
+    peak: dict[str, int] = {}
+
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
+        host = urlsplit(site.feed_url or "").netloc
+        with lock:
+            active[host] = active.get(host, 0) + 1
+            peak[host] = max(peak.get(host, 0), active[host])
+        barrier.wait()  # blocks until the other host's worker also arrives
+        with lock:
+            active[host] -= 1
+        return FetchOutcome(entries=[], error=None)
+
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
+
+    assert cli.main(["new-entries"]) == 0
+    # Every host was reached; none ever had two simultaneous in-flight fetches.
+    assert set(peak) == {"a.example.com", "b.example.com"}
+    assert max(peak.values()) == 1
+
+
+def test_new_entries_unexpected_worker_exception_aborts_run(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An *unexpected* (non-``FetchError``) exception in a fetch worker surfaces and
+    aborts the run — it is never swallowed into a partial, exit-0 emit.
+
+    A ``FetchError`` is absorbed per site (REQ-008), but a genuine bug is not: it
+    propagates out of the pool when the future is drained, exactly as the former
+    sequential gather would have. This guards the documented "propagates out of the
+    run" invariant against a future ``try/except`` around ``pool.map`` that would
+    silently emit an incomplete run.
+    """
+    for host in ("a", "b"):  # two hosts so the failing one runs in a pool worker
+        add_site(
+            sites_path(),
+            SiteConfig(id=host, name=host, feed_url=f"https://{host}.example.com/f.xml"),
+        )
+    _no_client(monkeypatch)
+
+    def boom(site: SiteConfig, *, client: object) -> FetchOutcome:
+        if site.id == "b":
+            raise RuntimeError("bug in a worker")
+        return FetchOutcome(entries=[], error=None)
+
+    monkeypatch.setattr(cli, "fetch_site", boom)
+    capsys.readouterr()  # drop the add-site output
+
+    with pytest.raises(RuntimeError, match="bug in a worker"):
+        cli.main(["new-entries"])
+    assert capsys.readouterr().out == ""  # aborted before the final _emit — nothing emitted
 
 
 def test_new_entries_unknown_site_id_exits_nonzero(
@@ -772,7 +855,7 @@ def test_new_entries_gate_fires_before_any_fetch(
         ),
     )
     monkeypatch.setattr(browser, "_playwright_installed", lambda: False)
-    monkeypatch.setattr(cli, "gather_new", lambda *a, **k: pytest.fail("fetched before the gate"))
+    monkeypatch.setattr(cli, "fetch_site", lambda *a, **k: pytest.fail("fetched before the gate"))
 
     rc = cli.main(["new-entries"])
     assert rc == 1
@@ -845,8 +928,8 @@ def test_new_entries_closes_browser_in_finally(
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
     monkeypatch.setattr(
         cli,
-        "gather_new",
-        lambda *a, **k: GatherResult(entries=[], index_matches=0, zero_links=False, error=None),
+        "fetch_site",
+        lambda *a, **k: FetchOutcome(entries=[], error=None),
     )
     closed: list[bool] = []
     monkeypatch.setattr(cli, "close_browser", lambda: closed.append(True))
@@ -1173,11 +1256,11 @@ def test_new_entries_excludes_forum_sites(
 
     gathered_ids: list[str] = []
 
-    def fake_gather(conn: sqlite3.Connection, site: SiteConfig, *, client: object) -> GatherResult:
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
         gathered_ids.append(site.id)
-        return GatherResult(entries=[], index_matches=0, zero_links=False, error=None)
+        return FetchOutcome(entries=[], error=None)
 
-    monkeypatch.setattr(cli, "gather_new", fake_gather)
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
 
     cli.main(["new-entries"])
     # Only the article site was gathered.

@@ -32,7 +32,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 The full module-by-module map, the CLI ↔ skills JSON contract, and the behavioral invariants live in [ARCHITECTURE.md](ARCHITECTURE.md) — read it before any change spanning more than one module. The load-bearing rules:
 
 - Deterministic logic is plain Python behind a single `feed-filter <subcommand>` CLI emitting JSON on stdout; that CLI is the **only** contract with the Claude Code skills, which never reach into Python internals. The LLM is reserved for cluster-pick at registration and keep/drop at run time.
-- Synchronous throughout: a sequential CLI batch over a sync `httpx.Client`, no `asyncio`.
+- Synchronous throughout: a sequential CLI batch over a sync `httpx.Client`, no `asyncio`. The one exception is the `new-entries` gather, which fetches independent hosts concurrently via a bounded thread pool over the sync client (same-host requests stay serialized, the seen-filter stays on the main thread) — threads, not `asyncio`.
 - Always dedupe on `canonical_url`, never the raw URL.
 - Design bias is **never-lost over never-duplicated**: a judging error reminds-then-records anyway; a gather failure records nothing so the next run retries.
 - Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned (FRM-CON-005).

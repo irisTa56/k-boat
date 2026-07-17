@@ -18,7 +18,7 @@ from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 from feed_filter import browser
 from feed_filter.canonical import canonical_url
 from feed_filter.config import DEFAULT_PER_SITE_CAP
-from feed_filter.pipeline import gather_new
+from feed_filter.pipeline import FetchOutcome, fetch_site, filter_gathered, gather_new
 from feed_filter.seen import count, open_db, snapshot
 from feed_filter.sites import SiteConfig
 
@@ -138,6 +138,36 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
         assert count(conn) == 0  # nothing recorded seen (REQ-008)
 
     assert result.error is not None
+    assert result.entries == []
+    assert result.index_matches == 0
+    assert result.zero_links is False
+
+
+# --- fetch/filter split (the concurrency seam) ----------------------------
+
+
+def test_fetch_site_absorbs_fetch_error_without_db() -> None:
+    """The network-only half absorbs a fetch failure into ``error`` (REQ-008) and
+    touches no DB, so it is safe to run off the main thread."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="busy")
+
+    with _client(handler) as client:
+        outcome = fetch_site(_FEED, client=client)
+
+    assert outcome.entries == []
+    assert outcome.error is not None
+
+
+def test_filter_gathered_passes_error_outcome_through(tmp_path: Path) -> None:
+    """A fetch failure flows straight through the DB half as an empty, error-bearing
+    result — nothing is recorded (REQ-008)."""
+    with contextlib.closing(open_db(tmp_path / "db")) as conn:
+        result = filter_gathered(conn, _FEED, FetchOutcome(entries=[], error="boom"))
+        assert count(conn) == 0
+
+    assert result.error == "boom"
     assert result.entries == []
     assert result.index_matches == 0
     assert result.zero_links is False

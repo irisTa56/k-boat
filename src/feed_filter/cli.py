@@ -35,9 +35,13 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from itertools import zip_longest
 from typing import Any
+from urllib.parse import urlsplit
+
+import httpx
 
 from feed_filter import body_cache, site_health
 from feed_filter.browser import (
@@ -49,6 +53,7 @@ from feed_filter.browser import (
 )
 from feed_filter.canonical import canonical_url
 from feed_filter.config import (
+    DEFAULT_GATHER_CONCURRENCY,
     DEFAULT_GLOBAL_CAP,
     DEFAULT_PERSISTENT_FAILURE_RUNS,
     DEFAULT_POLL_OFFSETS_DAYS,
@@ -61,7 +66,7 @@ from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.fetch import FetchError, build_client
 from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
-from feed_filter.pipeline import fetch_entries, gather_new
+from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
 from feed_filter.reminders import ReminderError, add_reminder, open_reminder_urls
 from feed_filter.seen import open_db, record, snapshot
 from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
@@ -201,12 +206,77 @@ def cmd_list_sites(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _gather_host_key(site: SiteConfig) -> str:
+    """The network host a gather fetch targets (``feed_url`` or ``index_url`` host).
+
+    Sites sharing a host are grouped so they fetch **sequentially within one
+    worker**, never concurrently — no host is ever hit by two simultaneous
+    requests (crawler politeness); concurrency in ``cmd_new_entries`` is across
+    hosts only. Falls back to the site id when the URL carries no netloc, so a
+    malformed entry becomes its own group rather than colliding with others under
+    an empty key.
+    """
+    url = site.feed_url or site.index_url or ""
+    return urlsplit(url).netloc.lower() or site.id
+
+
+def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, FetchOutcome]:
+    """Fetch every site's entries, returning ``{site_id: FetchOutcome}`` (REQ-008).
+
+    httpx sites are grouped by host (``_gather_host_key``) and fetched concurrently
+    across hosts through a pool bounded at ``DEFAULT_GATHER_CONCURRENCY``; each
+    worker fetches its host's sites in turn, so a host is never hit concurrently.
+    ``requires_browser`` sites are fetched on the main thread because Playwright's
+    sync API is not thread-safe. ``fetch_site`` absorbs a fetch failure into the
+    outcome's ``error`` (REQ-008); an *unexpected* exception in a worker surfaces
+    when its future is drained here, propagating out of the run exactly as the
+    former sequential gather would have.
+    """
+    outcomes: dict[str, FetchOutcome] = {}
+
+    host_groups: dict[str, list[SiteConfig]] = {}
+    for site in sites:
+        if site.requires_browser:
+            continue
+        host_groups.setdefault(_gather_host_key(site), []).append(site)
+
+    def fetch_group(group: list[SiteConfig]) -> list[tuple[str, FetchOutcome]]:
+        # One host per worker: fetch its sites sequentially (never concurrently).
+        return [(s.id, fetch_site(s, client=client)) for s in group]
+
+    if host_groups:
+        with ThreadPoolExecutor(
+            max_workers=min(DEFAULT_GATHER_CONCURRENCY, len(host_groups))
+        ) as pool:
+            for group_result in pool.map(fetch_group, host_groups.values()):
+                for site_id, outcome in group_result:
+                    outcomes[site_id] = outcome
+
+    # Browser sites on the main thread (Playwright is single-threaded).
+    for site in sites:
+        if site.requires_browser:
+            outcomes[site.id] = fetch_site(site, client=client)
+
+    return outcomes
+
+
 def cmd_new_entries(args: argparse.Namespace) -> int:
     """Gather new entries across non-forum sites, interleave, apply global cap (REQ-010).
 
     Forum sites (``kind == "forum"``) are excluded so the article-path gather
     never reaches ``fetch_entries``'s ``assert index_url is not None`` guard or
     ``gather_new``'s scrape flag on a forum row (FRM-CON-001, finding #8).
+
+    **Bounded per-host concurrency.** The gather is two phases. First the
+    network-only ``fetch_site`` runs for every httpx site, fetched concurrently
+    across hosts via a thread pool bounded at ``DEFAULT_GATHER_CONCURRENCY``; sites
+    sharing a host are grouped into one worker and fetched in turn, so no host sees
+    two concurrent requests (``_gather_host_key``). ``requires_browser`` sites use
+    Playwright, whose sync API is not thread-safe, so they are fetched on the main
+    thread. Then the DB-touching ``filter_gathered`` runs **serially on the main
+    thread in registry order**, so the seen-store is read single-threaded and the
+    round-robin ordering (REQ-010) is unchanged — concurrency only collapses the
+    network wall-clock, it does not reorder results.
 
     Each ``sites[]`` entry also carries ``consecutive_failures`` (the durable
     per-site count from ``site_health``) and ``persistent`` (that count has
@@ -230,8 +300,9 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     entries: list[dict[str, Any]] = []
     try:
         with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
+            outcomes = _fetch_all(sites, client=client)
             for site in sites:
-                gathered = gather_new(conn, site, client=client)
+                gathered = filter_gathered(conn, site, outcomes[site.id])
                 groups.append(
                     [
                         {
