@@ -145,7 +145,8 @@ Write the Basic Memory Report values in the **same language as the Summary** (Ja
 
 Write `none` for any of these keys except `flashcards/quiz:` when there is nothing to report. Annotate a per-run create-cap hit **once**: suffix `created:` with `(N created, create cap reached)`, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
 
-When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in, and invoke a matching writing skill for that language if the environment offers one.
+When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in: invoke a matching writing skill for that language up front if the environment offers one, and follow its conventions rather than drafting from memory of the rules.
+Then, before finalizing the prose you just drafted, re-read it once against that skill's own self-check as a distinct pass, rather than trusting that you kept the rules in mind while drafting.
 
 A **Kindle book** (Phase C) uses the same two-subsection layout, with `ASIN:<asin>` as the reference and its Summary drawn from the book and the reader's own `#dialogue` commentary in the body. Kindle books have no notebook, so they omit the `flashcards/quiz:` line.
 
