@@ -1,44 +1,29 @@
-[project]
-name = "kboat"
-version = "0.1.0"
-description = "Deterministic K-Boat tools over a shared frontmatter core: lifecycle, repos, the daily pick, validation, and the note writer."
-requires-python = ">=3.13"
-# Intentionally zero runtime dependencies: the mechanical core stays a pure,
-# independently-testable package. The browser-driven NotebookLM CLI lives outside
-# this env as a mise tool (`pipx:notebooklm-py`), so it never leaks in here.
-dependencies = []
-
-[project.scripts]
-kboat-lifecycle = "kboat.lifecycle.__main__:main"
-kboat-repos = "kboat.repos.__main__:main"
-kboat-pick = "kboat.pick.__main__:main"
-kboat-note = "kboat.note.__main__:main"
-kboat-validate = "kboat.validate.__main__:main"
-
-[build-system]
-requires = ["uv_build>=0.11.8,<0.12.0"]
-build-backend = "uv_build"
-
-[tool.uv.build-backend]
-module-name = "kboat"
+# Virtual workspace root: no [project] table, so `uv sync` builds one environment
+# from the members under packages/ without installing a root package. Only the
+# shared dev tooling lives here; each member declares its own runtime deps.
+[tool.uv.workspace]
+members = ["packages/*"]
 
 [dependency-groups]
 dev = [
     "pytest>=9",
+    "pytest-cov",
     "ruff>=0.15",
     "ty>=0.0.35",
+    "playwright",
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
+# The one ruff config for every workspace member: same coding style everywhere.
+# Members carry no [tool.ruff] of their own — ruff walks up to this. The pytest
+# quality bar (branch coverage ≥80, ResourceWarning-as-error) is identical per
+# member too; only the coverage target module differs, which pytest can't inherit.
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-extend-select = ["I", "UP", "B", "SIM", "RUF"]
+extend-select = ["I", "UP", "B", "SIM", "N", "RUF"]
 ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["kboat"]
+known-first-party = ["kboat", "feed_filter"]

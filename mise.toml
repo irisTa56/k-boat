@@ -15,6 +15,9 @@ OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
 # Defaults to a subdir of the vault; .env overrides it (for K-Boat, a Git-managed directory).
 KBOAT_KNOWLEDGE_PATH = "~/Documents/K-Boat/Knowledge"
 _.file = ".env"
+# One workspace venv at the root: `uv sync` installs every workspace member
+# editable plus the shared dev tooling, so each package's console scripts are
+# callable bare.
 _.python.venv = { path = ".venv", create = true }
 
 [hooks]
@@ -52,21 +55,51 @@ run = "rumdl check"
 description = "Scan staged changes for secrets"
 run = "gitleaks git --staged -v"
 
-# Python format/QA for the `kboat` package (now the repo root). `pre-commit`
-# (depends = ["qa:*"]) picks up `qa:py` directly.
+# Python QA is per-member: each `qa:py:<member>` runs in its own dir so that
+# package's pyproject config applies (ruff selects, ty root, pytest coverage),
+# resolving against the single workspace venv. `qa:py`/`fmt:py` aggregate them by
+# glob, so adding a package means adding its two leaf tasks — no central list.
 
-[tasks."fmt:py"]
-description = "Autofix Python lint and formatting"
-run = """
-uv run ruff check --fix
-uv run ruff format
-"""
-
-[tasks."qa:py"]
+[tasks."qa:py:kboat"]
 description = "Lint, type-check, and test the kboat package"
+dir = "packages/kboat"
 run = """
 uv run ruff check
 uv run ruff format --check
 uv run ty check
 uv run pytest
 """
+
+[tasks."qa:py:feed-filter"]
+description = "Lint, type-check, and test the feed-filter package"
+dir = "packages/feed-filter"
+run = """
+uv run ruff check
+uv run ruff format --check
+uv run ty check
+uv run pytest
+"""
+
+[tasks."qa:py"]
+description = "Python QA across all packages"
+depends = ["qa:py:*"]
+
+[tasks."fmt:py:kboat"]
+description = "Autofix kboat lint and formatting"
+dir = "packages/kboat"
+run = """
+uv run ruff check --fix
+uv run ruff format
+"""
+
+[tasks."fmt:py:feed-filter"]
+description = "Autofix feed-filter lint and formatting"
+dir = "packages/feed-filter"
+run = """
+uv run ruff check --fix
+uv run ruff format
+"""
+
+[tasks."fmt:py"]
+description = "Autofix lint and formatting across all packages"
+depends = ["fmt:py:*"]

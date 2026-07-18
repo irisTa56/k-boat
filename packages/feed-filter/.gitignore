@@ -1,0 +1,18 @@
+# feed-filter local state. Generic caches, .venv, .env, mise.lock, and .coverage
+# are ignored workspace-wide by the root .gitignore; only this member's own local
+# files live here.
+
+# Mutable runtime state (the seen-store); config lives in version control.
+feed-filter.db
+feed-filter.db-wal
+feed-filter.db-shm
+
+# Local seen-store backups (e.g. feed-filter.db.bak-YYYYMMDD plus their sqlite
+# -wal/-shm sidecars) — ad-hoc local snapshots, never committed.
+feed-filter.db.bak*
+
+# Personal subscription list — local state, never committed.
+sites.toml
+
+# Personal selection prompt — local, not committed (copy of prompts/selection.example.md).
+prompts/selection.md

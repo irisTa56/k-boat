@@ -1,0 +1,47 @@
+[project]
+name = "kboat"
+version = "0.1.0"
+description = "Deterministic K-Boat tools over a shared frontmatter core: lifecycle, repos, the daily pick, validation, and the note writer."
+requires-python = ">=3.13"
+# Intentionally zero runtime dependencies: the mechanical core stays a pure,
+# independently-testable package. The browser-driven NotebookLM CLI lives outside
+# this env as a mise tool (`pipx:notebooklm-py`), so it never leaks in here.
+dependencies = []
+
+[project.scripts]
+kboat-lifecycle = "kboat.lifecycle.__main__:main"
+kboat-repos = "kboat.repos.__main__:main"
+kboat-pick = "kboat.pick.__main__:main"
+kboat-note = "kboat.note.__main__:main"
+kboat-validate = "kboat.validate.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "kboat"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --cov=kboat --cov-report=term-missing --cov-fail-under=80"
+# Promote ResourceWarning to error so a leaked file handle fails loudly
+# instead of surfacing as a cryptic GC-time warning during collection.
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.ty.environment]
+root = ["src", "tests"]
+
+[tool.coverage.run]
+source = ["src/kboat"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+    "if __name__ == \"__main__\":",
+]

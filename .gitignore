@@ -7,3 +7,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .ty_cache/
+.rumdl_cache/
+.coverage
+.coverage.*
+htmlcov/
+# mise resolves external QA tools at `latest`; the lockfile is not pinned, so a
+# locally-generated one is never committed.
+mise.lock
