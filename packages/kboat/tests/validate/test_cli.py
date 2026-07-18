@@ -52,7 +52,7 @@ def test_clean_vault_reports_nothing(tmp_path: Path, capsys: pytest.CaptureFixtu
     vault = _vault(tmp_path, **{"a.md": VALID_SOURCE})
     assert main(["--vault", str(vault)]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["checked"] == {"source": 1, "kindle": 0, "repo": 0}
+    assert out["checked"] == {"source": 1, "kindle": 0, "repo": 0, "feed": 0}
     assert out["counts"]["total"] == 0
 
 

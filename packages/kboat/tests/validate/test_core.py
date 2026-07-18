@@ -161,3 +161,32 @@ def test_valid_kindle_and_repo() -> None:
     assert "missing_field" in _codes(
         "kindle", {k: v for k, v in kindle.items() if k != "store_link"}
     )
+
+
+def _feed(**over: Value) -> dict[str, Value]:
+    fm: dict[str, Value] = {
+        "type": "feed",
+        "title": "An article",
+        "url": "https://example.com/post",
+        "shelved": False,
+        "dismissed": False,
+        "wall": False,
+        "feed_kind": "article",
+        "site_id": "example",
+        "summary": "",
+        "added_date": "2026-07-19",
+    }
+    fm.update(over)
+    return fm
+
+
+def test_valid_feed() -> None:
+    assert check_note("feed", _feed(), "p") == []
+    assert check_note("feed", _feed(feed_kind="forum", summary="a topic"), "p") == []
+    # shelved + dismissed together is valid by design (orthogonal, unlike a
+    # source's exclusive dispositions), so the feed type has no cross-field rule.
+    assert check_note("feed", _feed(shelved=True, dismissed=True), "p") == []
+    # The status booleans are always-present: a null one is empty_required.
+    assert "empty_required" in _codes("feed", _feed(dismissed=None))
+    assert "bad_enum" in _codes("feed", _feed(feed_kind="video"))
+    assert "missing_field" in _codes("feed", {k: v for k, v in _feed().items() if k != "site_id"})

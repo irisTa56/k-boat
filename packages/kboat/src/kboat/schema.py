@@ -1,11 +1,13 @@
-"""The K-Boat note schema, as a single declarative source.
+"""The vault note schema, as a single declarative source.
 
 This is the code-authoritative description of the *mechanical* frontmatter schema
 for each note type — field names, order, kinds, defaults, which fields are
 always-present booleans (the Obsidian Base filters depend on that), and the enum
-domains. The `kboat-notes` skill remains the source of truth for what each field
-*means* (semantics, lifecycle, the disposition composition rules) and points here
-for the mechanical list.
+domains. The owning skill remains the source of truth for what each field *means*
+(semantics, lifecycle) and points here for the mechanical list: `kboat-notes` for
+the K-Boat types (`SOURCE`/`KINDLE`/`REPO`), `kboat-feed-notes` for the
+feed-filter type (`FEED`). The shared contract around this schema — the sync gate
+and `kboat-validate` — is the `kboat-vault-conventions` skill.
 
 Two consumers use it: `kboat validate` (checks every vault note against its
 schema) and — from Slice 2 — the note writers (assemble a note in this field
@@ -151,7 +153,29 @@ REPO = NoteSchema(
     body="notes",
 )
 
-BY_TYPE: dict[str, NoteSchema] = {s.type: s for s in (SOURCE, KINDLE, REPO)}
+FEED = NoteSchema(
+    "feed",
+    fields=(
+        Field("type", Kind.ENUM, enum=("feed",), default="feed"),
+        Field("title", Kind.STR),
+        Field("url", Kind.STR),
+        _bool("shelved"),
+        _bool("dismissed"),
+        _bool("wall"),
+        Field("feed_kind", Kind.ENUM, enum=("article", "forum")),
+        Field("site_id", Kind.STR),
+        Field("summary", Kind.STR, empty_ok=True),
+        Field("added_date", Kind.DATE, stamp="created"),
+    ),
+    identity="url",
+)
+
+BY_TYPE: dict[str, NoteSchema] = {s.type: s for s in (SOURCE, KINDLE, REPO, FEED)}
 
 # Which vault subdirectory holds each note type.
-DIR_BY_TYPE: dict[str, str] = {"source": "Sources", "kindle": "Kindles", "repo": "Repos"}
+DIR_BY_TYPE: dict[str, str] = {
+    "source": "Sources",
+    "kindle": "Kindles",
+    "repo": "Repos",
+    "feed": "Feeds",
+}
