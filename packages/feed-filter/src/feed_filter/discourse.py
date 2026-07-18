@@ -1,10 +1,9 @@
 """Discourse forum adapter — URL builders, JSON parsing, topic-id extraction.
 
 Reuses ``fetch.build_client`` / ``fetch.fetch`` / ``FetchError`` for all HTTP
-calls (FRM-GUD-001), ``feeds.parse_feed`` with ``sort=False`` for rank-ordered
-discovery (FRM-GUD-002), and ``canonical.canonical_url`` for topic-id extraction
-(FRM-GUD-003).  No state, no pipeline — those live in ``forum_store`` and
-``forum_pipeline`` (Phases 3–4).
+calls, ``feeds.parse_feed`` with ``sort=False`` for rank-ordered discovery, and
+``canonical.canonical_url`` for topic-id extraction.  No state, no pipeline —
+those live in ``forum_store`` and ``forum_pipeline``.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from feed_filter.canonical import canonical_url
 from feed_filter.feeds import html_to_text, parse_feed
 
 # ---------------------------------------------------------------------------
-# URL builders (TASK-006)
+# URL builders
 # ---------------------------------------------------------------------------
 
 
@@ -28,22 +27,22 @@ def _base(forum_url: str) -> str:
 
 
 def latest_feed_url(forum_url: str) -> str:
-    """latest.rss feed — Rule A discovery seed (FRM-001)."""
+    """latest.rss feed — Rule A discovery seed."""
     return _base(forum_url) + "/latest.rss"
 
 
 def top_feed_url(forum_url: str, period: str) -> str:
-    """top.rss?period=<period> feed — Rule B discovery seed (FRM-001)."""
+    """top.rss?period=<period> feed — Rule B discovery seed."""
     return _base(forum_url) + f"/top.rss?period={period}"
 
 
 def topic_json_url(forum_url: str, topic_id: int) -> str:
-    """Public topic JSON endpoint for post-grain polling (FRM-004)."""
+    """Public topic JSON endpoint for post-grain polling."""
     return _base(forum_url) + f"/t/{topic_id}.json"
 
 
 # ---------------------------------------------------------------------------
-# Topic-id extraction (TASK-007)
+# Topic-id extraction
 # ---------------------------------------------------------------------------
 
 # Matches the path component of a Discourse topic URL:
@@ -62,7 +61,7 @@ def topic_id_from_url(url: str) -> int | None:
 
     Accepts ``/t/<id>``, ``/t/<slug>/<id>``, and either form with a trailing
     post number.  Calls ``canonical_url`` for normalization (strips fragment,
-    tracking params, duplicate slashes) before matching (FRM-GUD-003).
+    tracking params, duplicate slashes) before matching.
     """
     path = urlsplit(canonical_url(url)).path
     m = _TOPIC_PATH_RE.match(path)
@@ -70,17 +69,16 @@ def topic_id_from_url(url: str) -> int | None:
 
 
 # ---------------------------------------------------------------------------
-# Dataclasses (TASK-008)
+# Dataclasses
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ForumTopic:
-    """Topic-level metadata from a Discourse topic JSON response (FRM-004).
+    """Topic-level metadata from a Discourse topic JSON response.
 
-    ``like_count`` is the topic-level total used for the FRM-CON-004
-    short-circuit (skip the JSON fetch when it is unchanged since the last
-    poll).
+    ``like_count`` is the topic-level total used for the short-circuit (skip the
+    JSON fetch when it is unchanged since the last poll).
     """
 
     id: int
@@ -91,11 +89,11 @@ class ForumTopic:
 
 @dataclass(frozen=True)
 class ForumPost:
-    """A single post from the first JSON chunk (FRM-CON-004 / FRM-004).
+    """A single post from the first JSON chunk.
 
     ``text`` is the ``cooked`` HTML flattened to plain text via the shared
     ``feeds.html_to_text`` so the haiku judge receives prose rather than markup
-    (TASK-008) — the same flattening the feed path applies to RSS summaries, so
+    — the same flattening the feed path applies to RSS summaries, so
     Rule-A (RSS) and Rule-B (topic JSON) text are produced by one implementation.
     """
 
@@ -109,11 +107,11 @@ _EMPTY_TOPIC = ForumTopic(id=0, slug="", title="", like_count=0)
 
 
 # ---------------------------------------------------------------------------
-# Topic JSON parsing (TASK-008)
+# Topic JSON parsing
 # ---------------------------------------------------------------------------
 
-# Typed coercers for untrusted JSON values (FRM-GUD-006). The ``/t/<id>.json``
-# shape is undocumented-but-stable (RISK-001); rather than truthy-check each
+# Typed coercers for untrusted JSON values. The ``/t/<id>.json``
+# shape is undocumented-but-stable; rather than truthy-check each
 # field (``x or 0``, which leaves a wrong-typed value to crash later — a string
 # ``count`` makes ``like_count`` a ``str`` that explodes in a downstream
 # ``>=`` comparison, an int ``actions_summary`` makes ``for`` raise
@@ -142,12 +140,12 @@ def _as_dict(value: object) -> dict[Any, Any]:
 def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
     """Parse a Discourse ``/t/<id>.json`` body into a topic and its posts.
 
-    Reads only ``post_stream.posts`` from the first chunk (FRM-CON-004). Every
+    Reads only ``post_stream.posts`` from the first chunk. Every
     value is funneled through a typed coercer (``_as_int``/``_as_str``/
     ``_as_list``/``_as_dict``), so a malformed or lite payload — a wrong type at
     *any* level, not just an absent key — degrades to ``(_EMPTY_TOPIC, [])`` (or
     a post with empty fields) rather than leaking a ``KeyError``/
-    ``AttributeError``/``TypeError`` into ``main()`` (FRM-GUD-006).
+    ``AttributeError``/``TypeError`` into ``main()``.
     """
     try:
         data = json.loads(json_bytes)
@@ -191,7 +189,7 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
 
 
 # ---------------------------------------------------------------------------
-# Feed-based topic-id discovery (TASK-009)
+# Feed-based topic-id discovery
 # ---------------------------------------------------------------------------
 
 
@@ -199,7 +197,7 @@ def discover_topic_ids(feed_bytes: bytes, base_url: str) -> list[int]:
     """Return topic ids from an RSS feed, preserving feed source order.
 
     Passes ``sort=False`` to ``parse_feed`` so a ``top.rss`` feed keeps its
-    rank order rather than being re-sorted by date (FRM-001 / FRM-GUD-002).
+    rank order rather than being re-sorted by date.
     Non-topic links (``topic_id_from_url`` returns ``None``) are dropped.
     """
     entries = parse_feed(feed_bytes, base_url, sort=False)

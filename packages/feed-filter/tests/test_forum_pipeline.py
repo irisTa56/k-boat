@@ -2,7 +2,7 @@
 
 Network-free via ``httpx.MockTransport`` (mirrors ``test_pipeline.py``); the
 seen-store is a real tmp_path SQLite DB via ``seen.open_db`` so the v2 forum
-tables exist (mirrors ``test_forum_store.py``).  ``now`` is injected (FRM-PAT-002).
+tables exist (mirrors ``test_forum_store.py``).  ``now`` is injected.
 
 The MockTransport handler routes by URL path to serve the right fixture:
 - ``/latest.rss``       → ``discourse_latest.rss``
@@ -10,7 +10,7 @@ The MockTransport handler routes by URL path to serve the right fixture:
 - ``/t/<id>.json``      → ``discourse_topic.json``
 - Any other path        → 500 (used to assert no JSON fetch in Rule-A tests)
 
-TASK-019 coverage:
+Coverage:
 - Admission union + dedupe across latest / daily / weekly.
 - Top-feed rank order preserved through ``sort=False`` (daily/weekly top-N).
 - Rule-A candidates emitted from the feed with no JSON fetch.
@@ -113,7 +113,7 @@ def _standard_handler(request: httpx.Request) -> httpx.Response:
 def _no_json_handler(request: httpx.Request) -> httpx.Response:
     """Like _standard_handler but 500 on any /t/<id>.json request.
 
-    Used to assert Rule-A paths never trigger a JSON fetch (FRM-002).
+    Used to assert Rule-A paths never trigger a JSON fetch.
     """
     path = request.url.path
     if path == "/latest.rss":
@@ -131,12 +131,12 @@ def _no_json_handler(request: httpx.Request) -> httpx.Response:
 
 
 # ---------------------------------------------------------------------------
-# admit_from_feeds: admission union and dedupe (TASK-019)
+# admit_from_feeds: admission union and dedupe
 # ---------------------------------------------------------------------------
 
 
 def test_admission_union_admits_all_three_feeds(conn: sqlite3.Connection) -> None:
-    """Topics from latest, daily, and weekly feeds are all admitted (FRM-001)."""
+    """Topics from latest, daily, and weekly feeds are all admitted."""
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(_no_json_handler) as client:
         result = admit_from_feeds(conn, site, client=client, now=NOW)
@@ -145,12 +145,12 @@ def test_admission_union_admits_all_three_feeds(conn: sqlite3.Connection) -> Non
     # latest.rss: 101, 102, 103; top.rss (daily+weekly both use same fixture): 201, 202, 203
     admitted_ids = {c.topic_id for c in result.candidates}
     assert {101, 102, 103, 201, 202, 203} == admitted_ids
-    # Three RSS fetches (latest + daily + weekly), all successful (FRM-001).
+    # Three RSS fetches (latest + daily + weekly), all successful.
     assert result.fetch_count == 3
 
 
 def test_admission_union_dedupes_overlapping_topics(conn: sqlite3.Connection) -> None:
-    """A topic id that appears in multiple feeds is admitted once (FRM-001).
+    """A topic id that appears in multiple feeds is admitted once.
 
     We pre-admit topic 101 (from latest.rss) into forum_watch, then admit the
     union and assert only one row exists for topic 101.
@@ -172,7 +172,7 @@ def test_admission_union_dedupes_overlapping_topics(conn: sqlite3.Connection) ->
 
 
 def test_top_feed_rank_order_preserved(conn: sqlite3.Connection) -> None:
-    """Top-N is the N most popular topics, not the N newest (FRM-001 / FRM-GUD-002).
+    """Top-N is the N most popular topics, not the N newest.
 
     discourse_top.rss ranks topics 201 > 202 > 203 by popularity, but the
     publication dates are Jun 1 < Jun 12 < Jun 14 (reverse order).  With
@@ -192,7 +192,7 @@ def test_top_feed_rank_order_preserved(conn: sqlite3.Connection) -> None:
 
 
 def test_rule_a_candidates_emitted_without_json_fetch(conn: sqlite3.Connection) -> None:
-    """Rule-A candidates come from RSS entries only — no JSON fetch (FRM-002).
+    """Rule-A candidates come from RSS entries only — no JSON fetch.
 
     The _no_json_handler raises AssertionError if any /t/<id>.json path is
     requested, so this test fails if the implementation fetches JSON.
@@ -209,7 +209,7 @@ def test_rule_a_candidates_emitted_without_json_fetch(conn: sqlite3.Connection) 
 
 
 def test_rule_a_skips_topic_with_op_interest_set(conn: sqlite3.Connection) -> None:
-    """A topic whose op_interest_kept is already set emits no Rule-A candidate (FRM-002).
+    """A topic whose op_interest_kept is already set emits no Rule-A candidate.
 
     Rule A is judged once: once the verdict is recorded (kept=1 or kept=0),
     the topic must not appear as a new Rule-A candidate.
@@ -228,7 +228,7 @@ def test_rule_a_skips_topic_with_op_interest_set(conn: sqlite3.Connection) -> No
 
 
 def test_rule_a_skips_topic_with_op_dropped(conn: sqlite3.Connection) -> None:
-    """A topic dropped by Rule A (kept=0) also emits no Rule-A candidate (FRM-002)."""
+    """A topic dropped by Rule A (kept=0) also emits no Rule-A candidate."""
     site = _forum_site()
     forum_store.admit_topic(conn, SITE_ID, 102, first_seen_at=NOW)
     forum_store.set_op_verdict(conn, SITE_ID, 102, kept=0)
@@ -240,7 +240,7 @@ def test_rule_a_skips_topic_with_op_dropped(conn: sqlite3.Connection) -> None:
 
 
 def test_rule_a_candidate_carries_op_text(conn: sqlite3.Connection) -> None:
-    """Rule-A candidates include the RSS summary as op_text (FRM-002)."""
+    """Rule-A candidates include the RSS summary as op_text."""
     site = _forum_site(daily_watch_count=0, weekly_watch_count=0)
     with _client_from_handler(_no_json_handler) as client:
         result = admit_from_feeds(conn, site, client=client, now=NOW)
@@ -296,7 +296,7 @@ def test_rule_a_op_text_flattens_html_description(conn: sqlite3.Connection) -> N
 
 
 def test_admit_error_absorption_continues_on_feed_failure(conn: sqlite3.Connection) -> None:
-    """A FetchError on one feed is absorbed; the other feeds still produce candidates (FRM-CON-005)."""
+    """A FetchError on one feed is absorbed; the other feeds still produce candidates."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -319,12 +319,12 @@ def test_admit_error_absorption_continues_on_feed_failure(conn: sqlite3.Connecti
     # Latest failed → 101/102/103 may not be admitted.
     assert {101, 102, 103}.isdisjoint(admitted_ids), "failed-feed topics must not be admitted"
     # A partial failure is a reachable site: one feed succeeding must leave
-    # all_feeds_failed False so the site_health counter resets (SH-REQ-003).
+    # all_feeds_failed False so the site_health counter resets.
     assert result.all_feeds_failed is False
 
 
 def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connection) -> None:
-    """If all three feeds fail, error is set and candidates is empty (FRM-CON-005)."""
+    """If all three feeds fail, error is set and candidates is empty."""
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="down")
@@ -339,12 +339,12 @@ def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connecti
     # fetch_count is a metric of calls made, not calls that succeeded.
     assert result.fetch_count == 3
     # Every feed failed → the site was wholly unreachable this run; this is the
-    # typed signal the CLI increments the site_health counter on (SH-REQ-003).
+    # typed signal the CLI increments the site_health counter on.
     assert result.all_feeds_failed is True
 
 
 def test_admit_all_feeds_succeed_not_flagged_unreachable(conn: sqlite3.Connection) -> None:
-    """When every feed fetches, all_feeds_failed is False (the reachable case, SH-REQ-003)."""
+    """When every feed fetches, all_feeds_failed is False (the reachable case)."""
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(_no_json_handler) as client:
         result = admit_from_feeds(conn, site, client=client, now=NOW)
@@ -354,7 +354,7 @@ def test_admit_all_feeds_succeed_not_flagged_unreachable(conn: sqlite3.Connectio
 
 
 def test_admit_marks_only_top_feed_topics_poll_eligible(conn: sqlite3.Connection) -> None:
-    """Only top-feed topics are poll-eligible; latest-only topics are not (FRM-001).
+    """Only top-feed topics are poll-eligible; latest-only topics are not.
 
     latest.rss carries 101/102/103; top.rss carries 201/202/203. The Rule-B poll
     set must be the top topics alone, so the per-run JSON sweep is bounded to the
@@ -383,7 +383,7 @@ def test_admit_marks_only_top_feed_topics_poll_eligible(conn: sqlite3.Connection
 
 
 def test_gather_skips_latest_only_topics(conn: sqlite3.Connection) -> None:
-    """gather_forum JSON-polls only poll-eligible (top-feed) topics (FRM-001).
+    """gather_forum JSON-polls only poll-eligible (top-feed) topics.
 
     After admission, a handler records which /t/<id>.json paths are fetched: the
     latest-only topics (101/102/103) must never be fetched, only the top topics.
@@ -411,7 +411,7 @@ def test_gather_skips_latest_only_topics(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# gather_forum: Rule-B candidate assembly (TASK-019)
+# gather_forum: Rule-B candidate assembly
 # ---------------------------------------------------------------------------
 
 
@@ -420,13 +420,13 @@ def _admit_and_make_due(conn: sqlite3.Connection, topic_id: int) -> None:
 
     Rule-B gather tests need the topic JSON-polled, so the topic is admitted
     ``poll_eligible=True`` (the top-feed case); a latest-only topic would never
-    be due (FRM-001).
+    be due.
     """
     forum_store.admit_topic(conn, SITE_ID, topic_id, first_seen_at=0, poll_eligible=True)
 
 
 def test_gather_forum_emits_rule_b_candidates(conn: sqlite3.Connection) -> None:
-    """due topics with qualifying posts produce RuleBCandidates (FRM-003)."""
+    """due topics with qualifying posts produce RuleBCandidates."""
     # The fixture has topic 1234 with post 5001 (10 likes) and 5003 (5 likes).
     # Default like_threshold=6, so post 5001 qualifies; post 5003 does not.
     # We override like_threshold=5 so both 5001 and 5003 qualify (5003 has 5 likes).
@@ -468,7 +468,7 @@ def test_gather_forum_candidate_url_carries_slug(conn: sqlite3.Connection) -> No
 
     The same topic must yield the same reminder URL whichever rule surfaces it,
     so gather_forum builds ``/t/<slug>/<id>`` from the JSON slug rather than the
-    slugless ``/t/<id>`` (FRM-GUD-003).  The fixture topic has slug
+    slugless ``/t/<id>``.  The fixture topic has slug
     ``my-forum-topic`` and id 1234.
     """
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
@@ -493,7 +493,7 @@ def test_gather_forum_candidate_url_falls_back_to_slugless(conn: sqlite3.Connect
 
     Discourse always slugs topics, but a lite/malformed JSON degrades ``slug``
     to ``""`` (``_as_str`` default); the URL builder must fall back to the
-    slugless form rather than emitting ``/t//<id>`` (FRM-GUD-003 / FRM-GUD-006).
+    slugless form rather than emitting ``/t//<id>``.
     """
     slugless_json = (
         b'{"id": 1234, "title": "No Slug Topic", "like_count": 9, '
@@ -518,7 +518,7 @@ def test_gather_forum_candidate_url_falls_back_to_slugless(conn: sqlite3.Connect
 
 
 def test_gather_forum_effective_threshold_switches_on_interest(conn: sqlite3.Connection) -> None:
-    """interest_like_threshold applies when op_interest_kept=1 (FRM-003 / TASK-018).
+    """interest_like_threshold applies when op_interest_kept=1.
 
     Default like_threshold=6, interest_like_threshold=3.
     Post 5003 has 5 likes: qualifies under interest threshold (3) but NOT default (6).
@@ -553,7 +553,7 @@ def test_gather_forum_effective_threshold_switches_on_interest(conn: sqlite3.Con
 def test_gather_forum_effective_threshold_default_when_interest_not_kept(
     conn: sqlite3.Connection,
 ) -> None:
-    """Default like_threshold applies when op_interest_kept=0 or NULL (FRM-003 / TASK-018)."""
+    """Default like_threshold applies when op_interest_kept=0 or NULL."""
     site = _forum_site(
         poll_offsets_days=(0,),
         like_threshold=6,
@@ -581,7 +581,7 @@ def test_gather_forum_effective_threshold_default_when_interest_not_kept(
 
 
 def test_gather_forum_seen_posts_excluded(conn: sqlite3.Connection) -> None:
-    """Already-seen posts are excluded from trigger_posts (FRM-006)."""
+    """Already-seen posts are excluded from trigger_posts."""
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -605,7 +605,7 @@ def test_gather_forum_seen_posts_excluded(conn: sqlite3.Connection) -> None:
 
 
 def test_gather_forum_last_like_count_short_circuit(conn: sqlite3.Connection) -> None:
-    """FRM-CON-004: short-circuit emits no candidate when like_count is unchanged after first poll.
+    """Short-circuit emits no candidate when like_count is unchanged after first poll.
 
     First poll (completed_polls=0, last_like_count=None): always evaluates → candidate emitted.
     Second poll (completed_polls=1): if topic.like_count == last_like_count → no candidate.
@@ -640,13 +640,11 @@ def test_gather_forum_last_like_count_short_circuit(conn: sqlite3.Connection) ->
     with _client_from_handler(handler) as client:
         result2 = gather_forum(conn, site, client=client, now=due_now)
 
-    assert result2.candidates == [], (
-        "second poll with unchanged like_count must be short-circuited (FRM-CON-004)"
-    )
+    assert result2.candidates == [], "second poll with unchanged like_count must be short-circuited"
 
 
 def test_gather_forum_short_circuit_does_not_fire_on_first_poll(conn: sqlite3.Connection) -> None:
-    """FRM-CON-004: first poll never short-circuits even when last_like_count appears set."""
+    """First poll never short-circuits even when last_like_count appears set."""
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -678,7 +676,7 @@ def test_gather_forum_json_error_absorbed(conn: sqlite3.Connection) -> None:
     """A *transient* FetchError is absorbed into error and does NOT advance the poll.
 
     A 503 is retryable: the topic must re-poll next run, so it is excluded from the
-    finalize worklist (no PolledTopic) — never-lost (FRM-CON-005 / FRM-007).
+    finalize worklist (no PolledTopic) — never-lost.
     """
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
 
@@ -698,7 +696,7 @@ def test_gather_forum_json_error_absorbed(conn: sqlite3.Connection) -> None:
 def test_gather_forum_permanent_404_advances_poll_for_retirement(
     conn: sqlite3.Connection,
 ) -> None:
-    """A *permanent* 404 (deleted topic) advances the poll so it retires (FRM-007).
+    """A *permanent* 404 (deleted topic) advances the poll so it retires.
 
     Unlike a transient error, a deleted topic will never fetch again — leaving it
     unadvanced re-fetches it every run forever. It is emitted as a PolledTopic
@@ -727,8 +725,8 @@ def test_gather_forum_permanent_and_transient_in_one_run_dont_interfere(
     """In one gather, a permanent-404 topic advances but a transient one does not.
 
     Locks the branch split: only the deleted topic is finalized (retires), while
-    the transiently-failing topic is withheld so it re-polls next run
-    (FRM-CON-005). Both failures are surfaced in ``error``. The transient arm uses
+    the transiently-failing topic is withheld so it re-polls next run.
+    Both failures are surfaced in ``error``. The transient arm uses
     a transport error (``FetchError.status is None``) — it both covers the
     ``None``-status branch and avoids the real retry back-off a 5xx would incur.
     """
@@ -759,7 +757,7 @@ def test_gather_forum_permanent_and_transient_in_one_run_dont_interfere(
 def test_gather_forum_permanent_410_advances_poll_for_retirement(
     conn: sqlite3.Connection,
 ) -> None:
-    """A 410 Gone is treated as permanent, like 404 (FRM-007)."""
+    """A 410 Gone is treated as permanent, like 404."""
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
 
     _admit_and_make_due(conn, 1234)
@@ -799,7 +797,7 @@ def test_gather_forum_permanent_404_carries_stored_like_count(
 
 
 def test_dead_topic_retires_after_offsets_consumed(conn: sqlite3.Connection) -> None:
-    """End-to-end: a perpetually-404 topic retires once its offsets are consumed (FRM-007).
+    """End-to-end: a perpetually-404 topic retires once its offsets are consumed.
 
     Drives gather_forum + finalize_poll across the offset schedule the way the CLI
     does, and asserts the dead topic is no longer due (retired) rather than being
@@ -834,7 +832,7 @@ def test_dead_topic_retires_after_offsets_consumed(conn: sqlite3.Connection) -> 
 
 
 def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Connection) -> None:
-    """A JSON failure for one topic does not abort remaining topics (FRM-CON-005)."""
+    """A JSON failure for one topic does not abort remaining topics."""
     site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
 
     # Admit two topics; their order in due_topics is first_seen_at ASC, topic_id ASC.
@@ -868,7 +866,7 @@ def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Conne
 
 
 def test_gather_forum_no_qualifying_posts_emits_no_candidate(conn: sqlite3.Connection) -> None:
-    """A due topic with no qualifying unseen posts produces no RuleBCandidate (FRM-003)."""
+    """A due topic with no qualifying unseen posts produces no RuleBCandidate."""
     # Use a very high threshold so no posts qualify.
     site = _forum_site(poll_offsets_days=(0,), like_threshold=100)
 
@@ -889,12 +887,12 @@ def test_gather_forum_no_qualifying_posts_emits_no_candidate(conn: sqlite3.Conne
 
 
 # ---------------------------------------------------------------------------
-# No writes during gather_forum (TASK-019 / FRM-CON-005)
+# No writes during gather_forum
 # ---------------------------------------------------------------------------
 
 
 def test_gather_forum_writes_nothing_to_db(conn: sqlite3.Connection) -> None:
-    """gather_forum must not write to forum_watch or forum_post_seen (FRM-CON-005).
+    """gather_forum must not write to forum_watch or forum_post_seen.
 
     Snapshot row counts before and after the call and assert they are equal.
     """
@@ -925,7 +923,7 @@ def test_gather_forum_writes_nothing_to_db(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# op_interest_kept reader in forum_store (added as part of TASK-016 support)
+# op_interest_kept reader in forum_store
 # ---------------------------------------------------------------------------
 
 

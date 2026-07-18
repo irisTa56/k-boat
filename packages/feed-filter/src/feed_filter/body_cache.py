@@ -4,13 +4,13 @@ the run orchestrator's context).
 ``new-entries`` writes each emitted feed entry's full body here and puts only a
 short preview on stdout; the judging haiku subagent pulls the full body on demand
 via the ``entry-body`` subcommand, so the body lands only in the cheap judge's
-context, never the orchestrator's (GUD-003). The cache is rewritten wholesale each
+context, never the orchestrator's. The cache is rewritten wholesale each
 ``new-entries`` run (``replace``), so it holds at most one run's bodies and never
 grows unbounded.
 
 It is **operational cache, not dedupe / never-lost state**: a miss — a non-feed
 entry, an interrupted run, or a row evicted by a later ``new-entries`` — returns
-``None`` and falls the judge back to a full-page WebFetch (REQ-007), costing at
+``None`` and falls the judge back to a full-page WebFetch, costing at
 most a redundant fetch, never a lost entry. The table (``entry_body``, v5 migration
 in ``seen.py``) is keyed by the emitted canonical-URL string, so a lookup matches
 exactly what ``new-entries`` put on stdout.
@@ -32,7 +32,7 @@ def replace(conn: sqlite3.Connection, items: list[tuple[str, str]]) -> None:
     legitimately carry the same ``canonical_url`` twice — two subscribed feeds
     running the same article, or two items that canonicalize alike — and nothing is
     recorded seen during ``new-entries`` to collapse them; a bare INSERT would raise
-    on the PRIMARY KEY and wedge the whole run (never-lost, REQ-009). On a collision
+    on the PRIMARY KEY and wedge the whole run (never-lost). On a collision
     the **longer** body is kept (``length(excluded.body) > length(...)``), not the
     last writer's: the two are the same article, and this feature exists to judge
     from the full body, so keeping the richer one (e.g. a full ``content:encoded``

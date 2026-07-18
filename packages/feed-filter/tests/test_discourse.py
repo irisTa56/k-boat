@@ -1,4 +1,4 @@
-"""Behavior tests for the Discourse adapter (TASK-010)."""
+"""Behavior tests for the Discourse adapter."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 # ---------------------------------------------------------------------------
-# URL builders (TASK-006)
+# URL builders
 # ---------------------------------------------------------------------------
 
 
@@ -41,7 +41,7 @@ def test_url_builders_no_trailing_slash() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Topic-id extraction (TASK-007)
+# Topic-id extraction
 # ---------------------------------------------------------------------------
 
 
@@ -82,7 +82,7 @@ def test_topic_id_from_url_non_topic(url: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# parse_topic (TASK-008)
+# parse_topic
 # ---------------------------------------------------------------------------
 
 
@@ -209,7 +209,7 @@ def test_parse_topic_skips_non_dict_post_elements() -> None:
 
 @pytest.mark.parametrize("post_stream", ["oops", [1, 2], 7])
 def test_parse_topic_wrong_typed_post_stream_degrades(post_stream: object) -> None:
-    """``post_stream`` arriving as a non-dict must not raise (FRM-GUD-006).
+    """``post_stream`` arriving as a non-dict must not raise.
 
     A bare ``or {}`` guard would call ``.get`` on a string/list and raise
     ``AttributeError``; the ``isinstance`` guard degrades to no posts instead.
@@ -232,7 +232,7 @@ def test_parse_topic_wrong_typed_actions_summary_degrades(actions_summary: objec
     """A non-list ``actions_summary`` must not raise; likes default to 0.
 
     A bare ``or []`` left an int ``actions_summary`` to crash ``for`` with
-    ``TypeError`` (FRM-GUD-006).
+    ``TypeError``.
     """
     data = {
         "id": 1,
@@ -301,7 +301,7 @@ def test_parse_topic_non_int_ids_degrade_to_zero() -> None:
 
 
 # ---------------------------------------------------------------------------
-# discover_topic_ids (TASK-009)
+# discover_topic_ids
 # ---------------------------------------------------------------------------
 
 

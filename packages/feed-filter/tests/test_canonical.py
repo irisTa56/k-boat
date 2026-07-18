@@ -1,4 +1,4 @@
-"""Table-driven tests for canonical URL normalization (TASK-009)."""
+"""Table-driven tests for canonical URL normalization."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ CASES: list[tuple[str, str | None, str]] = [
     ("https://example.com/a?utm_source=x&utm_medium=y&id=5", None, "https://example.com/a?id=5"),
     ("https://example.com/a?gclid=abc", None, "https://example.com/a"),
     ("https://example.com/a?fbclid=abc&mc_cid=1", None, "https://example.com/a"),
-    # ref is content-bearing and deliberately NOT stripped (REQ-009 never-lost)
+    # ref is content-bearing and deliberately NOT stripped (never-lost)
     ("https://example.com/a?ref=twitter", None, "https://example.com/a?ref=twitter"),
     # Medium's RSS attribution shape (source=rss----...) is stripped so the same
     # article dedupes whether or not the feed serves the link with it.
@@ -48,7 +48,7 @@ CASES: list[tuple[str, str | None, str]] = [
         "https://medium.com/google-earth/a-slug-xyz",
     ),
     # ...but a bare ``source`` (not the rss- shape) may be content-bearing and
-    # is kept, like ``ref`` (REQ-009 never-lost).
+    # is kept, like ``ref`` (never-lost).
     (
         "https://example.com/a?source=newsletter&id=5",
         None,
@@ -107,7 +107,7 @@ def test_medium_source_param_dedupes_identically() -> None:
 
 
 def test_non_medium_source_param_stays_distinct() -> None:
-    # The never-lost direction (REQ-009): a bare ``source`` is not Medium's
+    # The never-lost direction: a bare ``source`` is not Medium's
     # rss---- attribution, so it is kept and two values must not collide.
     a = canonical_url("https://example.com/a?source=variant-a")
     b = canonical_url("https://example.com/a?source=variant-b")

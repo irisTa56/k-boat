@@ -12,9 +12,9 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 ## Environment gotchas
 
-- The routine MUST run locally (CON-001). `rem` writes the local Reminders.app, so cloud routines cannot be used; the Mac must be awake and the Claude runtime idle at fire time.
+- The routine MUST run locally. `rem` writes the local Reminders.app, so cloud routines cannot be used; the Mac must be awake and the Claude runtime idle at fire time.
 - The `Filtered Feeds` Reminders list must already exist (user-created). The wrapper never auto-creates lists.
-- The `Filtered Forums` Reminders list must also exist (user-created) if any forum sites are registered. Forum reminders land there, not in `Filtered Feeds` (FRM-005).
+- The `Filtered Forums` Reminders list must also exist (user-created) if any forum sites are registered. Forum reminders land there, not in `Filtered Feeds`.
 - `feed-filter.db` (seen-store), `sites.toml` (the personal subscription list), and `prompts/selection.md` (the personal keep/drop criteria) are **gitignored local state** — personal config, never commit them. Only `prompts/selection.example.md` (an English template, overridable via `FEED_FILTER_SELECTION`) is version-controlled.
 - The browser ingestion path is an optional extra (`uv sync --extra browser && uv run playwright install chromium`); the base install and the httpx path import no Playwright. A `requires_browser` site on a machine without it fails fast with the install command (never a silent httpx fallback).
 
@@ -32,8 +32,8 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 - Synchronous throughout: a sequential CLI batch over a sync `httpx.Client`, no `asyncio`. The one exception is the `new-entries` gather, which fetches independent hosts concurrently via a bounded thread pool over the sync client (same-host requests stay serialized, the seen-filter stays on the main thread) — threads, not `asyncio`.
 - Always dedupe on `canonical_url`, never the raw URL.
 - Design bias is **never-lost over never-duplicated**: a judging error reminds-then-records anyway; a gather failure records nothing so the next run retries.
-- Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned (FRM-CON-005).
-- Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write; it is telemetry **outside** the never-lost authority, and a `persistent` site is surfaced for a human to investigate — the CLI never auto-disables (SH-CON-002/003).
+- Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned.
+- Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write; it is telemetry **outside** the never-lost authority, and a `persistent` site is surfaced for a human to investigate — the CLI never auto-disables.
 
 ## Keep this file current
 

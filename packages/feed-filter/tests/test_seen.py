@@ -1,4 +1,4 @@
-"""Behavior tests for the SQLite seen-store (TASK-011)."""
+"""Behavior tests for the SQLite seen-store."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def test_migration_creates_schema(conn: sqlite3.Connection) -> None:
 
 
 def test_v3_migration_adds_poll_eligible_column(conn: sqlite3.Connection) -> None:
-    """The v3 migration adds forum_watch.poll_eligible, defaulting to 0 (FRM-001)."""
+    """The v3 migration adds forum_watch.poll_eligible, defaulting to 0."""
     cols = {row[1]: row for row in conn.execute("PRAGMA table_info(forum_watch)")}
     assert "poll_eligible" in cols, "v3 migration must add the poll_eligible column"
     # PRAGMA table_info columns: (cid, name, type, notnull, dflt_value, pk).
@@ -44,7 +44,7 @@ def test_v3_migration_adds_poll_eligible_column(conn: sqlite3.Connection) -> Non
 
 
 def test_v3_upgrade_defaults_existing_rows_to_not_poll_eligible(tmp_path: Path) -> None:
-    """An existing v2 DB with rows gains poll_eligible=0 on the v3 upgrade (FRM-001).
+    """An existing v2 DB with rows gains poll_eligible=0 on the v3 upgrade.
 
     Pins the externally-important upgrade behavior: a topic already being watched
     under the old (all-latest) schema stops being polled until it is re-seen in a
@@ -76,7 +76,7 @@ def test_v3_upgrade_defaults_existing_rows_to_not_poll_eligible(tmp_path: Path) 
 
 
 def test_v4_migration_adds_site_health_table(conn: sqlite3.Connection) -> None:
-    """The v4 migration creates site_health(site_id PK, consecutive_failures) (SH-REQ-001)."""
+    """The v4 migration creates site_health(site_id PK, consecutive_failures)."""
     cols = {row[1]: row for row in conn.execute("PRAGMA table_info(site_health)")}
     assert cols, "v4 migration must create the site_health table"
     assert set(cols) == {"site_id", "consecutive_failures"}
@@ -86,7 +86,7 @@ def test_v4_migration_adds_site_health_table(conn: sqlite3.Connection) -> None:
 
 
 def test_v4_migration_applies_over_v3_without_touching_existing_tables(tmp_path: Path) -> None:
-    """A v3 DB with forum rows gains site_health on the v4 upgrade, losing nothing (SH-TEST-005).
+    """A v3 DB with forum rows gains site_health on the v4 upgrade, losing nothing.
 
     Builds a v3 DB by hand (migrations 0..2, user_version=3) so the v4 CREATE is
     exercised as an append over pre-existing data, and asserts the pre-existing
@@ -176,7 +176,7 @@ def test_snapshot_marks_many_unseen(conn: sqlite3.Connection) -> None:
     seen.snapshot(conn, site_id="s1", urls=urls)
     assert seen.count(conn) == 5
     assert all(seen.is_seen(conn, u) for u in urls)
-    # Snapshot rows carry kept=NULL (the flood guard, REQ-002).
+    # Snapshot rows carry kept=NULL (the flood guard).
     assert _kept(conn, urls[0]) is None
 
 

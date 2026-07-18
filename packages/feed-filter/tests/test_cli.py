@@ -1,4 +1,4 @@
-"""Dispatch + JSON-shape + ordering-invariant tests for the CLI (TASK-032 / TASK-024).
+"""Dispatch + JSON-shape + ordering-invariant tests for the CLI.
 
 Network and Reminders.app are monkeypatched at the ``cli`` module boundary; the
 seen-store and ``sites.toml`` are real tmp files (``state_dir`` fixture) so the
@@ -45,7 +45,7 @@ from feed_filter.sites import SiteConfig, add_site, load_sites
 def _no_open_reminder_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Default ``cmd_forum_remind``'s open-reminder lookup to empty (hermetic).
 
-    ``cmd_forum_remind`` queries open reminders to dedupe by URL (FRM-006);
+    ``cmd_forum_remind`` queries open reminders to dedupe by URL;
     without this guard every forum-remind test would shell out to the real
     Reminders store via ``rem list``. Suppression tests override this stub.
     """
@@ -133,7 +133,7 @@ def test_add_site_snapshots_before_writing_config(
     real_add_site = cli.add_site
 
     def spy_snapshot(conn: sqlite3.Connection, site_id: str, urls: list[CanonicalUrl]) -> None:
-        # REQ-002: the config file must not exist yet when the snapshot commits.
+        # The config file must not exist yet when the snapshot commits.
         assert not sites_path().exists()
         events.append("snapshot")
         real_snapshot(conn, site_id, urls)
@@ -182,7 +182,7 @@ def test_filesystem_error_surfaces_as_clean_exit(
 ) -> None:
     # An OSError from a durable config write (disk full / permission / rename
     # failure) must surface as `error: …` + exit 1, not a traceback — the same
-    # operational-failure principle that covers rem's absence (CON-004).
+    # operational-failure principle that covers rem's absence.
     _no_client(monkeypatch)
     monkeypatch.setattr(cli, "fetch_entries", lambda site, *, client: [])
 
@@ -230,7 +230,7 @@ def test_list_sites_projects_forum_config(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A forum site must be faithfully projected so the forum-run skill can read
-    # forum_subject for the Rule-A native-subject exclusion (FRM-002) via the CLI
+    # forum_subject for the Rule-A native-subject exclusion via the CLI
     # contract, never by reading sites.toml directly.
     add_site(
         sites_path(),
@@ -342,7 +342,7 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
     assert rc == 0
     out = _out(capsys)
     urls = [e["url"] for e in out["entries"]]
-    # Round-robin (REQ-010): site b's single entry is reached before site a's
+    # Round-robin: site b's single entry is reached before site a's
     # tail is exhausted, so a noisy site a can't starve b. a/2 is truncated.
     assert urls == ["https://a.example.com/0", "https://b.example.com/0", "https://a.example.com/1"]
     assert "https://a.example.com/2" not in urls
@@ -372,7 +372,7 @@ def test_new_entries_caches_full_body_and_emits_only_preview(
 ) -> None:
     """The full feed body is stashed in the body cache (pulled later via
     ``entry-body``); stdout carries only a bounded preview, so the run orchestrator
-    never sees the body (GUD-003)."""
+    never sees the body."""
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
     body = "Full article body. " + "x" * 1000  # longer than SUMMARY_PREVIEW_CHARS
@@ -399,7 +399,7 @@ def test_entry_body_cache_miss_returns_null(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A url not cached by ``new-entries`` (a scrape entry, or a stale/interrupted
-    run) returns ``body: null``, so the judge falls back to a WebFetch (REQ-007)."""
+    run) returns ``body: null``, so the judge falls back to a WebFetch."""
     url = "https://x.example.com/gone"
     assert cli.main(["entry-body", "--url", url]) == 0
     assert _out(capsys) == {"url": url, "body": None}
@@ -470,7 +470,7 @@ def test_new_entries_zero_links_does_not_increment_failure_counter(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A zero_links scrape is a broken pattern (healed by heal-site), not an outage,
-    so it must leave the site-health counter at 0 (SH-REQ-007) — persistence tracks
+    so it must leave the site-health counter at 0 — persistence tracks
     unreachability, not broken patterns. Only a non-None gather error increments.
     """
     _no_client(monkeypatch)
@@ -551,7 +551,7 @@ def test_new_entries_unexpected_worker_exception_aborts_run(
     """An *unexpected* (non-``FetchError``) exception in a fetch worker surfaces and
     aborts the run — it is never swallowed into a partial, exit-0 emit.
 
-    A ``FetchError`` is absorbed per site (REQ-008), but a genuine bug is not: it
+    A ``FetchError`` is absorbed per site, but a genuine bug is not: it
     propagates out of the pool when the future is drained, exactly as the former
     sequential gather would have. This guards the documented "propagates out of the
     run" invariant against a future ``try/except`` around ``pool.map`` that would
@@ -624,7 +624,7 @@ def test_remind_adds_then_records_atomically(
         ]
     )
     assert rc == 0
-    assert events == ["add", "record"]  # rem add first, seen record second (REQ-009)
+    assert events == ["add", "record"]  # rem add first, seen record second
     out = _out(capsys)
     assert out == {"id": "RID-1", "url": "https://e.example.com/a", "kept": True}
     with contextlib.closing(open_db(db_path())) as conn:
@@ -639,7 +639,7 @@ def test_remind_records_seen_when_rem_emits_unparseable_json(
     # ``cmd_remind`` skipped ``record`` — the next run re-created the reminder.
     # Drive the real ``add_reminder`` through a runner whose stdout cannot be
     # parsed, and assert the entry is still recorded seen (so it is not re-judged
-    # and re-reminded, REQ-009). The emitted id is empty (it was unrecoverable).
+    # and re-reminded). The emitted id is empty (it was unrecoverable).
     import feed_filter.reminders as rem_mod
 
     def fake_runner(_argv: list[str], **_: Any) -> SimpleNamespace:
@@ -765,7 +765,7 @@ def test_heal_site_snapshots_exactly_the_new_pattern_matches(
 def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The flood guard (REQ-002/REQ-006): if the re-scrape fails, config must NOT
+    # The flood guard: if the re-scrape fails, config must NOT
     # be left carrying the new pattern with no snapshot under it. Snapshot-first /
     # config-last makes a fetch failure a clean no-op modulo the still-broken
     # pattern (which simply re-triggers heal next run).
@@ -846,7 +846,7 @@ def test_heal_site_refuses_disabled_site(
 def test_new_entries_gate_fires_before_any_fetch(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A flagged site with Playwright missing must fail at the startup gate (REQ-006)
+    # A flagged site with Playwright missing must fail at the startup gate
     # BEFORE any gather, with the install command — not a mid-run ModuleNotFoundError.
     add_site(
         sites_path(),
@@ -866,7 +866,7 @@ def test_add_site_requires_browser_missing_playwright_fails_before_snapshot(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # add-site writes config last, so the on-disk gate can't see the new site; the
-    # in-memory require_playwright_for must fail before the snapshot fetch (REQ-006).
+    # in-memory require_playwright_for must fail before the snapshot fetch.
     monkeypatch.setattr(browser, "_playwright_installed", lambda: False)
     monkeypatch.setattr(
         cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before the gate")
@@ -948,7 +948,7 @@ def test_no_subcommand_errors() -> None:
 
 
 # =============================================================================
-# Forum subcommands (TASK-024)
+# Forum subcommands
 # =============================================================================
 
 FORUM_URL = "https://forum.example.com"
@@ -1220,7 +1220,7 @@ def test_forum_new_absorbs_per_site_errors(
 def test_forum_new_excludes_article_sites(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """forum-new ignores article (feed/scrape) sites — finding #8 (FRM-CON-001)."""
+    """forum-new ignores article (feed/scrape) sites."""
     _no_client(monkeypatch)
     # Register an article site and a forum site.
     add_site(
@@ -1247,7 +1247,7 @@ def test_forum_new_excludes_article_sites(
 def test_new_entries_excludes_forum_sites(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """new-entries ignores forum sites — finding #8 (FRM-CON-001)."""
+    """new-entries ignores forum sites."""
     _no_client(monkeypatch)
     add_site(
         sites_path(), SiteConfig(id="art", name="Art", feed_url="https://art.example.com/f.xml")
@@ -1272,7 +1272,7 @@ def test_forum_new_cap_safety_withholds_truncated_topic(
 ) -> None:
     """A topic whose candidate is truncated by the global cap is excluded from polls.
 
-    Never-lost invariant (FRM-CON-005): do not finalize a topic until all its
+    Never-lost invariant: do not finalize a topic until all its
     candidates are dispositioned.  With global-cap=1 and two topics (each with
     one candidate), the second topic's candidate is truncated and must not appear
     in polls.
@@ -1342,7 +1342,7 @@ def test_forum_new_cap_safety_withholds_topic_split_between_rule_a_and_b(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A single topic yielding BOTH a Rule-A and a Rule-B candidate is withheld from
-    polls when the cap truncates either one (FRM-CON-005).
+    polls when the cap truncates either one.
 
     This is the subtlest branch of the cap-safe predicate: the same ``(site_id,
     topic_id)`` produces two candidate entries (before_count == 2). With
@@ -1388,7 +1388,7 @@ def test_forum_new_cap_safety_withholds_topic_split_between_rule_a_and_b(
 def test_forum_remind_adds_then_records(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """forum-remind: rem add first, record_post second (FRM-CON-005)."""
+    """forum-remind: rem add first, record_post second."""
     import feed_filter.reminders as rem_mod
 
     _add_forum_site()
@@ -1439,7 +1439,7 @@ def test_forum_remind_adds_then_records(
     assert argv[list_idx + 1] == "Filtered Forums"
 
     # Post is recorded seen in forum_post_seen; the topic-grain interest verdict
-    # is NOT touched (a Rule-B keep carries no --is-op, FRM-006 independence).
+    # is NOT touched (a Rule-B keep carries no --is-op; the two axes are independent).
     with contextlib.closing(open_db(db_path())) as conn:
         from feed_filter.forum_store import is_post_seen, op_interest_kept
 
@@ -1452,7 +1452,7 @@ def test_forum_remind_records_post_when_rem_emits_unparseable_json(
 ) -> None:
     """The forum path shares the ``add_reminder`` contract: a zero-exit ``rem``
     with unparseable stdout is a created reminder, so the post is still recorded
-    seen (FRM-CON-005) and is not re-reminded — the same duplicate guard as the
+    seen and is not re-reminded — the same duplicate guard as the
     article path, on the second caller."""
     import feed_filter.reminders as rem_mod
 
@@ -1500,7 +1500,7 @@ def test_forum_remind_suppresses_when_url_already_open(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An incomplete reminder for the same topic URL suppresses the ``rem add``
-    but still records the disposition (FRM-006: one open reminder per topic URL)."""
+    but still records the disposition (one open reminder per topic URL)."""
     from feed_filter.forum_store import is_post_seen
 
     _add_forum_site()
@@ -1547,7 +1547,7 @@ def test_forum_remind_suppressed_rule_a_still_records_verdict(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A suppressed Rule-A remind (`--is-op`) still records the topic-grain
-    verdict: suppression skips only the `rem add`, never the record (FRM-006)."""
+    verdict: suppression skips only the `rem add`, never the record."""
     from feed_filter.forum_store import admit_topic, op_interest_kept
 
     _add_forum_site()
@@ -1595,7 +1595,7 @@ def test_forum_remind_rule_a_keep_records_verdict_only(
 ) -> None:
     """A Rule-A keep is ``--is-op`` with no ``--post-id``: it records the
     topic-grain interest verdict but writes NO post-grain seen, so a later
-    Rule-B pass can still re-judge the OP (FRM-006, the two axes are independent).
+    Rule-B pass can still re-judge the OP (the two axes are independent).
     """
     import feed_filter.reminders as rem_mod
     from feed_filter.forum_store import admit_topic, is_post_seen, op_interest_kept
@@ -1642,7 +1642,7 @@ def test_forum_remind_rule_a_keep_records_verdict_only(
 def test_forum_remind_does_not_record_when_add_raises(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """forum-remind: if rem add fails, the post must stay unseen (FRM-CON-005)."""
+    """forum-remind: if rem add fails, the post must stay unseen."""
     _add_forum_site()
 
     def boom(*_a: object, **_k: object) -> str:
@@ -1712,7 +1712,7 @@ def test_forum_mark_seen_rule_a_drop_records_verdict_only(
 ) -> None:
     """A Rule-A drop is ``--is-op`` with no ``--post-id``: it records the
     interest verdict (kept=0) but writes NO post-grain seen, so if the OP later
-    gains likes Rule B re-judges it (FRM-006, the user-confirmed behaviour).
+    gains likes Rule B re-judges it (the user-confirmed behaviour).
     """
     from feed_filter.forum_store import admit_topic, is_post_seen, op_interest_kept
 
@@ -1787,7 +1787,7 @@ def test_forum_poll_done_advances_counter(
 def test_forum_poll_done_retires_at_last_offset(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """forum-poll-done sets retired=1 when all offsets are consumed (FRM-007)."""
+    """forum-poll-done sets retired=1 when all offsets are consumed."""
     from feed_filter.forum_store import admit_topic
 
     # Register with a single-offset schedule so one poll retires the topic.

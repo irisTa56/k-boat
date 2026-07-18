@@ -1,8 +1,8 @@
 """Behavior tests for forum_store.py — post-grain dedupe and watch/poll throttle.
 
 All scheduling functions receive an injected ``now`` (unix int) so tests never
-call ``time.time()`` (FRM-PAT-002).  The ``conn`` fixture uses ``seen.open_db``
-so the v2 migration runs and the forum tables are present (FRM-GUD-004).
+call ``time.time()``.  The ``conn`` fixture uses ``seen.open_db``
+so the v2 migration runs and the forum tables are present.
 """
 
 from __future__ import annotations
@@ -31,12 +31,12 @@ def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
 
 
 # ---------------------------------------------------------------------------
-# TASK-011 sanity: v2 migration created the tables
+# Sanity: v2 migration created the tables
 # ---------------------------------------------------------------------------
 
 
 def test_forum_tables_exist(conn: sqlite3.Connection) -> None:
-    """The v2 migration must create forum_watch and forum_post_seen (TASK-011)."""
+    """The v2 migration must create forum_watch and forum_post_seen."""
     tables = {
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -46,7 +46,7 @@ def test_forum_tables_exist(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TASK-012: admission
+# admission
 # ---------------------------------------------------------------------------
 
 
@@ -68,7 +68,7 @@ def test_admit_topic_inserts_row(conn: sqlite3.Connection) -> None:
 
 
 def test_admit_topic_idempotent(conn: sqlite3.Connection) -> None:
-    """Second admit_topic for the same key is a no-op (FRM-CON-005).
+    """Second admit_topic for the same key is a no-op.
 
     first_seen_at and completed_polls must not be reset.
     """
@@ -88,7 +88,7 @@ def test_admit_topic_idempotent(conn: sqlite3.Connection) -> None:
 
 
 def test_admit_topic_defaults_not_poll_eligible(conn: sqlite3.Connection) -> None:
-    """admit_topic defaults to poll_eligible=0 — a topic must opt into polling (FRM-001)."""
+    """admit_topic defaults to poll_eligible=0 — a topic must opt into polling."""
     forum_store.admit_topic(conn, SITE, 42, first_seen_at=1000)
     flag = conn.execute(
         "SELECT poll_eligible FROM forum_watch WHERE site_id = ? AND topic_id = ?",
@@ -98,7 +98,7 @@ def test_admit_topic_defaults_not_poll_eligible(conn: sqlite3.Connection) -> Non
 
 
 def test_admit_topic_poll_eligible_set(conn: sqlite3.Connection) -> None:
-    """A top-feed admission sets poll_eligible=1 (FRM-001)."""
+    """A top-feed admission sets poll_eligible=1."""
     forum_store.admit_topic(conn, SITE, 43, first_seen_at=1000, poll_eligible=True)
     flag = conn.execute(
         "SELECT poll_eligible FROM forum_watch WHERE site_id = ? AND topic_id = ?",
@@ -108,7 +108,7 @@ def test_admit_topic_poll_eligible_set(conn: sqlite3.Connection) -> None:
 
 
 def test_admit_topic_upgrades_latest_only_to_poll_eligible(conn: sqlite3.Connection) -> None:
-    """A latest-only topic later seen in a top feed is upgraded to poll_eligible=1 (FRM-001).
+    """A latest-only topic later seen in a top feed is upgraded to poll_eligible=1.
 
     INSERT-OR-IGNORE cannot touch the existing row, so admit_topic runs an
     explicit one-directional UPDATE when poll_eligible=True.
@@ -137,7 +137,7 @@ def test_admit_topic_poll_eligible_not_downgraded(conn: sqlite3.Connection) -> N
 
 
 def test_due_topics_excludes_not_poll_eligible(conn: sqlite3.Connection) -> None:
-    """A latest-only topic (poll_eligible=0) is never due, however much time elapsed (FRM-001).
+    """A latest-only topic (poll_eligible=0) is never due, however much time elapsed.
 
     This is the bound that keeps the Rule-B sweep to the top-N: latest.rss topics
     are admitted for Rule-A tracking but never JSON-polled.
@@ -151,7 +151,7 @@ def test_due_topics_excludes_not_poll_eligible(conn: sqlite3.Connection) -> None
 
 
 def test_set_op_verdict_round_trip(conn: sqlite3.Connection) -> None:
-    """set_op_verdict writes and op_interest_kept can be read back (FRM-002)."""
+    """set_op_verdict writes and op_interest_kept can be read back."""
     forum_store.admit_topic(conn, SITE, 10, first_seen_at=500)
     assert _op_verdict(conn, SITE, 10) is None  # unset before judgment
 
@@ -163,17 +163,17 @@ def test_set_op_verdict_round_trip(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TASK-013: post dedupe
+# post dedupe
 # ---------------------------------------------------------------------------
 
 
 def test_post_not_seen_initially(conn: sqlite3.Connection) -> None:
-    """is_post_seen returns False before any record_post call (FRM-006)."""
+    """is_post_seen returns False before any record_post call."""
     assert not forum_store.is_post_seen(conn, SITE, post_id=99)
 
 
 def test_record_post_marks_seen(conn: sqlite3.Connection) -> None:
-    """is_post_seen returns True after record_post (FRM-006)."""
+    """is_post_seen returns True after record_post."""
     forum_store.admit_topic(conn, SITE, 5, first_seen_at=100)
     forum_store.record_post(conn, SITE, topic_id=5, post_id=99, kept=1)
     assert forum_store.is_post_seen(conn, SITE, post_id=99)
@@ -201,7 +201,7 @@ def test_record_post_upsert_updates_kept(conn: sqlite3.Connection) -> None:
 
 
 def test_record_post_independent_of_watch(conn: sqlite3.Connection) -> None:
-    """The record path does not depend on a prior admit_topic (FRM-CON-005).
+    """The record path does not depend on a prior admit_topic.
 
     forum_post_seen is a standalone dedupe authority: a post can be recorded
     seen without any forum_watch parent row (there is no FK), so a crash that
@@ -219,12 +219,12 @@ def test_record_post_independent_of_watch(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TASK-014: scheduling — due_topics and finalize_poll
+# scheduling — due_topics and finalize_poll
 # ---------------------------------------------------------------------------
 
 
 def test_not_due_before_first_offset(conn: sqlite3.Connection) -> None:
-    """A topic is not due before offset[0] days have elapsed (FRM-007).
+    """A topic is not due before offset[0] days have elapsed.
 
     OFFSETS=(0,1,7) means offset[0]=0 days, so any elapsed time ≥ 0 qualifies.
     Use a non-zero first offset to test the "not yet due" case.
@@ -240,7 +240,7 @@ def test_not_due_before_first_offset(conn: sqlite3.Connection) -> None:
 
 
 def test_due_at_first_offset(conn: sqlite3.Connection) -> None:
-    """A topic is due exactly at offset[0] (FRM-007)."""
+    """A topic is due exactly at offset[0]."""
     offsets = (1, 7)
     admitted_at = 0
     forum_store.admit_topic(conn, SITE, 1, first_seen_at=admitted_at, poll_eligible=True)
@@ -265,7 +265,7 @@ def test_offline_catchup_collapses_to_one_poll(conn: sqlite3.Connection) -> None
 
     After finalize_poll advances completed_polls from 0 to 1, the topic is
     checked against offsets[1], not offsets[2] — so it only becomes due once
-    per finalize step, even if multiple offsets have elapsed (FRM-007).
+    per finalize step, even if multiple offsets have elapsed.
     """
     offsets = (0, 1, 7)
     admitted_at = 0
@@ -294,7 +294,7 @@ def test_offline_catchup_collapses_to_one_poll(conn: sqlite3.Connection) -> None
 
 
 def test_retirement_at_last_offset(conn: sqlite3.Connection) -> None:
-    """A topic is retired when completed_polls >= len(offsets), not before (FRM-007)."""
+    """A topic is retired when completed_polls >= len(offsets), not before."""
     offsets = (0, 1, 7)
     admitted_at = 0
     forum_store.admit_topic(conn, SITE, 20, first_seen_at=admitted_at, poll_eligible=True)
@@ -318,7 +318,7 @@ def test_retirement_at_last_offset(conn: sqlite3.Connection) -> None:
 
 
 def test_due_topics_excludes_retired(conn: sqlite3.Connection) -> None:
-    """due_topics never returns a retired topic regardless of elapsed time (FRM-007)."""
+    """due_topics never returns a retired topic regardless of elapsed time."""
     offsets = (0,)  # single poll → retires immediately after finalize
     forum_store.admit_topic(conn, SITE, 50, first_seen_at=0, poll_eligible=True)
     forum_store.finalize_poll(conn, SITE, 50, like_count=0, offsets=offsets)
@@ -329,7 +329,7 @@ def test_due_topics_excludes_retired(conn: sqlite3.Connection) -> None:
 
 def test_due_topics_survives_shortened_offsets(conn: sqlite3.Connection) -> None:
     """A non-retired topic past the end of a *shortened* offsets list is skipped,
-    not crashed (FRM-007).
+    not crashed.
 
     If poll_offsets_days is shortened in config after a topic has already
     completed more polls than the new schedule has offsets, indexing
@@ -354,7 +354,7 @@ def test_due_topics_survives_shortened_offsets(conn: sqlite3.Connection) -> None
 
 
 def test_due_topics_returns_op_interest_and_like_count(conn: sqlite3.Connection) -> None:
-    """due_topics rows include op_interest_kept and last_like_count (FRM-CON-004)."""
+    """due_topics rows include op_interest_kept and last_like_count."""
     forum_store.admit_topic(conn, SITE, 11, first_seen_at=0, poll_eligible=True)
     forum_store.set_op_verdict(conn, SITE, 11, kept=1)
     forum_store.finalize_poll(conn, SITE, 11, like_count=7, offsets=OFFSETS)
@@ -389,18 +389,18 @@ def test_empty_offsets_returns_nothing(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TASK-014: last_like_count
+# last_like_count
 # ---------------------------------------------------------------------------
 
 
 def test_last_like_count_unset_initially(conn: sqlite3.Connection) -> None:
-    """last_like_count returns None before any finalize_poll (FRM-CON-004)."""
+    """last_like_count returns None before any finalize_poll."""
     forum_store.admit_topic(conn, SITE, 77, first_seen_at=0)
     assert forum_store.last_like_count(conn, SITE, 77) is None
 
 
 def test_last_like_count_after_finalize(conn: sqlite3.Connection) -> None:
-    """last_like_count returns the value stored by finalize_poll (FRM-CON-004)."""
+    """last_like_count returns the value stored by finalize_poll."""
     forum_store.admit_topic(conn, SITE, 77, first_seen_at=0)
     forum_store.finalize_poll(conn, SITE, 77, like_count=13, offsets=OFFSETS)
     assert forum_store.last_like_count(conn, SITE, 77) == 13
@@ -412,7 +412,7 @@ def test_last_like_count_missing_topic_returns_none(conn: sqlite3.Connection) ->
 
 
 def test_finalize_poll_on_missing_topic_is_noop(conn: sqlite3.Connection) -> None:
-    """finalize_poll on an unknown topic must not raise (FRM-CON-005 guard)."""
+    """finalize_poll on an unknown topic must not raise."""
     forum_store.finalize_poll(conn, SITE, 9999, like_count=0, offsets=OFFSETS)
 
 

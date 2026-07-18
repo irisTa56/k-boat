@@ -1,25 +1,25 @@
 """Opt-in Playwright browser fetch path for JS-rendered / anti-bot sites.
 
-A synchronous, SSRF-free port of loose-feeds' ``ingest/browser.py`` (CON-003).
+A synchronous, SSRF-free port of loose-feeds' ``ingest/browser.py``.
 Only the **gather** primitives are here: ``fetch_html`` (rendered index HTML for
 the scrape path) and ``fetch_raw`` (raw feed XML bytes for the feed path). What
 loose-feeds carried that this drops, and why:
 
 - async (``playwright.async_api``) → ``sync_api``: feed-filter is single-threaded
-  throughout (CON-001), so there is no event loop and the lazy singleton needs no
+  throughout, so there is no event loop and the lazy singleton needs no
   lock — a plain module-global guard suffices (the loose-feeds "double-checked"
   init existed only to serialize concurrent ``asyncio`` first-callers).
 - the two-layer SSRF guard (host allowlist + ``context.route`` subresource guard
-  + ``AllowlistOverride``): ``sites.toml`` is trusted single-user config (SEC-001),
+  + ``AllowlistOverride``): ``sites.toml`` is trusted single-user config,
   so there is no untrusted URL to defend against. The body-size cap is **retained**
   as the sole body backstop now that the route-guard is gone.
-- per-article ``fetch_and_extract_via_browser``: out of scope for the gather path
-  (CON-004); it lands only if a real site needs a gated body the judge cannot read.
+- per-article ``fetch_and_extract_via_browser``: out of scope for the gather path;
+  it lands only if a real site needs a gated body the judge cannot read.
 
-The Playwright dependency is an optional extra (CON-002): the import is lazy, so a
+The Playwright dependency is an optional extra: the import is lazy, so a
 base install that flags no ``requires_browser`` site never imports it. The startup
 gate ``require_playwright_if_needed`` fails fast with the install command if a
-flagged site is registered but the extra is missing (REQ-006).
+flagged site is registered but the extra is missing.
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ if TYPE_CHECKING:
 DEFAULT_BROWSER_TIMEOUT_SEC = 20.0
 
 # Per-fetch body cap, applied to both rendered HTML and raw feed bytes. This is
-# the SOLE body backstop now that loose-feeds' SSRF route-guard is dropped
-# (SEC-001) — do NOT remove it to "match httpx". Without it a runaway page (a
+# the SOLE body backstop now that loose-feeds' SSRF route-guard is dropped —
+# do NOT remove it to "match httpx". Without it a runaway page (a
 # CDN download URL pasted in, or a malicious multi-hundred-MB body) is fully
 # buffered into the process before any parse. 10 MiB covers every real page
 # observed; rendered long-form article HTML legitimately exceeds 2 MiB.
@@ -57,7 +57,7 @@ class MissingPlaywrightError(RuntimeError):
 
     Failing fast at the startup gate (rather than at the first fetch) means the
     operator sees the exact install command instead of a raw ``ModuleNotFoundError``
-    deep in the gather path (REQ-006).
+    deep in the gather path.
     """
 
 
@@ -73,7 +73,7 @@ class BrowserFetchError(RuntimeError):
     """A browser-path fetch failure (navigation, timeout, HTTP >= 400, oversize body).
 
     The type is distinct from ``FetchError`` so the gather dispatch can absorb both
-    into a per-site ``error`` without inspecting the message (REQ-008).
+    into a per-site ``error`` without inspecting the message.
     """
 
 
@@ -81,14 +81,14 @@ class BrowserFetchError(RuntimeError):
 class BrowserBundle:
     """The live Playwright instance, Chromium browser, and fresh context.
 
-    A single instance per CLI process (REQ-003), owned by the module-global
+    A single instance per CLI process, owned by the module-global
     singleton below and torn down by ``close_browser``. The context is **not**
     persisted: each process starts cold (no ``storage_state``). Validation against
     a Cloudflare managed-challenge site (Lab BRAINS) showed that replaying a
     persisted ``cf_clearance`` / ``__cf_bm`` cookie makes Cloudflare re-challenge
     the headless session (1/5 success), whereas a clean first-visitor context with
     only the UA strip passes reliably (5/5) — so the original cookie-persistence
-    design (REQ-004) is dropped as net-negative for this anti-bot class.
+    design is dropped as net-negative for this anti-bot class.
     """
 
     playwright: Playwright
@@ -96,7 +96,7 @@ class BrowserBundle:
     context: BrowserContext
 
 
-# Lazy singleton (REQ-003). No lock: the CLI is single-threaded (CON-001), so the
+# Lazy singleton. No lock: the CLI is single-threaded, so the
 # only way two bundles could exist is re-entrant calls within one thread, which
 # the ``is not None`` guard already prevents.
 _bundle: BrowserBundle | None = None
@@ -106,13 +106,13 @@ def _playwright_installed() -> bool:
     """True iff ``import playwright`` would resolve, without running its module body.
 
     ``find_spec`` is cheaper and side-effect-free compared to a try/except import,
-    and is what the startup gate consults to decide whether to fail fast (REQ-006).
+    and is what the startup gate consults to decide whether to fail fast.
     """
     return importlib.util.find_spec("playwright") is not None
 
 
 def _desktop_user_agent(version: str) -> str:
-    """Build a non-headless desktop User-Agent from the live Chromium version (REQ-005).
+    """Build a non-headless desktop User-Agent from the live Chromium version.
 
     Playwright's default UA carries ``HeadlessChrome/<ver>``, the exact marker
     Cloudflare's first-line bot check pattern-matches to serve a challenge headless
@@ -121,8 +121,8 @@ def _desktop_user_agent(version: str) -> str:
     string-replacing — drops the ``Headless`` marker and stays in sync with whatever
     Chromium Playwright bundles, so a version bump cannot drift back toward
     re-detection. The macOS platform string is fixed: the routine runs locally on
-    the user's Mac (CON-001). This is the entire Cloudflare mechanism — a site that
-    still serves an interactive challenge after the strip is unsupported (GUD-003),
+    the user's Mac. This is the entire Cloudflare mechanism — a site that
+    still serves an interactive challenge after the strip is unsupported,
     surfaced as a per-site error rather than worked around.
     """
     return (
@@ -135,7 +135,7 @@ def _desktop_user_agent(version: str) -> str:
 def get_browser() -> BrowserBundle:
     """Return the process-wide browser bundle, launching Chromium on first call.
 
-    Lazy (REQ-003): the ``playwright`` import and Chromium launch happen only here,
+    Lazy: the ``playwright`` import and Chromium launch happen only here,
     so a run with no ``requires_browser`` site pays nothing. The context is created
     **cold** — no ``storage_state`` is loaded — because a clean first-visitor
     context with only the UA strip is what reliably passes Cloudflare's managed
@@ -146,8 +146,8 @@ def get_browser() -> BrowserBundle:
         return _bundle
 
     # Lazy, opt-in import: kept inside the function so the base install and the
-    # httpx path never import Playwright (CON-002). Reached only after the startup
-    # gate / add-site check has confirmed the extra is installed (REQ-006).
+    # httpx path never import Playwright. Reached only after the startup
+    # gate / add-site check has confirmed the extra is installed.
     from playwright.sync_api import sync_playwright
 
     playwright = sync_playwright().start()
@@ -158,7 +158,7 @@ def get_browser() -> BrowserBundle:
 
 
 def close_browser() -> None:
-    """Tear down the browser; a no-op if none was launched (REQ-003).
+    """Tear down the browser; a no-op if none was launched.
 
     Idempotent: the slot is cleared first, so a re-entrant or double call (e.g. a
     ``finally`` plus a shutdown hook) short-circuits. Each step is best-effort —
@@ -187,7 +187,7 @@ def require_playwright_if_needed(sites_toml_path: Path) -> None:
     every caller passes ``config.sites_path()`` so the gate sees the same registry
     — honoring ``FEED_FILTER_SITES`` — as everything else (F8). Raises
     ``MissingPlaywrightError`` with the exact install command rather than letting a
-    raw ``ModuleNotFoundError`` surface mid-gather (REQ-006). A **disabled** site is
+    raw ``ModuleNotFoundError`` surface mid-gather. A **disabled** site is
     ignored — it is never gathered, so it must not force the install on its own.
     """
     flagged = [s.id for s in load_sites(sites_toml_path) if s.requires_browser and s.enabled]
@@ -201,10 +201,10 @@ def require_playwright_if_needed(sites_toml_path: Path) -> None:
 
 
 def require_playwright_for(site: SiteConfig) -> None:
-    """Fail fast if ``site`` needs the browser but Playwright is absent (add-site, REQ-006).
+    """Fail fast if ``site`` needs the browser but Playwright is absent (add-site).
 
     The on-disk gate ``require_playwright_if_needed`` cannot see a site mid-
-    registration — config is written last (REQ-002) — so ``add-site`` checks the
+    registration — config is written last — so ``add-site`` checks the
     in-memory ``SiteConfig`` directly, before its cold-start snapshot, so a
     Playwright-less machine gets this friendly error instead of a raw
     ``ModuleNotFoundError`` from the browser snapshot fetch.
@@ -216,7 +216,7 @@ def require_playwright_for(site: SiteConfig) -> None:
 
 
 def fetch_html(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> tuple[str, str]:
-    """Return ``(post-redirect URL, rendered HTML)`` for ``url`` (scrape index, REQ-002).
+    """Return ``(post-redirect URL, rendered HTML)`` for ``url`` (scrape index).
 
     The post-redirect URL (``response.url``) is the base for resolving relative
     article links, matching the httpx path's ``final_url`` and ``fetch_raw``'s
@@ -261,17 +261,17 @@ def fetch_html(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> tup
 
 
 def fetch_raw(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> tuple[str, bytes]:
-    """Return ``(post-redirect URL, raw response bytes)`` for a feed (the feed path, REQ-002).
+    """Return ``(post-redirect URL, raw response bytes)`` for a feed (the feed path).
 
     Feeds are XML: ``page.content()`` would wrap them in the browser's DOM tree-view
     envelope, which ``feedparser`` cannot parse, so the on-the-wire ``response.body()``
     is returned instead. The post-redirect ``response.url`` is handed back as the base
     for resolving relative entry links, matching the httpx path's ``final_url`` so the
-    two transports yield identical ``Entry`` lists (REQ-002). Raises
+    two transports yield identical ``Entry`` lists. Raises
     ``BrowserFetchError`` on navigation/timeout, a missing response, HTTP >= 400, or
     an oversize body.
 
-    Risk (RISK-003): the test fake pre-stuffs ``response.body()``, so it cannot
+    Risk: the test fake pre-stuffs ``response.body()``, so it cannot
     detect a future Playwright version that stops surfacing raw bytes for a
     navigation Chromium rendered as an XML tree-view (it would start returning
     empty bytes here). Only a real-Chromium integration test would catch that, and

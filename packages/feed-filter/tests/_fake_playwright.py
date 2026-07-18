@@ -1,4 +1,4 @@
-"""Synchronous Playwright test double (TASK-008).
+"""Synchronous Playwright test double.
 
 Re-derived — not copied — from loose-feeds' async fake: that double is built on
 ``async_api`` / ``AsyncMock``; this is a plain ``sync_api`` surface where every
@@ -103,7 +103,7 @@ class FakeContext:
 
 
 class FakeBrowser:
-    """A ``Browser`` stand-in. ``version`` feeds the UA strip (REQ-005)."""
+    """A ``Browser`` stand-in. ``version`` feeds the UA strip."""
 
     # A real Chromium version string; the exact value is irrelevant, only that the
     # attribute exists and flows into the UA the strip rebuilds (F1/F7).

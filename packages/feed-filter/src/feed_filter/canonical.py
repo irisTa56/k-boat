@@ -1,4 +1,4 @@
-"""Canonical URL normalization — the sole dedupe key (PAT-002).
+"""Canonical URL normalization — the sole dedupe key.
 
 A canonical URL has a lowercased scheme + host, default ports dropped, no
 fragment, tracking params stripped, query params sorted, percent-encodings
@@ -7,7 +7,7 @@ The same article reached by two different links must canonicalize identically;
 two genuinely distinct articles must not collide.
 
 ``canonical_url`` returns a ``CanonicalUrl`` — a ``NewType`` over ``str`` so the
-seen-store (the dedupe authority, REQ-009) can require, and ``ty`` can enforce,
+seen-store (the dedupe authority) can require, and ``ty`` can enforce,
 that every key it stores has actually been canonicalized.
 """
 
@@ -23,7 +23,7 @@ CanonicalUrl = NewType("CanonicalUrl", str)
 # Exact matches plus the ``utm_*`` / ``mc_*`` prefixes used by Google and
 # Mailchimp. Matched case-insensitively. ``ref`` is deliberately NOT stripped:
 # it is content-bearing on some sites (e.g. a git ref), and the project favors
-# never-lost over never-duplicated (REQ-009), so collapsing a real ``ref`` would
+# never-lost over never-duplicated, so collapsing a real ``ref`` would
 # be the worse failure.
 _TRACKING_EXACT = frozenset({"gclid", "fbclid"})
 _TRACKING_PREFIXES = ("utm_", "mc_")
@@ -41,7 +41,7 @@ _TRACKING_PREFIXES = ("utm_", "mc_")
 # each time the form flips. Both shapes share the ``rss-`` prefix, which is what
 # we match. A bare ``source`` is, like ``ref``, potentially content-bearing
 # elsewhere (a CMS may route on it), and unlike ``ref``'s git usage has no
-# common content-bearing form — but the never-lost bias (REQ-009) still says
+# common content-bearing form — but the never-lost bias still says
 # keep it rather than collapse two genuinely distinct pages. Matching the value
 # case-sensitively (Medium emits lowercase ``rss-``) keeps the strip narrow: a
 # value like ``RSS-digest`` is left alone rather than risk a never-lost collapse.

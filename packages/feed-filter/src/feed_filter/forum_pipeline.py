@@ -1,20 +1,20 @@
-"""Forum pipeline — admission union and Rule-B candidate assembly (FRM-001 – FRM-007).
+"""Forum pipeline — admission union and Rule-B candidate assembly.
 
 This module is the deterministic orchestration layer that turns due forum topics
 into judge-ready candidates, mirroring ``pipeline.gather_new``'s read-only,
-error-absorbing shape (FRM-PAT-001).
+error-absorbing shape.
 
 Two public entry points:
 
-``admit_from_feeds(conn, site, *, client, now)`` — **Rule-A path (TASK-016)**:
+``admit_from_feeds(conn, site, *, client, now)`` — **Rule-A path**:
     Fetches the three RSS feeds (latest + daily top + weekly top), builds the
     admission union deduped by topic id, calls ``forum_store.admit_topic`` for
     each (idempotent INSERT-OR-IGNORE), and emits a ``RuleACandidate`` for every
-    newly-admitted topic whose ``op_interest_kept`` is still ``NULL`` (FRM-002).
+    newly-admitted topic whose ``op_interest_kept`` is still ``NULL``.
     Feed-level ``FetchError`` is absorbed into ``error``; surviving feeds are
-    still processed (FRM-CON-005).
+    still processed.
 
-``gather_forum(conn, site, *, client, now)`` — **Rule-B path (TASK-017/018)**:
+``gather_forum(conn, site, *, client, now)`` — **Rule-B path**:
     For each due topic (``forum_store.due_topics``), fetches its JSON, evaluates
     qualifying posts against the effective like threshold, and emits a
     ``RuleBCandidate`` carrying the trigger posts and threshold.  Also returns a
@@ -26,28 +26,26 @@ Two public entry points:
     raised a *transient* error, which must re-poll).  This worklist is the seam the CLI
     needs to call ``finalize_poll`` after candidates are dispositioned, without
     ever calling ``finalize_poll`` for a topic whose fetch failed transiently
-    (FRM-CON-005 / FRM-007 — see Phase 5 review note: topics whose poll records are
-    not advanced would re-poll every run, growing the watch set unboundedly).  Performs **no
-    writes** to the DB (FRM-CON-005 / FRM-PAT-001); the record/finalize path
-    (Phase 5 CLI) writes ``forum_post_seen`` and advances ``completed_polls``
+    (topics whose poll records are not advanced would re-poll every run, growing
+    the watch set unboundedly).  Performs **no writes** to the DB; the
+    record/finalize path in the CLI writes ``forum_post_seen`` and advances ``completed_polls``
     after all posts are dispositioned.  A topic-level ``FetchError`` is absorbed
-    into ``error``; remaining topics continue (FRM-CON-005).
+    into ``error``; remaining topics continue.
 
 Design constraints honoured here:
-- FRM-CON-001: only forum-adapter tables and code paths are touched.
-- FRM-CON-002: no new runtime dependency — httpx + feedparser already present.
-- FRM-CON-003: synchronous throughout; no asyncio.
-- FRM-CON-004: fetch-minimization short-circuit documented inline.
-- FRM-CON-005: never-lost over never-duplicated; error absorbing; no writes in gather.
-- FRM-007: ``polled_topics`` worklist enables offset-only retirement without
+- Only forum-adapter tables and code paths are touched.
+- No new runtime dependency — httpx + feedparser already present.
+- Synchronous throughout; no asyncio.
+- Fetch-minimization short-circuit documented inline.
+- Never-lost over never-duplicated; error absorbing; no writes in gather.
+- ``polled_topics`` worklist enables offset-only retirement without
   advancing polls for topics whose JSON fetch failed transiently; a permanent
   404/410 does advance, so a deleted topic retires instead of re-polling forever.
-- FRM-GUD-001: all HTTP calls through ``fetch.fetch`` / ``FetchError``.
-- FRM-GUD-002: ``parse_feed(sort=False)`` keeps top-feed rank order.
-- FRM-GUD-003: ``canonical.canonical_url`` for topic URLs.
-- FRM-GUD-004: forum-table SQL lives in ``forum_store``; this module calls its API.
-- FRM-PAT-002: ``now`` and ``client`` are injected seams for unit testing.
-- FRM-PAT-003: FRM-* ids cited in docstrings and comments throughout.
+- All HTTP calls through ``fetch.fetch`` / ``FetchError``.
+- ``parse_feed(sort=False)`` keeps top-feed rank order.
+- ``canonical.canonical_url`` for topic URLs.
+- Forum-table SQL lives in ``forum_store``; this module calls its API.
+- ``now`` and ``client`` are injected seams for unit testing.
 """
 
 from __future__ import annotations
@@ -81,30 +79,30 @@ from feed_filter.sites import SiteConfig
 # topic returns 404 for its ``/t/<id>.json`` indefinitely (observed in the wild:
 # the same topic 404'd on every run for weeks); 410 Gone is the HTTP-standard
 # "permanently gone" signal. Unlike a throttle / 5xx / transport failure — which
-# must re-poll next run (FRM-CON-005, never-lost) — these advance the poll so the
-# dead topic retires via the offset schedule (FRM-007) instead of being re-fetched
+# must re-poll next run (never-lost) — these advance the poll so the
+# dead topic retires via the offset schedule instead of being re-fetched
 # and re-dismissed every run in perpetuity.
 #
 # Transient-404 tolerance: a momentary 404 (e.g. a topic briefly unroutable during
 # a Discourse deploy) advances only ONE offset and self-corrects on the next
 # successful poll; wrongly retiring a still-live topic would take its remaining
 # offsets to each 404 in turn. Under the default [0, 1, 7] schedule that tolerance
-# is ample; a single-offset schedule has none (one 404 retires) — see FRM-007 in
-# ARCHITECTURE.md. Retirement is not reversible (``admit_topic`` never un-retires),
+# is ample; a single-offset schedule has none (one 404 retires). Retirement is
+# not reversible (``admit_topic`` never un-retires),
 # which is why the multi-offset default matters.
 _PERMANENT_FETCH_STATUSES = frozenset({404, 410})
 
 # ---------------------------------------------------------------------------
-# Candidate dataclasses (TASK-017)
+# Candidate dataclasses
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class RuleACandidate:
-    """A topic surfaced by the RSS discovery feeds for Rule-A OP judgment (FRM-002).
+    """A topic surfaced by the RSS discovery feeds for Rule-A OP judgment.
 
     The OP text comes from the RSS entry's ``summary`` (the feed description).
-    No JSON fetch is needed at this stage (FRM-002); the CLI skill decides
+    No JSON fetch is needed at this stage; the CLI skill decides
     whether to ``WebFetch`` the topic page when the summary is too thin.
     """
 
@@ -116,7 +114,7 @@ class RuleACandidate:
 
 @dataclass(frozen=True)
 class TriggerPost:
-    """A single post that crossed the effective like threshold (FRM-003 / FRM-004).
+    """A single post that crossed the effective like threshold.
 
     Carried inside ``RuleBCandidate``; the CLI skill judges each post
     independently and records them via ``forum-remind`` / ``forum-mark-seen``.
@@ -130,7 +128,7 @@ class TriggerPost:
 
 @dataclass(frozen=True)
 class RuleBCandidate:
-    """A due topic with at least one qualifying, unseen post (FRM-003 / FRM-006).
+    """A due topic with at least one qualifying, unseen post.
 
     ``effective_threshold`` is the resolved like bar (interest or default),
     carried for the skill to surface in its judgment prompt.
@@ -145,7 +143,7 @@ class RuleBCandidate:
 
 @dataclass(frozen=True)
 class AdmitResult:
-    """Outcome of one ``admit_from_feeds`` call (TASK-016).
+    """Outcome of one ``admit_from_feeds`` call.
 
     ``candidates`` are Rule-A topics whose OP has not yet been judged.
     ``error`` is a combined message from any feed-level ``FetchError``(s),
@@ -154,8 +152,8 @@ class AdmitResult:
     (one per RSS feed, so at most three) — counted whether or not each succeeded,
     so the CLI can surface a per-run Discourse-call total for politeness
     observability (see ``cmd_forum_new``).  Default 0 keeps test fakes terse.
-    ``all_feeds_failed`` is the typed site-unreachability signal (SH-PAT-001 /
-    SH-REQ-003): ``True`` iff **every** discovery feed fetch raised ``FetchError``
+    ``all_feeds_failed`` is the typed site-unreachability signal: ``True`` iff
+    **every** discovery feed fetch raised ``FetchError``
     (latest ∧ daily-top ∧ weekly-top), so the whole site was unreachable this run.
     It is the trigger the CLI uses to increment the ``site_health`` counter — a
     typed boolean, not a heuristic parse of ``error`` text. A partial failure
@@ -171,15 +169,15 @@ class AdmitResult:
 
 @dataclass(frozen=True)
 class PolledTopic:
-    """A due topic whose JSON was successfully fetched and parsed (FRM-007).
+    """A due topic whose JSON was successfully fetched and parsed.
 
     Carried in ``GatherForumResult.polled_topics``; this is the **finalize
-    worklist** the Phase 5 CLI uses to call ``forum_store.finalize_poll`` after
-    all of a topic's candidates are dispositioned (FRM-CON-005).  Topics whose
+    worklist** the CLI uses to call ``forum_store.finalize_poll`` after
+    all of a topic's candidates are dispositioned.  Topics whose
     fetch raised a *transient* ``FetchError`` are excluded — their polls must not
     be advanced (they will re-poll next run).  Short-circuited topics and topics
     with no qualifying posts ARE included: they still need ``finalize_poll`` so
-    ``completed_polls`` advances and they eventually retire (FRM-007).  A topic
+    ``completed_polls`` advances and they eventually retire.  A topic
     whose fetch raised a *permanent* ``FetchError`` (404/410 — a deleted/gone
     topic) is ALSO included, carrying its stored ``like_count`` (no fresh parse),
     so offset-only retirement drains it instead of re-polling a dead topic every
@@ -187,16 +185,16 @@ class PolledTopic:
     """
 
     topic_id: int
-    like_count: int  # freshly parsed topic.like_count, stored by finalize_poll (FRM-CON-004)
+    like_count: int  # freshly parsed topic.like_count, stored by finalize_poll
 
 
 @dataclass(frozen=True)
 class GatherForumResult:
-    """Outcome of one ``gather_forum`` call (TASK-017/018).
+    """Outcome of one ``gather_forum`` call.
 
     ``candidates`` are Rule-B topics with qualifying unseen posts.
     ``polled_topics`` is the finalize worklist — one ``PolledTopic`` per due
-    topic whose JSON was successfully fetched and parsed (FRM-007 / FRM-CON-005).
+    topic whose JSON was successfully fetched and parsed.
     ``error`` is a combined message from any topic-level ``FetchError``(s),
     or ``None`` if every due topic fetched successfully.
     ``fetch_count`` is the number of Discourse topic-JSON requests this call
@@ -211,7 +209,7 @@ class GatherForumResult:
 
 
 # ---------------------------------------------------------------------------
-# Rule-A: admission union + candidate emission (TASK-016)
+# Rule-A: admission union + candidate emission
 # ---------------------------------------------------------------------------
 
 
@@ -225,27 +223,26 @@ def admit_from_feeds(
     """Fetch the three discovery feeds, admit topics, and emit Rule-A candidates.
 
     Fetches ``latest.rss``, ``top.rss?period=daily``, and
-    ``top.rss?period=weekly`` from ``site.forum_url`` (FRM-001).  Builds the
+    ``top.rss?period=weekly`` from ``site.forum_url``.  Builds the
     admission union deduped by topic id — a topic surfaced by multiple feeds is
     admitted once; the first entry seen for a given topic id supplies its OP
-    text (FRM-002).
+    text.
 
     Calls ``forum_store.admit_topic`` for each topic in the union; this is the
-    **only** write in the ``forum-new`` path (FRM-CON-005).  A topic is admitted
+    **only** write in the ``forum-new`` path.  A topic is admitted
     ``poll_eligible`` iff it was surfaced by a top feed (daily ∪ weekly): only
     those are JSON-polled for Rule B, so a ``latest.rss``-only topic is judged
-    once under Rule A but never enters the poll sweep (FRM-001 — this bounds the
+    once under Rule A but never enters the poll sweep (this bounds the
     sweep to the top-N and is what keeps the run under the forum's rate limit).
     Emits a ``RuleACandidate`` for each admitted topic whose ``op_interest_kept``
-    is still ``NULL`` — Rule A is judged once and needs no JSON fetch (FRM-002).
+    is still ``NULL`` — Rule A is judged once and needs no JSON fetch.
 
     Feed-level ``FetchError`` is absorbed into ``error``; surviving feeds are
-    still processed to maximise admission (never-lost, FRM-CON-005).
+    still processed to maximise admission (never-lost).
 
-    NOTE on signature: the plan's TASK-016 omitted ``now``, but
-    ``admit_topic`` needs a deterministic ``first_seen_at`` that anchors the
-    poll schedule, so ``now`` is injected here for testability (FRM-PAT-002).
-    This is a faithful refinement of the plan's intent.
+    NOTE on signature: ``now`` is injected here rather than read from the clock
+    internally because ``admit_topic`` needs a deterministic ``first_seen_at``
+    that anchors the poll schedule; injecting it keeps the schedule testable.
     """
     assert site.forum_url is not None, "admit_from_feeds requires a forum site"
     forum_url = site.forum_url
@@ -260,7 +257,7 @@ def admit_from_feeds(
     )
 
     errors: list[str] = []
-    # Site-unreachability signal (SH-REQ-003): set True by any feed that fetches
+    # Site-unreachability signal: set True by any feed that fetches
     # successfully. If all three raise FetchError it stays False, so the site was
     # wholly unreachable this run — the typed trigger for the site_health counter.
     any_feed_succeeded = False
@@ -281,8 +278,8 @@ def admit_from_feeds(
     except FetchError as exc:
         errors.append(str(exc))
 
-    # top.rss?period=daily: rank order, truncated to daily_count (FRM-001).
-    # parse_feed with sort=False preserves the feed's rank order (FRM-GUD-002).
+    # top.rss?period=daily: rank order, truncated to daily_count.
+    # parse_feed with sort=False preserves the feed's rank order.
     daily_entries = []
     try:
         fetch_count += 1
@@ -292,7 +289,7 @@ def admit_from_feeds(
     except FetchError as exc:
         errors.append(str(exc))
 
-    # top.rss?period=weekly: rank order, truncated to weekly_count (FRM-001).
+    # top.rss?period=weekly: rank order, truncated to weekly_count.
     weekly_entries = []
     try:
         fetch_count += 1
@@ -302,7 +299,7 @@ def admit_from_feeds(
     except FetchError as exc:
         errors.append(str(exc))
 
-    # --- Poll-eligible set: topics surfaced by the top feeds (FRM-001) ---
+    # --- Poll-eligible set: topics surfaced by the top feeds ---
     # Only daily/weekly top topics are JSON-polled for Rule B; a latest.rss-only
     # topic is admitted for Rule-A judged-once tracking but not enrolled in the
     # poll schedule, bounding the per-run poll sweep to the top-N (the prior
@@ -315,7 +312,7 @@ def admit_from_feeds(
 
     # --- Build admission union deduped by topic id ---
     # Iteration order: latest first, then daily top, then weekly top.
-    # First entry seen for a given topic id supplies the OP text (FRM-002).
+    # First entry seen for a given topic id supplies the OP text.
     seen_topic_ids: set[int] = set()
     ordered: list[tuple[int, str, str | None, str]] = []  # (topic_id, title, summary, url)
 
@@ -326,7 +323,7 @@ def admit_from_feeds(
         seen_topic_ids.add(tid)
         ordered.append((tid, entry.title or "", entry.summary, str(entry.canonical_url)))
 
-    # --- Admit each topic (idempotent INSERT-OR-IGNORE, FRM-CON-005) ---
+    # --- Admit each topic (idempotent INSERT-OR-IGNORE) ---
     candidates: list[RuleACandidate] = []
     for topic_id, title, summary, topic_url in ordered:
         forum_store.admit_topic(
@@ -338,7 +335,7 @@ def admit_from_feeds(
         )
 
         # Emit a Rule-A candidate only when op_interest_kept is still NULL
-        # (topic not yet judged under Rule A). FRM-002: Rule A is judged once.
+        # (topic not yet judged under Rule A). Rule A is judged once.
         if forum_store.op_interest_kept(conn, site.id, topic_id) is None:
             candidates.append(
                 RuleACandidate(
@@ -358,7 +355,7 @@ def admit_from_feeds(
 
 
 # ---------------------------------------------------------------------------
-# Rule-B: due-topic candidate assembly (TASK-017/018)
+# Rule-B: due-topic candidate assembly
 # ---------------------------------------------------------------------------
 
 
@@ -369,16 +366,16 @@ def gather_forum(
     client: httpx.Client,
     now: int,
 ) -> GatherForumResult:
-    """Assemble Rule-B candidates for due topics. Performs NO writes (FRM-CON-005).
+    """Assemble Rule-B candidates for due topics. Performs NO writes.
 
     For each topic returned by ``forum_store.due_topics``:
 
-    1.  **FRM-CON-004 short-circuit**: when ``completed_polls > 0`` (the topic
+    1.  **Short-circuit**: when ``completed_polls > 0`` (the topic
         has been polled at least once) AND the stored ``last_like_count`` is not
         ``None`` AND the freshly-parsed topic's ``like_count`` equals the stored
         value, skip the per-post deeper scan and emit no candidate.
 
-        IMPORTANT — v1 reconciliation: the plan's FRM-CON-004 described
+        IMPORTANT — v1 reconciliation: an earlier design described
         "skip the JSON fetch when like_count is unchanged."  In practice the
         current ``like_count`` is only observable by fetching ``/t/<id>.json``
         (the RSS feeds carry no like data — verified against the captured
@@ -387,34 +384,33 @@ def gather_forum(
         ``completed_polls == 0`` or ``last_like_count`` is ``None``, we always
         fetch and evaluate; when ``completed_polls > 0`` and the fetched
         ``topic.like_count == row["last_like_count"]``, we emit no candidate
-        (short-circuit the deeper scan).  See also RISK-002.
+        (short-circuit the deeper scan).
 
-    2.  Compute the **effective like threshold** (TASK-018): use
+    2.  Compute the **effective like threshold**: use
         ``interest_like_threshold`` (per-site else ``DEFAULT_INTEREST_LIKE_THRESHOLD``)
         when ``row["op_interest_kept"] == 1`` (Rule A kept the topic), else
         ``like_threshold`` (per-site else ``DEFAULT_LIKE_THRESHOLD``).
 
     3.  Collect **qualifying posts**: ``post.like_count >= effective_threshold``
-        AND NOT ``forum_store.is_post_seen(conn, site.id, post.id)`` (FRM-003 /
-        FRM-006).  If any qualify, emit one ``RuleBCandidate``.
+        AND NOT ``forum_store.is_post_seen(conn, site.id, post.id)``.
+        If any qualify, emit one ``RuleBCandidate``.
 
     After a successful ``parse_topic`` (whether or not the topic is short-
     circuited or has qualifying posts), append a ``PolledTopic`` to the
-    ``GatherForumResult.polled_topics`` finalize worklist (FRM-007 / FRM-CON-005
-    — Phase 5 review seam: the CLI needs the freshly-parsed ``like_count`` to
-    call ``finalize_poll``; topics that raised a *transient* ``FetchError`` are
+    ``GatherForumResult.polled_topics`` finalize worklist (the CLI needs the
+    freshly-parsed ``like_count`` to call ``finalize_poll``; topics that raised a *transient* ``FetchError`` are
     excluded so their poll is not advanced, and they re-poll next run without loss).
 
     A topic-level ``FetchError`` is absorbed into ``error``.  A *permanent* error
     (``status`` 404/410 — a deleted/gone topic) still appends a ``PolledTopic``
     (carrying the stored ``last_like_count``, or 0 if never polled) so the topic
     advances toward offset-only retirement instead of re-fetching a dead topic
-    every run forever.  A *transient* error records nothing (FRM-CON-005: the
+    every run forever.  A *transient* error records nothing (the
     topic will be re-polled next run).  Processing continues for remaining topics.
 
     Writes nothing to the DB.  The CLI skill calls ``forum-remind`` /
-    ``forum-mark-seen`` per post and ``forum-poll-done`` per topic (Phase 5)
-    only after all candidates are dispositioned (FRM-CON-005 / FRM-PAT-001).
+    ``forum-mark-seen`` per post and ``forum-poll-done`` per topic
+    only after all candidates are dispositioned.
     """
     assert site.forum_url is not None, "gather_forum requires a forum site"
     forum_url = site.forum_url
@@ -445,10 +441,10 @@ def gather_forum(
         except FetchError as exc:
             if exc.status in _PERMANENT_FETCH_STATUSES:
                 # A deleted/gone topic (404/410) will never fetch again. Advance
-                # its poll so offset-only retirement (FRM-007) eventually retires
+                # its poll so offset-only retirement eventually retires
                 # it, instead of re-fetching a dead topic every run forever. There
                 # are no posts to disposition; carry the stored like_count forward
-                # (the FRM-CON-004 short-circuit value is moot once retired). The
+                # (the short-circuit value is moot once retired). The
                 # message names the topic so a bounded, self-describing retirement
                 # notice is distinguishable from an actionable site outage.
                 last = row["last_like_count"]
@@ -459,7 +455,7 @@ def gather_forum(
                 continue
             # Transient failure (throttle / 5xx / transport): absorb and re-poll
             # next run. Do NOT append to polled_topics — the poll must not advance
-            # for a topic whose fetch may yet succeed (FRM-CON-005, never-lost).
+            # for a topic whose fetch may yet succeed (never-lost).
             errors.append(str(exc))
             continue
 
@@ -468,16 +464,16 @@ def gather_forum(
         # Append to the finalize worklist for every topic that was successfully
         # fetched and parsed — including short-circuited topics and topics with
         # no qualifying posts.  The CLI uses this list to call finalize_poll
-        # after candidates are dispositioned (FRM-007 / FRM-CON-005).
+        # after candidates are dispositioned.
         polled_topics.append(PolledTopic(topic_id=topic_id, like_count=topic.like_count))
 
-        # FRM-CON-004 short-circuit: when this is not the first poll AND the
+        # Short-circuit: when this is not the first poll AND the
         # topic-level like_count is unchanged since the last poll, skip the
         # per-post deeper scan and emit no candidate for this topic.
         # NOTE: the network round-trip is still performed (we need the JSON to
         # read like_count); this lever saves judge cost, not bandwidth (v1
         # limitation — like_count is only observable via /t/<id>.json, not the
-        # RSS feeds; see RISK-002).
+        # RSS feeds).
         if (
             row["completed_polls"] > 0
             and row["last_like_count"] is not None
@@ -485,11 +481,11 @@ def gather_forum(
         ):
             continue  # short-circuit: no new likes → no new qualifying posts
 
-        # Effective threshold (TASK-018): interest threshold when Rule A kept
-        # the OP; default (higher) threshold otherwise (FRM-003).
+        # Effective threshold: interest threshold when Rule A kept
+        # the OP; default (higher) threshold otherwise.
         effective_threshold = interest_thr if row["op_interest_kept"] == 1 else like_thr
 
-        # Build the topic URL using canonical_url for normalization (FRM-GUD-003).
+        # Build the topic URL using canonical_url for normalization.
         # Include the parsed slug so this matches the slugged ``/t/<slug>/<id>``
         # form the Rule-A path carries verbatim from the RSS entry — the same
         # topic must yield the same reminder URL whichever rule surfaces it. Fall
@@ -498,7 +494,7 @@ def gather_forum(
         slug = f"{topic.slug}/" if topic.slug else ""
         topic_url = str(canonical_url(f"{forum_url.rstrip('/')}/t/{slug}{topic_id}"))
 
-        # Collect qualifying, unseen posts (FRM-003 / FRM-006).
+        # Collect qualifying, unseen posts.
         trigger_posts: list[TriggerPost] = []
         for post in posts:
             if post.like_count >= effective_threshold and not forum_store.is_post_seen(

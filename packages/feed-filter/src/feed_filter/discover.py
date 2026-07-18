@@ -1,4 +1,4 @@
-"""Zero-manual-input feed/scrape discovery (ported, reduced) — REQ-001.
+"""Zero-manual-input feed/scrape discovery (ported, reduced).
 
 Given an arbitrary site URL, ``discover`` tries four layers in order, each firing
 only when the previous produced no *validated* feed candidate:
@@ -11,12 +11,12 @@ only when the previous produced no *validated* feed candidate:
       emitting every surviving article-shaped cluster as a scrape candidate.
 
 Ported from loose-feeds ``domain/discover.py`` and reduced to this project's
-shape (GUD-005, CON-003):
+shape:
 
 - **Synchronous.** A sync ``httpx.Client`` threaded through ``fetch``; no
   ``asyncio``, no parallel candidate validation.
-- **No SSRF guard.** ``sites.toml`` and the registration URL are trusted
-  (SEC-001); the private-IP / scheme gating loose-feeds applies at every hop is
+- **No SSRF guard.** ``sites.toml`` and the registration URL are trusted;
+  the private-IP / scheme gating loose-feeds applies at every hop is
   dropped, along with the Playwright browser path and the age filter.
 - **Feed type collapsed to ``"feed"``.** ``feedparser`` handles RSS and Atom
   alike and ``SiteConfig.kind`` is binary, so the rss/atom distinction
@@ -24,7 +24,7 @@ shape (GUD-005, CON-003):
   ``feed_type="feed"``, every scrape candidate ``"scrape"``.
 - **Rejection is data, not an exception.** A soft failure (no article cluster /
   likely-JS page) is returned as ``DiscoveryResult.rejection`` rather than
-  raised, so the sync CLI emits ``{candidates, rejection}`` directly (CON-006).
+  raised, so the sync CLI emits ``{candidates, rejection}`` directly.
   Only a transport failure of the *initial* URL raises — ``fetch`` raises the
   typed ``FetchError``, which propagates for the CLI to map to a non-zero exit.
   Candidate-probe fetch failures are absorbed (a 404 typical-path is not a feed).
@@ -56,7 +56,7 @@ _FEED_LINK_TYPES = frozenset(
     }
 )
 
-# REQ-001 typical RSS/Atom suffixes, joined against both the host root and the
+# Typical RSS/Atom suffixes, joined against both the host root and the
 # directory portion of the input URL. The cap bounds registration latency.
 _TYPICAL_FEED_SUFFIXES: tuple[str, ...] = (
     "feed.xml",
@@ -93,7 +93,7 @@ class DiscoveryRejection:
 class DiscoveryCandidate:
     """One registerable source. Feed and scrape candidates never coexist in a
     single result (layer (d) fires only when no feed validated), but feed
-    candidates are still ordered first per TASK-024.
+    candidates are still ordered first.
 
     For a feed candidate ``index_url`` / ``article_url_pattern`` are empty; for a
     scrape candidate ``feed_url`` is empty and the pair drives ``scrape_index``.
@@ -143,7 +143,7 @@ def _extract_alternate_links(html: str, base_url: str) -> list[str]:
 
 
 def _typical_path_candidates(source_url: str) -> list[str]:
-    """Typical RSS/Atom URLs to probe (REQ-001), order-preserving and capped.
+    """Typical RSS/Atom URLs to probe, order-preserving and capped.
 
     Each suffix is joined against the host root and the URL's directory (the
     whole path treated as a directory, so ``…/blog`` probes ``…/blog/rss.xml``
@@ -173,7 +173,7 @@ def _typical_path_candidates(source_url: str) -> list[str]:
 
 def _validated_feed(feed_url: str, entries: list[Entry]) -> _ValidatedFeed:
     """Build a feed candidate preview from already-parsed entries. ``sample_urls``
-    are canonical (PAT-002), matching the dedupe key the seen-store will use."""
+    are canonical, matching the dedupe key the seen-store will use."""
     return _ValidatedFeed(
         feed_url=feed_url,
         entry_count=len(entries),
@@ -186,7 +186,7 @@ def _probe_feed(url: str, *, client: httpx.Client) -> _ValidatedFeed | None:
 
     A transport/HTTP failure is absorbed — a probe that 404s or times out simply
     is not a feed. This is the deliberate complement to ``discover`` letting the
-    *initial*-URL ``FetchError`` propagate (CON-006): only the URL the operator
+    *initial*-URL ``FetchError`` propagate: only the URL the operator
     typed surfaces a transport error; speculative probes never do. A body
     ``feedparser`` recovers no resolvable entry from is also rejected (an empty
     ``sample_urls`` would be a useless source).
@@ -220,7 +220,7 @@ def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str
             continue
         parts = urlsplit(absolute)
         # Dedupe and count on the canonical URL — the exact key ``scrape_index``
-        # ingests against (PAT-002) — so ``entry_count`` / ``sample_urls`` preview
+        # ingests against — so ``entry_count`` / ``sample_urls`` preview
         # what registration will actually scrape, not a raw-path over-count.
         # Query/fragment are dropped first, mirroring ``scrape_index``, so
         # trailing-slash and tracking-param variants of one article collapse into
@@ -331,9 +331,9 @@ def _scrape_candidates(
 
 
 def discover(url: str, *, client: httpx.Client) -> DiscoveryResult:
-    """Discover feed/scrape candidates for ``url`` (REQ-001).
+    """Discover feed/scrape candidates for ``url``.
 
-    Raises ``FetchError`` if the initial URL is unreachable (CON-006); soft
+    Raises ``FetchError`` if the initial URL is unreachable; soft
     failures come back as ``DiscoveryResult.rejection``. See the module docstring
     for the layer ordering and the loose-feeds reductions applied.
     """

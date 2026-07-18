@@ -1,4 +1,4 @@
-"""Behavior tests for the httpx fetch boundary (TASK-016).
+"""Behavior tests for the httpx fetch boundary.
 
 Network-free: every client is built over an ``httpx.MockTransport`` so the
 success / redirect / status-error / transport-error paths are exercised without

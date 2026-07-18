@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Opt-in browser ingestion path for JS-rendered / anti-bot sites (CON-002).
+# Opt-in browser ingestion path for JS-rendered / anti-bot sites.
 # Not installed by default: the httpx-readable sites pay nothing. Enable with
 #   uv sync --extra browser && uv run playwright install chromium
 # (the second step pulls a ~200 MB Chromium binary, not managed by uv).

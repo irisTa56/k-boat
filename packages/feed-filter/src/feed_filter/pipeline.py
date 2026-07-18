@@ -1,16 +1,16 @@
-"""Per-site new-entry aggregation (REQ-003, REQ-006, REQ-008).
+"""Per-site new-entry aggregation.
 
 ``gather_new`` is the read-only half of a run: fetch a site's current entries,
 count how many the live page yields *before* dedupe (``index_matches``), then
 filter out already-seen URLs and clamp to the per-site cap. It records nothing —
 the seen-store is written only by the ``remind`` / ``mark-seen`` CLI paths, after
-a reminder is created (REQ-009). A fetch failure is captured into ``error`` and
+a reminder is created. A fetch failure is captured into ``error`` and
 leaves the entry list empty so nothing is recorded and the next run retries it
-naturally (REQ-008).
+naturally.
 
 ``index_matches`` separates two outcomes that look identical after filtering: a
 scrape site whose stored pattern no longer matches the live page (``index_matches
-== 0`` → ``zero_links``, self-heal fires, REQ-006) versus a quiet-but-healthy day
+== 0`` → ``zero_links``, self-heal fires) versus a quiet-but-healthy day
 (``index_matches > 0`` but every match already seen → no heal).
 
 ``gather_new`` is the sequential composition of two halves that ``cmd_new_entries``
@@ -63,7 +63,7 @@ class FetchOutcome:
 
     ``entries`` are the site's current items, uncapped and unfiltered (as
     ``fetch_entries`` returns them); ``error`` is the fetch failure message, if
-    any — when set, ``entries`` is empty (REQ-008). Carries no DB-derived state,
+    any — when set, ``entries`` is empty. Carries no DB-derived state,
     so it can be produced off the main thread and handed to ``filter_gathered``
     later (``cmd_new_entries`` fetches hosts concurrently, then filters serially).
     """
@@ -75,17 +75,17 @@ class FetchOutcome:
 def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
     """All of ``site``'s current entries, uncapped and unfiltered.
 
-    Branches on kind, then on transport. The feed path parses raw bytes (CON-002);
+    Branches on kind, then on transport. The feed path parses raw bytes;
     the scrape path resolves links against a base URL and matches
     ``article_url_pattern``. A ``requires_browser`` site routes its gather fetch
     through the Playwright path (``browser.fetch_raw`` / ``browser.fetch_html``)
     while every other site keeps the ``httpx`` path; both transports feed the same
-    parsers, so they yield identical ``Entry`` lists (REQ-002). ``client`` is unused
+    parsers, so they yield identical ``Entry`` lists. ``client`` is unused
     on the browser branch (F2). Raises ``FetchError`` (httpx) or ``BrowserFetchError``
     (browser) on a fetch failure.
 
     Used both by ``gather_new`` (then filtered) and by registration's cold-start
-    snapshot (REQ-002), which needs the full back-catalog, not the filtered slice.
+    snapshot, which needs the full back-catalog, not the filtered slice.
     """
     if site.feed_url is not None:
         if site.requires_browser:
@@ -115,7 +115,7 @@ def fetch_site(site: SiteConfig, *, client: httpx.Client) -> FetchOutcome:
     The network-only half of ``gather_new``: it touches no DB, so it is safe to
     run in a worker thread (``cmd_new_entries`` fetches independent hosts
     concurrently). A ``FetchError``/``BrowserFetchError`` becomes an ``error`` with
-    an empty entry list (REQ-008), exactly as ``gather_new`` absorbed it inline;
+    an empty entry list, exactly as ``gather_new`` absorbed it inline;
     nothing is recorded seen, so the next run retries naturally.
 
     A ``requires_browser`` site still routes through Playwright, whose sync API is
@@ -136,7 +136,7 @@ def filter_gathered(
     The DB-touching half of ``gather_new``: drop already-seen entries (``is_seen``),
     clamp to the per-site cap, and derive the ``zero_links`` self-heal signal. It
     reads the seen-store, so it runs on the main thread only. A fetch failure
-    passes straight through as an empty, error-bearing result (REQ-008).
+    passes straight through as an empty, error-bearing result.
     """
     if outcome.error is not None:
         return GatherResult(entries=[], index_matches=0, zero_links=False, error=outcome.error)
@@ -157,7 +157,7 @@ def gather_new(conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Clie
     """Fetch ``site``, drop already-seen entries, clamp to the per-site cap.
 
     The sequential composition of ``fetch_site`` then ``filter_gathered``; a
-    ``FetchError`` is absorbed into ``error`` with an empty entry list (REQ-008),
+    ``FetchError`` is absorbed into ``error`` with an empty entry list,
     nothing is recorded seen regardless. ``cmd_new_entries`` calls the two halves
     separately so it can fetch hosts concurrently while keeping the seen-filter on
     the main thread; this composed form is retained as the tested single-site

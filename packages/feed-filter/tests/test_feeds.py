@@ -1,4 +1,4 @@
-"""Behavior tests for feed parsing (TASK-018)."""
+"""Behavior tests for feed parsing."""
 
 from __future__ import annotations
 
@@ -269,7 +269,7 @@ _MIXED_RSS = b"""<?xml version="1.0"?>
 def test_published_at_degrades_malformed_date_to_none() -> None:
     # A struct_time carrying a non-numeric field makes calendar.timegm raise; the
     # entry must keep parsing as undated rather than the whole feed crashing
-    # (never-lost, REQ-007/REQ-009). A None field is skipped via the falsy guard.
+    # (never-lost). A None field is skipped via the falsy guard.
     good = SimpleNamespace(published_parsed=time.gmtime(0), updated_parsed=None)
     assert _published_at(good) == 0
 

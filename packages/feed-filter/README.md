@@ -12,7 +12,7 @@ Plain Python owns everything verifiable and cheap — fetching, feed/scrape pars
 The LLM owns only the two genuinely fuzzy judgments: picking the article cluster during site registration, and per-page keep/drop selection.
 
 The `feed-filter` CLI emits JSON on stdout and is the only contract between the Python core and the Claude Code skills; the skills never reach into Python internals.
-See [plan/feature-feed-filter-1.md](plan/feature-feed-filter-1.md) for the full specification and phased implementation plan.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the behavioral invariants.
 
 ## Prerequisites
 
@@ -137,7 +137,7 @@ A re-reminded topic produces a fresh reminder item in `Filtered Forums`; unlike 
 
 ## Scheduling
 
-The run **must execute locally** — `rem` writes the local Reminders.app, so a cloud routine cannot push reminders (CON-001).
+The run **must execute locally** — `rem` writes the local Reminders.app, so a cloud routine cannot push reminders.
 The Mac must be awake and the Claude runtime idle when the task fires.
 
 Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `feed-filter-run` for the article sites, `feed-filter-forum-run` for the Discourse forums.

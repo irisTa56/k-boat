@@ -1,4 +1,4 @@
-"""The ``feed-filter`` subcommand surface — the sole contract with the skills (PAT-001).
+"""The ``feed-filter`` subcommand surface — the sole contract with the skills.
 
 Every subcommand emits one JSON object/array on stdout and returns an exit code;
 the skills never reach into the Python internals, they parse this JSON. The
@@ -9,21 +9,20 @@ registration, keep/drop at run time).
 Ordering invariants enforced here, not in the skills:
 
 - **add-site**: snapshot the back-catalog as seen *first* (durable), write
-  ``sites.toml`` *last* (REQ-002) — a site in config without a snapshot would
+  ``sites.toml`` *last* — a site in config without a snapshot would
   flood the back-catalog on its first run.
 - **remind**: ``rem add`` *then* ``seen.record`` in one process, record only on a
-  successful add (REQ-009) — collapses the duplicate window and never records an
+  successful add — collapses the duplicate window and never records an
   entry that failed to remind.
 - **new-entries**: interleave entries round-robin across sites *before* the global
-  cap (REQ-010) so a noisy site can't starve the others; truncated entries are
+  cap so a noisy site can't starve the others; truncated entries are
   omitted and left unseen, so they reappear next run.
 - **forum-new**: only forum sites (``kind == "forum"``); **new-entries** only
-  non-forum sites — neither path ever sees the other's sites (FRM-CON-001, finding
-  #8 in the PR4 review).
+  non-forum sites — neither path ever sees the other's sites.
 - **forum-remind**: ``rem add`` *then* ``record_post`` (and ``set_op_verdict`` for
-  the OP), record only on successful add (FRM-CON-005 / FRM-PAT-001).
+  the OP), record only on successful add.
 - **forum-poll-done**: must be the **last** call for a topic in a run, after every
-  candidate post has been dispositioned (FRM-CON-005 / FRM-PAT-001).
+  candidate post has been dispositioned.
 """
 
 from __future__ import annotations
@@ -81,7 +80,7 @@ def _preview(text: str | None, limit: int) -> str | None:
     """First ``limit`` chars of ``text`` with an ellipsis when truncated, else
     ``text`` unchanged (``None`` passes through). The stdout ``summary`` for a feed
     entry whose full body is cached (``body_cache``); the judge pulls the full body
-    via ``entry-body`` (GUD-003)."""
+    via ``entry-body``."""
     if text is None or len(text) <= limit:
         return text
     return text[:limit] + "…"
@@ -102,7 +101,7 @@ def _site_to_dict(s: SiteConfig) -> dict[str, Any]:
     # list-sites is the JSON projection of the full model the skills read, so a
     # forum site must be as faithfully represented as a feed/scrape one. The
     # forum-run skill needs ``forum_subject`` to exclude the native subject from
-    # the Rule-A judgment (FRM-002); it reaches it here, never by reading
+    # the Rule-A judgment; it reaches it here, never by reading
     # sites.toml directly (the CLI is the only contract). The tuning fields are
     # included for the same faithful-projection reason (None when unset → the
     # config default applies at use time).
@@ -153,7 +152,7 @@ def _select_sites(site_id: str | None) -> list[SiteConfig]:
 
 
 def _round_robin(groups: list[list[Any]]) -> list[Any]:
-    """Flatten per-site lists by interleaving one item from each in turn (REQ-010).
+    """Flatten per-site lists by interleaving one item from each in turn.
 
     With sites A=[a1,a2,a3] and B=[b1], yields [a1,b1,a2,a3]: a later global-cap
     truncation then trims the tail fairly instead of starving whichever site
@@ -166,7 +165,7 @@ def _round_robin(groups: list[list[Any]]) -> list[Any]:
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
-    """Emit ``{candidates, rejection}``; a transport failure exits non-zero (CON-006)."""
+    """Emit ``{candidates, rejection}``; a transport failure exits non-zero."""
     with build_client() as client:
         result = discover(args.url, client=client)  # FetchError propagates → exit 1
     _emit(
@@ -183,7 +182,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
 
 def cmd_add_site(args: argparse.Namespace) -> int:
-    """Register a site: snapshot its current entries seen, THEN write config (REQ-002)."""
+    """Register a site: snapshot its current entries seen, THEN write config."""
     site = _site_from_args(args)  # shape validation first
     # The on-disk gate can't see this site yet (config is written last), so check
     # the in-memory config before the snapshot — a flagged site on a Playwright-less
@@ -221,14 +220,14 @@ def _gather_host_key(site: SiteConfig) -> str:
 
 
 def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, FetchOutcome]:
-    """Fetch every site's entries, returning ``{site_id: FetchOutcome}`` (REQ-008).
+    """Fetch every site's entries, returning ``{site_id: FetchOutcome}``.
 
     httpx sites are grouped by host (``_gather_host_key``) and fetched concurrently
     across hosts through a pool bounded at ``DEFAULT_GATHER_CONCURRENCY``; each
     worker fetches its host's sites in turn, so a host is never hit concurrently.
     ``requires_browser`` sites are fetched on the main thread because Playwright's
     sync API is not thread-safe. ``fetch_site`` absorbs a fetch failure into the
-    outcome's ``error`` (REQ-008); an *unexpected* exception in a worker surfaces
+    outcome's ``error``; an *unexpected* exception in a worker surfaces
     when its future is drained here, propagating out of the run exactly as the
     former sequential gather would have.
     """
@@ -261,11 +260,11 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
 
 
 def cmd_new_entries(args: argparse.Namespace) -> int:
-    """Gather new entries across non-forum sites, interleave, apply global cap (REQ-010).
+    """Gather new entries across non-forum sites, interleave, apply global cap.
 
     Forum sites (``kind == "forum"``) are excluded so the article-path gather
     never reaches ``fetch_entries``'s ``assert index_url is not None`` guard or
-    ``gather_new``'s scrape flag on a forum row (FRM-CON-001, finding #8).
+    ``gather_new``'s scrape flag on a forum row.
 
     **Bounded per-host concurrency.** The gather is two phases. First the
     network-only ``fetch_site`` runs for every httpx site, fetched concurrently
@@ -275,7 +274,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     Playwright, whose sync API is not thread-safe, so they are fetched on the main
     thread. Then the DB-touching ``filter_gathered`` runs **serially on the main
     thread in registry order**, so the seen-store is read single-threaded and the
-    round-robin ordering (REQ-010) is unchanged — concurrency only collapses the
+    round-robin ordering is unchanged — concurrency only collapses the
     network wall-clock, it does not reorder results.
 
     Each ``sites[]`` entry also carries ``consecutive_failures`` (the durable
@@ -284,16 +283,16 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     ``cmd_forum_new``. The count increments only when the site's gather errored
     this run (``gathered.error is not None``) and resets otherwise, so a stateless
     run can escalate a persistent outage at the threshold instead of re-deriving
-    "transient" every run (SH-REQ-007). A ``zero_links`` scrape does not increment
+    "transient" every run. A ``zero_links`` scrape does not increment
     — it is a broken pattern healed by ``heal-site``, not an outage. The CLI never
-    auto-disables — escalation is a skill-side notification (SH-CON-003).
+    auto-disables — escalation is a skill-side notification.
     """
     # Skip disabled sites entirely (no fetch, no error, no push) — they stay in the
     # registry with their seen-store intact for a later enable-site.
-    # Exclude forum sites: their gather path is ``cmd_forum_new`` (FRM-CON-001).
+    # Exclude forum sites: their gather path is ``cmd_forum_new``.
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind != "forum"]
     # Fail fast before any fetch if a registered site needs the browser but the
-    # extra is missing (REQ-006), so a misconfigured run errors cleanly up front.
+    # extra is missing, so a misconfigured run errors cleanly up front.
     require_playwright_if_needed(sites_path())
     groups: list[list[dict[str, Any]]] = []
     site_status: list[dict[str, Any]] = []
@@ -317,12 +316,12 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                         for e in gathered.entries
                     ]
                 )
-                # Site-health escalation (SH-REQ-007), the article-path mirror of
+                # Site-health escalation, the article-path mirror of
                 # cmd_forum_new. An article site fetches a single feed/index, so
                 # "unreachable this run" is simply a non-None gather error; a
                 # ``zero_links`` scrape (a broken pattern healed by heal-site, not an
                 # outage) is a distinct condition and does NOT increment. Same store,
-                # keyed by site_id (SH-GUD-002).
+                # keyed by site_id.
                 if gathered.error is not None:
                     failure_count = site_health.record_failure(conn, site.id)
                 else:
@@ -339,11 +338,11 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                         ),
                     }
                 )
-            # Interleave + global clamp (REQ-010) *before* caching so only the
+            # Interleave + global clamp *before* caching so only the
             # emitted set is cached. Then stash each emitted feed entry's full body
             # in the transient cache and replace the stdout ``summary`` with a short
             # preview, so the full body reaches only the judging haiku (via
-            # ``entry-body``), never this run's orchestrator context (GUD-003).
+            # ``entry-body``), never this run's orchestrator context.
             entries = _round_robin(groups)[: args.global_cap]
             body_cache.replace(conn, [(d["url"], d["summary"]) for d in entries if d["summary"]])
             for d in entries:
@@ -358,11 +357,11 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
     """Emit one gathered entry's full cached body for the judging subagent.
 
     ``new-entries`` caches each emitted feed entry's full body and puts only a
-    preview on stdout (GUD-003); the judge fetches the full body here so it lands
+    preview on stdout; the judge fetches the full body here so it lands
     only in the cheap judge's context. Output is ``{url, body}``; ``body`` is
     ``null`` on a cache miss — a non-feed entry (scrape entries carry no body), an
     interrupted run, or a body evicted by a later ``new-entries`` — and the judge
-    falls back to a full-page WebFetch, so never-lost holds (REQ-007).
+    falls back to a full-page WebFetch, so never-lost holds.
     """
     with contextlib.closing(open_db(db_path())) as conn:
         body = body_cache.get(conn, args.url)
@@ -371,7 +370,7 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
 
 
 def cmd_remind(args: argparse.Namespace) -> int:
-    """Create a reminder, then record seen (kept=1) only on success (REQ-009)."""
+    """Create a reminder, then record seen (kept=1) only on success."""
     reminder_id = add_reminder(
         args.title, args.url, args.notes
     )  # ReminderError → exit 1, no record
@@ -392,10 +391,10 @@ def cmd_mark_seen(args: argparse.Namespace) -> int:
 
 
 def cmd_heal_site(args: argparse.Namespace) -> int:
-    """Re-scrape under a new pattern, snapshot the back-catalog, THEN rewrite config (REQ-006).
+    """Re-scrape under a new pattern, snapshot the back-catalog, THEN rewrite config.
 
-    Snapshot-first / config-last, mirroring ``cmd_add_site`` and the REQ-002
-    principle: the config write (``update_pattern``) is the *last* durable side
+    Snapshot-first / config-last, mirroring ``cmd_add_site``: the config write
+    (``update_pattern``) is the *last* durable side
     effect, so a fetch failure can never leave ``sites.toml`` carrying the new
     pattern with no snapshot under it — that gap would flood the back-catalog on
     the next run. The new pattern is applied via an in-memory ``replace`` so the
@@ -414,7 +413,7 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     if site.kind != "scrape":
         raise ValueError(f"heal-site targets scrape sites only (site {site.id!r})")
     # The healed site is already on disk, so the on-disk gate sees it: fail fast if
-    # it is browser-flagged but the extra is missing (REQ-006) before the re-scrape.
+    # it is browser-flagged but the extra is missing before the re-scrape.
     require_playwright_if_needed(sites_path())
 
     healed_site = replace(site, article_url_pattern=args.pattern)
@@ -466,10 +465,10 @@ def _forum_site_from_args(args: argparse.Namespace) -> SiteConfig:
 
 
 def cmd_add_forum(args: argparse.Namespace) -> int:
-    """Register a forum site by writing config only (TASK-020).
+    """Register a forum site by writing config only.
 
     Unlike ``cmd_add_site``, there is NO back-catalog snapshot here.  Article
-    sites must snapshot first to avoid flooding on the first run (REQ-002).
+    sites must snapshot first to avoid flooding on the first run.
     Forum sites do not have this risk: admission writes ``forum_watch`` rows at
     run time (``admit_from_feeds``), so registration only writes config and the
     watch set is built incrementally each run.  Snapshotting a forum back-catalog
@@ -483,24 +482,24 @@ def cmd_add_forum(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_new(args: argparse.Namespace) -> int:
-    """Gather Rule-A and Rule-B candidates for forum sites (TASK-021).
+    """Gather Rule-A and Rule-B candidates for forum sites.
 
     Filters to ``kind == "forum"`` sites so article sites are never passed to
-    ``admit_from_feeds`` / ``gather_forum`` (FRM-CON-001, finding #8).
+    ``admit_from_feeds`` / ``gather_forum``.
 
     For each enabled forum site:
     - ``admit_from_feeds``: fetch the three RSS feeds, admit topics, emit Rule-A
       candidates for topics whose OP has not yet been judged (the only write is
-      an idempotent INSERT-OR-IGNORE into ``forum_watch``, FRM-CON-005).
+      an idempotent INSERT-OR-IGNORE into ``forum_watch``).
     - ``gather_forum``: for each due topic, fetch its JSON, assemble Rule-B
       candidates from qualifying unseen posts.  Performs no writes.
 
     Candidates from all sites are interleaved round-robin before the global cap
-    (reusing ``_round_robin``, REQ-010).  After capping, the ``polls`` worklist
+    (reusing ``_round_robin``).  After capping, the ``polls`` worklist
     is emitted for every polled topic that is cap-safe — i.e. every candidate
     for that ``(site_id, topic_id)`` pair survived the cap.  A topic truncated
     by the cap is withheld from ``polls`` so it re-polls next run and no post
-    is finalized before it is dispositioned (never-lost, FRM-CON-005).
+    is finalized before it is dispositioned (never-lost).
 
     The emitted ``discourse_fetches`` is the total Discourse HTTP calls this run
     made (RSS feeds + topic JSON, summed across sites) — a coarse politeness
@@ -512,9 +511,8 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     the site was wholly unreachable this run (``admit_result.all_feeds_failed``)
     and resets on any reachable run, so a stateless run can distinguish a
     persistent outage from a one-run blip and escalate at the threshold instead of
-    re-deriving "transient" every run (SH-REQ-001/002/005). The CLI never
-    auto-disables — escalation is a skill-side notification, not an action
-    (SH-CON-003).
+    re-deriving "transient" every run. The CLI never
+    auto-disables — escalation is a skill-side notification, not an action.
     """
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind == "forum"]
     now = int(time.time())
@@ -575,12 +573,12 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
             for pt in gather_result.polled_topics:
                 finalize_worklists.append((site.id, pt.topic_id, pt.like_count))
 
-            # Site-health escalation (SH-REQ-002/003): increment the durable
+            # Site-health escalation: increment the durable
             # consecutive-failure counter only when the whole site was unreachable
             # (every discovery feed raised FetchError), else reset it. This keys on
             # the typed admit signal, NOT the combined error string — a dead-topic
             # retirement or a partial feed failure leaves ``all_feeds_failed`` False,
-            # so a reachable site never false-escalates (SH-REQ-006 / SH-ALT-004).
+            # so a reachable site never false-escalates.
             if admit_result.all_feeds_failed:
                 failure_count = site_health.record_failure(conn, site.id)
             else:
@@ -600,12 +598,12 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
                 }
             )
 
-    # Round-robin interleave across sites, then apply the global cap (REQ-010).
+    # Round-robin interleave across sites, then apply the global cap.
     all_candidates = _round_robin(groups)
     topics = all_candidates[: args.global_cap]
 
     # Cap-safety: emit a poll record for a topic iff every candidate entry bearing
-    # its (site_id, topic_id) key survived the cap (FRM-CON-005 / never-lost).
+    # its (site_id, topic_id) key survived the cap (never-lost).
     # Count candidates before and after the cap; a key is safe iff the counts match.
     # Topics with zero candidates (short-circuited or no qualifying posts) have
     # count_before == count_after == 0, so they are trivially safe.
@@ -632,14 +630,14 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_remind(args: argparse.Namespace) -> int:
-    """Create a forum reminder, then record the disposition (kept=1) (TASK-022).
+    """Create a forum reminder, then record the disposition (kept=1).
 
     Mirrors the article path's ``cmd_remind`` ordering: ``rem add`` *first*,
-    the DB writes only on success (FRM-CON-005 / FRM-PAT-001).  Passes
+    the DB writes only on success.  Passes
     ``list_name=REMINDER_LIST_FORUM`` explicitly so forum reminders land in
-    ``Filtered Forums``, not ``Filtered Feeds`` (FRM-005 / FRM-GUD-005).
+    ``Filtered Forums``, not ``Filtered Feeds``.
 
-    The two dedupe axes are written independently (FRM-006, the two rules
+    The two dedupe axes are written independently (the two rules
     dedupe per axis; the OP may be taken up under both A and B):
 
     - ``--post-id`` present (a Rule-B disposition) → ``record_post(kept=1)``
@@ -648,12 +646,12 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
       records the topic-grain interest verdict (``forum_watch.op_interest_kept``).
 
     A Rule-A keep carries ``--is-op`` and **no** ``--post-id``: Rule A reads the
-    OP from RSS and never holds its ``post_id`` (FRM-002), so it writes only the
+    OP from RSS and never holds its ``post_id``, so it writes only the
     topic-grain verdict and never touches the post-grain seen store. This keeps
     Rule A fetch-free and lets a later Rule-B pass re-judge the OP if it gains
-    likes (FRM-006).
+    likes.
 
-    **Open-reminder de-duplication (FRM-006).** A forum reminder targets the
+    **Open-reminder de-duplication.** A forum reminder targets the
     topic top, so two open reminders for the same topic URL are redundant
     pointers to the same page — the same-run two-axis A/B case, or an unread
     cross-run re-remind. When an *incomplete* reminder for this URL already
@@ -664,9 +662,9 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     completes that reminder it leaves the incomplete set, so a later qualifying
     post re-reminds as before. Suppression keeps the record path, so the
     never-lost ordering (rem-then-record) is unchanged: a non-suppressed
-    ``rem add`` that fails still raises before any record (FRM-CON-005).
+    ``rem add`` that fails still raises before any record.
     """
-    # Suppress a second OPEN reminder for the same topic (FRM-006); still record.
+    # Suppress a second OPEN reminder for the same topic; still record.
     open_urls = {canonical_url(u) for u in open_reminder_urls(REMINDER_LIST_FORUM)}
     suppressed = bool(args.url) and canonical_url(args.url) in open_urls
 
@@ -674,7 +672,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     if not suppressed:
         reminder_id = add_reminder(
             args.title, args.url, args.notes, list_name=REMINDER_LIST_FORUM
-        )  # ReminderError → exit 1, no record (FRM-CON-005)
+        )  # ReminderError → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         if args.post_id is not None:
             record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
@@ -694,19 +692,19 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_mark_seen(args: argparse.Namespace) -> int:
-    """Record a dropped forum disposition (kept=0); no reminder (TASK-022).
+    """Record a dropped forum disposition (kept=0); no reminder.
 
-    The two dedupe axes are written independently (FRM-006), exactly as in
+    The two dedupe axes are written independently, exactly as in
     ``cmd_forum_remind`` but with no ``rem add``:
 
     - ``--post-id`` present (a Rule-B drop) → ``record_post(kept=0)`` marks the
       post seen so it is not re-judged.
     - ``--is-op`` present (a Rule-A OP drop) → ``set_op_verdict(kept=0)`` records
       the topic-grain interest verdict; it writes **no** post-grain seen, so a
-      later Rule-B pass can still re-judge the OP if it gains likes (FRM-006).
+      later Rule-B pass can still re-judge the OP if it gains likes.
 
     A Rule-A drop therefore carries ``--is-op`` and no ``--post-id`` (Rule A holds
-    no OP ``post_id``, FRM-002), and never marks the OP seen at post grain.
+    no OP ``post_id``), and never marks the OP seen at post grain.
     """
     with contextlib.closing(open_db(db_path())) as conn:
         if args.post_id is not None:
@@ -725,9 +723,9 @@ def cmd_forum_mark_seen(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_poll_done(args: argparse.Namespace) -> int:
-    """Advance the poll counter for one topic after all its posts are dispositioned (TASK-023).
+    """Advance the poll counter for one topic after all its posts are dispositioned.
 
-    This is the **last** call for a topic in a run (FRM-CON-005 / FRM-PAT-001).
+    This is the **last** call for a topic in a run.
     Resolves ``poll_offsets_days`` from the site config (per-site override else
     the config default loaded by ``SiteConfig`` at construction time).
     """
@@ -812,7 +810,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_enable.add_argument("--site-id", dest="site_id", required=True)
     p_enable.set_defaults(handler=cmd_enable_site)
 
-    # --- Forum subcommands (Phase 5 / TASK-020 through TASK-023) ---
+    # --- Forum subcommands ---
 
     p_add_forum = sub.add_parser(
         "add-forum", help="register a Discourse forum site (writes config only, no snapshot)"
@@ -853,7 +851,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_forum_remind.add_argument("--topic-id", dest="topic_id", type=int, required=True)
     # --post-id is optional: a Rule-B disposition passes it (records the post at
     # post grain); a Rule-A OP disposition omits it (records only the topic-grain
-    # verdict via --is-op, since Rule A holds no OP post_id — FRM-002 / FRM-006).
+    # verdict via --is-op, since Rule A holds no OP post_id).
     p_forum_remind.add_argument("--post-id", dest="post_id", type=int, default=None)
     p_forum_remind.add_argument("--url", required=True)
     p_forum_remind.add_argument("--title", required=True)
@@ -903,8 +901,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     Every expected runtime failure becomes a stderr ``error: …`` line and exit 1
     — never a traceback, never a silent success:
 
-    - ``FetchError`` — network / discover transport failure (CON-006);
-    - ``ReminderError`` — ``rem`` non-zero exit or absent binary (CON-004);
+    - ``FetchError`` — network / discover transport failure;
+    - ``ReminderError`` — ``rem`` non-zero exit or absent binary;
     - ``ValueError`` — shape/validation (bad site config, non-scrape heal);
     - ``KeyError`` — unknown site id;
     - ``OSError`` — filesystem failures from the config writes / db open
@@ -914,7 +912,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (add-site / heal-site snapshot), the browser analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
-      extra (the message carries the install command, REQ-006).
+      extra (the message carries the install command).
     """
     args = build_parser().parse_args(argv)
     try:

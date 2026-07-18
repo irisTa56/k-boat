@@ -39,13 +39,13 @@ When in doubt, prefer to **keep** — a stray extra reminder is cheaper to dismi
 When judging a **forum candidate** (from the `feed-filter-forum-run` skill), two rules apply.
 
 **Rule A** — cross-domain interest, judged on the topic OP:
-The forum's own native subject (`forum_subject`, e.g. "Erlang" for an Erlang forum) must be **excluded as a match reason** (FRM-002).
+The forum's own native subject (`forum_subject`, e.g. "Erlang" for an Erlang forum) must be **excluded as a match reason**.
 A topic about Erlang on an Erlang forum is not cross-domain; it is the forum's home territory.
 Ask: would this topic interest a reader from *outside* that community?
 Judge from the `op_text` first; fall back to a `WebFetch` of the topic page only when the snippet is too thin to decide.
 
 **Rule B** — worth-reading information, judged per trigger post:
-The native subject exclusion does **not** apply (FRM-003).
+The native subject exclusion does **not** apply.
 A technically deep post in the forum's own domain may still be worth reading.
 Judge from the pre-fetched `text` field; no `WebFetch` is needed.
 

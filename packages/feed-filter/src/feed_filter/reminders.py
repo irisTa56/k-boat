@@ -1,15 +1,15 @@
-"""The ``rem`` wrapper — the only writer of Reminders.app (REQ-005, CON-004).
+"""The ``rem`` wrapper — the only writer of Reminders.app.
 
 ``add_reminder`` shells out to ``rem add … -o json`` and returns the created id.
 ``open_reminder_urls`` is the one read: it lists a list's *incomplete* reminders
-so the forum path can keep at most one open reminder per topic URL (FRM-006).
+so the forum path can keep at most one open reminder per topic URL.
 Two invariants the rest of the pipeline relies on:
 
 - **A reminder always has a non-empty title.** ``rem add`` rejects an empty name,
-  so a missing/blank title falls back to the source ``url`` (REQ-005). Scrape
+  so a missing/blank title falls back to the source ``url``. Scrape
   keeps and error fallbacks lean on this.
 - **The exit code is the success authority, not stdout.** A non-zero exit (e.g.
-  the ``Filtered Feeds`` list was renamed away, CON-004) raises ``ReminderError``
+  the ``Filtered Feeds`` list was renamed away) raises ``ReminderError``
   so the caller does NOT record the entry seen and silently lose it. A *zero*
   exit means the reminder was created even when its stdout is unparseable: only
   the id is lost, not the reminder, so the caller still records it seen rather
@@ -32,7 +32,7 @@ from typing import Any
 from feed_filter.config import REMINDER_LIST
 
 # The CLI binary. Bare name (resolved via PATH); the scheduled routine is
-# responsible for a PATH that includes Homebrew (DEP-007).
+# responsible for a PATH that includes Homebrew.
 REM_BINARY = "rem"
 
 # The injected runner mirrors ``subprocess.run``'s shape: argv list in, an object
@@ -68,11 +68,11 @@ def add_reminder(
 ) -> str:
     """Create one reminder via ``rem add`` and return its id.
 
-    ``title`` falls back to ``url`` when blank/``None`` (REQ-005); if both are
+    ``title`` falls back to ``url`` when blank/``None``; if both are
     empty the call raises ``ValueError`` rather than shipping ``rem`` an empty
     name. ``url`` / ``notes`` are omitted from the argv when empty (so the alert
     channel can pass a bare title). A non-zero ``rem`` exit raises
-    ``ReminderError`` (CON-004) — the caller must not record the entry seen.
+    ``ReminderError`` — the caller must not record the entry seen.
 
     The exit code, **not** stdout parseability, is the success signal: a zero
     exit means ``rem`` already created the reminder (the side effect is done),
@@ -101,9 +101,9 @@ def add_reminder(
         proc = runner(argv, capture_output=True, text=True)
     except OSError as exc:
         # rem absent from PATH or not executable. The scheduled routine inherits
-        # a PATH that often lacks Homebrew (CON-001/DEP-007), so this is a likely
+        # a PATH that often lacks Homebrew, so this is a likely
         # failure, not a corner case. Route it through the same channel as a
-        # non-zero exit (CON-004) — an actionable error, never a raw traceback.
+        # non-zero exit — an actionable error, never a raw traceback.
         # 127 is the conventional "command not found" code.
         raise ReminderError(argv, 127, f"could not execute {REM_BINARY!r}: {exc}") from exc
     if proc.returncode != 0:
@@ -126,14 +126,14 @@ def open_reminder_urls(
 
     Runs ``rem list --list <name> --incomplete -o json`` and collects each
     reminder's ``url`` field. The forum path uses this to keep **at most one open
-    reminder per topic URL** (FRM-006): a forum reminder targets the topic top,
+    reminder per topic URL**: a forum reminder targets the topic top,
     so a second open item for the same URL is a redundant pointer to the same
     page (the two-axis A/B case, or an unread cross-run re-remind).
 
     Fails **open**: any failure (non-zero exit, ``rem`` missing, unparseable
     output, unexpected shape) returns an empty set, so suppression simply does
-    not fire and the caller reminds as usual — never-lost over never-duplicated
-    (FRM-CON-005). A genuine ``rem`` fault then surfaces on the subsequent
+    not fire and the caller reminds as usual — never-lost over never-duplicated.
+    A genuine ``rem`` fault then surfaces on the subsequent
     ``rem add`` (``ReminderError``), not here.
     """
     argv = [REM_BINARY, "list", "--list", list_name, "--incomplete", "-o", "json"]

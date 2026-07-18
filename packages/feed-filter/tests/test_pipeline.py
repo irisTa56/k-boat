@@ -1,4 +1,4 @@
-"""Behavior tests for per-site gathering (TASK-030).
+"""Behavior tests for per-site gathering.
 
 Network-free via ``httpx.MockTransport``; the seen-store is a real tmp_path
 SQLite db so the seen-filtering and "records nothing on error" contracts are
@@ -135,7 +135,7 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
     with contextlib.closing(open_db(tmp_path / "db")) as conn:
         with _client(handler) as client:
             result = gather_new(conn, _FEED, client=client)
-        assert count(conn) == 0  # nothing recorded seen (REQ-008)
+        assert count(conn) == 0  # nothing recorded seen
 
     assert result.error is not None
     assert result.entries == []
@@ -147,7 +147,7 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
 
 
 def test_fetch_site_absorbs_fetch_error_without_db() -> None:
-    """The network-only half absorbs a fetch failure into ``error`` (REQ-008) and
+    """The network-only half absorbs a fetch failure into ``error`` and
     touches no DB, so it is safe to run off the main thread."""
 
     def handler(_: httpx.Request) -> httpx.Response:
@@ -162,7 +162,7 @@ def test_fetch_site_absorbs_fetch_error_without_db() -> None:
 
 def test_filter_gathered_passes_error_outcome_through(tmp_path: Path) -> None:
     """A fetch failure flows straight through the DB half as an empty, error-bearing
-    result — nothing is recorded (REQ-008)."""
+    result — nothing is recorded."""
     with contextlib.closing(open_db(tmp_path / "db")) as conn:
         result = filter_gathered(conn, _FEED, FetchOutcome(entries=[], error="boom"))
         assert count(conn) == 0
@@ -199,7 +199,7 @@ _BROWSER_SCRAPE = SiteConfig(
 def test_browser_feed_yields_same_entries_as_httpx(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
 ) -> None:
-    # REQ-002: the browser feed path must produce an identical Entry list to the
+    # The browser feed path must produce an identical Entry list to the
     # httpx path over the same bytes. Establish the httpx baseline, then route the
     # same feed through the browser (fake) and compare.
     rss = _rss(3)
@@ -245,8 +245,8 @@ def test_browser_scrape_resolves_links_against_post_redirect_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
 ) -> None:
     # The index redirects example.com/blog -> www.example.com/blog; the rendered
-    # page's relative link must resolve against the post-redirect host (REQ-002,
-    # symmetric with the httpx path), not the configured index_url. If the base were
+    # page's relative link must resolve against the post-redirect host
+    # (symmetric with the httpx path), not the configured index_url. If the base were
     # the configured index_url, the canonical URL would carry the bare host instead.
     ctx = FakeContext(
         html=_index(["/blog/a"]),
@@ -263,7 +263,7 @@ def test_browser_fetch_error_sets_error_and_records_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser_env: None
 ) -> None:
     # A BrowserFetchError absorbs into the per-site error exactly like FetchError
-    # (REQ-008): empty entries, nothing recorded seen, retried next run.
+    # empty entries, nothing recorded seen, retried next run.
     install_fake_playwright(monkeypatch, context=FakeContext(response=FakeResponse(status=403)))
     with contextlib.closing(open_db(tmp_path / "db")) as conn:
         with _client(_no_http) as client:

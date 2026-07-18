@@ -1,12 +1,12 @@
-"""Site registry — the version-controlled ``sites.toml`` config (PAT-003).
+"""Site registry — the version-controlled ``sites.toml`` config.
 
 A site is a *feed* (``feed_url``), a *scrape* (``article_url_pattern`` matched
 against links on an ``index_url``), or a *forum* (``forum_url`` pointing at a
 Discourse instance); exactly one of the three, validated at construction. Forum
-sites carry optional tuning fields (FRM-GUD-007); the per-site values override
+sites carry optional tuning fields; the per-site values override
 the config-level defaults at use time. Site ids are unique (the seen-store and
 self-heal route by id). Writes are atomic and durable (temp file + fsync +
-``os.replace`` + dir fsync, REQ-002) and go through tomlkit so existing entries
+``os.replace`` + dir fsync) and go through tomlkit so existing entries
 keep their formatting.
 """
 
@@ -28,7 +28,7 @@ _OPTIONAL_FIELDS = (
     "index_url",
     "article_url_pattern",
     "selection",
-    # Forum string fields (FRM-GUD-007):
+    # Forum string fields:
     "forum_url",
     "forum_subject",
 )
@@ -43,7 +43,7 @@ _FORUM_INT_FIELDS = (
 )
 
 # All forum-only tuning fields (int + the offsets tuple). Used to validate that
-# none are set unless forum_url is also set (FRM-GUD-007).
+# none are set unless forum_url is also set.
 _FORUM_TUNING_FIELDS = (*_FORUM_INT_FIELDS, "poll_offsets_days")
 
 
@@ -67,8 +67,8 @@ class SiteConfig:
     article_url_pattern: str | None = None
     # Optional per-site selection override; falls back to the global prompts/selection.md.
     selection: str | None = None
-    # Opt-in browser (Playwright) gather path for JS-rendered / anti-bot sites
-    # (REQ-001). Default false → the unchanged httpx path. Not a string optional,
+    # Opt-in browser (Playwright) gather path for JS-rendered / anti-bot sites.
+    # Default false → the unchanged httpx path. Not a string optional,
     # so it sits outside _OPTIONAL_FIELDS' blank-normalization.
     requires_browser: bool = False
     # Whether the run gathers this site. Default true; a disabled site is skipped
@@ -76,18 +76,18 @@ class SiteConfig:
     # are preserved, so re-enabling resumes without a back-catalog flood. The lever
     # a user reaches for when a site is chronically broken or temporarily unwanted.
     enabled: bool = True
-    # --- Forum kind (FRM-GUD-007) ---
+    # --- Forum kind ---
     # Base URL of the Discourse forum (e.g. "https://elixirforum.com"). Set iff
     # kind == "forum"; mutually exclusive with feed_url / article_url_pattern.
     forum_url: str | None = None
-    # Native subject excluded from Rule-A cross-domain judgment (FRM-002).
+    # Native subject excluded from Rule-A cross-domain judgment.
     forum_subject: str | None = None
     # Per-site tuning overrides; None falls back to the config-level defaults.
-    like_threshold: int | None = None  # FRM-003
-    interest_like_threshold: int | None = None  # FRM-003
-    daily_watch_count: int | None = None  # FRM-001
-    weekly_watch_count: int | None = None  # FRM-001
-    poll_offsets_days: tuple[int, ...] | None = None  # FRM-007
+    like_threshold: int | None = None
+    interest_like_threshold: int | None = None
+    daily_watch_count: int | None = None
+    weekly_watch_count: int | None = None
+    poll_offsets_days: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         # Normalize blank/whitespace-only string optionals to None so a
@@ -136,7 +136,7 @@ def _atomic_write(path: Path, text: str) -> None:
             os.fsync(f.fileno())  # contents durable before the rename
         os.replace(tmp, path)
         # Durably persist the rename itself, so a crash can't lose a "registered"
-        # config that REQ-002 requires committed before the snapshot is trusted.
+        # config that must be committed before the snapshot is trusted.
         dir_fd = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(dir_fd)
@@ -275,8 +275,8 @@ def add_site(path: Path, site: SiteConfig) -> None:
     # minimal, and a disabled one carries an explicit ``enabled = false``.
     if not site.enabled:
         table["enabled"] = False
-    # Emit forum int tuning fields only when set (emit-only-when-non-default,
-    # FRM-GUD-007). forum_url / forum_subject are already handled by _OPTIONAL_FIELDS.
+    # Emit forum int tuning fields only when set (emit-only-when-non-default).
+    # forum_url / forum_subject are already handled by _OPTIONAL_FIELDS.
     for key in _FORUM_INT_FIELDS:
         value = getattr(site, key)
         if value is not None:
@@ -294,7 +294,7 @@ def add_site(path: Path, site: SiteConfig) -> None:
 
 
 def update_pattern(path: Path, site_id: str, pattern: str) -> None:
-    """Rewrite only ``site_id``'s ``article_url_pattern`` (self-heal, REQ-006).
+    """Rewrite only ``site_id``'s ``article_url_pattern`` (self-heal).
 
     Raises ``KeyError`` if the id is absent, ``ValueError`` if it names a non-scrape
     site (feed or forum): writing a pattern there would corrupt the exactly-one-of
@@ -305,7 +305,7 @@ def update_pattern(path: Path, site_id: str, pattern: str) -> None:
         if _req_str(table, "id", path) == site_id:
             # Reject any non-scrape row, matching load_sites' notion of "scrape
             # site": neither feed_url nor forum_url set (a blank value is unset, so
-            # a half-written scrape row stays healable, REQ-006). The exactly-one-of
+            # a half-written scrape row stays healable). The exactly-one-of
             # invariant is three-way (feed / scrape / forum), so this guard must
             # exclude both other kinds, not just feed.
             if _opt_str(table, "feed_url") is not None or _opt_str(table, "forum_url") is not None:

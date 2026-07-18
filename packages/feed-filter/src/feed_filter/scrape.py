@@ -4,10 +4,10 @@ For non-feed sites, ``scrape_index`` walks every ``<a>`` on the index HTML,
 resolves same-host absolute URLs, drops query/fragment, and keeps those whose
 path matches ``article_url_pattern``. Entries carry ``kind="scrape"`` with no
 metadata (``title``/``summary``/``published_at`` are ``None``); the subagent's
-page fetch supplies a title for any keep (REQ-005).
+page fetch supplies a title for any keep.
 
 Ported from loose-feeds ``ingest/scrape.py``, stripped of SSRF guards, age
-filtering, and the metadata store — ``sites.toml`` is trusted (SEC-001) and the
+filtering, and the metadata store — ``sites.toml`` is trusted and the
 seen-store lives elsewhere.
 """
 
@@ -38,7 +38,7 @@ def scrape_index(
     empty.
 
     Both the ``pattern`` match and the dedupe key are computed on the
-    **canonical** URL (PAT-002), not the raw path. ``discover`` synthesizes the
+    **canonical** URL, not the raw path. ``discover`` synthesizes the
     pattern from the canonical cluster key, so matching here on the canonical path
     keeps the two sides symmetric: a ``//`` or trailing-slash variant of one
     article (``/post`` vs ``/post/`` vs ``/blog//post``) collapses to the single

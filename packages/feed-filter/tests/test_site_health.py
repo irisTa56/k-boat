@@ -1,4 +1,4 @@
-"""Behavior tests for the site_health store — the durable failure counter (SH-TEST-001).
+"""Behavior tests for the site_health store — the durable failure counter.
 
 Network-free; the counter lives in a real tmp_path SQLite DB via ``seen.open_db``
 so the v4 ``site_health`` table exists (mirrors ``test_forum_store.py``).
@@ -58,13 +58,13 @@ def test_record_success_resets(conn: sqlite3.Connection) -> None:
 
 
 def test_record_success_on_absent_site_is_noop(conn: sqlite3.Connection) -> None:
-    """Resetting a site that has never failed must not insert a zero row (SH-REQ-002)."""
+    """Resetting a site that has never failed must not insert a zero row."""
     site_health.record_success(conn, "never-failed")
     assert _count(conn, "never-failed") is None, "an unfailed site stays absent, not a 0 row"
 
 
 def test_is_persistent_boundary() -> None:
-    """False below the threshold, True at exactly the threshold (SH-REQ-004)."""
+    """False below the threshold, True at exactly the threshold."""
     assert site_health.is_persistent(2, 3) is False
     assert site_health.is_persistent(3, 3) is True
     assert site_health.is_persistent(4, 3) is True

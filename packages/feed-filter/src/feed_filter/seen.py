@@ -1,9 +1,9 @@
-"""The seen-store — the sole dedupe authority (REQ-009).
+"""The seen-store — the sole dedupe authority.
 
 A single SQLite table keyed by canonical URL. A row exists iff the URL has been
 processed (kept, dropped, or snapshotted at registration). ``kept`` distinguishes
 the three: ``1`` reminded, ``0`` dropped, ``NULL`` snapshotted-only (the
-cold-start flood guard, REQ-002 / REQ-006). Membership — not ``kept`` — is what
+cold-start flood guard). Membership — not ``kept`` — is what
 ``is_seen`` tests.
 
 Keys are typed ``CanonicalUrl`` so a caller that forgets to canonicalize is a
@@ -22,7 +22,7 @@ from feed_filter.canonical import CanonicalUrl
 # current ``PRAGMA user_version``, then stamps the new version — so adding a
 # column in a later phase is an append here, not a break against an existing
 # feed-filter.db. v1 uses IF NOT EXISTS so it is also safe over a pre-versioning
-# database created during Phase 2 development.
+# database from before this migration framework existed.
 _MIGRATIONS: list[str] = [
     # v1: initial schema
     """
@@ -34,22 +34,22 @@ _MIGRATIONS: list[str] = [
         seen_at       INTEGER
     );
     """,
-    # v2: forum adapter tables (FRM-GUD-004).
+    # v2: forum adapter tables.
     # These are the Discourse adapter's post-grain dedupe authority and
     # watch/poll throttle.  They are colocated here only because migrations
     # share one ``user_version`` counter; all queries against them live in
     # ``forum_store.py``, which keeps ``seen.py`` the sole authority for the
     # ``seen`` table.
     #
-    # ``forum_watch``: one row per admitted topic, anchoring the poll schedule
-    # (FRM-007).  ``op_interest_kept`` and ``last_like_count`` are nullable so
-    # "unset" (not yet judged / not yet polled) is distinguishable from 0
-    # (FRM-CON-004, FRM-003).  ``completed_polls`` counts finalized polls;
+    # ``forum_watch``: one row per admitted topic, anchoring the poll schedule.
+    # ``op_interest_kept`` and ``last_like_count`` are nullable so
+    # "unset" (not yet judged / not yet polled) is distinguishable from 0.
+    # ``completed_polls`` counts finalized polls;
     # ``retired`` is set when ``completed_polls >= len(poll_offsets_days)``
-    # (offset-only retirement, FRM-007).
+    # (offset-only retirement).
     #
     # ``forum_post_seen``: one row per dispositioned post (kept or dropped),
-    # enforcing post-grain dedupe (FRM-006 / FRM-CON-005).
+    # enforcing post-grain dedupe.
     """
     CREATE TABLE IF NOT EXISTS forum_watch (
         site_id          TEXT    NOT NULL,
@@ -71,7 +71,7 @@ _MIGRATIONS: list[str] = [
         PRIMARY KEY (site_id, post_id)
     );
     """,
-    # v3: bound the Rule-B poll set to top-feed topics (FRM-001 reconciliation).
+    # v3: bound the Rule-B poll set to top-feed topics.
     # ``poll_eligible`` marks a watched topic as one to JSON-poll for Rule B.
     # Only topics surfaced by ``top.rss`` (daily/weekly) are poll-eligible; a
     # ``latest.rss``-only topic is still admitted (so its Rule-A OP verdict is
@@ -83,16 +83,16 @@ _MIGRATIONS: list[str] = [
     """
     ALTER TABLE forum_watch ADD COLUMN poll_eligible INTEGER NOT NULL DEFAULT 0;
     """,
-    # v4: per-site consecutive-failure counter for gather-error escalation
-    # (SH-REQ-001). One row per site; ``consecutive_failures`` counts runs where
+    # v4: per-site consecutive-failure counter for gather-error escalation.
+    # One row per site; ``consecutive_failures`` counts runs where
     # the site was genuinely unreachable, reset to 0 on any reachable run.
     #
-    # This is **operational telemetry, not dedupe / never-lost state**
-    # (SH-CON-002): it is explicitly outside the never-lost authority (FRM-CON-005)
+    # This is **operational telemetry, not dedupe / never-lost state**:
+    # it is explicitly outside the never-lost authority
     # that governs ``forum_post_seen`` / ``forum_watch`` / ``completed_polls``. A
     # crash after this write costs at most one extra increment on a failure that
     # would recur anyway — never a lost post. All queries against it live in
-    # ``site_health.py`` (SH-GUD-001), keeping ``seen.py`` the authority only for
+    # ``site_health.py``, keeping ``seen.py`` the authority only for
     # the ``seen`` table. A ``last_error`` / ``last_failed_at`` column is
     # deferred until a consumer exists; append-only migrations make adding one
     # later a one-line change (the current error is already emitted in
@@ -106,7 +106,7 @@ _MIGRATIONS: list[str] = [
     # v5: transient per-run cache of full feed bodies. ``new-entries`` stores each
     # emitted feed entry's full body here and puts only a short preview on stdout,
     # so the body reaches only the judging haiku (via the ``entry-body`` subcommand),
-    # never the run orchestrator's context (GUD-003). Rewritten wholesale each
+    # never the run orchestrator's context. Rewritten wholesale each
     # ``new-entries`` run, so it holds at most one run's bodies.
     #
     # Like ``site_health``, this is **operational cache, not dedupe / never-lost
@@ -175,7 +175,7 @@ def record(
 
 
 def snapshot(conn: sqlite3.Connection, site_id: str, urls: list[CanonicalUrl]) -> None:
-    """Bulk-mark ``urls`` as seen with ``kept=NULL`` and no reminders (REQ-002).
+    """Bulk-mark ``urls`` as seen with ``kept=NULL`` and no reminders.
 
     Existing rows are left untouched (``DO NOTHING``), so a snapshot never
     clobbers an already-decided keep/drop.

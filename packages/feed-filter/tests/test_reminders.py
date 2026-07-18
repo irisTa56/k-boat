@@ -1,4 +1,4 @@
-"""Behavior tests for the ``rem`` wrapper (TASK-028).
+"""Behavior tests for the ``rem`` wrapper.
 
 No real Reminders.app: a fake runner captures the exact argv and returns a
 canned process result, so the title-fallback, special-char safety, and
@@ -98,7 +98,7 @@ def test_no_title_and_no_url_raises() -> None:
 
 
 def test_nonzero_exit_raises_unknown_list() -> None:
-    # CON-004: a renamed/missing list must surface, not swallow the kept entry.
+    # A renamed/missing list must surface, not swallow the kept entry.
     runner = FakeRunner(FakeProc(returncode=1, stderr="reminders: list not found: Filtered Feeds"))
     with pytest.raises(ReminderError) as excinfo:
         add_reminder("T", "https://e.example.com/a", "n", runner=runner)
@@ -122,8 +122,8 @@ def test_zero_exit_missing_id_returns_empty_id() -> None:
 
 
 def test_missing_binary_raises_reminder_error() -> None:
-    # rem absent from PATH (the likely scheduled-routine failure, CON-001/DEP-007)
-    # must surface as a ReminderError, not a raw OSError traceback (CON-004).
+    # rem absent from PATH (the likely scheduled-routine failure)
+    # must surface as a ReminderError, not a raw OSError traceback.
     def boom(*_a: Any, **_k: Any) -> FakeProc:
         raise FileNotFoundError(2, "No such file or directory", "rem")
 
@@ -133,7 +133,7 @@ def test_missing_binary_raises_reminder_error() -> None:
     assert "could not execute" in str(excinfo.value)
 
 
-# --- open_reminder_urls (FRM-006 open-reminder dedupe) ----------------------
+# --- open_reminder_urls (open-reminder dedupe) ----------------------
 
 
 def _list_proc(items: object) -> FakeProc:
@@ -167,7 +167,7 @@ def test_open_reminder_urls_empty_list() -> None:
 
 def test_open_reminder_urls_fails_open_on_nonzero() -> None:
     # A rem failure must NOT raise: suppression simply does not fire and the
-    # caller reminds as usual (never-lost over never-duplicated, FRM-CON-005).
+    # caller reminds as usual (never-lost over never-duplicated).
     runner = FakeRunner(FakeProc(returncode=1, stderr="list not found"))
     assert open_reminder_urls("Filtered Forums", runner=runner) == set()
 

@@ -1,21 +1,21 @@
-"""Raw HTTP fetch — the single network boundary (GUD-005).
+"""Raw HTTP fetch — the single network boundary.
 
 Synchronous throughout: feed-filter processes a handful of sites in order, so a
 sync ``httpx.Client`` is used everywhere; there is no ``asyncio`` boundary.
 
 ``fetch`` returns the response as both raw ``bytes`` and decoded ``text``. Feeds
-MUST be parsed from the raw bytes (CON-002: ``feedparser`` does its own encoding
+MUST be parsed from the raw bytes (``feedparser`` does its own encoding
 detection from the XML declaration, which httpx's text decoding would pre-empt);
 HTML scraping consumes ``text``.
 
 Any HTTP-status (``>= 400``) or transport failure raises ``FetchError``. Callers
-consume it per REQ-008 (a gather-time failure leaves the entry unseen so the
+consume it (a gather-time failure leaves the entry unseen so the
 next run retries it naturally).
 
 Before raising on a throttling status (``429``/``503``), ``fetch`` retries a
 bounded number of times, honoring the server's ``Retry-After`` header. The
 forum gather loop polls ``/t/<id>.json`` once per due topic in a tight sequence
-(FRM-CON-004) and trips Discourse's anonymous rate limit, so this client-side
+and trips Discourse's anonymous rate limit, so this client-side
 back-off keeps a run complete instead of shedding throttled topics to the next
 run. httpx's own transport ``retries`` covers only connection failures, not
 status codes, so the status-based retry lives here at the single fetch boundary.

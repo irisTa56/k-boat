@@ -1,4 +1,4 @@
-"""Behavior tests for the 4-layer discovery (TASK-025).
+"""Behavior tests for the 4-layer discovery.
 
 Network-free: every client is built over an ``httpx.MockTransport`` whose handler
 routes by path so the self-feed / alternate-link / typical-path / clustering and
@@ -317,7 +317,7 @@ def test_descendant_cluster_ordered_before_alphabetically_earlier_sibling() -> N
 
 
 def test_cluster_counts_distinct_canonical_urls() -> None:
-    # /blog/a and /blog/a/ are one article under canonical dedup (PAT-002), the
+    # /blog/a and /blog/a/ are one article under canonical dedup, the
     # same key scrape_index uses — so the cluster of 6 raw links counts as 5 and
     # the preview shows the canonical form once, matching what registration
     # ingests rather than over-counting.

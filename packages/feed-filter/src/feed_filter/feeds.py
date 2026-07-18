@@ -1,11 +1,11 @@
-"""Feed parsing — ``feedparser`` over raw bytes (CON-002).
+"""Feed parsing — ``feedparser`` over raw bytes.
 
 ``Entry`` is the shared ingest shape across the feed and scrape paths. ``title``,
 ``summary``, and ``published_at`` are populated for feed entries (any may still
 be ``None`` for a sparse item) but are documented **feed-only**: the scrape path
 (``scrape.scrape_index``) leaves them ``None`` and the subagent's page fetch
-supplies a title for any keep (REQ-005). ``canonical_url`` is the dedupe key
-(PAT-002), so it is typed ``CanonicalUrl`` and always set.
+supplies a title for any keep. ``canonical_url`` is the dedupe key,
+so it is typed ``CanonicalUrl`` and always set.
 """
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ def _published_at(entry: object) -> int | None:
 
 # Medium serves the same article under shifting link hosts — ``medium.com/<pub>/``
 # vs a publication's custom domain (e.g. ``netflixtechblog.com``) — so the link
-# forks the dedupe key (PAT-002) and the article re-reminds every time the host
+# forks the dedupe key and the article re-reminds every time the host
 # flips. (The other historical fork, a volatile ``?source=`` param, is already
 # neutralized in ``canonical.py``; the host shift is the residual cause.) Every
 # Medium item also carries ``<guid isPermaLink="false">https://medium.com/p/
@@ -153,7 +153,7 @@ def _published_at(entry: object) -> int | None:
 # purpose: with the host + ``/p/`` + ``fullmatch`` anchoring already rejecting
 # every non-Medium guid, erring wide only risks keying a hypothetical non-hex
 # ``/p/`` id on its own stable guid (still collision-free), whereas erring
-# narrow could miss a real guid and silently re-remind (never-lost, REQ-009).
+# narrow could miss a real guid and silently re-remind (never-lost).
 _MEDIUM_GUID = re.compile(r"https?://medium\.com/p/[0-9a-z]+/?", re.IGNORECASE)
 
 
@@ -214,7 +214,7 @@ def _entry_summary(entry: object) -> str | None:
 def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     """Parse an RSS/Atom body into ``Entry`` objects.
 
-    ``body`` is raw bytes (CON-002), never ``str``: ``feedparser.parse`` treats a
+    ``body`` is raw bytes, never ``str``: ``feedparser.parse`` treats a
     ``str`` that looks like a URL or path as a fetch/file-open instruction, so a
     ``str`` overload here would turn this pure parser into an SSRF/file-read
     footgun. Callers pass ``FetchResult.content``.
@@ -222,15 +222,15 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     Entries whose link is unresolvable (missing / fragment-only / non-http) are
     skipped (``resolve_link``). A malformed body that ``feedparser`` cannot
     recover any entry from yields ``[]`` rather than raising — a dead feed is an
-    empty observation, not a crash (REQ-007/REQ-008 handle it downstream).
+    empty observation, not a crash (handled downstream).
 
     Ordering (``sort=True``, default): dated entries by ``published_at``
     descending, undated entries in source order at the tail. The per-site cap
-    downstream then keeps the newest (CON-005).
+    downstream then keeps the newest.
 
     ``sort=False``: entries are returned in feed source order with no date sort.
     Used by ``discourse.discover_topic_ids`` so a top-feed preserves rank order
-    rather than being re-sorted by date (FRM-GUD-002 / FRM-001).
+    rather than being re-sorted by date.
     """
     parsed = feedparser.parse(body)
     raw_entries = getattr(parsed, "entries", []) or []

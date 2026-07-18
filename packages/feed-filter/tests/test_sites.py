@@ -1,4 +1,4 @@
-"""Behavior tests for the sites registry: validation, round-trip, atomic writes (TASK-013)."""
+"""Behavior tests for the sites registry: validation, round-trip, atomic writes."""
 
 from __future__ import annotations
 
@@ -109,14 +109,14 @@ def test_add_site_with_selection_override(tmp_path: Path) -> None:
 
 
 def test_requires_browser_defaults_false() -> None:
-    # Absent flag → httpx path (REQ-001); shape validation is unaffected.
+    # Absent flag → httpx path; shape validation is unaffected.
     assert _feed().requires_browser is False
     assert _scrape().requires_browser is False
 
 
 def test_requires_browser_round_trip(tmp_path: Path) -> None:
     # A flagged feed site survives add→load; the flag does not disturb the
-    # exactly-one-of feed/scrape shape (REQ-001).
+    # exactly-one-of feed/scrape shape.
     path = tmp_path / "sites.toml"
     add_site(
         path,
@@ -308,7 +308,7 @@ def test_load_rejects_missing_required_key(tmp_path: Path) -> None:
 
 def test_update_pattern_heals_scrape_site_with_blank_feed_url(tmp_path: Path) -> None:
     # A half-written scrape row carrying an empty feed_url still loads as scrape,
-    # so self-heal (REQ-006) must be able to rewrite its pattern — the guard must
+    # so self-heal must be able to rewrite its pattern — the guard must
     # agree with load_sites that a blank feed_url is unset.
     path = tmp_path / "sites.toml"
     path.write_text(
@@ -379,7 +379,7 @@ def test_update_pattern_rejects_feed_site(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Forum kind — TASK-005
+# Forum kind
 # ---------------------------------------------------------------------------
 
 
@@ -545,7 +545,7 @@ def test_update_pattern_rejects_forum_site(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _opt_int / _opt_int_list helpers — TASK-005
+# _opt_int / _opt_int_list helpers
 # ---------------------------------------------------------------------------
 
 

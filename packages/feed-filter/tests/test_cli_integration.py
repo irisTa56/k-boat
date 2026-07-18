@@ -1,4 +1,4 @@
-"""End-to-end CLI smoke over real state files (TASK-038 / TASK-024).
+"""End-to-end CLI smoke over real state files.
 
 Exercises the actual pipeline — fetch → parse → seen-store → round-robin/cap —
 not the monkeypatched core fns of ``test_cli.py``. The only fakes are the network
@@ -7,13 +7,13 @@ injected runner). The seen-store and ``sites.toml`` are real tmp files via the
 ``state_dir`` fixture, so the cross-process invariants hold against persisted
 state:
 
-- ``add-site`` snapshots the back-catalog seen *before* writing config (REQ-002),
+- ``add-site`` snapshots the back-catalog seen *before* writing config,
   so ``new-entries`` returns only entries that appeared *after* registration;
-- ``remind`` creates the reminder *and* records seen in one process (REQ-009),
+- ``remind`` creates the reminder *and* records seen in one process,
   so a second ``new-entries`` no longer yields the reminded entry — no duplicate.
 - Forum: ``forum-remind`` / ``forum-mark-seen`` record posts, ``forum-poll-done``
   finalizes per-topic; re-running ``forum-new`` after partial disposition still
-  finds the already-seen posts and produces no duplicates (FRM-CON-005).
+  finds the already-seen posts and produces no duplicates.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def _no_open_reminder_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Default ``cmd_forum_remind``'s open-reminder lookup to empty (hermetic).
 
     Keeps forum-remind from shelling out to the real Reminders store via
-    ``rem list`` (FRM-006 dedupe). The suppression end-to-end test overrides this
+    ``rem list`` (dedupe). The suppression end-to-end test overrides this
     with a stateful stub backed by the same fake ``rem`` store.
     """
     monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set())
@@ -177,7 +177,7 @@ def test_scrape_site_self_heal_end_to_end(
 ) -> None:
     """A scrape site whose index is redesigned away from its pattern self-heals.
 
-    Drives the full cross-process REQ-006 path over real state: register
+    Drives the full cross-process self-heal path over real state: register
     (snapshot back-catalog) → a new article surfaces → the index moves under a
     new path so the stored pattern matches nothing (``zero_links``) → ``heal-site``
     re-scrapes under the new pattern, snapshots the live URLs, rewrites config
@@ -232,8 +232,7 @@ def test_scrape_site_self_heal_end_to_end(
     assert broken["entries"] == []  # nothing matches the stale pattern
     # zero_links fires on a broken pattern (index_matches == 0), NOT a quiet day.
     # A zero_links scrape is not an outage (error is None), so it must NOT increment
-    # the site-health counter — persistence tracks unreachability, not broken patterns
-    # (SH-REQ-007).
+    # the site-health counter — persistence tracks unreachability, not broken patterns.
     assert broken["sites"] == [
         {
             "site_id": "blg",
@@ -291,7 +290,7 @@ def test_add_site_requires_browser_snapshots_via_browser(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A JS feed registers through the browser path: its back-catalog is snapshotted
-    via the fake Chromium (REQ-007), the flag persists, and the httpx client is
+    via the fake Chromium, the flag persists, and the httpx client is
     never touched."""
     # An httpx client that errors if used — the browser add-site must not fetch over it.
     monkeypatch.setattr(cli, "build_client", _MockSite(b"nope", content_type="text/plain").client)
@@ -427,7 +426,7 @@ def test_heal_site_browser_scrape_succeeds(
 
 
 # =============================================================================
-# Forum end-to-end (TASK-024 / TEST-005)
+# Forum end-to-end
 # =============================================================================
 
 # Hand-authored minimal Discourse fixtures for the integration tests.
@@ -478,7 +477,7 @@ def _discourse_rss(topic_id: int, slug: str, title: str, description: str) -> by
 
 
 _LATEST_RSS = _discourse_rss(1234, "my-topic", "My Forum Topic", "OP text summary")
-# Topic 1234 also appears in the daily top feed so it is poll-eligible (FRM-001):
+# Topic 1234 also appears in the daily top feed so it is poll-eligible:
 # only top-feed topics are JSON-polled for Rule B, so the end-to-end Rule-B path
 # requires 1234 in a top feed, not latest.rss alone.
 _TOP_DAILY_RSS = _discourse_rss(1234, "my-topic", "My Forum Topic", "OP text summary")
@@ -529,9 +528,9 @@ def test_forum_end_to_end(
 ) -> None:
     """Full forum run: add-forum → forum-new → Rule-A keep of the OP (verdict
     only) + Rule-B keep of the same OP (post-grain seen) → forum-poll-done.
-    Asserts the two dedupe axes are written independently (FRM-006), 'Filtered
+    Asserts the two dedupe axes are written independently, 'Filtered
     Forums' is the list target, and the second open reminder for the same topic
-    URL is suppressed (FRM-006) — one open reminder per topic, both axes recorded.
+    URL is suppressed — one open reminder per topic, both axes recorded.
     """
     monkeypatch.setattr(cli, "build_client", _forum_transport)
 
@@ -556,7 +555,7 @@ def test_forum_end_to_end(
         ),
     )
     # The open-reminder lookup reflects what has been added, so a second remind
-    # of the same topic URL is suppressed (FRM-006). Overrides the autouse stub.
+    # of the same topic URL is suppressed. Overrides the autouse stub.
     monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set(open_urls))
 
     # --- Step 1: register the forum site (config only, no snapshot) -----------
@@ -600,7 +599,7 @@ def test_forum_end_to_end(
     assert new_out["discourse_fetches"] == 4
 
     # --- Step 3: Rule-A keep of the OP — `--is-op`, NO `--post-id` ------------
-    # Rule A holds no OP post_id (it reads RSS, FRM-002); it records only the
+    # Rule A holds no OP post_id (it reads RSS); it records only the
     # topic-grain interest verdict and never touches the post-grain seen store.
     rc = cli.main(
         [
@@ -638,7 +637,7 @@ def test_forum_end_to_end(
     # The OP is also a Rule-B trigger (10 likes ≥ 6).  Independent axis: pass
     # `--post-id`, NO `--is-op`.  An open reminder for this topic URL already
     # exists (Step 3), so the `rem add` is SUPPRESSED — but the post-grain seen
-    # is still recorded (FRM-006): one open reminder per topic, both axes written.
+    # is still recorded: one open reminder per topic, both axes written.
     rc = cli.main(
         [
             "forum-remind",
@@ -660,7 +659,7 @@ def test_forum_end_to_end(
     b_out = _out(capsys)
     assert b_out["suppressed"] is True  # same URL already open → suppressed
     assert b_out["id"] is None  # no reminder created
-    assert len(rem_calls) == 1  # no second `rem add` (FRM-006 open-reminder dedupe)
+    assert len(rem_calls) == 1  # no second `rem add` (open-reminder dedupe)
 
     with contextlib.closing(open_db(db_path())) as conn:
         # Post-grain seen IS still recorded despite the suppressed reminder.
@@ -699,8 +698,7 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
 ) -> None:
     """Never-lost ordering: a run that disposes posts but is interrupted before
     forum-poll-done can re-run forum-new and re-derive the same posts as
-    already-seen.  No duplicate remind; after poll-done the topic advances cleanly
-    (FRM-CON-005).
+    already-seen.  No duplicate remind; after poll-done the topic advances cleanly.
     """
     monkeypatch.setattr(cli, "build_client", _forum_transport)
 
@@ -817,7 +815,7 @@ def test_forum_rule_a_drop_resurfaces_under_rule_b(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The headline FRM-006 behaviour: an OP dropped under Rule A is NOT marked
+    """The headline behaviour: an OP dropped under Rule A is NOT marked
     post-grain seen (only the topic-grain verdict is set), so it is still
     re-judged under Rule B if it crosses the like bar.  This is the mirror of
     ``test_forum_never_lost_ordering_reruns_find_seen_posts`` (where a post-grain
@@ -870,7 +868,7 @@ def test_forum_rule_a_drop_resurfaces_under_rule_b(
         assert not is_post_seen(conn, _FORUM_SITE_ID, 5001)
 
     # Run 2: the OP (post 5001, 10 likes ≥ threshold) still surfaces under Rule B,
-    # because the Rule-A drop did not record it seen at post grain (FRM-006).
+    # because the Rule-A drop did not record it seen at post grain.
     cli.main(["forum-new", "--site-id", _FORUM_SITE_ID])
     new2 = _out(capsys)
     rule_b_for_topic = [t for t in new2["topics"] if t["rule"] == "B" and t["topic_id"] == 1234]
@@ -885,8 +883,9 @@ def test_forum_site_excluded_from_new_entries_and_vice_versa(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Finding #8 (FRM-CON-001): forum sites never enter new-entries; article sites
-    never enter forum-new.  Verified end-to-end with real transport stubs.
+    """Forum sites never enter new-entries; article sites never enter forum-new.
+
+    Verified end-to-end with real transport stubs.
     """
     # Article site mock.
     article_site = _MockSite(_rss(A, B))
@@ -923,14 +922,14 @@ def test_forum_site_excluded_from_new_entries_and_vice_versa(
 
 
 # ---------------------------------------------------------------------------
-# Site-health escalation (SH-TEST-003): forum-new increments the durable
+# Site-health escalation: forum-new increments the durable
 # consecutive-failure counter on whole-site unreachability, resets on a
 # reachable run, and never increments on a dead-topic retirement alone.
 # ---------------------------------------------------------------------------
 
 
 def _all_feeds_fail_transport() -> httpx.Client:
-    """Every request fails 503 — every discovery feed is unreachable (SH-REQ-003)."""
+    """Every request fails 503 — every discovery feed is unreachable."""
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="down")
@@ -943,7 +942,7 @@ def _dead_topic_transport() -> httpx.Client:
 
     The site is reachable (all_feeds_failed is False), yet gather_forum emits a
     benign ``retiring dead topic`` error for the deleted topic — the exact case
-    SH-REQ-006 says must NOT increment the failure counter.
+    that must NOT increment the failure counter.
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1004,7 +1003,7 @@ def test_forum_new_escalates_persistent_then_resets(
     ``persistent`` at the threshold (3); the first reachable run resets it to 0.
 
     This is the cross-run signal the whole feature exists for: stateless runs that
-    would each re-derive "transient" now share one durable count (SH-REQ-001/002).
+    would each re-derive "transient" now share one durable count.
     """
     _register_forum()
     capsys.readouterr()  # discard add-forum output
@@ -1033,8 +1032,8 @@ def test_forum_new_dead_topic_retirement_does_not_increment(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A reachable run whose only error is a dead-topic retirement must not count
-    as a site failure (SH-REQ-006) — the counter keys on whole-site
-    unreachability, not on the combined error string (SH-ALT-004).
+    as a site failure — the counter keys on whole-site
+    unreachability, not on the combined error string.
     """
     _register_forum(offsets=("0",))  # offset 0 → topic 1234 is due the run it is admitted
     capsys.readouterr()
@@ -1051,7 +1050,7 @@ def test_forum_new_dead_topic_retirement_does_not_increment(
 
 
 # ---------------------------------------------------------------------------
-# Site-health escalation, article path (SH-TEST-004): new-entries increments the
+# Site-health escalation, article path: new-entries increments the
 # durable counter when a site's gather errors, resets on a reachable run, and
 # never increments on a zero_links scrape (the last covered by the heal-flow test
 # above, which now asserts consecutive_failures == 0 on the zero_links run).
@@ -1059,7 +1058,7 @@ def test_forum_new_dead_topic_retirement_does_not_increment(
 
 
 def _feed_fail_transport() -> httpx.Client:
-    """Every request fails 503 — the article feed is unreachable (SH-REQ-007)."""
+    """Every request fails 503 — the article feed is unreachable."""
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="down")
@@ -1074,7 +1073,7 @@ def test_new_entries_escalates_persistent_then_resets(
 ) -> None:
     """An article site whose feed keeps erroring increments the durable counter each
     run and flips ``persistent`` at the threshold (3); the first reachable run
-    resets it to 0 — the article-path parity of the forum escalation (SH-REQ-007).
+    resets it to 0 — the article-path parity of the forum escalation.
     """
     feed = _MockSite(_rss(A, B))
     monkeypatch.setattr(cli, "build_client", feed.client)
@@ -1082,7 +1081,7 @@ def test_new_entries_escalates_persistent_then_resets(
     capsys.readouterr()  # discard add-site output
 
     # Three consecutive failed gathers → count 1, 2, 3; persistent at 3. The error
-    # is a hard fetch failure, not a zero_links scrape, so it counts (SH-REQ-007).
+    # is a hard fetch failure, not a zero_links scrape, so it counts.
     monkeypatch.setattr(cli, "build_client", _feed_fail_transport)
     for expected_count in (1, 2, 3):
         assert cli.main(["new-entries", "--site-id", "ex"]) == 0

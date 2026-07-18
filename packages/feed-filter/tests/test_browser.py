@@ -1,4 +1,4 @@
-"""Behavior tests for the sync browser module (TASK-008).
+"""Behavior tests for the sync browser module.
 
 No real Chromium: a fake ``playwright.sync_api`` is injected via
 ``tests/_fake_playwright.py`` so the lazy-init, fetch, lifecycle, UA-strip, and
@@ -199,7 +199,7 @@ def test_context_is_cold_no_storage_state(monkeypatch: pytest.MonkeyPatch) -> No
     assert "storage_state" not in handles.browser.new_context_kwargs
 
 
-# --- UA strip (REQ-005) ---------------------------------------------------
+# --- UA strip ---------------------------------------------------
 
 
 def test_ua_strip_removes_headless_marker(monkeypatch: pytest.MonkeyPatch) -> None:
