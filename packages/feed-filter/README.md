@@ -37,7 +37,7 @@ The CLI can also be run directly from the repo root.
 
 ### Register a site
 
-Use the `feed-filter-add-site` skill, or run the CLI directly.
+Use the `kboat-feed-add-site` skill, or run the CLI directly.
 Discovery determines whether a URL is a feed or a scrape site; registration snapshots the current back-catalog as already-seen so only entries appearing *after* registration are ever reminded.
 
 ```sh
@@ -99,12 +99,12 @@ A body behind the same gate the browser gather passed is therefore unreadable to
 
 ### Run the filter
 
-Use the `feed-filter-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
+Use the `kboat-feed-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
 
 ### Register a Discourse forum
 
-Use the `feed-filter-add-site` skill, or register directly:
+Use the `kboat-feed-add-site` skill, or register directly:
 
 ```sh
 # Register a Discourse forum (no back-catalog snapshot — admission is per-poll):
@@ -125,7 +125,7 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 
 ### Run the forum filter
 
-Use the `feed-filter-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, reminds the keeps into `Filtered Forums`, and advances each topic's poll counter.
+Use the `kboat-feed-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, reminds the keeps into `Filtered Forums`, and advances each topic's poll counter.
 
 - **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
 - **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
@@ -140,7 +140,7 @@ A re-reminded topic produces a fresh reminder item in `Filtered Forums`; unlike 
 The run **must execute locally** — `rem` writes the local Reminders.app, so a cloud routine cannot push reminders.
 The Mac must be awake and the Claude runtime idle when the task fires.
 
-Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `feed-filter-run` for the article sites, `feed-filter-forum-run` for the Discourse forums.
+Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `kboat-feed-run` for the article sites, `kboat-feed-forum-run` for the Discourse forums.
 The two are independent routines; register whichever you use, on whatever schedule you choose.
 Guidance:
 

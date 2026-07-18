@@ -55,10 +55,10 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 ## Architecture (K-Boat)
 
 The product skills live at the repo-root `.claude/skills/`.
-The shared `vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
+The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
 The eight K-Boat skills:
 
-- `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the reading inbox, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `vault-conventions` for the shared mechanics. Read it before touching any note format.
+- `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the reading inbox, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `kboat-vault-conventions` for the shared mechanics. Read it before touching any note format.
 - `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos`, but a GitHub blob/raw `.pdf`/`.md` file link stays a source.
 - `kboat-repos` — non-interactive: catalogues a GitHub repository (`type: repo`) via `gh` and refreshes the catalogue's metadata.
 - `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome, into an ASIN-named `Kindles/` note.
@@ -67,7 +67,7 @@ The eight K-Boat skills:
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling the content through the user's real Chrome.
 - `kboat-curate` — on-demand maintenance of the knowledge base: curates the concept graph and checks the concept-note tags for drift and gaps. Human-run, not in the routine.
 
-Each skill defers to `kboat-notes` for the K-Boat note schema, and `kboat-notes` in turn to `vault-conventions` for the shared vault contract. The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)) — the five console scripts (`kboat-lifecycle`, `kboat-repos`, `kboat-pick`, `kboat-validate`, `kboat-note`) over a shared frontmatter core and the code-authoritative schema (`kboat.schema`), whose field semantics are specified by `kboat-notes` and whose shared contract by `vault-conventions`. See its README for the library surface.
+Each skill defers to `kboat-notes` for the K-Boat note schema, and `kboat-notes` in turn to `kboat-vault-conventions` for the shared vault contract. The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)) — the five console scripts (`kboat-lifecycle`, `kboat-repos`, `kboat-pick`, `kboat-validate`, `kboat-note`) over a shared frontmatter core and the code-authoritative schema (`kboat.schema`), whose field semantics are specified by `kboat-notes` and whose shared contract by `kboat-vault-conventions`. See its README for the library surface.
 
 The prose skills carry no automated tests (only the `kboat` library is unit-tested); validate a skill change by running it against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
 
@@ -104,12 +104,12 @@ Automation:
 
 - In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
 - Property keys and enum values are `snake_case`; dates are `YYYY-MM-DD`.
-- Source and repo notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in `vault-conventions`); Kindle notes by their ASIN. All keep the readable title in the `title` property. Other note names replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
+- Source and repo notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in `kboat-vault-conventions`); Kindle notes by their ASIN. All keep the readable title in the `title` property. Other note names replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
 
 ## Keep this file current
 
-The shared vault mechanics (naming, the schema/validate/write contract, Base discipline) are owned by the `vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
-When a shared convention changes, update `vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
+The shared vault mechanics (naming, the schema/validate/write contract, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
+When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
 But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the `K-Boat Queue` and `K-Boat Questions` lists, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `PushNotification` trigger set.

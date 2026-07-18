@@ -1,5 +1,5 @@
 ---
-name: feed-filter-add-site
+name: kboat-feed-add-site
 description: Register a new site in feed-filter from its URL alone. For an article feed/scrape site, run discovery, pick the article cluster, and snapshot the back-catalog; for a Discourse forum, register it with add-forum (no discovery, no snapshot). Use when the user wants to add/register a site or a Discourse forum to feed-filter, whether by URL or by name.
 ---
 
@@ -7,7 +7,7 @@ description: Register a new site in feed-filter from its URL alone. For an artic
 
 Add one site to the feed-filter registry so the periodic run starts watching it.
 The user supplies only a URL; deterministic discovery decides whether it is a feed or a scrape site, and you pick the right article cluster when discovery offers more than one.
-This is the infrequent, main-model half of feed-filter (GUD-004) — the periodic keep/drop half lives in the `feed-filter-run` skill.
+This is the infrequent, main-model half of feed-filter (GUD-004) — the periodic keep/drop half lives in the `kboat-feed-run` skill.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
 The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.

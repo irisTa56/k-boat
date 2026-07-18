@@ -36,7 +36,7 @@ When in doubt, prefer to **keep** — a stray extra reminder is cheaper to dismi
 
 ## Forum posts (Rule A and Rule B)
 
-When judging a **forum candidate** (from the `feed-filter-forum-run` skill), two rules apply.
+When judging a **forum candidate** (from the `kboat-feed-forum-run` skill), two rules apply.
 
 **Rule A** — cross-domain interest, judged on the topic OP:
 The forum's own native subject (`forum_subject`, e.g. "Erlang" for an Erlang forum) must be **excluded as a match reason**.

@@ -1,5 +1,5 @@
 ---
-name: vault-conventions
+name: kboat-vault-conventions
 description: Shared conventions and the mechanical contract for writing any note into the K-Boat Obsidian vault (OBSIDIAN_VAULT_PATH) — URL-hash naming, frontmatter rules, the code-authoritative kboat.schema and its sync gate, the kboat.write.upsert write contract, and Base-authoring discipline. Use when adding or changing a vault note type, writing a note into the vault, or authoring a Base. Every vault writer defers here for how the vault works; a note type's own fields, semantics, and lifecycle live in the owning member's spec (K-Boat's in kboat-notes).
 ---
 

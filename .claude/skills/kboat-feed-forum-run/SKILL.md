@@ -1,5 +1,5 @@
 ---
-name: feed-filter-forum-run
+name: kboat-feed-forum-run
 description: Run one forum-filter pass — gather Rule-A and Rule-B candidates from registered Discourse forums, judge each with cheap haiku subagents, push keeps to the Filtered Forums Reminders list. Use for the scheduled forum routine or a manual forum run.
 ---
 
@@ -113,8 +113,8 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    Report it in the summary — a broken forum is visible here, by design there is no backoff.
    - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next reachable run, so do not escalate on a single bad run.
    - **`persistent == true`**: the site has been wholly unreachable for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **fire the push** (see Run summary) and, in the summary, recommend the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site (SH-CON-003).
-     1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`. If the forum moved, fixing `forum_url` (see `feed-filter-manage-sites`) restores it with no loss — the seen-store keys on `(site_id, topic_id)`, not the domain.
-     2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `feed-filter-manage-sites` skill).
+     1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`. If the forum moved, fixing `forum_url` (see `kboat-feed-manage-sites`) restores it with no loss — the seen-store keys on `(site_id, topic_id)`, not the domain.
+     2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-feed-manage-sites` skill).
 
 ## Run summary
 

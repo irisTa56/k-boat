@@ -1,12 +1,12 @@
 ---
-name: feed-filter-manage-sites
+name: kboat-feed-manage-sites
 description: Pause or resume a feed-filter site (disable/enable) and show which sites are currently paused vs active. Use when the user wants to disable/pause/stop a site, enable/resume one, or check the on/off status of registered sites — e.g. after a recurring site error surfaces in a run's push notification.
 ---
 
 # Manage feed-filter sites (pause / resume / status)
 
 Turn an individual site's gathering off or on without losing it, and report which sites are currently paused.
-This is the ad-hoc, user-driven half of site management — registration lives in the `feed-filter-add-site` skill, the periodic run in `feed-filter-run`.
+This is the ad-hoc, user-driven half of site management — registration lives in the `kboat-feed-add-site` skill, the periodic run in `kboat-feed-run`.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
 The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
