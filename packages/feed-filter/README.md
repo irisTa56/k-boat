@@ -1,4 +1,4 @@
-# Feed Filter
+# feed-filter — feed and forum triage
 
 A simplified, Claude-Code-native reimplementation of the sibling project `loose-feeds` (a local checkout at `../loose-feeds`, not a public repo).
 

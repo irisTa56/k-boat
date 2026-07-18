@@ -20,9 +20,8 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 ## Commands
 
-- `mise install` — install tools, sync the venv (`uv sync`), and generate the git pre-commit hook. `eval "$(mise env)"` then loads `.env` and puts `.venv/bin` on PATH, so `feed-filter` is callable bare (the scheduled routine bootstraps env this way).
-- `mise run pre-commit` — full QA gate (`qa:*`): ruff lint+format, `ty`, pytest (coverage ≥80%), rumdl, gitleaks. Merge gate for every phase.
-- `mise run qa:py:feed-filter` — this member's Python gate (ruff, `ty`, pytest). `mise run check:links` — lychee link check (network, not in pre-commit).
+Install and the QA gates are workspace-wide — see the [root CLAUDE.md](../../CLAUDE.md).
+This member's Python gate is `mise run qa:py:feed-filter`; the browser ingestion path is an optional extra (see Environment gotchas).
 
 ## Architecture
 
@@ -34,8 +33,3 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 - Design bias is **never-lost over never-duplicated**: a judging error reminds-then-records anyway; a gather failure records nothing so the next run retries.
 - Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned.
 - Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write; it is telemetry **outside** the never-lost authority, and a `persistent` site is surfaced for a human to investigate — the CLI never auto-disables.
-
-## Keep this file current
-
-Treat CLAUDE.md as part of the definition of done.
-Update it autonomously, without being asked, whenever a change alters the architecture, the commands, or the environment gotchas.
