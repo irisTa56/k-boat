@@ -1,6 +1,6 @@
 ---
 name: kboat-notes
-description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, a Kindle note, or a GitHub repo note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox, Kindle, or Repos Base, or where distilled concept notes live. This is the single source of truth for K-Boat note management; kboat-ingest, kboat-distill, kboat-kindle, and kboat-repos defer to it.
+description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, a Kindle note, or a GitHub repo note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox, Kindle, or Repos Base, or where distilled concept notes live. This is the source of truth for K-Boat's note types and their lifecycle; the shared vault mechanics (URL-hash naming, the schema/validate contract, the write contract, Base discipline) are the vault-conventions skill, which this defers to. kboat-ingest, kboat-distill, kboat-kindle, and kboat-repos defer to this skill.
 ---
 
 # K-Boat note conventions
@@ -46,9 +46,11 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 
 ## Conventions
 
-- Property keys and enum values use `snake_case`.
-- Date-valued properties carry a `_date` suffix (`added_date`, `filed_date`, `distilled_date`) and use `YYYY-MM-DD`.
-- Source notes are named by a URL hash, not by the title. The filename is the first 12 hex characters of the SHA-256 of the `url` value, hashed verbatim with no normalization (`printf '%s' "<url>" | shasum -a 256 | cut -c1-12`), e.g. `Sources/a1b2c3d4e5f6.md`. Use `printf '%s'`, not `echo`: a trailing newline would change every digest. `shasum` is the macOS Perl tool, not `sha256sum`. Because `url` is immutable the hash is stable, so the file is never renamed, and the human-readable title lives only in the `title` property, surfaced by the Base. Two consequences the create procedure handles: the verbatim hash maps URL variants of one article (trailing slash, tracking params, fragment) to different files, and 48 bits is collision-resistant but not collision-free — so it de-dups by reading the existing note's `url`, never by filename alone. (Other notes keep their date names: `Reviews/YYYY-MM-DD.md`.)
+The vault-wide conventions — `snake_case` keys, the `_date` / `YYYY-MM-DD` rule, inline vs block lists, and the URL-hash naming recipe (`printf '%s' "<url>" | shasum -a 256 | cut -c1-12`) — are the shared `vault-conventions` skill; read it for the mechanics.
+What is specific to K-Boat notes:
+
+- A source note hashes its `url` **verbatim** (no normalization) into `Sources/<slug>.md`, and a repo note its canonical GitHub URL into `Repos/<slug>.md` (see "Naming and de-dup"). Because a source `url` is immutable the file is never renamed, and the create procedure de-dups by reading the existing note's `url`, never by filename alone.
+- A Kindle note is named by its ASIN (`Kindles/<ASIN>.md`) and a review report by its date (`Reviews/YYYY-MM-DD.md`) — the non-hash exceptions.
 
 ## One notebook per source (1:1)
 
@@ -69,10 +71,12 @@ The whole notebook — original plus any saved dialogue — is discarded last, a
 
 ## Schema authority and validation
 
-The schema *tables* below describe what each field means and when it is set. The **mechanical** schema — the exact field names, their order, kinds, defaults, which fields are always-present booleans (the Base-filter invariant), and the enum domains — is code-authoritative in `kboat.schema` (`SOURCE`/`KINDLE`/`REPO`), the single declaration the note writers and the validator both read. When a field changes, update this skill's description and `kboat.schema` together; the field tuple order there *is* the canonical frontmatter order.
-The tables' field list and order are checked against `kboat.schema` by `packages/kboat/tests/test_doc_schema_sync.py` (run in `qa:py`), so adding, removing, renaming, or reordering a field on one side without the other fails the commit — the per-field prose (defaults, kinds, enums) is not machine-checked, so keep those accurate by hand.
+The schema *tables* below describe what each K-Boat field means and when it is set.
+The **mechanical** schema — field names, order, kinds, defaults, always-present booleans, enum domains — is code-authoritative in `kboat.schema` (`SOURCE` / `KINDLE` / `REPO`), and the doc-table sync gate (`test_doc_schema_sync.py`) plus the generic `kboat-validate` mechanism are the shared `vault-conventions` skill ("Schema authority and validation").
+When a field changes, update this skill's table and `kboat.schema` together, per that gate.
 
-`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool`/`bad_enum`/`bad_date`/`not_list`/`not_int`/`not_str`) and cross-field (`ambiguous` dispositions, `blocked_has_notebook`, `picked_non_web`, `web_missing_url`, the repo `status_archived_mismatch`), plus `parse_error`. It is read-only and report-only by default (exit 0; `--strict` exits non-zero); the routine runs it last (Phase 5) and surfaces any violations in its run summary as drift for the human to fix.
+On top of the generic per-field checks, `kboat-validate` applies these K-Boat cross-field rules: `ambiguous` (contradictory dispositions), `blocked_has_notebook`, `picked_non_web`, `web_missing_url`, and the repo `status_archived_mismatch`.
+The routine runs it last (Phase 5) and surfaces any violations in its run summary as drift for the human to fix.
 
 ## Source note (`Sources/*.md`)
 
@@ -455,7 +459,7 @@ The to-read inboxes filter `distill != true && keep != true && dismiss != true &
 The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `reading`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
 The Ambiguous view (`dismiss && (keep || distill)`, and `blocked != true`) lists the contradictory sources the routine refuses to process, so they can be fixed. It is kept separate from Holding because it is an error state, not a resting one; like every non-DLQ view it excludes `blocked`, so a blocked source never leaks out of the DLQ.
 The DLQ view (`blocked`) lists the sources ingest could not complete, with their `file.name` (the URL-hash slug) as the first column so it is easy to copy into `kboat-rescue`, plus the `url`; the failure is implied by their presence here. Rescuing one clears `blocked`, moving it out of the DLQ.
-Every Base filter is a plain boolean (`distill`, `keep`, `dismiss`, `blocked`) or an `==`/`!=` over an always-present property (`source_type` and the disposition booleans) — never a `!=` over a property that might be missing, and never a date-emptiness test. This holds only because `distill`, `keep`, `dismiss`, and `blocked` are written on every source at creation; the create-time invariant, not the booleanness alone, is what keeps the views complete (a `!=` over a *missing* property would silently drop the note). Visibility never depends on the routine having stamped a date.
+Every filter here is a plain boolean (`distill`, `keep`, `dismiss`, `blocked`) or an `==`/`!=` over an always-present property (`source_type` and the disposition booleans), per the Base-authoring discipline in `vault-conventions`; those booleans are written on every source at creation, so the views stay complete.
 The to-read and Holding views lead with the disposition checkboxes and sort by `added_date`. The Web and PDF inboxes are single-type, so they omit the `source_type` column that the All and Holding views keep. Column widths and other cosmetics are per-vault tweaks.
 
 Because the filename is an opaque URL hash, the readable title is shown through a `title_link` formula — `file.asLink(note.title)` renders the `title` as text but links to the note, so a click opens the (hash-named) file. All views show `formula.title_link` in place of `file.name`.
