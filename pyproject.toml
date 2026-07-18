@@ -8,8 +8,8 @@ members = ["packages/*"]
 dev = [
     "pytest>=9",
     "pytest-cov",
-    "ruff>=0.15",
-    "ty>=0.0.35",
+    "ruff>=0.15.22",
+    "ty>=0.0.61",
     "playwright",
 ]
 
