@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+The feed-filter workspace member.
+Shared conventions (git workflow, QA commands, markdown rules) are in the [root CLAUDE.md](../../CLAUDE.md); this file covers what is specific to feed-filter.
 
 ## What this repo is
 
@@ -21,11 +22,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, `rem` wra
 
 - `mise install` — install tools, sync the venv (`uv sync`), and generate the git pre-commit hook. `eval "$(mise env)"` then loads `.env` and puts `.venv/bin` on PATH, so `feed-filter` is callable bare (the scheduled routine bootstraps env this way).
 - `mise run pre-commit` — full QA gate (`qa:*`): ruff lint+format, `ty`, pytest (coverage ≥80%), rumdl, gitleaks. Merge gate for every phase.
-- `mise run qa:py:test` — Python tests only. `mise run check:links` — lychee link check (network, not in pre-commit).
-
-## Git workflow
-
-- Never push to `main` directly; branch first, then PR. PRs are merged out-of-band, so verify the current branch before pushing — a merge can leave the tree on `main`.
+- `mise run qa:py:feed-filter` — this member's Python gate (ruff, `ty`, pytest). `mise run check:links` — lychee link check (network, not in pre-commit).
 
 ## Architecture
 
@@ -37,10 +34,6 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 - Design bias is **never-lost over never-duplicated**: a judging error reminds-then-records anyway; a gather failure records nothing so the next run retries.
 - Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned (FRM-CON-005).
 - Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write; it is telemetry **outside** the never-lost authority, and a `persistent` site is surfaced for a human to investigate — the CLI never auto-disables (SH-CON-002/003).
-
-## Writing conventions
-
-- In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
 
 ## Keep this file current
 

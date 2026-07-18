@@ -128,7 +128,7 @@ def _extract_alternate_links(html: str, base_url: str) -> list[str]:
     """Resolved hrefs of each ``<link rel="alternate">`` carrying a feed type."""
     try:
         tree = HTMLParser(html)
-    except Exception:  # noqa: BLE001 - a malformed page is "no links", not a crash
+    except Exception:
         return []
     found: list[str] = []
     for link in tree.css('link[rel="alternate"]'):
@@ -210,7 +210,7 @@ def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str
     """
     try:
         tree = HTMLParser(html)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
     clusters: dict[str, list[str]] = {}
     seen_urls: set[CanonicalUrl] = set()
@@ -232,7 +232,7 @@ def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str
         segments = [s for s in urlsplit(canon).path.split("/") if s]
         if not segments:
             continue
-        key = "/" + "/".join(segments[:-1] + [_SLUG_TOKEN])
+        key = "/" + "/".join([*segments[:-1], _SLUG_TOKEN])
         clusters.setdefault(key, []).append(str(canon))
     qualified = [(k, urls) for k, urls in clusters.items() if len(urls) >= _CLUSTER_MIN_SIZE]
     qualified.sort(key=lambda kv: (-len(kv[1]), kv[0]))

@@ -19,7 +19,9 @@ import pytest
 
 from kboat.schema import KINDLE, REPO, SOURCE, NoteSchema
 
-SKILL = Path(__file__).resolve().parents[1] / ".claude/skills/kboat-notes/SKILL.md"
+# The skills live at the workspace root; this test file sits at
+# packages/kboat/tests/, so walk up three levels (tests → kboat → packages → root).
+SKILL = Path(__file__).resolve().parents[3] / ".claude/skills/kboat-notes/SKILL.md"
 
 # `## Source note (…)` etc. — the H2 that introduces each type's Property table.
 _SECTION = {"Source note": "source", "Kindle note": "kindle", "Repo note": "repo"}
