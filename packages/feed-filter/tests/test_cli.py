@@ -14,7 +14,6 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -23,7 +22,7 @@ import pytest
 from feed_filter import browser, cli
 from feed_filter.browser import BrowserFetchError
 from feed_filter.canonical import CanonicalUrl, canonical_url
-from feed_filter.config import SUMMARY_PREVIEW_CHARS, db_path, sites_path
+from feed_filter.config import SUMMARY_PREVIEW_CHARS, db_path, sites_path, vault_path
 from feed_filter.discover import DiscoveryCandidate, DiscoveryRejection, DiscoveryResult
 from feed_filter.feeds import Entry, EntryKind
 from feed_filter.fetch import FetchError
@@ -36,20 +35,17 @@ from feed_filter.forum_pipeline import (
     TriggerPost,
 )
 from feed_filter.pipeline import FetchOutcome
-from feed_filter.reminders import ReminderError
 from feed_filter.seen import count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
+from feed_filter.vault import VaultError
+from kboat.frontmatter import Value, parse_frontmatter
+from kboat.naming import url_slug
 
 
-@pytest.fixture(autouse=True)
-def _no_open_reminder_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Default ``cmd_forum_remind``'s open-reminder lookup to empty (hermetic).
-
-    ``cmd_forum_remind`` queries open reminders to dedupe by URL;
-    without this guard every forum-remind test would shell out to the real
-    Reminders store via ``rem list``. Suppression tests override this stub.
-    """
-    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set())
+def _feed_note_fm(url: str) -> dict[str, Value]:
+    """Parse the frontmatter of the Feeds note written for ``url``."""
+    note = vault_path() / "Feeds" / f"{url_slug(str(canonical_url(url)))}.md"
+    return parse_frontmatter(note.read_text(encoding="utf-8"))
 
 
 def _no_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -587,15 +583,16 @@ def test_new_entries_unknown_site_id_exits_nonzero(
 # --- remind / mark-seen ---------------------------------------------------
 
 
-def test_remind_adds_then_records_atomically(
+def test_remind_writes_then_records_atomically(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     events: list[str] = []
+    real_write = cli.write_feed_note
     real_record = cli.record
 
-    def fake_add(*_a: object, **_k: object) -> str:
-        events.append("add")
-        return "RID-1"
+    def spy_write(*a: Any, **k: Any) -> dict[str, object]:
+        events.append("write")
+        return real_write(*a, **k)
 
     def spy_record(
         conn: sqlite3.Connection,
@@ -607,92 +604,77 @@ def test_remind_adds_then_records_atomically(
         events.append("record")
         real_record(conn, url, site_id, title, kept)
 
-    monkeypatch.setattr(cli, "add_reminder", fake_add)
+    monkeypatch.setattr(cli, "write_feed_note", spy_write)
     monkeypatch.setattr(cli, "record", spy_record)
 
+    url = "https://e.example.com/a"
     rc = cli.main(
         [
             "remind",
             "--site-id",
             "f1",
             "--url",
-            "https://e.example.com/a",
+            url,
             "--title",
             "T",
-            "--notes",
+            "--summary",
             "N",
+            "--today",
+            "2026-07-19",
         ]
     )
     assert rc == 0
-    assert events == ["add", "record"]  # rem add first, seen record second
+    assert events == ["write", "record"]  # vault write first, seen record second
     out = _out(capsys)
-    assert out == {"id": "RID-1", "url": "https://e.example.com/a", "kept": True}
+    assert out == {
+        "slug": url_slug(str(canonical_url(url))),
+        "url": url,
+        "kept": True,
+        "status": "created",
+    }
+    assert _feed_note_fm(url)["feed_kind"] == "article"  # the article path
     with contextlib.closing(open_db(db_path())) as conn:
-        assert is_seen(conn, canonical_url("https://e.example.com/a"))
+        assert is_seen(conn, canonical_url(url))
 
 
-def test_remind_records_seen_when_rem_emits_unparseable_json(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_remind_writes_wall_and_summary(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The original duplicate bug: ``rem add`` created the reminder (exit 0) but
-    # emitted invalid JSON for a quote-bearing title, so the wrapper raised and
-    # ``cmd_remind`` skipped ``record`` — the next run re-created the reminder.
-    # Drive the real ``add_reminder`` through a runner whose stdout cannot be
-    # parsed, and assert the entry is still recorded seen (so it is not re-judged
-    # and re-reminded). The emitted id is empty (it was unrecoverable).
-    import feed_filter.reminders as rem_mod
-
-    def fake_runner(_argv: list[str], **_: Any) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0, stdout='{"id": "x", "name": "a "b"}', stderr="")
-
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes, **kw: rem_mod.add_reminder(title, url, notes, runner=fake_runner),
-    )
-
+    # The --wall flag marks the note behind a login/paywall; --summary lands as
+    # the note's summary. Both are new to the vault sink.
+    url = "https://e.example.com/walled"
     rc = cli.main(
         [
             "remind",
             "--site-id",
             "f1",
             "--url",
-            "https://e.example.com/a",
+            url,
             "--title",
-            'T "quoted"',
-            "--notes",
-            "N",
+            "T",
+            "--summary",
+            "gist",
+            "--wall",
+            "--today",
+            "2026-07-19",
         ]
     )
     assert rc == 0
-    out = _out(capsys)
-    assert out == {"id": "", "url": "https://e.example.com/a", "kept": True}
-    with contextlib.closing(open_db(db_path())) as conn:
-        assert is_seen(conn, canonical_url("https://e.example.com/a"))
+    fm = _feed_note_fm(url)
+    assert fm["wall"] is True
+    assert fm["summary"] == "gist"
 
 
-def test_remind_does_not_record_when_add_raises(
+def test_remind_does_not_record_when_write_fails(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(*_a: object, **_k: object) -> str:
-        raise ReminderError(["rem"], 1, "list not found")
+    def boom(*_a: object, **_k: object) -> dict[str, object]:
+        raise VaultError("slug collision")
 
-    monkeypatch.setattr(cli, "add_reminder", boom)
-    rc = cli.main(
-        [
-            "remind",
-            "--site-id",
-            "f1",
-            "--url",
-            "https://e.example.com/a",
-            "--title",
-            "T",
-            "--notes",
-            "N",
-        ]
-    )
+    monkeypatch.setattr(cli, "write_feed_note", boom)
+    rc = cli.main(["remind", "--site-id", "f1", "--url", "https://e.example.com/a", "--title", "T"])
     assert rc == 1
-    # The reminder failed, so the entry must stay unseen and retry next run.
+    # The write failed, so the entry must stay unseen and retry next run.
     with contextlib.closing(open_db(db_path())) as conn:
         assert not is_seen(conn, canonical_url("https://e.example.com/a"))
         assert count(conn) == 0
@@ -964,12 +946,6 @@ def _add_forum_site(*, site_id: str = FORUM_SITE_ID) -> SiteConfig:
     site = _forum_site(site_id=site_id)
     add_site(sites_path(), site)
     return site
-
-
-# Fake rem runner that accepts list_name kwarg (the article path's fake is
-# positional-only, so forum commands need their own fake).
-def _fake_rem_runner(argv: list[str], **_: Any) -> SimpleNamespace:
-    return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
 
 
 # --- add-forum ---------------------------------------------------------------
@@ -1385,27 +1361,12 @@ def test_forum_new_cap_safety_withholds_topic_split_between_rule_a_and_b(
 # --- forum-remind ------------------------------------------------------------
 
 
-def test_forum_remind_adds_then_records(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_forum_remind_writes_then_records(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """forum-remind: rem add first, record_post second."""
-    import feed_filter.reminders as rem_mod
-
+    """forum-remind writes a feed_kind=forum note and records the post seen."""
     _add_forum_site()
-
-    rem_calls: list[list[str]] = []
-
-    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
-        rem_calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
-
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes, *, list_name, **kw: rem_mod.add_reminder(
-            title, url, notes, list_name=list_name, runner=fake_runner
-        ),
-    )
+    url = f"{FORUM_URL}/t/topic/1234"
 
     rc = cli.main(
         [
@@ -1417,26 +1378,22 @@ def test_forum_remind_adds_then_records(
             "--post-id",
             "5001",
             "--url",
-            f"{FORUM_URL}/t/topic/1234",
+            url,
             "--title",
             "My Topic",
-            "--notes",
+            "--summary",
             "Great post",
+            "--today",
+            "2026-07-19",
         ]
     )
     assert rc == 0
     out = _out(capsys)
-    assert out["id"] == "FR-1"
     assert out["kept"] is True
     assert out["post_id"] == 5001
-    assert out["suppressed"] is False  # no open reminder for this URL (autouse stub)
-
-    # rem was invoked with --list "Filtered Forums".
-    assert len(rem_calls) == 1
-    argv = rem_calls[0]
-    assert "--list" in argv
-    list_idx = argv.index("--list")
-    assert argv[list_idx + 1] == "Filtered Forums"
+    assert out["slug"] == url_slug(str(canonical_url(url)))
+    assert out["status"] == "created"
+    assert _feed_note_fm(url)["feed_kind"] == "forum"
 
     # Post is recorded seen in forum_post_seen; the topic-grain interest verdict
     # is NOT touched (a Rule-B keep carries no --is-op; the two axes are independent).
@@ -1447,124 +1404,22 @@ def test_forum_remind_adds_then_records(
         assert op_interest_kept(conn, FORUM_SITE_ID, 1234) is None
 
 
-def test_forum_remind_records_post_when_rem_emits_unparseable_json(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_forum_remind_reremind_upserts_same_note(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The forum path shares the ``add_reminder`` contract: a zero-exit ``rem``
-    with unparseable stdout is a created reminder, so the post is still recorded
-    seen and is not re-reminded — the same duplicate guard as the
-    article path, on the second caller."""
-    import feed_filter.reminders as rem_mod
-
-    _add_forum_site()
-
-    def fake_runner(_argv: list[str], **_: Any) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0, stdout='{"id": "x", "name": "a "b"}', stderr="")
-
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes, *, list_name, **kw: rem_mod.add_reminder(
-            title, url, notes, list_name=list_name, runner=fake_runner
-        ),
-    )
-
-    rc = cli.main(
-        [
-            "forum-remind",
-            "--site-id",
-            FORUM_SITE_ID,
-            "--topic-id",
-            "1234",
-            "--post-id",
-            "5001",
-            "--url",
-            f"{FORUM_URL}/t/topic/1234",
-            "--title",
-            'My Topic "quoted"',
-            "--notes",
-            "Great post",
-        ]
-    )
-    assert rc == 0
-    out = _out(capsys)
-    assert out["id"] == ""
-    assert out["kept"] is True
-    with contextlib.closing(open_db(db_path())) as conn:
-        from feed_filter.forum_store import is_post_seen
-
-        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
-
-
-def test_forum_remind_suppresses_when_url_already_open(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """An incomplete reminder for the same topic URL suppresses the ``rem add``
-    but still records the disposition (one open reminder per topic URL)."""
-    from feed_filter.forum_store import is_post_seen
+    """The former open-reminder suppression case: the same topic taken up twice
+    (both rules, or a cross-run re-remind as a post crosses the like threshold)
+    resolves to one hash-named note. The second keep upserts that SAME note — an
+    idempotent update, not a duplicate — and records each disposition."""
+    from feed_filter.forum_store import admit_topic, is_post_seen, op_interest_kept
 
     _add_forum_site()
     url = f"{FORUM_URL}/t/topic/1234"
-
-    # An open reminder for this URL already exists (overrides the autouse stub).
-    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: {url})
-
-    # add_reminder must NOT be invoked when the URL is already open.
-    def fail_add(*_a: object, **_k: object) -> str:
-        pytest.fail("add_reminder must not be called when the URL is already open")
-
-    monkeypatch.setattr(cli, "add_reminder", fail_add)
-
-    rc = cli.main(
-        [
-            "forum-remind",
-            "--site-id",
-            FORUM_SITE_ID,
-            "--topic-id",
-            "1234",
-            "--post-id",
-            "5001",
-            "--url",
-            url,
-            "--title",
-            "My Topic",
-            "--notes",
-            "Popular",
-        ]
-    )
-    assert rc == 0
-    out = _out(capsys)
-    assert out["suppressed"] is True
-    assert out["id"] is None  # no reminder created
-
-    # The post-grain seen IS recorded despite the suppressed reminder, so the
-    # post is not re-judged next run (delivered via the surviving open reminder).
-    with contextlib.closing(open_db(db_path())) as conn:
-        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
-
-
-def test_forum_remind_suppressed_rule_a_still_records_verdict(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A suppressed Rule-A remind (`--is-op`) still records the topic-grain
-    verdict: suppression skips only the `rem add`, never the record."""
-    from feed_filter.forum_store import admit_topic, op_interest_kept
-
-    _add_forum_site()
-    url = f"{FORUM_URL}/t/topic/1234"
-
-    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: {url})
-
-    def fail_add(*_a: object, **_k: object) -> str:
-        pytest.fail("add_reminder must not be called when the URL is already open")
-
-    monkeypatch.setattr(cli, "add_reminder", fail_add)
-
-    # Pre-admit so set_op_verdict has a row to update.
     with contextlib.closing(open_db(db_path())) as conn:
         admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
 
-    rc = cli.main(
+    # Rule-A keep of the OP.
+    rc1 = cli.main(
         [
             "forum-remind",
             "--site-id",
@@ -1575,42 +1430,54 @@ def test_forum_remind_suppressed_rule_a_still_records_verdict(
             url,
             "--title",
             "My Topic",
-            "--notes",
-            "Cross-domain",
             "--is-op",
+            "--today",
+            "2026-07-19",
         ]
     )
-    assert rc == 0
-    out = _out(capsys)
-    assert out["suppressed"] is True
-    assert out["id"] is None
+    capsys.readouterr()  # clear the first emit
+    # Rule-B keep of a later post in the same topic.
+    rc2 = cli.main(
+        [
+            "forum-remind",
+            "--site-id",
+            FORUM_SITE_ID,
+            "--topic-id",
+            "1234",
+            "--post-id",
+            "5001",
+            "--url",
+            url,
+            "--title",
+            "My Topic",
+            "--summary",
+            "hot",
+            "--today",
+            "2026-07-19",
+        ]
+    )
+    assert rc1 == 0 and rc2 == 0
+    assert _out(capsys)["status"] == "updated"  # the second write updated the note
 
-    # The topic-grain interest verdict is recorded despite the suppressed reminder.
+    # Exactly one note (the same slug), written twice.
+    notes = list((vault_path() / "Feeds").glob("*.md"))
+    assert [n.name for n in notes] == [f"{url_slug(str(canonical_url(url)))}.md"]
+    # Both axes recorded independently.
     with contextlib.closing(open_db(db_path())) as conn:
         assert op_interest_kept(conn, FORUM_SITE_ID, 1234) == 1
+        assert is_post_seen(conn, FORUM_SITE_ID, 5001)
 
 
 def test_forum_remind_rule_a_keep_records_verdict_only(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A Rule-A keep is ``--is-op`` with no ``--post-id``: it records the
     topic-grain interest verdict but writes NO post-grain seen, so a later
     Rule-B pass can still re-judge the OP (the two axes are independent).
     """
-    import feed_filter.reminders as rem_mod
     from feed_filter.forum_store import admit_topic, is_post_seen, op_interest_kept
 
     _add_forum_site()
-
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes, *, list_name, **kw: rem_mod.add_reminder(
-            title, url, notes, list_name=list_name, runner=_fake_rem_runner
-        ),
-    )
-
-    # Pre-admit so set_op_verdict has a row to update.
     with contextlib.closing(open_db(db_path())) as conn:
         admit_topic(conn, FORUM_SITE_ID, 1234, first_seen_at=0)
 
@@ -1625,9 +1492,9 @@ def test_forum_remind_rule_a_keep_records_verdict_only(
             f"{FORUM_URL}/t/topic/1234",
             "--title",
             "My Topic",
-            "--notes",
-            "Great OP",
             "--is-op",
+            "--today",
+            "2026-07-19",
         ]
     )
     assert rc == 0
@@ -1639,16 +1506,16 @@ def test_forum_remind_rule_a_keep_records_verdict_only(
         assert not is_post_seen(conn, FORUM_SITE_ID, 5001)
 
 
-def test_forum_remind_does_not_record_when_add_raises(
+def test_forum_remind_does_not_record_when_write_fails(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """forum-remind: if rem add fails, the post must stay unseen."""
+    """forum-remind: if the vault write fails, the post must stay unseen."""
     _add_forum_site()
 
-    def boom(*_a: object, **_k: object) -> str:
-        raise ReminderError(["rem"], 1, "list not found")
+    def boom(*_a: object, **_k: object) -> dict[str, object]:
+        raise VaultError("slug collision")
 
-    monkeypatch.setattr(cli, "add_reminder", boom)
+    monkeypatch.setattr(cli, "write_feed_note", boom)
 
     rc = cli.main(
         [
@@ -1663,8 +1530,6 @@ def test_forum_remind_does_not_record_when_add_raises(
             f"{FORUM_URL}/t/topic/1234",
             "--title",
             "T",
-            "--notes",
-            "N",
         ]
     )
     assert rc == 1

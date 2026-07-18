@@ -15,8 +15,9 @@ filename alone — exactly as `kboat-notes` prescribes for sources.
 
 from __future__ import annotations
 
-import hashlib
 import re
+
+from kboat.naming import url_slug
 
 # Matches the owner and repo from any github.com URL (optionally `www.`); the
 # repo group stops at the next `/`, `?`, or `#`, so deep links (`/tree/main`,
@@ -155,5 +156,4 @@ def canonical_slug(url: str) -> str | None:
     owner, repo = parse_repo(url)
     if not owner or not repo:
         return None
-    digest = hashlib.sha256(canonical_url(owner, repo).encode("utf-8")).hexdigest()
-    return digest[:12]
+    return url_slug(canonical_url(owner, repo))

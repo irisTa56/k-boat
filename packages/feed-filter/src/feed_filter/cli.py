@@ -2,8 +2,8 @@
 
 Every subcommand emits one JSON object/array on stdout and returns an exit code;
 the skills never reach into the Python internals, they parse this JSON. The
-deterministic core (discover, gather, the seen-store, the ``rem`` wrapper) does
-the work — the skills supply only the two fuzzy judgments (cluster pick at
+deterministic core (discover, gather, the seen-store, the vault writer) does the
+work — the skills supply only the two fuzzy judgments (cluster pick at
 registration, keep/drop at run time).
 
 Ordering invariants enforced here, not in the skills:
@@ -11,16 +11,19 @@ Ordering invariants enforced here, not in the skills:
 - **add-site**: snapshot the back-catalog as seen *first* (durable), write
   ``sites.toml`` *last* — a site in config without a snapshot would
   flood the back-catalog on its first run.
-- **remind**: ``rem add`` *then* ``seen.record`` in one process, record only on a
-  successful add — collapses the duplicate window and never records an
-  entry that failed to remind.
+- **remind**: write the ``Feeds/`` note *then* ``seen.record`` in one process,
+  record only on a successful write — never records an entry whose note could
+  not be written. The note is hash-named by the canonical URL, so writing it
+  again is idempotent (no duplicate), which is why there is no dedupe window.
 - **new-entries**: interleave entries round-robin across sites *before* the global
   cap so a noisy site can't starve the others; truncated entries are
   omitted and left unseen, so they reappear next run.
 - **forum-new**: only forum sites (``kind == "forum"``); **new-entries** only
   non-forum sites — neither path ever sees the other's sites.
-- **forum-remind**: ``rem add`` *then* ``record_post`` (and ``set_op_verdict`` for
-  the OP), record only on successful add.
+- **forum-remind**: write the ``Feeds/`` note *then* ``record_post`` (and
+  ``set_op_verdict`` for the OP), record only on a successful write. A
+  re-reminded topic upserts the *same* hash-named note, so the human's
+  ``shelved``/``dismissed`` triage survives and no suppression is needed.
 - **forum-poll-done**: must be the **last** call for a topic in a run, after every
   candidate post has been dispositioned.
 """
@@ -36,6 +39,7 @@ from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import date
 from itertools import zip_longest
 from typing import Any
 from urllib.parse import urlsplit
@@ -56,19 +60,19 @@ from feed_filter.config import (
     DEFAULT_GLOBAL_CAP,
     DEFAULT_PERSISTENT_FAILURE_RUNS,
     DEFAULT_POLL_OFFSETS_DAYS,
-    REMINDER_LIST_FORUM,
     SUMMARY_PREVIEW_CHARS,
     db_path,
     sites_path,
+    vault_path,
 )
 from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.fetch import FetchError, build_client
 from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
-from feed_filter.reminders import ReminderError, add_reminder, open_reminder_urls
 from feed_filter.seen import open_db, record, snapshot
 from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
+from feed_filter.vault import VaultError, write_feed_note
 
 
 def _emit(obj: Any) -> None:
@@ -370,14 +374,29 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
 
 
 def cmd_remind(args: argparse.Namespace) -> int:
-    """Create a reminder, then record seen (kept=1) only on success."""
-    reminder_id = add_reminder(
-        args.title, args.url, args.notes
-    )  # ReminderError → exit 1, no record
+    """Write the kept entry as a ``Feeds/`` note, then record seen (kept=1).
+
+    Vault write **first**, seen-record only on success: a ``VaultError`` (slug
+    collision) or ``OSError`` (the atomic write) raises before the record, so an
+    entry whose note could not be written stays unseen for the next run to retry
+    — the never-lost half. The title falls back to the URL when blank, so the
+    note's required ``title`` is never empty.
+    """
     cu = canonical_url(args.url)
+    title = args.title.strip() if args.title and args.title.strip() else str(cu)
+    result = write_feed_note(
+        vault_path(),
+        cu,
+        title=title,
+        feed_kind="article",
+        site_id=args.site_id,
+        summary=args.summary or "",
+        wall=args.wall,
+        today=args.today,
+    )  # VaultError / OSError → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         record(conn, cu, args.site_id, args.title or None, kept=1)
-    _emit({"id": reminder_id, "url": str(cu), "kept": True})
+    _emit({"slug": result["slug"], "url": str(cu), "kept": True, "status": result["status"]})
     return 0
 
 
@@ -630,12 +649,10 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_remind(args: argparse.Namespace) -> int:
-    """Create a forum reminder, then record the disposition (kept=1).
+    """Write the kept forum topic as a ``Feeds/`` note, then record the disposition.
 
-    Mirrors the article path's ``cmd_remind`` ordering: ``rem add`` *first*,
-    the DB writes only on success.  Passes
-    ``list_name=REMINDER_LIST_FORUM`` explicitly so forum reminders land in
-    ``Filtered Forums``, not ``Filtered Feeds``.
+    Mirrors the article path's ``cmd_remind`` ordering: the vault write **first**,
+    the DB writes only on success. The note carries ``feed_kind: forum``.
 
     The two dedupe axes are written independently (the two rules
     dedupe per axis; the OP may be taken up under both A and B):
@@ -651,28 +668,26 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     Rule A fetch-free and lets a later Rule-B pass re-judge the OP if it gains
     likes.
 
-    **Open-reminder de-duplication.** A forum reminder targets the
-    topic top, so two open reminders for the same topic URL are redundant
-    pointers to the same page — the same-run two-axis A/B case, or an unread
-    cross-run re-remind. When an *incomplete* reminder for this URL already
-    exists in ``Filtered Forums`` (``open_reminder_urls``), the ``rem add`` is
-    suppressed but the disposition is **still recorded** (so the post/OP is not
-    re-judged): the surviving open reminder already directs the reader to the
-    topic, where every post is visible, so no content is lost. Once the reader
-    completes that reminder it leaves the incomplete set, so a later qualifying
-    post re-reminds as before. Suppression keeps the record path, so the
-    never-lost ordering (rem-then-record) is unchanged: a non-suppressed
-    ``rem add`` that fails still raises before any record.
+    **No open-reminder suppression.** A forum reminder targets the topic top, so
+    the same topic taken up twice (the two-axis A/B case, or a cross-run
+    re-remind as a later post crosses the like threshold) resolves to the same
+    URL, hence the same hash-named note: the second write is an idempotent
+    ``upsert`` of that note, not a duplicate. The former ``open_reminder_urls``
+    suppression the Reminders sink needed is therefore gone; the disposition is
+    recorded on every keep exactly as before.
     """
-    # Suppress a second OPEN reminder for the same topic; still record.
-    open_urls = {canonical_url(u) for u in open_reminder_urls(REMINDER_LIST_FORUM)}
-    suppressed = bool(args.url) and canonical_url(args.url) in open_urls
-
-    reminder_id: str | None = None
-    if not suppressed:
-        reminder_id = add_reminder(
-            args.title, args.url, args.notes, list_name=REMINDER_LIST_FORUM
-        )  # ReminderError → exit 1, no record
+    cu = canonical_url(args.url)
+    title = args.title.strip() if args.title and args.title.strip() else str(cu)
+    result = write_feed_note(
+        vault_path(),
+        cu,
+        title=title,
+        feed_kind="forum",
+        site_id=args.site_id,
+        summary=args.summary or "",
+        wall=False,
+        today=args.today,
+    )  # VaultError / OSError → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         if args.post_id is not None:
             record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
@@ -680,12 +695,13 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
             set_op_verdict(conn, args.site_id, args.topic_id, kept=1)
     _emit(
         {
-            "id": reminder_id,
+            "slug": result["slug"],
+            "url": str(cu),
             "site_id": args.site_id,
             "topic_id": args.topic_id,
             "post_id": args.post_id,
             "kept": True,
-            "suppressed": suppressed,
+            "status": result["status"],
         }
     )
     return 0
@@ -782,11 +798,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_body.add_argument("--url", required=True)
     p_body.set_defaults(handler=cmd_entry_body)
 
-    p_remind = sub.add_parser("remind", help="create a reminder and record it seen (kept)")
+    p_remind = sub.add_parser(
+        "remind", help="write a kept entry as a Feeds/ note and record it seen"
+    )
     p_remind.add_argument("--site-id", dest="site_id", required=True)
     p_remind.add_argument("--url", required=True)
     p_remind.add_argument("--title", required=True)
-    p_remind.add_argument("--notes", required=True)
+    p_remind.add_argument(
+        "--summary", default="", help="short summary/snippet for the note (optional)"
+    )
+    p_remind.add_argument(
+        "--wall",
+        action="store_true",
+        help="the page is behind a login/paywall (judged on its summary alone)",
+    )
+    p_remind.add_argument("--today", default=date.today().isoformat(), help=argparse.SUPPRESS)
     p_remind.set_defaults(handler=cmd_remind)
 
     p_mark = sub.add_parser("mark-seen", help="record a dropped entry seen (kept=0)")
@@ -855,13 +881,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_forum_remind.add_argument("--post-id", dest="post_id", type=int, default=None)
     p_forum_remind.add_argument("--url", required=True)
     p_forum_remind.add_argument("--title", required=True)
-    p_forum_remind.add_argument("--notes", required=True)
+    p_forum_remind.add_argument(
+        "--summary", default="", help="short summary/snippet for the note (optional)"
+    )
     p_forum_remind.add_argument(
         "--is-op",
         dest="is_op",
         action="store_true",
         help="this is the Rule-A OP disposition; records the topic-grain interest verdict",
     )
+    p_forum_remind.add_argument("--today", default=date.today().isoformat(), help=argparse.SUPPRESS)
     p_forum_remind.set_defaults(handler=cmd_forum_remind)
 
     p_forum_mark = sub.add_parser(
@@ -902,8 +931,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     — never a traceback, never a silent success:
 
     - ``FetchError`` — network / discover transport failure;
-    - ``ReminderError`` — ``rem`` non-zero exit or absent binary;
-    - ``ValueError`` — shape/validation (bad site config, non-scrape heal);
+    - ``VaultError`` — a feed note could not be written (slug collision);
+    - ``ValueError`` — shape/validation (bad site config, non-scrape heal, an
+      unset ``OBSIDIAN_VAULT_PATH``);
     - ``KeyError`` — unknown site id;
     - ``OSError`` — filesystem failures from the config writes / db open
       (disk full, permission, atomic-rename failure). Caught for the same reason
@@ -920,7 +950,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         FetchError,
         BrowserFetchError,
-        ReminderError,
+        VaultError,
         ValueError,
         KeyError,
         OSError,

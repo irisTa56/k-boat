@@ -23,8 +23,8 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 | `type` | Always `feed`. |
 | `title` | The entry or topic title. |
 | `url` | The page's canonical URL — the read link and the de-dup identity. Immutable. |
-| `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Later view to look at when there is time. Always present (default `false`), preserved across a re-write. |
-| `dismissed` | Checkbox, set by the **human**. "Cleanable": hide the card from the Inbox as a future auto-cleanup target. Always present (default `false`). |
+| `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Later view to look at when there is time. Always present (default `false`); feed-filter omits it on a re-write, so a shelved card stays shelved. |
+| `dismissed` | Checkbox, set by the **human**. "Cleanable": hide the card from the Inbox as a future auto-cleanup target. Always present (default `false`). feed-filter **resets it to `false` on every write**, so a re-reminded topic (a new qualifying forum post) resurfaces into the Inbox rather than staying dismissed. |
 | `wall` | Boolean, set by **feed-filter**. The page is behind a login or paywall, so it was admitted on its summary alone; surfaced in the Walls view for the human to judge. Always present (default `false`). |
 | `feed_kind` | `article` or `forum` — which gather produced it (`kboat-feed-run` vs `kboat-feed-forum-run`). |
 | `site_id` | The registered site's id (from feed-filter's `sites.toml`); the provenance and grouping key. |
@@ -36,11 +36,11 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 A feed note has no destructive routine action and no cooldown, so its lifecycle is entirely manual triage over three always-present booleans.
 
 - `shelved` and `dismissed` are the **human's** two dispositions, orthogonal to each other:
-  - `shelved` moves the card to the Later view — a "read later" holding shelf — without removing it from anywhere destructive.
+  - `shelved` moves the card to the Later view — a "read later" holding shelf — without removing it from anywhere destructive. feed-filter preserves it across a re-write.
   - `dismissed` hides the card from the Inbox and marks it a future auto-cleanup target. Cleanup is **manual for now**: no note is auto-deleted, and the Base views only hide dismissed cards.
 - `wall` is **feed-filter's** flag, re-evaluated on each write, not a human disposition.
 - **Promotion is manual.** To read a feed card as a full K-Boat source, add its `url` to the `K-Boat Queue` (the `kboat-ingest` inbox) by hand; there is no auto-promotion from a feed note to a source note. The two are separate inboxes.
-- **Re-writes preserve the human's dispositions.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic can upsert the same note again; the merge (see `kboat-vault-conventions` "The write contract") keeps the human's `shelved` / `dismissed` while feed-filter refreshes `wall`, `summary`, and the rest.
+- **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again. That re-write resets `dismissed` to `false`, so a topic the reader dismissed reappears in the Inbox when it gains new activity (as the old Reminders sink re-surfaced a completed reminder). `shelved` is instead preserved; feed-filter refreshes `wall`, `summary`, and the metadata.
 
 `kboat-validate` checks every `Feeds/*.md` against the `FEED` schema (the generic per-field checks — presence, emptiness, kind/enum/date); the feed type carries no cross-field rules.
 

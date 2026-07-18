@@ -16,6 +16,19 @@ from feed_filter import fetch
 
 
 @pytest.fixture(autouse=True)
+def isolate_vault(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never let a test see the real ``OBSIDIAN_VAULT_PATH``.
+
+    The workspace ``.env`` exports it (the iCloud vault) into the environment the
+    test suite runs under, so without this a ``remind`` test would write feed
+    notes into the real vault. Clear it by default; a test that needs a vault
+    sets it to a tmp dir (``state_dir`` does), and ``vault_path()`` otherwise
+    raises, surfacing a test that forgot to.
+    """
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def no_real_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     """Neutralize ``fetch``'s retry back-off so no test waits in real time.
 
@@ -38,7 +51,8 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Redirect the DB and sites registry into a tmp dir via env overrides."""
+    """Redirect the DB, sites registry, and output vault into a tmp dir."""
     monkeypatch.setenv("FEED_FILTER_DB", str(tmp_path / "feed-filter.db"))
     monkeypatch.setenv("FEED_FILTER_SITES", str(tmp_path / "sites.toml"))
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
     yield tmp_path
