@@ -1,0 +1,84 @@
+[project]
+name = "feed-filter"
+version = "0.1.0"
+description = "Filter new feed/scrape pages by prompt and push survivors to Reminders.app"
+requires-python = ">=3.13"
+# Floors = the versions under test (locked in uv.lock); a floor-less spec lets a
+# source/lock-less install resolve an untested-old release. No upper caps: uv.lock
+# pins exact versions, so an unreviewed major can land only via a deliberate
+# `uv lock --upgrade`, where it is reviewed — a cap would just add churn-y bumps.
+dependencies = [
+    "httpx>=0.28",
+    "feedparser>=6.0",
+    "selectolax>=0.4.10",
+    "tomlkit>=0.15",
+]
+
+[project.optional-dependencies]
+# Opt-in browser ingestion path for JS-rendered / anti-bot sites (CON-002).
+# Not installed by default: the httpx-readable sites pay nothing. Enable with
+#   uv sync --extra browser && uv run playwright install chromium
+# (the second step pulls a ~200 MB Chromium binary, not managed by uv).
+browser = ["playwright"]
+
+[project.scripts]
+feed-filter = "feed_filter.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/feed_filter"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    # Bounded range, not a floor-only pin: `ty` is pre-1.0 and may shift
+    # behavior across 0.0.x releases, so cap below 0.1 (RISK-004).
+    "ty>=0.0.34,<0.1",
+    # Dev-only so `ty` can resolve `playwright.sync_api` types and the test fake
+    # has a parent package to shadow. The runtime install is the optional
+    # `browser` extra plus `playwright install chromium` (not part of `uv sync`).
+    "playwright",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B", "SIM", "N"]
+
+[tool.ty.environment]
+# ``tests`` is a root so cross-test-module imports (e.g. ``import _fake_playwright``)
+# resolve the same way pytest's prepend import mode resolves them at runtime — the
+# test dir is on ``sys.path``, so sibling helpers import by bare name.
+root = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --cov=feed_filter --cov-report=term-missing --cov-fail-under=80"
+# Promote ResourceWarning to error so leaked sqlite/file handles fail loudly
+# instead of surfacing as cryptic GC-time warnings during collection.
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.coverage.run]
+source = ["src/feed_filter"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+    # The entrypoint guard is unreachable under pytest. Not-yet-implemented
+    # dispatch arms use an explicit `# pragma: no cover` at the call site —
+    # deliberately NOT a blanket `raise NotImplementedError` exclude, so a
+    # stub accidentally shipped without a pragma still dents coverage.
+    "if __name__ == \"__main__\":",
+]

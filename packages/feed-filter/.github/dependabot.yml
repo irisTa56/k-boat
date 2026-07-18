@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # uv ecosystem: Dependabot reads pyproject.toml + uv.lock directly. Monthly is
+  # ample for this low-churn single-user repo; one grouped PR keeps the noise low.
+  # No CI here — validate the PR with `mise run pre-commit` before merging.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      python-deps:
+        patterns: ["*"]
