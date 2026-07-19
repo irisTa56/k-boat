@@ -3,9 +3,10 @@
 Two deterministic subcommands behind the daily pick (the relevance ranking is the
 LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
 
-- `candidates` — read the recent Daily-note bodies (newest-first, within a
-  `--lookback-days` window) and the active web inbox, and print both as JSON for
-  the ranker, which infers the human's current interests from the note content.
+- `candidates` — read the two interest signals (the recent Daily-note bodies,
+  newest-first within a `--lookback-days` window, and the open-questions backlog
+  from `Questions.md`) and the active web inbox, and print them as JSON for the
+  ranker, which infers the human's current interests from the notes and questions.
 - `set --slugs a,b` — reset `picked` to false on every source, then set it true on
   the chosen slugs (at most two). An empty `--slugs` just clears the spotlight.
 
@@ -25,6 +26,7 @@ from pathlib import Path
 from .candidates import candidate_from, is_active_web
 from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_daily_notes
 from .notes import FrontmatterError, Value, parse_frontmatter, set_picked
+from .questions import extract_questions
 
 
 def _load_sources(
@@ -54,15 +56,21 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
         {"date": dn.date, "body": dn.body}
         for dn in extract_daily_notes(vault / "Daily", today, lookback_days)
     ]
+    questions = [
+        {"rank": q.rank, "question": q.question, "note": q.note}
+        for q in extract_questions(vault / "Questions.md")
+    ]
     return {
         "today": today.isoformat(),
         "vault": str(vault),
         "lookback_days": lookback_days,
         "daily_notes": daily_notes,
+        "questions": questions,
         "candidates": candidates,
         "counts": {
             "candidates_total": len(candidates),
             "daily_note_days": len(daily_notes),
+            "questions_total": len(questions),
         },
         "anomalies": anomalies,
     }
@@ -101,7 +109,7 @@ def _cmd_set(vault: Path, slugs: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kboat-pick",
-        description="Daily-pick mechanics: gather recent Daily notes + web candidates, and set the picked flag.",
+        description="Daily-pick mechanics: gather the interest signals (recent Daily notes + open-questions backlog) and web candidates, and set the picked flag.",
     )
     parser.add_argument(
         "--vault",
@@ -111,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_cand = sub.add_parser(
-        "candidates", help="Print recent Daily-note bodies and the active web inbox as JSON."
+        "candidates",
+        help="Print the interest signals (Daily-note bodies + open-questions backlog) and the active web inbox as JSON.",
     )
     p_cand.add_argument(
         "--today",
