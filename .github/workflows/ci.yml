@@ -1,0 +1,71 @@
+name: CI
+
+# Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
+# to main), but without mise: CI needs neither the notebooklm tool nor a browser,
+# so it installs only uv and runs the same ruff / ty / pytest / rumdl / gitleaks
+# checks directly. Keep the checks here in sync with mise.toml's `qa:*` tasks.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The lock is authoritative in CI: never re-resolve or update uv.lock here, so a
+  # stale lock fails the run instead of being silently papered over.
+  UV_FROZEN: "1"
+
+jobs:
+  python-qa:
+    name: python-qa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+      - name: Sync the workspace venv
+        run: uv sync
+      # Per-member, each in its own dir so that package's pyproject config applies
+      # (ruff selects, ty root, pytest coverage) — matching mise's `qa:py:<member>`.
+      - name: kboat — ruff, ty, pytest
+        working-directory: packages/kboat
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+          uv run ty check
+          uv run pytest
+      - name: feed-filter — ruff, ty, pytest
+        working-directory: packages/feed-filter
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+          uv run ty check
+          uv run pytest
+
+  markdown-lint:
+    name: markdown-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v8
+      - name: rumdl
+        run: uvx rumdl check
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so gitleaks can scan the PR's commits
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
