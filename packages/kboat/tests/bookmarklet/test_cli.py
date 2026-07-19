@@ -18,9 +18,9 @@ def test_bookmarklet_shape_and_baked_in_params() -> None:
     assert "obsidian://new?vault=" in out
     assert "&silent=true" in out
     # Title and URL are read in the browser at click time, not interpolated here,
-    # and assembled into the `[title](url)` markdown-link body.
+    # and assembled into the `[title](url)` markdown-link body with a trailing newline.
     assert "document.title" in out and "location.href" in out
-    assert "'['+t+']('+u+')'" in out
+    assert "'['+t+']('+u+')\\n'" in out
 
 
 def test_empty_folder_drops_the_prefix() -> None:

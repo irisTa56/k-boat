@@ -23,8 +23,8 @@ def build_bookmarklet(vault: str, folder: str) -> str:
     """Return the `javascript:` bookmarklet for one vault + queue folder.
 
     Clicking the result writes a `<folder>/kboat-queue-<epoch_ms>.md` note whose body
-    is a `[title](url)` markdown link, through `obsidian://new` with `silent` set so
-    the note is not opened. The file name is the capture timestamp alone — no title,
+    is a `[title](url)` markdown link plus a trailing newline, through `obsidian://new`
+    with `silent` set so the note is not opened. The file name is the capture timestamp alone — no title,
     so there are no forbidden-character or collision concerns. `vault` and `folder`
     are embedded as JSON string literals (safely escaped); `document.title` and
     `location.href` are read in the browser, never interpolated here, so a page's
@@ -36,7 +36,7 @@ def build_bookmarklet(vault: str, folder: str) -> str:
     script = (
         "(function(){"
         "var t=document.title,u=location.href;"
-        "var c='['+t+']('+u+')';"
+        "var c='['+t+']('+u+')\\n';"
         f"var f={prefix_literal}+'kboat-queue-'+Date.now();"
         f"location.href='obsidian://new?vault='+encodeURIComponent({vault_literal})"
         "+'&file='+encodeURIComponent(f)"
