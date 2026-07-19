@@ -1,6 +1,6 @@
 ---
 name: kboat-notes
-description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, a Kindle note, or a GitHub repo note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the reading inbox, Kindle, Repos, or Reviews Base, or where distilled concept notes live. This is the source of truth for K-Boat's note types and their lifecycle; the shared vault mechanics (URL-hash naming, the schema/validate contract, the write contract, Base discipline) are the kboat-vault-conventions skill, which this defers to. kboat-ingest, kboat-distill, kboat-kindle, and kboat-repos defer to this skill.
+description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, a Kindle note, or a GitHub repo note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the Sources, Kindle, Repos, or Reviews Base, or where distilled concept notes live. This is the source of truth for K-Boat's note types and their lifecycle; the shared vault mechanics (URL-hash naming, the schema/validate contract, the write contract, Base discipline) are the kboat-vault-conventions skill, which this defers to. kboat-ingest, kboat-distill, kboat-kindle, and kboat-repos defer to this skill.
 ---
 
 # K-Boat note conventions
@@ -34,7 +34,7 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `PDFs/` — the downloaded file for each PDF source, named `<slug>.pdf` by the same URL-hash slug as its note. Only PDF sources have one; web-page sources do not. It is the reading copy (opened in Obsidian) and the file uploaded to NotebookLM.
 - `Reviews/` — one `YYYY-MM-DD.md` per run that distilled something, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary. A run that distilled nothing writes no file. Covers both source and Kindle distillation. Carries a small `type: review`/`date`/`read` frontmatter block for the read-tracking Base (see "Review note"); the body layout is kboat-distill "Review report".
 - `Reviews.base` — a top-level standalone Base listing the review reports with their read flag (see "Review note").
-- `Reading Inbox.base` — a top-level standalone Base listing sources still to read (see below).
+- `Sources.base` — a top-level standalone Base listing sources still to read (see below).
 - `Kindles/` — one `type: kindle` note per Kindle book, named by ASIN. No notebook; read on a Kindle and distilled from highlights pasted into the note body. See "Kindle note".
 - `Kindles.base` — a top-level standalone Base listing Kindle books (see "Kindle note").
 - `Repos/` — one `type: repo` note per GitHub repository, named by a URL hash. No notebook; a metadata catalogue entry, not distilled. See "Repo note".
@@ -246,7 +246,7 @@ views:
         direction: DESC
 ```
 
-Column widths and other cosmetics are per-vault tweaks (the live `Kindles.base` carries `columnSize` not shown here), as with the reading inbox Base.
+Column widths and other cosmetics are per-vault tweaks (the live `Kindles.base` carries `columnSize` not shown here), as with the Sources Base.
 
 ## Repo note (`Repos/*.md`)
 
@@ -322,7 +322,7 @@ There is nothing destructive to gate, so the state is minimal:
 
 ### Repo Base
 
-A standalone Base at the vault root, `Repos.base`, over `type == "repo"`, with an **All** catalogue plus focused **By role** / **By domain** style views. Titles show through a `title_link` formula because the file is hash-named, and a `url_link` formula makes the GitHub URL clickable. Every filter is a plain boolean or an `==` over an always-present property (`role`, `status`, `archived`) — never a date-emptiness test, the same rule the reading inbox follows.
+A standalone Base at the vault root, `Repos.base`, over `type == "repo"`, with an **All** catalogue plus focused **By role** / **By domain** style views. Titles show through a `title_link` formula because the file is hash-named, and a `url_link` formula makes the GitHub URL clickable. Every filter is a plain boolean or an `==` over an always-present property (`role`, `status`, `archived`) — never a date-emptiness test, the same rule the Sources Base follows.
 
 ```yaml
 filters:
@@ -449,11 +449,11 @@ PDFs are never picked: a pick is for choosing the next web read, while anything 
 An in-progress web page is excluded from the candidate set (the `!reading` term above), not just from the result, for that same reason: it already shows in the Today view whatever `picked` says, so spending one of the two slots on it would surface nothing new, and keeping both slots on unstarted reads keeps the pick a pull toward what to start next rather than a nudge to grow the in-progress pile. So the candidate set is the Web inbox minus its in-progress reads, a strict subset of what the Web view shows.
 Each run `kboat-pick set --slugs` first resets `picked` to `false` on every source, then sets it `true` on the new choices, so yesterday's spotlight never lingers.
 
-The result is read in the Today view of the reading-inbox Base, not in the Daily note — web picks and started reads side by side, which works on mobile where the project CLIs do not.
+The result is read in the Today view of the Sources Base, not in the Daily note — web picks and started reads side by side, which works on mobile where the project CLIs do not.
 
-## Reading inbox Base
+## Sources Base
 
-A single standalone Base at the vault root, `Reading Inbox.base`, gives seven views over all sources: a **Today** view (the daily-pick shortlist plus what you are mid-read), three to-read inboxes — a **Web** view, an **All** view, and a **PDF** view — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources ingest could not complete. The **Today** view is listed first so it is the default Obsidian opens (a Base shows its first view on open, as noted for the Kindle Base).
+A single standalone Base at the vault root, `Sources.base`, gives seven views over all sources: a **Today** view (the daily-pick shortlist plus what you are mid-read), three to-read inboxes — a **Web** view, an **All** view, and a **PDF** view — a **Holding** view of every filed source, an **Ambiguous** view of contradictory dispositions, and a **DLQ** view of sources ingest could not complete. The **Today** view is listed first so it is the default Obsidian opens (a Base shows its first view on open, as noted for the Kindle Base).
 The Today view is the reading entry point, mobile included: it filters `distill != true && keep != true && dismiss != true && blocked != true` and then `picked == true || reading == true`, so it shows the day's at-most-two web picks (set by the daily-pick step, see "Daily pick") next to every source you have started (`reading`) but not yet filed, whatever its `source_type`. Both halves are plain booleans, staying within the filter rules below; it carries `summary` so the two picks are legible at a glance, and sorts by `added_date` newest-first like the other inboxes (`picked` is hidden, so it is not a stable sort key).
 The to-read inboxes filter `distill != true && keep != true && dismiss != true && blocked != true` — readable, undispositioned sources only (a blocked source has no content to read, so it belongs in the DLQ, not the inbox). The All inbox adds no type filter, so it is exhaustive over that set: every readable, undispositioned source appears whatever its `source_type`. The Web and PDF inboxes (`source_type ==`) are focused subsets, since web pages and PDFs are read differently — a URL versus Obsidian's PDF++. Do not replace All with a `source_type !=` catch-all: Obsidian Bases excludes a missing property from a `!=` filter, so a source lacking `source_type` would vanish.
 The Holding view (`(distill || keep || dismiss)` and `blocked != true`) is where every filed source lives: the read-later shelf (`keep`), the cooldown window for `distill`/`dismiss` (change the disposition here before the routine processes it), and the processed/terminal states. It leads with the three disposition checkboxes plus `reading`, and carries `summary` for browsing along with `filed_date`/`distilled_date`/`notebooklm_id`, so each lifecycle state is legible from its columns. It is deliberately one view — the disposition booleans in the columns distinguish the states, so separate Shelf and Processed views are unnecessary.
@@ -495,7 +495,7 @@ views:
       - property: added_date
         direction: DESC
   - type: table
-    name: Reading Inbox · Web
+    name: Sources · Web
     filters:
       and:
         - distill != true
@@ -514,7 +514,7 @@ views:
       - property: added_date
         direction: DESC
   - type: table
-    name: Reading Inbox · All
+    name: Sources · All
     filters:
       and:
         - distill != true
@@ -533,7 +533,7 @@ views:
       - property: added_date
         direction: DESC
   - type: table
-    name: Reading Inbox · PDF
+    name: Sources · PDF
     filters:
       and:
         - distill != true
