@@ -9,8 +9,8 @@ Add one site to the feed-filter registry so the periodic run starts watching it.
 The user supplies only a URL; deterministic discovery decides whether it is a feed or a scrape site, and you pick the right article cluster when discovery offers more than one.
 This is the infrequent, main-model half of feed-filter — the periodic keep/drop half lives in the `kboat-feed-run` skill.
 
-Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/feed-filter`).
-The `feed-filter` binary lives in the project venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
+Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/k-boat`).
+The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
 Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 The CLI emits one JSON document on stdout and exits non-zero on a transport/operational failure — parse the JSON, read the exit code, never scrape prose.
 
@@ -50,11 +50,11 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
    - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
-   That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever reminded.
+   That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever written as notes.
    A non-zero exit means the back-catalog fetch failed before anything was written — report it and retry; the site was not registered.
 
 5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
-   Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be reminded).
+   Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
 
 ## Registering a Discourse forum
 
@@ -84,7 +84,7 @@ There is **no discovery** (there is no article cluster to pick) and **no cold-st
 
 6. **Confirm.** On success the output is `{site_id, kind, forum_url}` with `kind == "forum"`.
    Tell the user the forum was registered and that keeps will be written as `Feeds/` notes in the vault (`feed_kind: forum`).
-   Remind them to create it if they have not: the forum run fails loudly on a missing list and never auto-creates one.
+   Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (from the workspace `.env`).
 
 A forum's per-site `selection` override is not an `add-forum` flag.
 Set it later by hand-editing the `selection = "..."` line under that forum's `[[site]]` block in `sites.toml` (the forum run honors it, replacing the Topics section for that forum only).

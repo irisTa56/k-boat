@@ -379,15 +379,14 @@ def cmd_remind(args: argparse.Namespace) -> int:
     Vault write **first**, seen-record only on success: a ``VaultError`` (slug
     collision) or ``OSError`` (the atomic write) raises before the record, so an
     entry whose note could not be written stays unseen for the next run to retry
-    — the never-lost half. The title falls back to the URL when blank, so the
-    note's required ``title`` is never empty.
+    — the never-lost half. ``write_feed_note`` falls the note's ``title`` back to
+    the URL when blank, so a ``--title ""`` still writes a valid note.
     """
     cu = canonical_url(args.url)
-    title = args.title.strip() if args.title and args.title.strip() else str(cu)
     result = write_feed_note(
         vault_path(),
         cu,
-        title=title,
+        title=args.title,
         feed_kind="article",
         site_id=args.site_id,
         summary=args.summary or "",
@@ -401,7 +400,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
 
 
 def cmd_mark_seen(args: argparse.Namespace) -> int:
-    """Record a dropped entry seen (kept=0); no reminder."""
+    """Record a dropped entry seen (kept=0); no note."""
     cu = canonical_url(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
         record(conn, cu, args.site_id, args.title or None, kept=0)
@@ -417,9 +416,9 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     effect, so a fetch failure can never leave ``sites.toml`` carrying the new
     pattern with no snapshot under it — that gap would flood the back-catalog on
     the next run. The new pattern is applied via an in-memory ``replace`` so the
-    re-scrape uses it without committing it first. The heal files NO list
-    reminder — it is an operational notice, not a page; the run routine reports
-    the heal in its push summary instead (the list holds only pages).
+    re-scrape uses it without committing it first. The heal writes NO
+    feed note — it is an operational notice, not a page; the run routine reports
+    the heal in its push summary instead (feed notes are pages only).
     """
     site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
     if not site.enabled:
@@ -677,11 +676,10 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     recorded on every keep exactly as before.
     """
     cu = canonical_url(args.url)
-    title = args.title.strip() if args.title and args.title.strip() else str(cu)
     result = write_feed_note(
         vault_path(),
         cu,
-        title=title,
+        title=args.title,
         feed_kind="forum",
         site_id=args.site_id,
         summary=args.summary or "",
@@ -708,7 +706,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
 
 
 def cmd_forum_mark_seen(args: argparse.Namespace) -> int:
-    """Record a dropped forum disposition (kept=0); no reminder.
+    """Record a dropped forum disposition (kept=0); no note.
 
     The two dedupe axes are written independently, exactly as in
     ``cmd_forum_remind`` but with no ``rem add``:
@@ -871,7 +869,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_forum_remind = sub.add_parser(
         "forum-remind",
-        help="create a forum reminder and record the post seen (kept=1)",
+        help="write a kept forum topic as a Feeds/ note and record the post seen (kept=1)",
     )
     p_forum_remind.add_argument("--site-id", dest="site_id", required=True)
     p_forum_remind.add_argument("--topic-id", dest="topic_id", type=int, required=True)
@@ -895,7 +893,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_forum_mark = sub.add_parser(
         "forum-mark-seen",
-        help="record a dropped forum post seen (kept=0); no reminder",
+        help="record a dropped forum post seen (kept=0); no note written",
     )
     p_forum_mark.add_argument("--site-id", dest="site_id", required=True)
     p_forum_mark.add_argument("--topic-id", dest="topic_id", type=int, required=True)
@@ -937,8 +935,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     - ``KeyError`` — unknown site id;
     - ``OSError`` — filesystem failures from the config writes / db open
       (disk full, permission, atomic-rename failure). Caught for the same reason
-      ``rem``'s absence is: a config write that can't complete is an operational
-      failure to report, not a stack trace to dump.
+      a ``VaultError`` is: a write that can't complete is an operational failure
+      to report, not a stack trace to dump.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (add-site / heal-site snapshot), the browser analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional

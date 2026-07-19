@@ -466,7 +466,7 @@ def test_gather_forum_emits_rule_b_candidates(conn: sqlite3.Connection) -> None:
 def test_gather_forum_candidate_url_carries_slug(conn: sqlite3.Connection) -> None:
     """Rule-B topic_url uses the parsed slug, matching the Rule-A ``/t/<slug>/<id>`` form.
 
-    The same topic must yield the same reminder URL whichever rule surfaces it,
+    The same topic must yield the same note URL whichever rule surfaces it,
     so gather_forum builds ``/t/<slug>/<id>`` from the JSON slug rather than the
     slugless ``/t/<id>``.  The fixture topic has slug
     ``my-forum-topic`` and id 1234.
@@ -489,7 +489,7 @@ def test_gather_forum_candidate_url_carries_slug(conn: sqlite3.Connection) -> No
 
 
 def test_gather_forum_candidate_url_falls_back_to_slugless(conn: sqlite3.Connection) -> None:
-    """A payload with no slug yields the slugless ``/t/<id>`` reminder URL.
+    """A payload with no slug yields the slugless ``/t/<id>`` note URL.
 
     Discourse always slugs topics, but a lite/malformed JSON degrades ``slug``
     to ``""`` (``_as_str`` default); the URL builder must fall back to the

@@ -162,8 +162,8 @@ def test_scrape_site_self_heal_end_to_end(
     (snapshot back-catalog) → a new article surfaces → the index moves under a
     new path so the stored pattern matches nothing (``zero_links``) → ``heal-site``
     re-scrapes under the new pattern, snapshots the live URLs, rewrites config
-    last → the next run is clean. heal-site files NO list reminder (the list holds
-    only pages; the heal is reported in the run's push summary).
+    last → the next run is clean. heal-site writes NO feed note (feed notes are
+    pages only; the heal is reported in the run's push summary).
     """
     site = _MockSite(_index_html("/blog/a", "/blog/b"), content_type="text/html")
     monkeypatch.setattr(cli, "build_client", site.client)
@@ -224,7 +224,7 @@ def test_scrape_site_self_heal_end_to_end(
         }
     ]
 
-    # --- heal: re-scrape under the new pattern, snapshot, rewrite config (no list reminder)
+    # --- heal: re-scrape under the new pattern, snapshot, rewrite config (no feed note)
     assert cli.main(["heal-site", "--site-id", "blg", "--pattern", NEW_PATTERN]) == 0
     healed = _out(capsys)
     assert healed["pattern"] == NEW_PATTERN

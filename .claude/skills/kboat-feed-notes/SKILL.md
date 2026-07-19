@@ -134,4 +134,5 @@ views:
         direction: DESC
 ```
 
-The views are `table` for parity with the other K-Boat Bases and a verified schema; switch a view to a `cards` gallery in Obsidian's UI if you prefer that browse (the view type persists to the file, like the `columnSize` cosmetics the live Bases carry). Column widths and other cosmetics are per-vault tweaks.
+The views are `table` for parity with the other K-Boat Bases and a verified schema; switch a view to a `cards` gallery in Obsidian's UI if you prefer that browse (the view type persists to the file, like the `columnSize` cosmetics the live Bases carry).
+Column widths and other cosmetics are per-vault tweaks.

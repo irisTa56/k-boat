@@ -1,8 +1,8 @@
 """Shared pytest fixtures and deterministic helpers.
 
-Fixtures here are tmp_path-based and network-free; no real Reminders, no real
-HTTP. Modules added in later phases hang their fakes (rem runner, MockTransport
-clients) off this file.
+Fixtures here are tmp_path-based and network-free; no real vault writes, no real
+HTTP. Tests hang their fakes (a tmp vault via `state_dir`, MockTransport clients)
+off this file.
 """
 
 from __future__ import annotations

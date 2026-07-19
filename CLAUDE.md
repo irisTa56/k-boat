@@ -20,7 +20,7 @@ Each piece of content gets its own throwaway NotebookLM notebook (1:1) for readi
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), and the standalone Bases `Reading Inbox.base`, `Kindles.base`, `Repos.base`, `Reviews.base`.
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), `Feeds/` (feed-filter's triage notes, one URL-hash-named note per kept feed/forum item), and the standalone Bases `Reading Inbox.base`, `Kindles.base`, `Repos.base`, `Reviews.base`, `Feeds.base`.
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Layout

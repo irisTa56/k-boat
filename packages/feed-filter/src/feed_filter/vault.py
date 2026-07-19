@@ -56,7 +56,8 @@ def write_feed_note(
     `summary` (plus `type`/`url`, and `added_date` stamped by `upsert`) — and
     `dismissed: false` to resurface a re-written (re-reminded) topic. It omits
     `shelved`, the reader's "read later" flag, which `upsert` defaults to `false`
-    on create and preserves on a re-write. Returns `upsert`'s
+    on create and preserves on a re-write. A blank `title` falls back to the URL,
+    so the note's required `title` is never empty. Returns `upsert`'s
     `{status, slug, path}`; raises `VaultError` on a slug collision.
     """
     slug = url_slug(str(cu))
@@ -64,7 +65,7 @@ def write_feed_note(
         "slug": slug,
         "fields": {
             "type": "feed",
-            "title": title,
+            "title": title.strip() if title and title.strip() else str(cu),
             "url": str(cu),
             "dismissed": False,
             "wall": wall,

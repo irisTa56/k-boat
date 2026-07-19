@@ -55,7 +55,7 @@ Copy this section verbatim into your local `prompts/selection.md` and add any fo
 
 Sometimes the fetched page is not the article but a login wall, paywall, or subscribe gate — you got a "sign in / subscribe" page instead of the body.
 You cannot judge an article you cannot read, so do **not** drop it on a guess: set `wall = true`.
-When `wall = true` the run routine reminds the page for manual review and **ignores `keep`**, so `keep` is irrelevant — set it either way.
+When `wall = true` the run routine writes the page as a note for manual review and **ignores `keep`**, so `keep` is irrelevant — set it either way.
 Wall detection only happens once you actually fetch the page: scrape entries are always fetched, but a feed entry you can judge from its title and summary alone is judged normally and never reaches a wall — its metadata is the readable content, so there is nothing to flag.
 Reserve a wall for a page you would plausibly **keep** if you could read it.
 If the title and summary already place the page **outside the Topics**, drop it on that basis — do not fetch an out-of-scope page just to assess its depth, so it cannot become a needless manual-review note.
@@ -77,7 +77,7 @@ Return a single JSON object and nothing else:
 ```
 
 - `keep` — boolean.
-- `wall` — boolean; `true` when the fetched page is a login wall / paywall / subscribe gate rather than the article (see "Walls and unreadable pages"). A walled page is reminded for manual review regardless of `keep`.
+- `wall` — boolean; `true` when the fetched page is a login wall / paywall / subscribe gate rather than the article (see "Walls and unreadable pages"). A walled page is written as a note (flagged `wall`) for manual review regardless of `keep`.
 - `title` — a non-empty title for the note. For scrape entries (no feed metadata) this is the **only** source of a title, so always supply one; on a keep it becomes the note's title.
 - `summary` — one line; becomes the note's `summary`. Write it in whatever language you triage fastest in (e.g. add "write the summary in Japanese" here) — the run routine never inspects its language. Omit or leave empty on a drop.
 - `reason` — a brief justification, surfaced only in the run summary.

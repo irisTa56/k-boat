@@ -50,6 +50,25 @@ def test_create_writes_a_feed_note_with_defaults(tmp_path: Path) -> None:
     assert fm["wall"] is False
 
 
+def test_blank_title_falls_back_to_url(tmp_path: Path) -> None:
+    # `remind --title ""` (the skills' wall / judging-error path) must still write
+    # a note whose required `title` is non-empty — the URL is the fallback.
+    for i, blank in enumerate(("", "   ")):
+        v = tmp_path / f"v{i}"
+        v.mkdir()
+        write_feed_note(
+            v,
+            CU,
+            title=blank,
+            feed_kind="article",
+            site_id="ex",
+            summary="",
+            wall=False,
+            today="2026-07-19",
+        )
+        assert _fm(v, str(CU))["title"] == str(CU)
+
+
 def test_wall_and_forum_kind_are_written(tmp_path: Path) -> None:
     write_feed_note(
         tmp_path,

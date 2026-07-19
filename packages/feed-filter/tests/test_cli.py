@@ -1,7 +1,7 @@
 """Dispatch + JSON-shape + ordering-invariant tests for the CLI.
 
-Network and Reminders.app are monkeypatched at the ``cli`` module boundary; the
-seen-store and ``sites.toml`` are real tmp files (``state_dir`` fixture) so the
+Network is monkeypatched at the ``cli`` module boundary; the
+seen-store, ``sites.toml``, and the output vault are real tmp files (``state_dir`` fixture) so the
 ordering invariants — snapshot-before-config, remind-then-record, snapshot the
 exact healed URLs, forum record-then-poll — are asserted against actual persisted
 state.
@@ -178,7 +178,7 @@ def test_filesystem_error_surfaces_as_clean_exit(
 ) -> None:
     # An OSError from a durable config write (disk full / permission / rename
     # failure) must surface as `error: …` + exit 1, not a traceback — the same
-    # operational-failure principle that covers rem's absence.
+    # operational-failure principle that covers a vault write failure.
     _no_client(monkeypatch)
     monkeypatch.setattr(cli, "fetch_entries", lambda site, *, client: [])
 
@@ -1543,7 +1543,7 @@ def test_forum_remind_does_not_record_when_write_fails(
 
 
 def test_forum_mark_seen_records_drop(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """forum-mark-seen records kept=0 for the post; no reminder."""
+    """forum-mark-seen records kept=0 for the post; no note."""
     _add_forum_site()
 
     rc = cli.main(
