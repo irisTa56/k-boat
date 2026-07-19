@@ -46,12 +46,12 @@ A feed note has no destructive routine action and no cooldown, so its lifecycle 
 
 ## Feeds Base
 
-A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human four views of the triage queue.
+A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human four card views of the triage queue.
 Every filter is a plain boolean over an always-present property, per the Base-authoring discipline in `kboat-vault-conventions` — never a `!=` over a possibly-missing property, never a date-emptiness test.
-The title shows through a `title_link` formula (the file is hash-named) and the URL through a `url_link` formula so the page opens in one click.
+The file is hash-named, so each card leads with a `title_link` formula (the readable, clickable title) rather than the file name; the `url_link` formula opens the page in one click.
 
-- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged cards. A `wall` card still appears here (it is an untriaged keep); the `wall` column flags it.
-- **Later** (`shelved`) — the read-later shelf.
+- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged cards. A `wall` card still appears here (it is an untriaged keep); the `wall` property flags it.
+- **Shelf** (`shelved`) — the read-later shelf.
 - **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing.
 - **Dismissed** (`dismissed`) — the cleanable cards, kept visible here so a dismissal can be undone before any future cleanup.
 
@@ -63,76 +63,81 @@ formulas:
   title_link: file.asLink(note.title)
   url_link: link(url)
 views:
-  - type: table
+  - type: cards
     name: Inbox
     filters:
       and:
         - dismissed != true
         - shelved != true
     order:
-      - shelved
-      - dismissed
-      - wall
       - formula.title_link
       - summary
-      - feed_kind
+      - shelved
+      - dismissed
       - site_id
       - added_date
+      - wall
     sort:
       - property: added_date
         direction: DESC
-  - type: table
-    name: Later
+    cardSize: 360
+    rowHeight: medium
+  - type: cards
+    name: Shelf
     filters:
       and:
         - shelved
     order:
-      - shelved
-      - dismissed
-      - wall
       - formula.title_link
       - summary
-      - feed_kind
+      - shelved
+      - dismissed
       - site_id
       - added_date
+      - wall
     sort:
       - property: added_date
         direction: DESC
-  - type: table
+    cardSize: 360
+    rowHeight: medium
+  - type: cards
     name: Walls
     filters:
       and:
         - wall
     order:
-      - shelved
-      - dismissed
       - formula.title_link
       - formula.url_link
       - summary
-      - feed_kind
+      - shelved
+      - dismissed
       - site_id
       - added_date
     sort:
       - property: added_date
         direction: DESC
-  - type: table
+    cardSize: 360
+    rowHeight: medium
+  - type: cards
     name: Dismissed
     filters:
       and:
         - dismissed
     order:
-      - shelved
-      - dismissed
-      - wall
       - formula.title_link
       - summary
-      - feed_kind
+      - shelved
+      - dismissed
       - site_id
       - added_date
+      - wall
     sort:
       - property: added_date
         direction: DESC
+    cardSize: 360
+    rowHeight: medium
 ```
 
-The views are `table` for parity with the other K-Boat Bases and a verified schema; switch a view to a `cards` gallery in Obsidian's UI if you prefer that browse (the view type persists to the file, like the `columnSize` cosmetics the live Bases carry).
-Column widths and other cosmetics are per-vault tweaks.
+The views are `cards` (a gallery browse) at `cardSize: 360`; flip a view to a `table` in Obsidian's UI if you prefer that layout (the view type persists to the file, like the `cardSize`/`rowHeight` cosmetics the live Base carries).
+Each card leads with the title and summary, then the two human triage checkboxes `shelved` and `dismissed`; `wall` sits last, apart from those two, because it is feed-filter's read-only flag, not something the reader ticks.
+Card size and other cosmetics are per-vault tweaks.
