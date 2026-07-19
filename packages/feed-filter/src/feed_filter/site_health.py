@@ -8,7 +8,7 @@ The counter is the sole cross-run signal that lets a stateless run distinguish a
 persistent site failure from a one-run blip: each scheduled run absorbs a gather
 error and reports it, but without this durable count it has no memory of prior
 runs, so it re-judges a recurring failure as "transient" every time and never
-escalates (the 2026-07-10 session review found exactly this).
+escalates.
 
 The table is **operational telemetry, not dedupe / never-lost state**:
 it is carved out of the never-lost authority. A crash
