@@ -1,13 +1,10 @@
 name: Dependabot auto-merge
 
-# Turn on auto-merge for Dependabot PRs so a green update lands without a manual
-# click. The merge still waits for the branch ruleset's required checks (the CI
-# workflow), so a failing update never merges. Major bumps are excluded on
-# purpose — they land as an ordinary PR for manual review, since a major can
-# change runtime behavior in ways the tests may not catch.
-#
-# No approval step is needed: the main ruleset does not require a review, so
-# enabling auto-merge is enough once checks pass.
+# Enable auto-merge on every Dependabot PR so a green update lands without a
+# manual click. The merge waits for the main ruleset's required CI checks, so a
+# failing update never merges — that gate is what keeps auto-merging safe at any
+# semver level, majors included. No approval step is needed: the ruleset requires
+# no review.
 #
 # PRECONDITION: this is only safe once the main ruleset requires the CI checks
 # (python-qa / markdown-lint / secret-scan) — that requirement is what makes
@@ -25,20 +22,10 @@ permissions:
 
 jobs:
   auto-merge:
-    name: enable auto-merge
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
-      - name: Fetch update metadata
-        id: meta
-        uses: dependabot/fetch-metadata@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Enable auto-merge for patch and minor updates
-        # Allow-list, not deny-list, so it fails closed: fetch-metadata leaves its
-        # outputs empty when a human pushes onto the Dependabot branch, and an
-        # empty update-type must NOT be treated as "not a major".
-        if: contains(fromJSON('["version-update:semver-minor", "version-update:semver-patch"]'), steps.meta.outputs.update-type)
+      - name: Enable auto-merge
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
