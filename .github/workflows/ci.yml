@@ -27,7 +27,7 @@ jobs:
   python-qa:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned to a full version: setup-uv publishes no floating `v8` major tag.
       - uses: astral-sh/setup-uv@v8.3.2
         with:
@@ -54,7 +54,7 @@ jobs:
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Official rumdl action (Dependabot-tracked), not `uvx rumdl`: it avoids an
       # unpinned PyPI install on every run. The rumdl version defaults to latest,
       # matching mise's `rumdl = "latest"`; it auto-detects .rumdl.toml at the root.
@@ -63,9 +63,9 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history so gitleaks can scan the PR's commits
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
