@@ -1,7 +1,7 @@
 [project]
 name = "feed-filter"
 version = "0.1.0"
-description = "Filter new feed/scrape pages by prompt and push survivors to Reminders.app"
+description = "Filter new feed/scrape pages by prompt and file survivors into the Obsidian vault"
 requires-python = ">=3.13"
 # Floors = the versions under test (locked in uv.lock); a floor-less spec lets a
 # source/lock-less install resolve an untested-old release. No upper caps: uv.lock

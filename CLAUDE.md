@@ -20,7 +20,7 @@ Each piece of content gets its own throwaway NotebookLM notebook (1:1) for readi
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), `Feeds/` (feed-filter's triage notes, one URL-hash-named note per kept feed/forum item), `Questions.md` (the daily pick's open-questions backlog, a hand-maintained bullet list), and the standalone Bases `Sources.base`, `Kindles.base`, `Repos.base`, `Reviews.base`, `Feeds.base`.
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Queue/` (the ingest inbox, one capture file per URL, drained by `kboat-ingest`), `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), `Feeds/` (feed-filter's triage notes, one URL-hash-named note per kept feed/forum item), `Questions.md` (the daily pick's open-questions backlog, a hand-maintained bullet list), and the standalone Bases `Sources.base`, `Kindles.base`, `Repos.base`, `Reviews.base`, `Feeds.base`.
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Layout
@@ -37,7 +37,7 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 
 ## Environment gotchas
 
-- The `K-Boat Queue` ingest list is read with the `rem` CLI (macOS Reminders); what it drives is in the `kboat-ingest` bullet below. The daily pick's open-questions backlog is not a Reminders list — it is the vault's `Questions.md`, read via `kboat-pick` (see the `kboat-recall` bullet).
+- The ingest queue is the vault's `Queue/` folder: one `Queue/*.md` capture per URL (a `[title](url)` link), filled by the capture bookmarklet (`kboat-bookmarklet` prints it) through the Obsidian URI scheme and drained by `kboat-ingest`, which treats the captured title/URL as untrusted page text. The daily pick's open-questions backlog is the vault's `Questions.md`, read via `kboat-pick` (see the `kboat-recall` bullet).
 - GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
 - Distillation writes to a Basic Memory project (`k-boat-knowledge`) rooted at `KBOAT_KNOWLEDGE_PATH`, via its MCP tools.
   - Basic Memory is a soft dependency: the concept notes are plain Markdown, so it is only the search/query layer. If it is down, distillation defers (it must not extract and then discard a notebook with nowhere to write).
@@ -59,7 +59,7 @@ The shared `kboat-vault-conventions` skill owns the vault mechanics every writer
 The eight K-Boat skills:
 
 - `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `kboat-vault-conventions` for the shared mechanics. Read it before touching any note format.
-- `kboat-ingest` — drains the `K-Boat Queue` reminders into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos`, but a GitHub blob/raw `.pdf`/`.md` file link stays a source.
+- `kboat-ingest` — drains the vault's `Queue/` folder into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos`, but a GitHub blob/raw `.pdf`/`.md` file link stays a source.
 - `kboat-repos` — non-interactive: catalogues a GitHub repository (`type: repo`) via `gh` and refreshes the catalogue's metadata.
 - `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome, into an ASIN-named `Kindles/` note.
 - `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
@@ -67,15 +67,15 @@ The eight K-Boat skills:
 - `kboat-rescue` — interactive, Mac-only: completes a DLQ (`blocked`) source by pulling the content through the user's real Chrome.
 - `kboat-curate` — on-demand maintenance of the knowledge base: curates the concept graph and checks the concept-note tags for drift and gaps. Human-run, not in the routine.
 
-Each skill defers to `kboat-notes` for the K-Boat note schema, and `kboat-notes` in turn to `kboat-vault-conventions` for the shared vault contract. The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)) — the five console scripts (`kboat-lifecycle`, `kboat-repos`, `kboat-pick`, `kboat-validate`, `kboat-note`) over a shared frontmatter core and the code-authoritative schema (`kboat.schema`), whose field semantics are specified by `kboat-notes` and whose shared contract by `kboat-vault-conventions`. See its README for the library surface.
+Each skill defers to `kboat-notes` for the K-Boat note schema, and `kboat-notes` in turn to `kboat-vault-conventions` for the shared vault contract. The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)) — the seven console scripts (`kboat-lifecycle`, `kboat-repos`, `kboat-pick`, `kboat-validate`, `kboat-note`, `kboat-bookmarklet`, `kboat-queue`) over a shared frontmatter core and the code-authoritative schema (`kboat.schema`), whose field semantics are specified by `kboat-notes` and whose shared contract by `kboat-vault-conventions`. See its README for the library surface.
 
-The prose skills carry no automated tests (only the `kboat` library is unit-tested); validate a skill change by running it against the real NotebookLM CLI, `rem`, the vault, and the `k-boat-knowledge` Basic Memory project.
+The prose skills carry no automated tests (only the `kboat` library is unit-tested); validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
 Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
 
 - One notebook per source (1:1), throwaway by default but retained for a `keep` source; its `notebooklm_id`/`gemini_url`/`notebooklm_url` live on the source note. At creation every notebook is given the same fixed honest-dialogue chat persona. Reading-time dialogue saved back as NotebookLM notes (usually `url: null`) distills as `#dialogue`.
 - A source is a web page or a PDF (`source_type`); a PDF is uploaded into the notebook as a file at `PDFs/<slug>.pdf`, never fetched from a URL. No Google Drive or Play Books — Play Books has no upload API, so it would break the unattended routine.
-- The DLQ is exactly the *durably* un-ingestable set: a source whose ingest cannot obtain what its path requires becomes a `blocked` note keeping its `url`, cleared by `kboat-rescue`. A transient failure is not a member (it keeps its reminder and retries).
+- The DLQ is exactly the *durably* un-ingestable set: a source whose ingest cannot obtain what its path requires becomes a `blocked` note keeping its `url`, cleared by `kboat-rescue`. A transient failure is not a member (it keeps its queue file and retries).
 - The NotebookLM source id is never stored — it is resolved on demand by matching `url` (then `title`, for `url: null` uploads) in `notebooklm source list`.
 - Reading state is one informational `reading` checkbox plus three dispositions: `distill` and `keep` compose; `dismiss` is exclusive, so combining it is the ambiguous case the routine refuses. The routine stamps `filed_date` on first disposition, runs a 7-day cooldown from it, then acts; `distilled_date` is terminal.
 - Crash-safety: a ripe source's notebook is discarded **last** (if at all), after `distilled_date` is stamped and the review report written.
@@ -88,7 +88,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then `kboat-validate`, under a single auth refresh. It must be local — the queue (Reminders), the NotebookLM auth cookies, the iCloud vault, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
+- A Claude Code Desktop local scheduled task (`kboat-routine`, daily ~07:06) runs `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then `kboat-validate`, under a single auth refresh. It must be local — the queue lives in the iCloud vault, and the NotebookLM auth cookies, the vault itself, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
 - A failure that needs the user's action but would otherwise go unseen (auth unusable, the `k-boat-knowledge` project missing, Basic Memory down) sends one `PushNotification`; routine and self-healing outcomes stay in the run summary.
 
 ## Tooling config
@@ -112,5 +112,5 @@ The shared vault mechanics (naming, the schema/validate/write contract, Base dis
 When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
-But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the `K-Boat Queue` list, the vault's `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `PushNotification` trigger set.
+But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `PushNotification` trigger set.
 When a change alters any of those, reconcile that prompt in the same change and confirm it back.

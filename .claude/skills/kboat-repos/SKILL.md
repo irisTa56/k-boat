@@ -23,14 +23,14 @@ Given a GitHub repository URL (from `kboat-ingest` routing, or pasted by the use
 1. **Gather** the metadata: `kboat-repos gather "<url>"`. It prints a JSON record with the **`gh`-resolved** canonical `url`, `slug`, `title` (`owner/repo`), a ready-to-write `fields` object (the mechanical GitHub-derived frontmatter — `description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`, `status` — already mapped, including the 10%-share language rule), and a `readme_excerpt`. A `status` other than `ok` means this is not a repo to catalogue — report it and stop; do not write a note. The non-`ok` verdicts:
    - `skip-not-a-repo` — a non-repo GitHub URL (profile, gist, reserved route): fall through to the source/web path (`kboat-ingest`), not the repo path.
    - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**. The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`. Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
-   - `error-meta` — `gh` failed (rate limit, auth, network, or a `github.com/owner/repo` that does not resolve): no note is written; report it and keep the reminder for retry.
+   - `error-meta` — `gh` failed (rate limit, auth, network, or a `github.com/owner/repo` that does not resolve): no note is written; report it and keep the queue file for retry.
 2. **Classify** with a cheap subagent (Haiku — `gh`-fetched repos are a trickle, and repo-memorizer judged the same three fields on Haiku at scale). Give it `fields.description`, `fields.topics`, `fields.language`, and `readme_excerpt`, plus the vocabulary from kboat-notes ("Classification vocabulary"), and have it return:
    - `role` — one of the closed 6-value enum.
    - `domain` — 1–3 values from the controlled 14-word vocabulary; prefer existing values, fold neighbours rather than invent.
    - `summary` — one or two plain Japanese sentences (what it is, who it is for; no marketing language).
 3. **Write** via the package: take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`). The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's `## Notes` body / `reading` / `added_date` on update — none of which the agent should hand-assemble. It prints `{status: created|updated|collision, ...}`; a `collision` (the slug is held by a different `url`) is written nowhere — report it and stop.
 
-This skill writes only the note; deleting the queue reminder is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
+This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
 
 ## Procedure: refresh the catalogue
 
@@ -43,7 +43,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
 
 Detect and report; do not work around.
 
-- During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `source-file`, or `error-meta` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes). The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path; `error-meta` writes nothing, so report it and keep the reminder for retry.
+- During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `source-file`, or `error-meta` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes). The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path; `error-meta` writes nothing, so report it and keep the queue file for retry.
 - `write` returned `status: collision` (the slug is held by a different `url`). Nothing was written; report it — deterministic, needs a human.
 - `refresh` `failed` entries (a `gh` error per repo), `rename_collisions` (a rename blocked by an existing note), and `adopted` (renames healed) — surface them; never delete.
 - `gh` not authenticated. Stop and report rather than producing empty records.
