@@ -8,6 +8,12 @@ name: Dependabot auto-merge
 #
 # No approval step is needed: the main ruleset does not require a review, so
 # enabling auto-merge is enough once checks pass.
+#
+# PRECONDITION: this is only safe once the main ruleset requires the CI checks
+# (python-qa / markdown-lint / secret-scan) — that requirement is what makes
+# `--auto` wait for CI. Keep the repo's "Allow auto-merge" setting OFF until the
+# ruleset is in place; with it off, `gh pr merge --auto` fails loudly here rather
+# than merging a PR before its checks have run.
 
 on: pull_request
 
@@ -28,8 +34,11 @@ jobs:
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Enable auto-merge for non-major updates
-        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+      - name: Enable auto-merge for patch and minor updates
+        # Allow-list, not deny-list, so it fails closed: fetch-metadata leaves its
+        # outputs empty when a human pushes onto the Dependabot branch, and an
+        # empty update-type must NOT be treated as "not a major".
+        if: contains(fromJSON('["version-update:semver-minor", "version-update:semver-patch"]'), steps.meta.outputs.update-type)
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

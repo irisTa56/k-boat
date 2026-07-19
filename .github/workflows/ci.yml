@@ -1,9 +1,10 @@
 name: CI
 
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
-# to main), but without mise: CI needs neither the notebooklm tool nor a browser,
-# so it installs only uv and runs the same ruff / ty / pytest / rumdl / gitleaks
-# checks directly. Keep the checks here in sync with mise.toml's `qa:*` tasks.
+# to main), but without mise: CI needs neither the notebooklm tool nor a browser.
+# It runs the same ruff / ty / pytest / rumdl / gitleaks checks — uv for the
+# Python gates, official actions for rumdl and gitleaks. Keep the checks here in
+# sync with mise.toml's `qa:*` tasks.
 
 on:
   pull_request:
@@ -24,10 +25,10 @@ env:
 
 jobs:
   python-qa:
-    name: python-qa
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Pinned to a full version: setup-uv publishes no floating `v8` major tag.
       - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
@@ -51,16 +52,15 @@ jobs:
           uv run pytest
 
   markdown-lint:
-    name: markdown-lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v8.3.2
-      - name: rumdl
-        run: uvx rumdl check
+      # Official rumdl action (Dependabot-tracked), not `uvx rumdl`: it avoids an
+      # unpinned PyPI install on every run. The rumdl version defaults to latest,
+      # matching mise's `rumdl = "latest"`; it auto-detects .rumdl.toml at the root.
+      - uses: rvben/rumdl@v0
 
   secret-scan:
-    name: secret-scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
