@@ -7,7 +7,7 @@ cold-start flood guard). Membership — not ``kept`` — is what
 ``is_seen`` tests.
 
 Keys are typed ``CanonicalUrl`` so a caller that forgets to canonicalize is a
-``ty`` error, not a silent duplicate reminder.
+``ty`` error, not a silent duplicate note.
 """
 
 from __future__ import annotations
@@ -175,7 +175,7 @@ def record(
 
 
 def snapshot(conn: sqlite3.Connection, site_id: str, urls: list[CanonicalUrl]) -> None:
-    """Bulk-mark ``urls`` as seen with ``kept=NULL`` and no reminders.
+    """Bulk-mark ``urls`` as seen with ``kept=NULL`` and no notes.
 
     Existing rows are left untouched (``DO NOTHING``), so a snapshot never
     clobbers an already-decided keep/drop.

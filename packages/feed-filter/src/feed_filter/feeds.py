@@ -146,7 +146,7 @@ def _published_at(entry: object) -> int | None:
 # Medium item also carries ``<guid isPermaLink="false">https://medium.com/p/
 # <hash></guid>``, invariant across host, slug, and query, which 302-redirects
 # to the live article — so it is the durable dedupe identity (and a usable
-# reminder link). Non-Medium feeds are unaffected: their guids don't match, so
+# note link). Non-Medium feeds are unaffected: their guids don't match, so
 # they keep deduping on the resolved link.
 #
 # The hash class is ``[0-9a-z]`` (wider than the hex Medium emits today) on

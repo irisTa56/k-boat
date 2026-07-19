@@ -1,6 +1,6 @@
 """CLI entry point: `kboat-note <subcommand>`.
 
-- `write --type {source,kindle,repo}` — create or update a vault note from a
+- `write --type {source,kindle,repo,feed}` — create or update a vault note from a
   `{slug, fields, body?}` JSON record on stdin, schema-driven via `kboat.write`
   (`upsert`): frontmatter order, YAML quoting, the always-present fields, body
   preservation, slug de-dup, and the `added_date`/`refreshed_date` stamps are all

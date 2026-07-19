@@ -10,13 +10,11 @@ from feed_filter import config
 
 
 def test_constants() -> None:
-    assert config.REMINDER_LIST == "Filtered Feeds"
     assert config.DEFAULT_PER_SITE_CAP == 20
     assert config.DEFAULT_GLOBAL_CAP == 80
 
 
 def test_forum_constants() -> None:
-    assert config.REMINDER_LIST_FORUM == "Filtered Forums"
     assert config.DEFAULT_LIKE_THRESHOLD == 6
     assert config.DEFAULT_INTEREST_LIKE_THRESHOLD == 3
     assert config.DEFAULT_DAILY_WATCH_COUNT == 3
@@ -53,3 +51,15 @@ def test_selection_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     target = tmp_path / "elsewhere-selection.md"
     monkeypatch.setenv("FEED_FILTER_SELECTION", str(target))
     assert config.selection_path() == target
+
+
+def test_vault_path_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # The output vault is the shared OBSIDIAN_VAULT_PATH — no repo-relative default.
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+    assert config.vault_path() == tmp_path / "vault"
+
+
+def test_vault_path_unset_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+    with pytest.raises(ValueError, match="OBSIDIAN_VAULT_PATH is not set"):
+        config.vault_path()

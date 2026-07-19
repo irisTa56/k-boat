@@ -488,7 +488,7 @@ def gather_forum(
         # Build the topic URL using canonical_url for normalization.
         # Include the parsed slug so this matches the slugged ``/t/<slug>/<id>``
         # form the Rule-A path carries verbatim from the RSS entry — the same
-        # topic must yield the same reminder URL whichever rule surfaces it. Fall
+        # topic must yield the same note URL whichever rule surfaces it. Fall
         # back to the slugless ``/t/<id>`` (a valid Discourse redirect) when the
         # payload carried no slug.
         slug = f"{topic.slug}/" if topic.slug else ""

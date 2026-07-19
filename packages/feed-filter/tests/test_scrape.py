@@ -43,7 +43,7 @@ def test_respects_cap() -> None:
 def test_dedupes_canonical_variants() -> None:
     # The same article linked as bare, trailing-slash, and mixed-host-case must
     # collapse to one entry keyed by the canonical URL — not three the
-    # seen-store would later treat as one, double-counting the cap and reminder.
+    # seen-store would later treat as one, double-counting the cap and the note write.
     html = (
         '<a href="https://blog.example.com/blog/x">a</a>'
         '<a href="https://blog.example.com/blog/x/">b</a>'

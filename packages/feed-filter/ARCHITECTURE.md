@@ -6,7 +6,7 @@ Read this when a change touches more than one module or the Python ↔ skills co
 
 ## The split: deterministic Python vs. LLM
 
-Everything verifiable and cheap is plain Python — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the `rem` wrapper.
+Everything verifiable and cheap is plain Python — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer.
 The LLM is reserved for the two genuinely fuzzy judgments: picking the article cluster during site registration, and per-page keep/drop at run time.
 
 A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the **only** contract between the Python core and the Claude Code skills.
@@ -19,7 +19,7 @@ Same-host sites are serialized within one worker, and the seen-store filter stay
 
 Pure primitives:
 
-- `config.py` — constants and env-overridable paths (`FEED_FILTER_DB`, `FEED_FILTER_SITES`, `FEED_FILTER_SELECTION`).
+- `config.py` — constants and env-overridable paths (`FEED_FILTER_DB`, `FEED_FILTER_SITES`, `FEED_FILTER_SELECTION`), plus `vault_path()`, the `Feeds/`-note vault root read from `OBSIDIAN_VAULT_PATH`.
 - `canonical.py` — URL canonicalization. **Always dedupe on `canonical_url`, never the raw URL.**
 - `seen.py` — the sqlite seen-store; the sole dedupe authority.
 - `site_health.py` — the durable per-site consecutive-failure counter (`site_health` table, v4 migration in `seen.py`); source-kind-agnostic, keyed by `site_id`. Operational telemetry, **not** dedupe/never-lost state (see the site-health invariant below).
@@ -44,7 +44,7 @@ Browser path (opt-in):
 
 Side effects and orchestration:
 
-- `reminders.py` — the injectable `rem` wrapper; raises on non-zero exit.
+- `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), and raises `VaultError` on a slug collision so a failed write is never recorded seen.
 - `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
   `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
@@ -53,7 +53,7 @@ Side effects and orchestration:
 ## Discourse forum adapter (`src/feed_filter/`)
 
 A second gather/judge/remind path for Discourse forums.
-The forum kind extends the existing abstractions — `SiteConfig.kind == "forum"`, the seen-store migration framework, `parse_feed`/`Entry`, the already-parameterized `add_reminder(list_name=…)` — and adds only the genuinely new surface.
+The forum kind extends the existing abstractions — `SiteConfig.kind == "forum"`, the seen-store migration framework, `parse_feed`/`Entry`, the shared `write_feed_note` vault sink — and adds only the genuinely new surface.
 
 New modules:
 
@@ -86,9 +86,9 @@ The two rules:
   Effective threshold = `interest_like_threshold` when Rule A kept the topic, else `like_threshold`.
   Emitted by `gather_forum` from the topic JSON (`/t/<id>.json`).
 
-Reminders land in the separate `Filtered Forums` list (`REMINDER_LIST_FORUM` in `config.py`); each reminder targets the topic top.
-A reminder is suppressed when an *incomplete* reminder for the same topic URL already exists in the list (`open_reminder_urls`): two open reminders for one topic are redundant pointers to the same page, so at most one open reminder exists per topic — the disposition is still recorded, and once the reader completes that reminder a later qualifying post re-reminds.
-The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds as new posts qualify, which is why it dedupes in its own tables rather than `seen.py` (see the dedupe-authority carve-out under Behavioral invariants).
+Forum keeps become `Feeds/` notes like article keeps, hash-named by the topic URL and carrying `feed_kind: forum`; each note points at the topic top.
+A re-reminded topic (a later qualifying post) upserts the *same* note idempotently — no duplicate — which subsumes the old "at most one open reminder per topic" suppression; the re-write resurfaces the topic by resetting `dismissed` to `false`, while the reader's `shelved` flag is preserved.
+The forum path deliberately re-writes the note as new posts qualify, which is why it dedupes in its own tables (`forum_store.py`) rather than `seen.py` (see the dedupe-authority carve-out under Behavioral invariants).
 
 ## CLI subcommands (the JSON contract)
 
@@ -99,14 +99,14 @@ The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds a
 | `list-sites` | list registered sites (with enabled/disabled status) |
 | `new-entries` | gather new, unseen entries across non-forum sites (each entry's `summary` is a preview; the full body is cached for `entry-body`) |
 | `entry-body` | print one gathered entry's full cached body (`{url, body}`; `body` is `null` on a cache miss) for the judge |
-| `remind` | create a reminder and record it seen (kept) |
+| `remind` | write a kept entry as a `Feeds/` note and record it seen (`--wall` flags a login/paywall page, `--summary` optional) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
 | `heal-site` | rewrite a scrape pattern and re-snapshot |
 | `disable-site` / `enable-site` | pause / resume a site without losing it |
 | `add-forum` | register a Discourse forum (writes config only, no snapshot) |
 | `forum-new` | gather Rule-A and Rule-B candidates across forum sites |
-| `forum-remind` | create a forum reminder and record the disposition (kept=1): `--post-id` → post-grain seen, `--is-op` → topic-grain verdict |
-| `forum-mark-seen` | record a dropped disposition (kept=0); no reminder; same `--post-id`/`--is-op` axes |
+| `forum-remind` | write a kept forum topic as a `Feeds/` note and record the disposition (kept=1): `--post-id` → post-grain seen, `--is-op` → topic-grain verdict |
+| `forum-mark-seen` | record a dropped disposition (kept=0); no note written; same `--post-id`/`--is-op` axes |
 | `forum-poll-done` | advance the poll counter for one topic (call last, after all posts dispositioned) |
 
 `new-entries` filters to `kind != "forum"` and `forum-new` filters to `kind == "forum"` — neither path ever sees the other's sites.
@@ -116,23 +116,23 @@ The `Filtered Feeds` list is unchanged: the forum path deliberately re-reminds a
 
 `.claude/skills/` holds the four skills that drive the CLI. `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
 
-- `feed-filter-add-site` — main-model registration: discover → pick cluster → `add-site`.
-- `feed-filter-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
-- `feed-filter-manage-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
-- `feed-filter-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
+- `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site`.
+- `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
+- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
+- `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
 
 These are the rules a multi-module change must preserve, each named with where it is enforced.
 The user-facing narrative of the observable behavior is README's "Failure and self-heal behavior" — keep the two in sync.
 
-- **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) reminds *then* records seen, recording only on success; `add_reminder` raises `ReminderError` on a non-zero `rem` exit (`reminders.py`) so a failed remind is never recorded as seen. A judging error still reminds (title or URL fallback) before recording. The only duplicate window is a crash in the gap between remind and record, accepted to guarantee no loss.
-- **Never-lost at post grain (forum).** `cmd_forum_remind` mirrors the above for forum posts: `rem add` *then* the DB write, only on success. `cmd_forum_poll_done` must be the **last** call for a topic in a run, after every candidate is dispositioned — advancing the watch before disposition can cause a loss. A crash before `forum-poll-done` costs at most one re-poll; `forum_post_seen` dedups the already-seen posts so no duplicate remind results.
-- **Two independent dedupe axes (forum).** Rule A and Rule B dedupe separately, and the OP may be taken up under both. A Rule-A disposition writes only the **topic-grain** verdict `forum_watch.op_interest_kept` (via `--is-op`); a Rule-B disposition writes only the **post-grain** `forum_post_seen` (via `--post-id`). The two flags are orthogonal in `cmd_forum_remind`/`cmd_forum_mark_seen`. Because Rule A reads the OP from RSS and never holds its `post_id`, it never marks the OP seen at post grain — so an OP dropped for interest under Rule A is still re-judged by Rule B if it later gains likes. An OP that is both interesting and popular is recorded under **both** axes, but reminded **once**: the second `forum-remind` for the same topic URL is suppressed when an open reminder already exists (`open_reminder_urls`), since both point to the same topic top — at most one open reminder per topic, the disposition still recorded.
-- **Seen-store is the sole dedupe authority (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; `rem` does not dedupe. A gather-time fetch failure records nothing, so the next run retries — there is no *cross-run* backoff (within a single fetch, `fetch.py` does retry transient `429`/`503` throttling per `Retry-After`).
+- **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) writes the note *then* records seen, recording only on success; `write_feed_note` raises `VaultError` on a slug collision and lets an `OSError` from the atomic write propagate (`vault.py`), so a failed write is never recorded as seen. A judging error still writes the note (title or URL fallback) before recording. The only duplicate window is a crash in the gap between write and record — and the hash-named upsert makes even that re-run write idempotent, so nothing duplicates.
+- **Never-lost at post grain (forum).** `cmd_forum_remind` mirrors the above for forum posts: the note write *then* the DB write, only on success. `cmd_forum_poll_done` must be the **last** call for a topic in a run, after every candidate is dispositioned — advancing the watch before disposition can cause a loss. A crash before `forum-poll-done` costs at most one re-poll; `forum_post_seen` dedups the already-seen posts, and the hash-named upsert makes a re-written note idempotent, so no duplicate results.
+- **Two independent dedupe axes (forum).** Rule A and Rule B dedupe separately, and the OP may be taken up under both. A Rule-A disposition writes only the **topic-grain** verdict `forum_watch.op_interest_kept` (via `--is-op`); a Rule-B disposition writes only the **post-grain** `forum_post_seen` (via `--post-id`). The two flags are orthogonal in `cmd_forum_remind`/`cmd_forum_mark_seen`. Because Rule A reads the OP from RSS and never holds its `post_id`, it never marks the OP seen at post grain — so an OP dropped for interest under Rule A is still re-judged by Rule B if it later gains likes. An OP that is both interesting and popular is recorded under **both** axes, but yields **one** note: both `forum-remind` calls hash-name by the same topic URL, so the second upserts the same `Feeds/` note the first wrote — one note per topic, each disposition still recorded.
+- **Seen-store is the dedupe authority at gather time (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; the sink now also dedupes (a hash-named `kboat.write.upsert` is idempotent), but the seen-store remains the authority that stops an already-processed article from being re-gathered and re-judged. A gather-time fetch failure records nothing, so the next run retries — there is no *cross-run* backoff (within a single fetch, `fetch.py` does retry transient `429`/`503` throttling per `Retry-After`).
   **Forum carve-out:** the forum adapter is a second, post-grain dedupe authority in `forum_store.py` / `forum_post_seen`.
   Post-grain re-reminding is deliberate (a later post on a watched topic crosses the like bar); this suspends the "seen is final" invariant for forum sources only, leaving `seen.py` and every non-forum path untouched.
-- **Operational notices never enter the list.** The `Filtered Feeds` list and the `Filtered Forums` list both hold only user-facing items (`reminders.py`); self-heal and per-site errors are reported in the run's push summary, not as list reminders.
+- **Operational notices never become notes.** The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's push summary, not as feed notes.
 - **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index. `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it).
 - **Run bounds.** Per-site cap 20 and global cap 80 on entries/candidates judged (`DEFAULT_PER_SITE_CAP` / `DEFAULT_GLOBAL_CAP` in `config.py`).
 - **Bounded per-host gather concurrency (article path).** `cmd_new_entries` fetches sites in two phases: the network-only `fetch_site` runs concurrently across hosts in a thread pool bounded at `DEFAULT_GATHER_CONCURRENCY` (16), then the DB-touching `filter_gathered` runs serially on the main thread in registry order. Two constraints are load-bearing: sites sharing a host (`_gather_host_key`) are grouped into one worker and fetched **in turn**, so no host is ever hit by two concurrent requests (crawler politeness — `sites.toml` has, e.g., six `aws.amazon.com` feeds); and `requires_browser` sites are fetched on the main thread because Playwright's sync API is not thread-safe. The concurrency collapses only the network wall-clock — it does not reorder results (round-robin is unchanged) or read the seen-store off the main thread. A fetch failure is still absorbed per site; an *unexpected* worker exception surfaces when its future drains, propagating out of the run exactly as the former sequential gather would. This exists because the gather was a slow sequential sum over ~80 sites (each up to `fetch.DEFAULT_TIMEOUT`), which pushed a run past the foreground timeout and forced backgrounding.

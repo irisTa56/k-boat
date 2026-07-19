@@ -1,15 +1,14 @@
 """End-to-end CLI smoke over real state files.
 
 Exercises the actual pipeline — fetch → parse → seen-store → round-robin/cap —
-not the monkeypatched core fns of ``test_cli.py``. The only fakes are the network
-(an ``httpx.MockTransport`` serving a controllable RSS body) and ``rem`` (an
-injected runner). The seen-store and ``sites.toml`` are real tmp files via the
-``state_dir`` fixture, so the cross-process invariants hold against persisted
-state:
+not the monkeypatched core fns of ``test_cli.py``. The only fake is the network
+(an ``httpx.MockTransport`` serving a controllable RSS body); the seen-store,
+``sites.toml``, and the output vault are real tmp files via the ``state_dir``
+fixture, so the cross-process invariants hold against persisted state:
 
 - ``add-site`` snapshots the back-catalog seen *before* writing config,
   so ``new-entries`` returns only entries that appeared *after* registration;
-- ``remind`` creates the reminder *and* records seen in one process,
+- ``remind`` writes the ``Feeds/`` note *and* records seen in one process,
   so a second ``new-entries`` no longer yields the reminded entry — no duplicate.
 - Forum: ``forum-remind`` / ``forum-mark-seen`` record posts, ``forum-poll-done``
   finalizes per-topic; re-running ``forum-new`` after partial disposition still
@@ -22,7 +21,6 @@ import contextlib
 import json
 from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -30,23 +28,20 @@ import pytest
 from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
 from feed_filter import browser, cli
-from feed_filter import reminders as reminders_mod
 from feed_filter.canonical import canonical_url
-from feed_filter.config import db_path, sites_path
+from feed_filter.config import db_path, sites_path, vault_path
 from feed_filter.forum_store import is_post_seen, op_interest_kept
 from feed_filter.seen import is_seen, open_db
 from feed_filter.sites import load_sites
+from kboat.naming import url_slug
 
 
-@pytest.fixture(autouse=True)
-def _no_open_reminder_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Default ``cmd_forum_remind``'s open-reminder lookup to empty (hermetic).
+def _feeds_dir() -> Path:
+    return vault_path() / "Feeds"
 
-    Keeps forum-remind from shelling out to the real Reminders store via
-    ``rem list`` (dedupe). The suppression end-to-end test overrides this
-    with a stateful stub backed by the same fake ``rem`` store.
-    """
-    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set())
+
+def _feed_note_written(url: str) -> bool:
+    return (_feeds_dir() / f"{url_slug(str(canonical_url(url)))}.md").is_file()
 
 
 def _rss(*links: tuple[str, str]) -> bytes:
@@ -112,20 +107,6 @@ def test_add_site_then_run_has_no_duplicate(
     feed = _MockSite(_rss(A, B))
     monkeypatch.setattr(cli, "build_client", feed.client)
 
-    # Fake rem: a successful runner so the real add_reminder logic runs (argv
-    # build + JSON id parse), and cmd_remind's real seen.record follows it.
-    rem_calls: list[list[str]] = []
-
-    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
-        rem_calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "rem-1"}), stderr="")
-
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes: reminders_mod.add_reminder(title, url, notes, runner=fake_runner),
-    )
-
     # --- register: snapshots A and B seen, THEN writes sites.toml -------------
     assert cli.main(["add-site", "--id", "ex", "--name", "Example", "--feed-url", FEED_URL]) == 0
     added = _out(capsys)
@@ -148,16 +129,16 @@ def test_add_site_then_run_has_no_duplicate(
         }
     ]
 
-    # --- remind C: creates the reminder AND records it seen, atomically -------
+    # --- remind C: writes the Feeds note AND records it seen, atomically ------
     assert (
-        cli.main(["remind", "--site-id", "ex", "--url", C[1], "--title", "C", "--notes", "note"])
+        cli.main(["remind", "--site-id", "ex", "--url", C[1], "--title", "C", "--summary", "note"])
         == 0
     )
     reminded = _out(capsys)
-    assert reminded["id"] == "rem-1"
     assert reminded["kept"] is True
-    assert len(rem_calls) == 1 and rem_calls[0][:2] == ["rem", "add"]
-    assert _seen(C[1])  # recorded in the same process as the remind
+    assert reminded["status"] == "created"
+    assert _feed_note_written(C[1])  # the Feeds/ note landed
+    assert _seen(C[1])  # recorded in the same process as the write
 
     # --- second run: C is gone, nothing duplicated ---------------------------
     assert cli.main(["new-entries"]) == 0
@@ -181,8 +162,8 @@ def test_scrape_site_self_heal_end_to_end(
     (snapshot back-catalog) → a new article surfaces → the index moves under a
     new path so the stored pattern matches nothing (``zero_links``) → ``heal-site``
     re-scrapes under the new pattern, snapshots the live URLs, rewrites config
-    last → the next run is clean. heal-site files NO list reminder (the list holds
-    only pages; the heal is reported in the run's push summary).
+    last → the next run is clean. heal-site writes NO feed note (feed notes are
+    pages only; the heal is reported in the run's push summary).
     """
     site = _MockSite(_index_html("/blog/a", "/blog/b"), content_type="text/html")
     monkeypatch.setattr(cli, "build_client", site.client)
@@ -243,7 +224,7 @@ def test_scrape_site_self_heal_end_to_end(
         }
     ]
 
-    # --- heal: re-scrape under the new pattern, snapshot, rewrite config (no list reminder)
+    # --- heal: re-scrape under the new pattern, snapshot, rewrite config (no feed note)
     assert cli.main(["heal-site", "--site-id", "blg", "--pattern", NEW_PATTERN]) == 0
     healed = _out(capsys)
     assert healed["pattern"] == NEW_PATTERN
@@ -528,35 +509,11 @@ def test_forum_end_to_end(
 ) -> None:
     """Full forum run: add-forum → forum-new → Rule-A keep of the OP (verdict
     only) + Rule-B keep of the same OP (post-grain seen) → forum-poll-done.
-    Asserts the two dedupe axes are written independently, 'Filtered
-    Forums' is the list target, and the second open reminder for the same topic
-    URL is suppressed — one open reminder per topic, both axes recorded.
+    Asserts the two dedupe axes are written independently, and that the same
+    topic taken up under both rules resolves to one hash-named Feeds note (the
+    second keep upserts it) — no duplicate, both axes recorded.
     """
     monkeypatch.setattr(cli, "build_client", _forum_transport)
-
-    rem_calls: list[list[str]] = []
-    open_urls: list[str] = []  # stateful fake Reminders store: URLs of open items
-
-    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
-        rem_calls.append(argv)
-        # A successful `rem add` makes that URL an open reminder.
-        if len(argv) > 1 and argv[1] == "add" and "--url" in argv:
-            open_urls.append(argv[argv.index("--url") + 1])
-        return SimpleNamespace(
-            returncode=0, stdout=json.dumps({"id": f"FR-{len(rem_calls)}"}), stderr=""
-        )
-
-    # Inject the forum-aware rem runner (accepts list_name kwarg).
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes, *, list_name, **kw: reminders_mod.add_reminder(
-            title, url, notes, list_name=list_name, runner=fake_runner
-        ),
-    )
-    # The open-reminder lookup reflects what has been added, so a second remind
-    # of the same topic URL is suppressed. Overrides the autouse stub.
-    monkeypatch.setattr(cli, "open_reminder_urls", lambda *_a, **_k: set(open_urls))
 
     # --- Step 1: register the forum site (config only, no snapshot) -----------
     rc = cli.main(
@@ -598,6 +555,8 @@ def test_forum_end_to_end(
     # discourse_fetches: 3 RSS feeds + one topic-JSON for the single due topic 1234.
     assert new_out["discourse_fetches"] == 4
 
+    topic_url = f"{_FORUM_URL}/t/my-topic/1234"
+
     # --- Step 3: Rule-A keep of the OP — `--is-op`, NO `--post-id` ------------
     # Rule A holds no OP post_id (it reads RSS); it records only the
     # topic-grain interest verdict and never touches the post-grain seen store.
@@ -609,24 +568,18 @@ def test_forum_end_to_end(
             "--topic-id",
             "1234",
             "--url",
-            f"{_FORUM_URL}/t/my-topic/1234",
+            topic_url,
             "--title",
             "My Forum Topic",
-            "--notes",
-            "Cross-domain interesting",
+            "--summary",
+            "Cross-domain",
             "--is-op",
         ]
     )
     assert rc == 0
     a_out = _out(capsys)
-    assert a_out["suppressed"] is False  # first reminder for this URL → created
-    assert a_out["id"] is not None
-
-    # rem was called with --list "Filtered Forums", not "Filtered Feeds".
-    assert len(rem_calls) == 1
-    argv = rem_calls[0]
-    list_idx = argv.index("--list")
-    assert argv[list_idx + 1] == "Filtered Forums"
+    assert a_out["status"] == "created"  # first write for this topic → the note is created
+    assert _feed_note_written(topic_url)
 
     with contextlib.closing(open_db(db_path())) as conn:
         assert op_interest_kept(conn, _FORUM_SITE_ID, 1234) == 1  # Rule-A kept
@@ -635,9 +588,9 @@ def test_forum_end_to_end(
 
     # --- Step 4: Rule-B keep of the same OP (trigger post 5001) ---------------
     # The OP is also a Rule-B trigger (10 likes ≥ 6).  Independent axis: pass
-    # `--post-id`, NO `--is-op`.  An open reminder for this topic URL already
-    # exists (Step 3), so the `rem add` is SUPPRESSED — but the post-grain seen
-    # is still recorded: one open reminder per topic, both axes written.
+    # `--post-id`, NO `--is-op`.  The topic URL already has a note (Step 3), so
+    # this keep UPSERTS that same hash-named note — no duplicate — while still
+    # recording the post-grain seen: both axes written.
     rc = cli.main(
         [
             "forum-remind",
@@ -648,21 +601,23 @@ def test_forum_end_to_end(
             "--post-id",
             "5001",
             "--url",
-            f"{_FORUM_URL}/t/my-topic/1234",
+            topic_url,
             "--title",
             "My Forum Topic",
-            "--notes",
-            "Popular and worth reading",
+            "--summary",
+            "Popular",
         ]
     )
     assert rc == 0
     b_out = _out(capsys)
-    assert b_out["suppressed"] is True  # same URL already open → suppressed
-    assert b_out["id"] is None  # no reminder created
-    assert len(rem_calls) == 1  # no second `rem add` (open-reminder dedupe)
+    assert b_out["status"] == "updated"  # same URL → same note, upserted (not a duplicate)
+    # Exactly one Feeds note for this topic across both keeps.
+    assert [n.name for n in _feeds_dir().glob("*.md")] == [
+        f"{url_slug(str(canonical_url(topic_url)))}.md"
+    ]
 
     with contextlib.closing(open_db(db_path())) as conn:
-        # Post-grain seen IS still recorded despite the suppressed reminder.
+        # Post-grain seen IS recorded on the Rule-B keep.
         assert is_post_seen(conn, _FORUM_SITE_ID, 5001)
 
     # --- Step 5: forum-poll-done (last call for topic 1234) -------------------
@@ -702,20 +657,6 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
     """
     monkeypatch.setattr(cli, "build_client", _forum_transport)
 
-    rem_calls: list[list[str]] = []
-
-    def fake_runner(argv: list[str], **_: Any) -> SimpleNamespace:
-        rem_calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout=json.dumps({"id": "FR-1"}), stderr="")
-
-    monkeypatch.setattr(
-        cli,
-        "add_reminder",
-        lambda title, url, notes, *, list_name, **kw: reminders_mod.add_reminder(
-            title, url, notes, list_name=list_name, runner=fake_runner
-        ),
-    )
-
     # Register the forum site.
     rc = cli.main(
         [
@@ -751,12 +692,13 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
             f"{_FORUM_URL}/t/my-topic/1234",
             "--title",
             "My Forum Topic",
-            "--notes",
-            "first run",
+            "--summary",
+            "first",
         ]
     )
     _out(capsys)
-    assert len(rem_calls) == 1
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert is_post_seen(conn, _FORUM_SITE_ID, 5001)  # recorded seen before the crash
 
     # poll-done is NOT called (simulated crash).
     with contextlib.closing(open_db(db_path())) as conn:
@@ -778,9 +720,6 @@ def test_forum_never_lost_ordering_reruns_find_seen_posts(
             assert not any(p["post_id"] == 5001 for p in t["trigger_posts"]), (
                 "post 5001 is already seen; it must not appear as a trigger post again"
             )
-
-    # No new rem call from run 2 (no new candidates to remind).
-    assert len(rem_calls) == 1  # still just one from run 1
 
     # --- After re-run, complete the cycle with forum-poll-done ---------------
     polls2 = new2["polls"]

@@ -4,7 +4,7 @@
 count how many the live page yields *before* dedupe (``index_matches``), then
 filter out already-seen URLs and clamp to the per-site cap. It records nothing —
 the seen-store is written only by the ``remind`` / ``mark-seen`` CLI paths, after
-a reminder is created. A fetch failure is captured into ``error`` and
+a note is written. A fetch failure is captured into ``error`` and
 leaves the entry list empty so nothing is recorded and the next run retries it
 naturally.
 

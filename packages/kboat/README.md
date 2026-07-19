@@ -1,7 +1,7 @@
 # kboat — K-Boat's deterministic mechanical core
 
 The tested Python that the [K-Boat](../../README.md) skills call, so the model neither re-derives the mechanical logic nor pays tokens for it.
-Its **spec** is the `kboat-notes` skill: change the schema and conventions there first, then this package and its tests.
+Its **spec** is split by ownership: the shared vault contract (naming, the schema/validate/write contract, Base discipline) is the `kboat-vault-conventions` skill, and K-Boat's note-type field semantics are the `kboat-notes` skill. Change the relevant spec first, then this package and its tests.
 
 ## Console scripts
 
@@ -14,7 +14,7 @@ Its **spec** is the `kboat-notes` skill: change the schema and conventions there
 ## Shared modules
 
 - `kboat.frontmatter` — read, scoped rewrite, YAML-safe rendering.
-- `kboat.schema` — the code-authoritative mechanical schema (field names, order, kinds, defaults, the always-present booleans, the enums). `kboat-notes` keeps the human semantics and points here.
+- `kboat.schema` — the code-authoritative mechanical schema (field names, order, kinds, defaults, the always-present booleans, the enums). `kboat-vault-conventions` describes the schema/validate/write contract around it, and `kboat-notes` keeps the K-Boat field semantics; both point here.
 - `kboat.write` — schema-driven note assembly and create-or-update (`build_note`/`render_field`/`upsert`), the one writer all note types share.
 
 ## Development

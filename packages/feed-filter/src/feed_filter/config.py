@@ -10,14 +10,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# The Reminders.app list every kept entry is pushed into. User-created; the
-# routine never auto-creates lists. Centralized here so a rename is a
-# one-line change.
-REMINDER_LIST = "Filtered Feeds"
-
-# Reminders list for forum posts; user-created, never auto-created.
-REMINDER_LIST_FORUM = "Filtered Forums"
-
 # Forum adapter defaults. Applied at use time when
 # the per-site tuning fields are unset (None).
 DEFAULT_LIKE_THRESHOLD = 6  # Rule-B threshold for non-interest topics
@@ -65,6 +57,10 @@ ENV_DB = "FEED_FILTER_DB"
 ENV_SITES = "FEED_FILTER_SITES"
 ENV_SELECTION = "FEED_FILTER_SELECTION"
 
+# The shared Obsidian vault kept entries are written into (as `Feeds/` notes).
+# Read from the workspace `.env` via mise; a member never has its own default.
+ENV_VAULT = "OBSIDIAN_VAULT_PATH"
+
 
 def sites_path() -> Path:
     """Path to the site registry. Overridable via ``FEED_FILTER_SITES``."""
@@ -88,3 +84,17 @@ def db_path() -> Path:
     """Path to the seen-store SQLite DB. Overridable via ``FEED_FILTER_DB``."""
     override = os.environ.get(ENV_DB)
     return Path(override) if override else REPO_ROOT / "feed-filter.db"
+
+
+def vault_path() -> Path:
+    """The Obsidian vault root that kept entries are written into.
+
+    From ``OBSIDIAN_VAULT_PATH`` (the workspace ``.env``); unlike the local-state
+    paths above there is no repo-relative default — the vault is a shared,
+    absolute location. Raises ``ValueError`` when unset, which the CLI maps to a
+    reported non-zero exit rather than a traceback.
+    """
+    override = os.environ.get(ENV_VAULT)
+    if not override:
+        raise ValueError(f"{ENV_VAULT} is not set (needed to write feed notes into the vault)")
+    return Path(override).expanduser()

@@ -1,7 +1,7 @@
 """CLI entry point: `kboat-validate`.
 
-Checks every note in the vault (`Sources/`, `Kindles/`, `Repos/`) against its
-schema (`kboat.schema`) and prints the violations as JSON. Read-only — it never
+Checks every note in the vault (`Sources/`, `Kindles/`, `Repos/`, `Feeds/`)
+against its schema (`kboat.schema`) and prints the violations as JSON. Read-only — it never
 writes. Exit 0 by default (report-only, for the routine's run summary); with
 `--strict`, exit 1 when any violation is found.
 """

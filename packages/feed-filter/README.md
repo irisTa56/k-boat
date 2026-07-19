@@ -2,13 +2,13 @@
 
 A simplified, Claude-Code-native reimplementation of the sibling project `loose-feeds` (a local checkout at `../loose-feeds`, not a public repo).
 
-A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against a prompt using cheap subagents, and pushes the survivors into the macOS Reminders list **`Filtered Feeds`** via the [`rem`](https://github.com/BRO3886/rem) CLI.
-A second routine does the same for registered Discourse forums, judging topics and popular posts on a sparse poll schedule and pushing keeps into **`Filtered Forums`**.
+A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against a prompt using cheap subagents, and writes the survivors as `type: feed` notes in the Obsidian vault's `Feeds/` folder.
+A second routine does the same for registered Discourse forums, judging topics and popular posts on a sparse poll schedule and writing keeps as the same `Feeds/` notes.
 
 ## Design
 
 Responsibilities split deterministically.
-Plain Python owns everything verifiable and cheap — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the `rem` wrapper — exposed as a single `feed-filter` CLI.
+Plain Python owns everything verifiable and cheap — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer — exposed as a single `feed-filter` CLI.
 The LLM owns only the two genuinely fuzzy judgments: picking the article cluster during site registration, and per-page keep/drop selection.
 
 The `feed-filter` CLI emits JSON on stdout and is the only contract between the Python core and the Claude Code skills; the skills never reach into Python internals.
@@ -16,9 +16,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the beha
 
 ## Prerequisites
 
-- macOS with the **`Filtered Feeds`** Reminders list already created. The routine never auto-creates lists; a missing or renamed list makes a remind fail loudly rather than silently dropping kept entries.
-- If you register any Discourse forum sites, the **`Filtered Forums`** Reminders list must also exist (user-created). Forum reminders land there, not in `Filtered Feeds`.
-- The [`rem`](https://github.com/BRO3886/rem) CLI on `PATH` (e.g. `/opt/homebrew/bin/rem`).
+- `OBSIDIAN_VAULT_PATH` set (via the workspace `.env`) to the Obsidian vault; kept entries are written as `Feeds/` notes under it. An unset vault path makes a write fail loudly rather than silently dropping kept entries.
 - `mise` for the toolchain and tasks.
 
 ## Setup
@@ -37,8 +35,8 @@ The CLI can also be run directly from the repo root.
 
 ### Register a site
 
-Use the `feed-filter-add-site` skill, or run the CLI directly.
-Discovery determines whether a URL is a feed or a scrape site; registration snapshots the current back-catalog as already-seen so only entries appearing *after* registration are ever reminded.
+Use the `kboat-add-feed-site` skill, or run the CLI directly.
+Discovery determines whether a URL is a feed or a scrape site; registration snapshots the current back-catalog as already-seen so only entries appearing *after* registration are ever written as notes.
 
 ```sh
 # Inspect what discovery finds (feed candidates and/or scrape clusters):
@@ -63,7 +61,7 @@ To stop gathering a site without losing it — a chronically failing site, or on
 
 ```sh
 feed-filter disable-site --site-id example   # the run skips it; config + seen-store kept
-feed-filter enable-site  --site-id example   # resume; only post-resume entries are reminded
+feed-filter enable-site  --site-id example   # resume; only post-resume entries are written
 ```
 
 A disabled site is skipped entirely (no fetch, no error, no notification) and stays in `sites.toml` with an `enabled = false` line. Because its seen-store is preserved, re-enabling never floods the back-catalog. This is reversible and cheap, unlike deleting and re-registering (which re-runs discovery and loses history).
@@ -95,16 +93,16 @@ That marker is what Cloudflare's first-line bot check matches to serve a challen
 This covers the common first-line-bot-check class only; a site that still serves an interactive challenge after the User-Agent is normalized is unsupported, and surfaces as a recurring per-site error in run summaries rather than being worked around.
 
 One further limit applies at judging time: the per-article body is fetched by the run skill's subagent over plain HTTP (`WebFetch`), not through the browser.
-A body behind the same gate the browser gather passed is therefore unreadable to the judge, so such an entry is judged on its feed summary — or, when that is too thin, reminded for manual review rather than content-filtered.
+A body behind the same gate the browser gather passed is therefore unreadable to the judge, so such an entry is judged on its feed summary — or, when that is too thin, written as a feed note (flagged `wall`) for manual review rather than content-filtered.
 
 ### Run the filter
 
-Use the `feed-filter-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, reminds the keeps into `Filtered Feeds`, and records everything processed as seen.
+Use the `kboat-feed-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
 
 ### Register a Discourse forum
 
-Use the `feed-filter-add-site` skill, or register directly:
+Use the `kboat-add-feed-site` skill, or register directly:
 
 ```sh
 # Register a Discourse forum (no back-catalog snapshot — admission is per-poll):
@@ -125,38 +123,38 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 
 ### Run the forum filter
 
-Use the `feed-filter-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, reminds the keeps into `Filtered Forums`, and advances each topic's poll counter.
+Use the `kboat-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
 
 - **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
 - **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
 
-The two rules are independent axes. An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is reminded once under each rule.
+The two rules are independent axes. An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is recorded under both axes, but resolves to a single `Feeds/` note (see below).
 
 Topics are polled on a sparse schedule (`--poll-offsets-days`, default 0, 1, and 7 days from first-seen) and retire after the last offset.
-A re-reminded topic produces a fresh reminder item in `Filtered Forums`; unlike article keeps, the same topic may appear more than once if multiple posts qualify across polls or under both rules.
+A re-reminded topic upserts the *same* `Feeds/` note (hash-named by the topic URL), so a topic never produces duplicate notes; the re-write resurfaces it by resetting the note's `dismissed` flag to `false`, so a topic the reader dismissed reappears when a new qualifying post arrives.
 
 ## Scheduling
 
-The run **must execute locally** — `rem` writes the local Reminders.app, so a cloud routine cannot push reminders.
+The run **must execute locally** — the vault is the local iCloud folder, so a cloud routine cannot write the notes.
 The Mac must be awake and the Claude runtime idle when the task fires.
 
-Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `feed-filter-run` for the article sites, `feed-filter-forum-run` for the Discourse forums.
+Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `kboat-feed-run` for the article sites, `kboat-forum-run` for the Discourse forums.
 The two are independent routines; register whichever you use, on whatever schedule you choose.
 Guidance:
 
 - Schedule it on an **off-:00 minute** (e.g. `17 * * * *` or a few times a day) to avoid the top-of-hour congestion when many routines fire at once.
 - The task starts fresh each run with no memory of prior runs; the seen-store (`feed-filter.db`) is what carries state across runs, so the prompt only needs to point at this repo and the run skill.
-- Ensure the task's `PATH` includes Homebrew (`/opt/homebrew/bin`) so `rem` resolves; an absent `rem` surfaces as a non-zero exit, not a silent drop.
+- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (loaded from the workspace `.env`); an unset vault path surfaces as a non-zero exit, not a silent drop.
 - A scheduled task runs only while the Claude app is open; if the app was closed when the task was due, it runs on next launch.
 
 ## Failure and self-heal behavior
 
 The design favors **never-lost over never-duplicated**:
 
-- An entry that errors during judging is reminded anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
+- An entry that errors during judging is written as a feed note anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
 - A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
-- The seen-store is the sole dedupe authority for article sources (`rem` does not dedupe). The remind-then-record pair runs in one process; the only duplicate window is a crash in the sub-millisecond gap between them, accepted to guarantee no loss.
-- Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-remind as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
+- The seen-store is the dedupe authority for article sources at gather time. The write-then-record pair runs in one process; a crash in the sub-millisecond gap between them re-runs the write next time, but the hash-named upsert makes that write idempotent — so even the crash window duplicates nothing.
+- Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-write its feed note as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
   The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
 
-When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's push summary. The heal files no reminder into the list, which holds only pages; operational notices go to the push channel.
+When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's push summary. The heal writes no feed note; the feed notes are pages only, and operational notices go to the push channel.
