@@ -1,0 +1,36 @@
+name: Dependabot auto-merge
+
+# Turn on auto-merge for Dependabot PRs so a green update lands without a manual
+# click. The merge still waits for the branch ruleset's required checks (the CI
+# workflow), so a failing update never merges. Major bumps are excluded on
+# purpose — they land as an ordinary PR for manual review, since a major can
+# change runtime behavior in ways the tests may not catch.
+#
+# No approval step is needed: the main ruleset does not require a review, so
+# enabling auto-merge is enough once checks pass.
+
+on: pull_request
+
+# Dependabot PRs run with a read-only token by default; elevate GITHUB_TOKEN here
+# so the job can enable auto-merge.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: enable auto-merge
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch update metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Enable auto-merge for non-major updates
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
