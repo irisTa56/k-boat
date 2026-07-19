@@ -40,7 +40,7 @@ A feed note has no destructive routine action and no cooldown, so its lifecycle 
   - `dismissed` hides the card from the Inbox and marks it a future auto-cleanup target. Cleanup is **manual for now**: no note is auto-deleted, and the Base views only hide dismissed cards.
 - `wall` is **feed-filter's** flag, re-evaluated on each write, not a human disposition.
 - **Promotion is manual.** To read a feed card as a full K-Boat source, add its `url` to the `K-Boat Queue` (the `kboat-ingest` inbox) by hand; there is no auto-promotion from a feed note to a source note. The two are separate inboxes.
-- **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again. That re-write resets `dismissed` to `false`, so a topic the reader dismissed reappears in the Inbox when it gains new activity (as the old Reminders sink re-surfaced a completed reminder). `shelved` is instead preserved; feed-filter refreshes `wall`, `summary`, and the metadata.
+- **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again. That re-write resets `dismissed` to `false`, so a topic the reader dismissed reappears in the Inbox when it gains new activity. `shelved` is instead preserved; feed-filter refreshes `wall`, `summary`, and the metadata.
 
 `kboat-validate` checks every `Feeds/*.md` against the `FEED` schema (the generic per-field checks — presence, emptiness, kind/enum/date); the feed type carries no cross-field rules.
 

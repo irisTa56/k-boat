@@ -49,10 +49,9 @@ SUMMARY_PREVIEW_CHARS = 500
 # misclassified as transient across 13 runs / 9+ days.
 DEFAULT_PERSISTENT_FAILURE_RUNS = 3
 
-# Package root = .../packages/feed-filter (the member package dir, holding its own
-# pyproject.toml and the gitignored local state), two levels above this file
-# (src/feed_filter/). In the monorepo this is NOT the repo root — that is the
-# workspace root two levels higher.
+# The feed-filter package dir (.../packages/feed-filter), two levels above this
+# file (src/feed_filter/). Holds this member's own pyproject.toml and its
+# gitignored local state (sites.toml, feed-filter.db, prompts/selection.md).
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 
 # Env vars that redirect local state away from the package dir (e.g. for tests).
