@@ -35,7 +35,7 @@ The CLI can also be run directly from the repo root.
 
 ### Register a site
 
-Use the `kboat-feed-add-site` skill, or run the CLI directly.
+Use the `kboat-add-feed-site` skill, or run the CLI directly.
 Discovery determines whether a URL is a feed or a scrape site; registration snapshots the current back-catalog as already-seen so only entries appearing *after* registration are ever written as notes.
 
 ```sh
@@ -102,7 +102,7 @@ A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
 
 ### Register a Discourse forum
 
-Use the `kboat-feed-add-site` skill, or register directly:
+Use the `kboat-add-feed-site` skill, or register directly:
 
 ```sh
 # Register a Discourse forum (no back-catalog snapshot — admission is per-poll):
@@ -123,7 +123,7 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 
 ### Run the forum filter
 
-Use the `kboat-feed-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
+Use the `kboat-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
 
 - **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
 - **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
@@ -138,7 +138,7 @@ A re-reminded topic upserts the *same* `Feeds/` note (hash-named by the topic UR
 The run **must execute locally** — the vault is the local iCloud folder, so a cloud routine cannot write the notes.
 The Mac must be awake and the Claude runtime idle when the task fires.
 
-Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `kboat-feed-run` for the article sites, `kboat-feed-forum-run` for the Discourse forums.
+Create a scheduled task (a `~/.claude/scheduled-tasks/<id>/SKILL.md`) whose prompt invokes the relevant run skill against this repo: `kboat-feed-run` for the article sites, `kboat-forum-run` for the Discourse forums.
 The two are independent routines; register whichever you use, on whatever schedule you choose.
 Guidance:
 

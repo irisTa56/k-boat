@@ -116,10 +116,10 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 
 `.claude/skills/` holds the four skills that drive the CLI. `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
 
-- `kboat-feed-add-site` — main-model registration: discover → pick cluster → `add-site`.
+- `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
-- `kboat-feed-manage-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
-- `kboat-feed-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
+- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
+- `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
 

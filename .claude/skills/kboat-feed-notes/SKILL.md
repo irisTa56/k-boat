@@ -1,6 +1,6 @@
 ---
 name: kboat-feed-notes
-description: Conventions for the feed-filter member's Feeds vault notes. Use when creating or updating a Feeds note, authoring the Feeds Base, or when you need the exact FEED frontmatter schema, the shelved/dismissed/wall status semantics, or the feed triage lifecycle. This is the source of truth for the feed note type and its lifecycle; the shared vault mechanics (URL-hash naming, the schema/validate contract, the write contract, Base discipline) are the kboat-vault-conventions skill, which this defers to. The kboat-feed-run and kboat-feed-forum-run skills defer here for the note format.
+description: Conventions for the feed-filter member's Feeds vault notes. Use when creating or updating a Feeds note, authoring the Feeds Base, or when you need the exact FEED frontmatter schema, the shelved/dismissed/wall status semantics, or the feed triage lifecycle. This is the source of truth for the feed note type and its lifecycle; the shared vault mechanics (URL-hash naming, the schema/validate contract, the write contract, Base discipline) are the kboat-vault-conventions skill, which this defers to. The kboat-feed-run and kboat-forum-run skills defer here for the note format.
 ---
 
 # Feed note conventions
@@ -26,7 +26,7 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 | `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Later view to look at when there is time. Always present (default `false`); feed-filter omits it on a re-write, so a shelved card stays shelved. |
 | `dismissed` | Checkbox, set by the **human**. "Cleanable": hide the card from the Inbox as a future auto-cleanup target. Always present (default `false`). feed-filter **resets it to `false` on every write**, so a re-reminded topic (a new qualifying forum post) resurfaces into the Inbox rather than staying dismissed. |
 | `wall` | Boolean, set by **feed-filter**. The page is behind a login or paywall, so it was admitted on its summary alone; surfaced in the Walls view for the human to judge. Always present (default `false`). |
-| `feed_kind` | `article` or `forum` — which gather produced it (`kboat-feed-run` vs `kboat-feed-forum-run`). |
+| `feed_kind` | `article` or `forum` — which gather produced it (`kboat-feed-run` vs `kboat-forum-run`). |
 | `site_id` | The registered site's id (from feed-filter's `sites.toml`); the provenance and grouping key. |
 | `summary` | A short summary or snippet from the feed entry, in the language it came in. Empty when the source gave none. Lets a card be judged at a glance in the Base. |
 | `added_date` | Date the note was filed into the vault. |
