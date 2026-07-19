@@ -33,4 +33,4 @@ Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), a
 
 - Identity is the ASIN throughout; the filename (the ASIN) never changes, so re-running on the same book reuses the existing note — no duplicate.
 - This skill mutates only the source-of-record note: it writes `Kindles/<ASIN>.md`. It creates no NotebookLM notebook and deletes nothing.
-- Future extensions (not done here): pulling Kindle highlights from `read.amazon.co.jp/notebook` to fill the body automatically, and auto-routing read.amazon URLs dropped into the `K-Boat Queue` reminders list.
+- Future extensions (not done here): pulling Kindle highlights from `read.amazon.co.jp/notebook` to fill the body automatically, and auto-routing read.amazon URLs dropped into the `Queue/` folder.

@@ -10,6 +10,8 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat-pick` — the daily-pick mechanics (`candidates`/`set`), no LLM and no NotebookLM.
 - `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON.
 - `kboat-note` — create-or-update one note from a `{slug, fields, body?}` JSON record.
+- `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
+- `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain.
 
 ## Shared modules
 

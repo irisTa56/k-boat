@@ -6,8 +6,7 @@ over weeks — the deliberate interest signal, parallel to the recent Daily note
 ambient one. Its *order* is the priority: a question higher in the list is a stronger
 interest than one below it, so the daily pick ranks question-driven picks by list
 position (`rank` 1 is the top). A question's nested sub-bullets are its `note` — free
-context the ranker may use, the counterpart of a reminder's note text before the
-backlog moved out of Reminders.
+context the ranker may use.
 
 Only open questions are listed; the human resolves one by deleting its line, so the
 routine never writes here — it reads the file and nothing else. A missing or

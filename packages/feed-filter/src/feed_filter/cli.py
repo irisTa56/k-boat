@@ -667,13 +667,12 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     Rule A fetch-free and lets a later Rule-B pass re-judge the OP if it gains
     likes.
 
-    **No open-reminder suppression.** A forum reminder targets the topic top, so
+    **No cross-run URL suppression.** A forum reminder targets the topic top, so
     the same topic taken up twice (the two-axis A/B case, or a cross-run
     re-remind as a later post crosses the like threshold) resolves to the same
     URL, hence the same hash-named note: the second write is an idempotent
-    ``upsert`` of that note, not a duplicate. The former ``open_reminder_urls``
-    suppression the Reminders sink needed is therefore gone; the disposition is
-    recorded on every keep exactly as before.
+    ``upsert`` of that note, not a duplicate, so the disposition is recorded on
+    every keep without tracking which URLs are already open.
     """
     cu = canonical_url(args.url)
     result = write_feed_note(
@@ -709,7 +708,7 @@ def cmd_forum_mark_seen(args: argparse.Namespace) -> int:
     """Record a dropped forum disposition (kept=0); no note.
 
     The two dedupe axes are written independently, exactly as in
-    ``cmd_forum_remind`` but with no ``rem add``:
+    ``cmd_forum_remind`` but writing no vault note:
 
     - ``--post-id`` present (a Rule-B drop) → ``record_post(kept=0)`` marks the
       post seen so it is not re-judged.
