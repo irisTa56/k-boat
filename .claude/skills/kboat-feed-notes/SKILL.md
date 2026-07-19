@@ -46,98 +46,105 @@ A feed note has no destructive routine action and no cooldown, so its lifecycle 
 
 ## Feeds Base
 
-A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human four card views of the triage queue.
+A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human four table views of the triage queue.
 Every filter is a plain boolean over an always-present property, per the Base-authoring discipline in `kboat-vault-conventions` — never a `!=` over a possibly-missing property, never a date-emptiness test.
-The file is hash-named, so each card leads with a `title_link` formula (the readable, clickable title) rather than the file name; the `url_link` formula opens the page in one click.
 
-- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged cards. A `wall` card still appears here (it is an untriaged keep); the `wall` property flags it.
+The lead column is a `title_summary` formula — `note.title + " 💬 " + note.summary` — so each row shows the title and its summary together in one wide (`columnSize` 360), `tall`-row cell.
+The title is plain text there, not a link: an Obsidian Bases formula that concatenates `file.asLink(...)` with a string coerces the link to plain text, so a clickable title cannot be combined with the summary in one cell.
+The 💬 separator is an emoji on purpose — a plain punctuation separator could itself occur inside a title or summary and blur the boundary, which an emoji will not.
+Navigation moves to two dedicated link columns instead: `url_link` (`link(url)`) opens the web page, and `note_link` (`file.asLink("↗")`, the last column) opens the feed note itself.
+
+- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row still appears here (it is an untriaged keep); the `wall` column flags it.
 - **Shelf** (`shelved`) — the read-later shelf.
 - **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing.
-- **Dismissed** (`dismissed`) — the cleanable cards, kept visible here so a dismissal can be undone before any future cleanup.
+- **Dismissed** (`dismissed`) — the cleanable rows, kept visible here so a dismissal can be undone before any future cleanup.
 
 ```yaml
 filters:
   and:
     - type == "feed"
 formulas:
-  title_link: file.asLink(note.title)
+  title_summary: note.title + " 💬 " + note.summary
   url_link: link(url)
+  note_link: file.asLink("↗")
 views:
-  - type: cards
+  - type: table
     name: Inbox
     filters:
       and:
         - dismissed != true
         - shelved != true
     order:
-      - formula.title_link
-      - summary
+      - formula.title_summary
+      - formula.url_link
       - shelved
       - dismissed
-      - site_id
       - added_date
       - wall
+      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    cardSize: 360
-    rowHeight: medium
-  - type: cards
+    rowHeight: tall
+    columnSize:
+      formula.title_summary: 360
+  - type: table
     name: Shelf
     filters:
       and:
         - shelved
     order:
-      - formula.title_link
-      - summary
+      - formula.title_summary
+      - formula.url_link
       - shelved
       - dismissed
-      - site_id
       - added_date
       - wall
+      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    cardSize: 360
-    rowHeight: medium
-  - type: cards
+    rowHeight: tall
+    columnSize:
+      formula.title_summary: 360
+  - type: table
     name: Walls
     filters:
       and:
         - wall
     order:
-      - formula.title_link
+      - formula.title_summary
       - formula.url_link
-      - summary
       - shelved
       - dismissed
-      - site_id
       - added_date
+      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    cardSize: 360
-    rowHeight: medium
-  - type: cards
+    rowHeight: tall
+    columnSize:
+      formula.title_summary: 360
+  - type: table
     name: Dismissed
     filters:
       and:
         - dismissed
     order:
-      - formula.title_link
-      - summary
+      - formula.title_summary
+      - formula.url_link
       - shelved
       - dismissed
-      - site_id
       - added_date
       - wall
+      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    cardSize: 360
-    rowHeight: medium
+    rowHeight: tall
+    columnSize:
+      formula.title_summary: 360
 ```
 
-The views are `cards` (a gallery browse) at `cardSize: 360`; flip a view to a `table` in Obsidian's UI if you prefer that layout (the view type persists to the file, like the `cardSize`/`rowHeight` cosmetics the live Base carries).
-Each card leads with the title and summary, then the two human triage checkboxes `shelved` and `dismissed`; `wall` sits last, apart from those two, because it is feed-filter's read-only flag, not something the reader ticks.
-Card size and other cosmetics are per-vault tweaks.
+The views are `table` at `rowHeight: tall`, with the composite column widened to 360; the two human triage checkboxes `shelved` and `dismissed` sit together, `wall` follows them (it is feed-filter's read-only flag, not something the reader ticks), and the `↗` note link is last.
+Row height, column width, the separator emoji, and other cosmetics are per-vault tweaks.
