@@ -35,12 +35,12 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 
 A feed note has no destructive routine action and no cooldown, so its lifecycle is entirely manual triage over three always-present booleans.
 
-- `shelved` and `dismissed` are the **human's** two dispositions, orthogonal to each other:
-  - `shelved` moves the card to the Later view — a "read later" holding shelf — without removing it from anywhere destructive. feed-filter preserves it across a re-write.
-  - `dismissed` hides the card from the Inbox and marks it a future auto-cleanup target. Cleanup is **manual for now**: no note is auto-deleted, and the Base views only hide dismissed cards.
+- `shelved` and `dismissed` are the **human's** two dispositions; `dismissed` takes precedence over `shelved`, hiding the card from both working views:
+  - `shelved` moves the card to the Shelf view — a "read later" holding shelf — without removing it from anywhere destructive. feed-filter preserves it across a re-write.
+  - `dismissed` hides the card from both the Inbox and the Shelf — a dismissed card leaves the working views whether or not it is shelved — and marks it a future auto-cleanup target. Cleanup is **manual for now**: no note is auto-deleted; the Base only hides dismissed cards from the working views and keeps them in the Dismissed view so a dismissal can be undone.
 - `wall` is **feed-filter's** flag, re-evaluated on each write, not a human disposition.
 - **Promotion is manual.** To read a feed card as a full K-Boat source, add its `url` to the `K-Boat Queue` (the `kboat-ingest` inbox) by hand; there is no auto-promotion from a feed note to a source note. The two are separate inboxes.
-- **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again. That re-write resets `dismissed` to `false`, so a topic the reader dismissed reappears in the Inbox when it gains new activity. `shelved` is instead preserved; feed-filter refreshes `wall`, `summary`, and the metadata.
+- **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again. That re-write resets `dismissed` to `false`, so a topic the reader dismissed reappears in the working views when it gains new activity. `shelved` is instead preserved; feed-filter refreshes `wall`, `summary`, and the metadata.
 
 `kboat-validate` checks every `Feeds/*.md` against the `FEED` schema (the generic per-field checks — presence, emptiness, kind/enum/date); the feed type carries no cross-field rules.
 
@@ -55,7 +55,7 @@ The 💬 separator is an emoji on purpose — a plain punctuation separator coul
 Navigation moves to two dedicated link columns instead: `url_link` (`link(url)`) opens the web page, and `note_link` (`file.asLink("↗")`, the last column) opens the feed note itself.
 
 - **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row still appears here (it is an untriaged keep); the `wall` column flags it.
-- **Shelf** (`shelved`) — the read-later shelf.
+- **Shelf** (`shelved && dismissed != true`) — the read-later shelf; a card the reader later dismisses drops out of here too, since `dismissed` hides from both working views.
 - **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing.
 - **Dismissed** (`dismissed`) — the cleanable rows, kept visible here so a dismissal can be undone before any future cleanup.
 
@@ -77,8 +77,8 @@ views:
     order:
       - formula.title_summary
       - formula.url_link
-      - shelved
       - dismissed
+      - shelved
       - added_date
       - wall
       - formula.note_link
@@ -93,11 +93,12 @@ views:
     filters:
       and:
         - shelved
+        - dismissed != true
     order:
       - formula.title_summary
       - formula.url_link
-      - shelved
       - dismissed
+      - shelved
       - added_date
       - wall
       - formula.note_link
@@ -115,8 +116,8 @@ views:
     order:
       - formula.title_summary
       - formula.url_link
-      - shelved
       - dismissed
+      - shelved
       - added_date
       - formula.note_link
     sort:
@@ -133,8 +134,8 @@ views:
     order:
       - formula.title_summary
       - formula.url_link
-      - shelved
       - dismissed
+      - shelved
       - added_date
       - wall
       - formula.note_link
@@ -146,5 +147,5 @@ views:
       formula.title_summary: 360
 ```
 
-The views are `table` at `rowHeight: tall`, with the composite column widened to 360; the two human triage checkboxes `shelved` and `dismissed` sit together, `wall` follows them (it is feed-filter's read-only flag, not something the reader ticks), and the `↗` note link is last.
+The views are `table` at `rowHeight: tall`, with the composite column widened to 360; the two human triage checkboxes sit together with `dismissed` first (the more frequent action) then `shelved`, `wall` follows them (it is feed-filter's read-only flag, not something the reader ticks), and the `↗` note link is last.
 Row height, column width, the separator emoji, and other cosmetics are per-vault tweaks.
