@@ -50,9 +50,88 @@ A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives 
 Every filter is a plain boolean over an always-present property, per the Base-authoring discipline in `kboat-vault-conventions` — never a `!=` over a possibly-missing property, never a date-emptiness test.
 The title shows through a `title_link` formula (the file is hash-named) and the URL through a `url_link` formula so the page opens in one click.
 
-- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged cards.
+- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged cards. A `wall` card still appears here (it is an untriaged keep); the `wall` column flags it.
 - **Later** (`shelved`) — the read-later shelf.
-- **Walls** (`wall`) — cards admitted on their summary alone, for the human to judge whether the wall is worth clearing.
+- **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing.
 - **Dismissed** (`dismissed`) — the cleanable cards, kept visible here so a dismissal can be undone before any future cleanup.
 
-The concrete `Feeds.base` file (its view type and the exact column layout) is authored and deployed into the vault alongside the feed-filter output change; the view design above is its spec.
+```yaml
+filters:
+  and:
+    - type == "feed"
+formulas:
+  title_link: file.asLink(note.title)
+  url_link: link(url)
+views:
+  - type: table
+    name: Inbox
+    filters:
+      and:
+        - dismissed != true
+        - shelved != true
+    order:
+      - shelved
+      - dismissed
+      - wall
+      - formula.title_link
+      - summary
+      - feed_kind
+      - site_id
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Later
+    filters:
+      and:
+        - shelved
+    order:
+      - shelved
+      - dismissed
+      - wall
+      - formula.title_link
+      - summary
+      - feed_kind
+      - site_id
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Walls
+    filters:
+      and:
+        - wall
+    order:
+      - shelved
+      - dismissed
+      - formula.title_link
+      - formula.url_link
+      - summary
+      - feed_kind
+      - site_id
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+  - type: table
+    name: Dismissed
+    filters:
+      and:
+        - dismissed
+    order:
+      - shelved
+      - dismissed
+      - wall
+      - formula.title_link
+      - summary
+      - feed_kind
+      - site_id
+      - added_date
+    sort:
+      - property: added_date
+        direction: DESC
+```
+
+The views are `table` for parity with the other K-Boat Bases and a verified schema; switch a view to a `cards` gallery in Obsidian's UI if you prefer that browse (the view type persists to the file, like the `columnSize` cosmetics the live Bases carry). Column widths and other cosmetics are per-vault tweaks.

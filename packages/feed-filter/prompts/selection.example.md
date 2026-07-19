@@ -3,7 +3,7 @@
 This is the version-controlled **template**. Copy it to `prompts/selection.md` (gitignored, your personal criteria) — that copy is what the run routine reads, so your interests never enter version control. Override the path with `FEED_FILTER_SELECTION` if you keep it elsewhere.
 
 This file is the keep/drop prompt the run routine hands to each judging subagent.
-A subagent sees one candidate page at a time and decides whether it belongs in the **`Filtered Feeds`** or **`Filtered Forums`** Reminders list.
+A subagent sees one candidate page at a time and decides whether it is worth keeping as a feed note in the vault.
 Replace the placeholders below with your own interests; the routine reloads `prompts/selection.md` every run, so edits take effect on the next run with no code change.
 
 A per-site override may live in `sites.toml` (`selection = "..."` on a `[[site]]`); when present it replaces the **Topics** section below for that site only, while the **Output** and **Heuristics** sections still apply.
@@ -11,7 +11,7 @@ A per-site override may live in `sites.toml` (`selection = "..."` on a `[[site]]
 ## Decision
 
 Return `keep = true` only when the page is something you would genuinely want to read later.
-When in doubt, prefer to **keep** — a stray extra reminder is cheaper to dismiss than a missed article is to recover (the seen-store never re-surfaces a dropped entry).
+When in doubt, prefer to **keep** — a stray extra note is cheaper to dismiss than a missed article is to recover (the seen-store never re-surfaces a dropped entry).
 
 ## Topics
 
@@ -58,7 +58,7 @@ You cannot judge an article you cannot read, so do **not** drop it on a guess: s
 When `wall = true` the run routine reminds the page for manual review and **ignores `keep`**, so `keep` is irrelevant — set it either way.
 Wall detection only happens once you actually fetch the page: scrape entries are always fetched, but a feed entry you can judge from its title and summary alone is judged normally and never reaches a wall — its metadata is the readable content, so there is nothing to flag.
 Reserve a wall for a page you would plausibly **keep** if you could read it.
-If the title and summary already place the page **outside the Topics**, drop it on that basis — do not fetch an out-of-scope page just to assess its depth, so it cannot become a needless manual-review reminder.
+If the title and summary already place the page **outside the Topics**, drop it on that basis — do not fetch an out-of-scope page just to assess its depth, so it cannot become a needless manual-review note.
 Escalate to the body only when the page is plausibly in-scope and only its quality or depth is unresolved — fetching an out-of-scope page just to assess depth is what risks a needless wall on a gated site.
 Hard fetch errors (the page would not load at all) are handled by the run routine itself, not here.
 
@@ -78,6 +78,6 @@ Return a single JSON object and nothing else:
 
 - `keep` — boolean.
 - `wall` — boolean; `true` when the fetched page is a login wall / paywall / subscribe gate rather than the article (see "Walls and unreadable pages"). A walled page is reminded for manual review regardless of `keep`.
-- `title` — a non-empty title for the reminder. For scrape entries (no feed metadata) this is the **only** source of a title, so always supply one; on a keep it becomes the reminder's name.
-- `summary` — one line; becomes the reminder's note. Write it in whatever language you triage fastest in (e.g. add "write the summary in Japanese" here) — the run routine never inspects its language. Omit or leave empty on a drop.
+- `title` — a non-empty title for the note. For scrape entries (no feed metadata) this is the **only** source of a title, so always supply one; on a keep it becomes the note's title.
+- `summary` — one line; becomes the note's `summary`. Write it in whatever language you triage fastest in (e.g. add "write the summary in Japanese" here) — the run routine never inspects its language. Omit or leave empty on a drop.
 - `reason` — a brief justification, surfaced only in the run summary.
