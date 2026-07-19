@@ -30,7 +30,7 @@ On-disk frontmatter edits are picked up by Basic Memory's file watcher, so editi
 
 ## Part A — graph health
 
-Delegate the generic mechanics to **memory-curate**, scoped to `k-boat-knowledge`:
+Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-knowledge` — do not hand-roll an equivalent graph audit inline:
 
 - **Orphans** — concept notes with no inbound or outbound relations; propose relations or a hub note.
 - **Duplicates / overlaps** — clusters covering the same ground; propose an index note or relations, not a merge (log merge candidates for a human).
