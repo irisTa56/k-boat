@@ -1,10 +1,11 @@
-# Dependabot version updates. No GitHub Actions minutes are consumed: this repo
-# has no CI workflows for the update PRs to trigger (relevant if CI is added).
+# Dependabot version updates. Two ecosystems:
 #
-# Only the uv ecosystem is configured, at the workspace root ("/"): Dependabot
-# reads the root uv.lock, which resolves the whole workspace, so one entry covers
-# every member's runtime deps plus the root dev group — no per-member entry as
-# packages are added.
+# - uv, at the workspace root ("/"): Dependabot reads the root uv.lock, which
+#   resolves the whole workspace, so one entry covers every member's runtime deps
+#   plus the root dev group — no per-member entry as packages are added.
+# - github-actions, at "/": keeps the action versions pinned in the CI workflow
+#   (.github/workflows/*.yml) current.
+#
 # The mise-managed tools (gitleaks, lychee, rumdl, uv) are out of Dependabot's
 # scope and stay on `mise upgrade`.
 version: 2
@@ -16,3 +17,13 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
