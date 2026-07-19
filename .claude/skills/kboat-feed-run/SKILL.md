@@ -8,7 +8,7 @@ description: Run one feed-filter pass — gather new entries from registered sit
 One pass of the filter: gather unseen entries across all registered sites, judge each against `prompts/selection.md`, write the keeps into the vault, and record everything processed as seen.
 This is the periodic, cost-sensitive half of feed-filter — the judging runs on **haiku** subagents, and the per-site/global caps, not subagent cleverness, are the primary cost bound.
 
-Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/k-boat`).
+Run every `feed-filter` command from the repo root.
 The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
 Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 The routine must run **locally** — the vault is the local iCloud Obsidian folder (`OBSIDIAN_VAULT_PATH`), so a cloud run cannot write keeps into it.
