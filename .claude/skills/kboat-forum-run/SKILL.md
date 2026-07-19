@@ -11,7 +11,7 @@ Judging is split by model: **Rule A** (the subtle cross-domain call) runs on a *
 Rule A needs the stronger model because haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure" — a distinction no prompt wording reliably fixes on a model that cannot apply it. Rule B's local per-post value call is within haiku's reach.
 The global cap (`DEFAULT_GLOBAL_CAP=80`) is the primary cost bound; a steady-state run judges only a handful of new topics, so the Sonnet cost is small except at cold start.
 
-Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/k-boat`).
+Run every `feed-filter` command from the repo root.
 The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
 Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 The routine must run **locally** — the vault is the local iCloud Obsidian folder (`OBSIDIAN_VAULT_PATH`), so a cloud run cannot write keeps into it.

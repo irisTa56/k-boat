@@ -8,7 +8,7 @@ description: Pause or resume a feed-filter site (disable/enable) and show which 
 Turn an individual site's gathering off or on without losing it, and report which sites are currently paused.
 This is the ad-hoc, user-driven half of site management — registration lives in the `kboat-add-feed-site` skill, the periodic run in `kboat-feed-run`.
 
-Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/k-boat`).
+Run every `feed-filter` command from the repo root.
 The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
 Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
 Each subcommand emits one JSON document on stdout and exits non-zero on failure — parse the JSON and read the exit code.
