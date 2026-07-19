@@ -2,8 +2,9 @@
 
 Dump your content into a knowledge lake, then sail it with AI agents.
 
-K-Boat reads content through [NotebookLM](https://notebooklm.google.com/) and matures what it learns into a knowledge base.
-Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
+K-Boat is a [Claude Code](https://www.anthropic.com/claude-code) skill package: the reading, distillation, and feed-triage procedures are skills an agent executes, so most of the product is prose rather than code.
+It reads each source through [NotebookLM](https://notebooklm.google.com/) (renamed [Gemini Notebook](https://blog.google/innovation-and-ai/products/gemini-notebook/notebooklm-gemini-notebook/) in July 2026), keeps the reading side in an [Obsidian](https://obsidian.md/) vault, and distills what it learns into a [Basic Memory](https://github.com/basicmachines-co/basic-memory) knowledge graph.
+Each piece of content gets its own throwaway notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
 Two kinds are exceptions, each with no notebook. Books you read on **Kindle** are catalogued by ASIN in `Kindles/` and distilled from the highlights you paste into the note body. **GitHub repositories** are catalogued in `Repos/` — a tagged, searchable bookmark with GitHub metadata and a judged role/domain/summary, never distilled.
 
 This repository is a uv workspace. K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package; an upstream triage stage, [**feed-filter**](packages/feed-filter/), funnels new pages from registered feeds and forums into the same vault.
@@ -13,7 +14,7 @@ This repository is a uv workspace. K-Boat's deterministic mechanical core is the
 - Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; it installs the tools and a postinstall hook syncs the venv.
 - The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run. To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
 - `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
-- Distilled knowledge is a [Basic Memory](https://github.com/basicmachines-co/basic-memory) project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
+- Distilled knowledge is a Basic Memory project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
 
 ## Layout
 
