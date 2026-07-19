@@ -61,7 +61,7 @@ class Candidate:
 def is_active_web(fm: dict[str, Value]) -> bool:
     """A not-yet-started, undispositioned web-page source (`!reading && !distill
     && !keep && !dismiss && !blocked && source_type == "web_page"`). The `reading`
-    exclusion is what makes this a strict subset of the Reading Inbox "Web" view
+    exclusion is what makes this a strict subset of the Sources "Web" view
     (which keeps in-progress reads): a source you are mid-read already shows in the
     Today view via `reading`, so a pick on it would surface nothing new — see
     kboat-notes "Daily pick"."""
