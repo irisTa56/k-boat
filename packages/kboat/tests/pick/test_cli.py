@@ -60,6 +60,10 @@ def vault(tmp_path: Path) -> Path:
     (daily / "2026-06-04.md").write_text(
         "---\ntags: [daily]\n---\n\ncurious about agentic workflows\n", encoding="utf-8"
     )
+    (tmp_path / "Questions.md").write_text(
+        "- how do agents plan?\n    - the deliberate signal\n- what is a MoE?\n",
+        encoding="utf-8",
+    )
     return tmp_path
 
 
@@ -75,6 +79,13 @@ def test_candidates_lists_only_active_web_plus_daily_notes(
     # Frontmatter is stripped; the body carries the human's interest signal.
     assert out["daily_notes"] == [{"date": "2026-06-04", "body": "curious about agentic workflows"}]
     assert out["counts"]["daily_note_days"] == 1
+    # The open-questions backlog: ordered by list position (rank 1 = top interest),
+    # each with its nested sub-bullet as the note.
+    assert out["questions"] == [
+        {"rank": 1, "question": "how do agents plan?", "note": "the deliberate signal"},
+        {"rank": 2, "question": "what is a MoE?", "note": ""},
+    ]
+    assert out["counts"]["questions_total"] == 2
     assert out["candidates"][0]["topics"] == ["topic-web1"]
     # `added_date` (the diversification key) and `notebooklm_id` (the Stage 2
     # fulltext handle) survive the parser → candidate → JSON round-trip.
