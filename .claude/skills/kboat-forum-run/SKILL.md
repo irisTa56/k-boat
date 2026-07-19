@@ -8,7 +8,7 @@ description: Run one forum-filter pass — gather Rule-A and Rule-B candidates f
 One pass of the forum filter: gather due Rule-A and Rule-B candidates across all registered Discourse forum sites, judge each against `prompts/selection.md`, write the keeps into the vault, and advance each topic's poll counter.
 This is the periodic half of the forum adapter.
 Judging is split by model: **Rule A** (the subtle cross-domain call) runs on a **Sonnet** subagent; **Rule B** (a local per-post value call) stays on **haiku**.
-This revises the skill's original "all judging on haiku" default: a live run showed haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure", so Rule A needs the stronger model; no prompt wording reliably fixes a model that cannot apply the distinction.
+Rule A needs the stronger model because haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure" — a distinction no prompt wording reliably fixes on a model that cannot apply it. Rule B's local per-post value call is within haiku's reach.
 The global cap (`DEFAULT_GLOBAL_CAP=80`) is the primary cost bound; a steady-state run judges only a handful of new topics, so the Sonnet cost is small except at cold start.
 
 Run every `feed-filter` command from the repo root (`/Users/takayuki/Documents/_repos/k-boat`).

@@ -44,9 +44,10 @@ SUMMARY_PREVIEW_CHARS = 500
 # all unreachable for this many consecutive stateless runs is flagged
 # ``persistent`` so the run skill escalates instead of re-deriving "transient"
 # every run. The signal is discovery-feed (admit) unreachability only — a single
-# dead topic's JSON failure never counts. The default of 3 matches
-# the 2026-07-10 session review, which observed an elixirforum-com outage
-# misclassified as transient across 13 runs / 9+ days.
+# dead topic's JSON failure never counts. The default of 3 guards a real failure
+# mode: a moved or dead feed stays unreachable for many consecutive runs, which a
+# memoryless per-run "transient?" check would re-excuse as a one-run blip every
+# time, so the outage would never surface for a human.
 DEFAULT_PERSISTENT_FAILURE_RUNS = 3
 
 # The feed-filter package dir (.../packages/feed-filter), two levels above this
