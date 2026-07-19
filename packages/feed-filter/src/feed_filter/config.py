@@ -1,4 +1,4 @@
-"""Static configuration: constants, repo-relative paths, and env overrides.
+"""Static configuration: constants, package-relative paths, and env overrides.
 
 Paths resolve at call time (not import time) so tests and the scheduled routine
 can redirect state via ``FEED_FILTER_DB`` / ``FEED_FILTER_SITES`` /
@@ -49,10 +49,13 @@ SUMMARY_PREVIEW_CHARS = 500
 # misclassified as transient across 13 runs / 9+ days.
 DEFAULT_PERSISTENT_FAILURE_RUNS = 3
 
-# Repo root = .../feed-filter, two levels above this file (src/feed_filter/).
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Package root = .../packages/feed-filter (the member package dir, holding its own
+# pyproject.toml and the gitignored local state), two levels above this file
+# (src/feed_filter/). In the monorepo this is NOT the repo root — that is the
+# workspace root two levels higher.
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 
-# Env vars that redirect local state away from the repo (e.g. for tests).
+# Env vars that redirect local state away from the package dir (e.g. for tests).
 ENV_DB = "FEED_FILTER_DB"
 ENV_SITES = "FEED_FILTER_SITES"
 ENV_SELECTION = "FEED_FILTER_SELECTION"
@@ -65,7 +68,7 @@ ENV_VAULT = "OBSIDIAN_VAULT_PATH"
 def sites_path() -> Path:
     """Path to the site registry. Overridable via ``FEED_FILTER_SITES``."""
     override = os.environ.get(ENV_SITES)
-    return Path(override) if override else REPO_ROOT / "sites.toml"
+    return Path(override) if override else PACKAGE_ROOT / "sites.toml"
 
 
 def selection_path() -> Path:
@@ -77,20 +80,20 @@ def selection_path() -> Path:
     locally. Only the template is version-controlled.
     """
     override = os.environ.get(ENV_SELECTION)
-    return Path(override) if override else REPO_ROOT / "prompts" / "selection.md"
+    return Path(override) if override else PACKAGE_ROOT / "prompts" / "selection.md"
 
 
 def db_path() -> Path:
     """Path to the seen-store SQLite DB. Overridable via ``FEED_FILTER_DB``."""
     override = os.environ.get(ENV_DB)
-    return Path(override) if override else REPO_ROOT / "feed-filter.db"
+    return Path(override) if override else PACKAGE_ROOT / "feed-filter.db"
 
 
 def vault_path() -> Path:
     """The Obsidian vault root that kept entries are written into.
 
     From ``OBSIDIAN_VAULT_PATH`` (the workspace ``.env``); unlike the local-state
-    paths above there is no repo-relative default — the vault is a shared,
+    paths above there is no package-relative default — the vault is a shared,
     absolute location. Raises ``ValueError`` when unset, which the CLI maps to a
     reported non-zero exit rather than a traceback.
     """

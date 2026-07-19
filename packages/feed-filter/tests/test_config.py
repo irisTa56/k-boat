@@ -22,15 +22,16 @@ def test_forum_constants() -> None:
     assert config.DEFAULT_POLL_OFFSETS_DAYS == (0, 1, 7)
 
 
-def test_repo_root_contains_pyproject() -> None:
-    # REPO_ROOT must point at the project root, not src/ or the package dir.
-    assert (config.REPO_ROOT / "pyproject.toml").is_file()
+def test_package_root_contains_pyproject() -> None:
+    # PACKAGE_ROOT must point at the feed-filter package dir (which holds its own
+    # pyproject.toml and the gitignored local state), not src/ or the module dir.
+    assert (config.PACKAGE_ROOT / "pyproject.toml").is_file()
 
 
-def test_default_paths_are_repo_relative(clean_env: None) -> None:
-    assert config.sites_path() == config.REPO_ROOT / "sites.toml"
-    assert config.selection_path() == config.REPO_ROOT / "prompts" / "selection.md"
-    assert config.db_path() == config.REPO_ROOT / "feed-filter.db"
+def test_default_paths_are_package_relative(clean_env: None) -> None:
+    assert config.sites_path() == config.PACKAGE_ROOT / "sites.toml"
+    assert config.selection_path() == config.PACKAGE_ROOT / "prompts" / "selection.md"
+    assert config.db_path() == config.PACKAGE_ROOT / "feed-filter.db"
 
 
 def test_db_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
