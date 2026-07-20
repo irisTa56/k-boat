@@ -66,7 +66,7 @@ The notebook is a reading-and-dialogue workspace, so reading-time dialogue is pa
 A useful Gemini exchange can be **saved back into the notebook as a NotebookLM note**, which then appears in `notebooklm source list` as an *additional* source — typically `url: null` and a note / "unknown" type, with a topic-style `title` distinct from the original.
 This is expected and not a 1:1 violation: the 1:1 invariant is one notebook per *original* source, and the original is always identifiable by the `url`/`title` match above, so every other source in the notebook is saved dialogue.
 
-Distillation treats the two differently (see kboat-distill): the original source's content is the `#grounded` authority, and each saved dialogue note is `#dialogue` — vetted before keeping and keyed to the **original** source's `url` for provenance (the two roots can't resolve a wikilink, and the dialogue happened over that source).
+Distillation treats the two differently (see kboat-distill): the original source's content is the `#grounded` authority, and each saved dialogue note is treated as `#dialogue` unless the source grounds it — vetted before accreting and keyed to the **original** source's `url` for provenance (the two roots can't resolve a wikilink, and the dialogue happened over that source).
 The whole notebook — original plus any saved dialogue — is discarded last, after the original is distilled and the report is written, so nothing distillable is lost before it is recorded; a dialogue note that failed to extract is the accepted exception, reported and discarded with the notebook.
 
 ## Schema authority and validation
