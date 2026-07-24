@@ -23,11 +23,13 @@ status codes, so the status-based retry lives here at the single fetch boundary.
 
 from __future__ import annotations
 
+import ssl
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
+import truststore
 
 # Generous timeout: a slow feed is worth waiting for in a batch routine that
 # runs infrequently. Applied via the client built by ``build_client``.
@@ -113,10 +115,20 @@ def build_client() -> httpx.Client:
     is owned by ``fetch`` per request, not set here, so there is one source of
     truth for it. The CLI builds one client per run and threads it through
     ``fetch``; tests inject their own ``httpx.Client`` over a ``MockTransport``.
+
+    TLS verification is delegated to the OS trust store via ``truststore``
+    rather than httpx's default certifi bundle. certifi verifies only the chain
+    the server actually sends, so a site serving an incomplete chain (a leaf
+    with no intermediate) fails even though browsers and ``curl`` load it — they
+    complete the chain by fetching the missing intermediate over AIA. The OS
+    verifier does the same AIA completion, so those sites verify here too;
+    verification stays fully on, and the OS store is a superset of certifi.
     """
+    ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     return httpx.Client(
         timeout=DEFAULT_TIMEOUT,
         headers={"User-Agent": USER_AGENT},
+        verify=ctx,
     )
 
 
