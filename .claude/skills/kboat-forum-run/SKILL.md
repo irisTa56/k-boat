@@ -108,19 +108,17 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 5. **Surface errors.** For each site in `sites` with a non-null `error`, the gather fetch failed for that site; nothing was recorded, so it retries naturally next run.
    Report it in the summary — a broken forum is visible here, by design there is no backoff.
    - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next reachable run, so do not escalate on a single bad run.
-   - **`persistent == true`**: the site has been wholly unreachable for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **fire the push** (see Run summary) and, in the summary, recommend the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
+   - **`persistent == true`**: the site has been wholly unreachable for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
      1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`. If the forum moved, fixing `forum_url` (see `kboat-manage-feed-sites`) restores it with no loss — the seen-store keys on `(site_id, topic_id)`, not the domain.
      2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
 
 ## Run summary
 
-Send a push notification (the `PushNotification` tool — one line, ≤200 chars, no markdown) **only when the run produced something that needs your attention beyond the Feeds inbox**: a gather `error` or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
-Routine keeps already land in the `Feeds/` notes where you'll see them in the Feeds Base, so a run whose only outcome is keeps sends **no** push; a no-op run sends none either.
-A `persistent == true` site is **always** such a case: send the push whenever any site is `persistent`, without exception — this is the escalation the durable counter exists to trigger, so it is not a judgment call. Lead the push with the persistent site and the URL-change recommendation from step 5.
-Lead with what's actionable and name the offending sites.
-Example: `forum-filter: 1 site error (erlang-forum 429), 3 topics kept`.
-Persistent example: `forum-filter: elixirforum-com unreachable 3 runs — check for a moved forum URL, else disable-site`.
-Always keep the fuller breakdown as the run's text output (the transcript), regardless of whether a push was sent.
+Emit a run summary as the run's text output — the pass's durable record.
+Lead with what is **actionable** and name the offending sites: a gather `error` or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
+Routine keeps need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
+A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's URL-change recommendation (first check for a moved forum URL, else the remedy is `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill).
+Whether to escalate this summary to a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
 
 - Counts: sites gathered, topics with Rule-A candidates, topics with Rule-B candidates, posts kept (written), posts dropped, posts error-fallback written, and `discourse_fetches` (total Discourse HTTP calls this run made).
 - Poll advances: topics finalized (advanced poll counter), topics withheld (cap-truncated, re-poll next run).

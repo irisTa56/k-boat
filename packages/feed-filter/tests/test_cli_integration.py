@@ -163,7 +163,7 @@ def test_scrape_site_self_heal_end_to_end(
     new path so the stored pattern matches nothing (``zero_links``) → ``heal-site``
     re-scrapes under the new pattern, snapshots the live URLs, rewrites config
     last → the next run is clean. heal-site writes NO feed note (feed notes are
-    pages only; the heal is reported in the run's push summary).
+    pages only; the heal is reported in the run's summary).
     """
     site = _MockSite(_index_html("/blog/a", "/blog/b"), content_type="text/html")
     monkeypatch.setattr(cli, "build_client", site.client)

@@ -72,7 +72,7 @@ class SiteConfig:
     # so it sits outside _OPTIONAL_FIELDS' blank-normalization.
     requires_browser: bool = False
     # Whether the run gathers this site. Default true; a disabled site is skipped
-    # by new-entries (no fetch, no error, no push) while its config and seen-store
+    # by new-entries (no fetch, no error, no notification) while its config and seen-store
     # are preserved, so re-enabling resumes without a back-catalog flood. The lever
     # a user reaches for when a site is chronically broken or temporarily unwanted.
     enabled: bool = True
