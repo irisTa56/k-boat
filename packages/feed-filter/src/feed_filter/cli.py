@@ -289,9 +289,9 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     run can escalate a persistent outage at the threshold instead of re-deriving
     "transient" every run. A ``zero_links`` scrape does not increment
     — it is a broken pattern healed by ``heal-site``, not an outage. The CLI never
-    auto-disables — escalation is a skill-side notification.
+    auto-disables — escalation is surfaced in the run summary.
     """
-    # Skip disabled sites entirely (no fetch, no error, no push) — they stay in the
+    # Skip disabled sites entirely (no fetch, no error, no notification) — they stay in the
     # registry with their seen-store intact for a later enable-site.
     # Exclude forum sites: their gather path is ``cmd_forum_new``.
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind != "forum"]
@@ -418,7 +418,7 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     the next run. The new pattern is applied via an in-memory ``replace`` so the
     re-scrape uses it without committing it first. The heal writes NO
     feed note — it is an operational notice, not a page; the run routine reports
-    the heal in its push summary instead (feed notes are pages only).
+    the heal in the run summary instead (feed notes are pages only).
     """
     site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
     if not site.enabled:
@@ -530,7 +530,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     and resets on any reachable run, so a stateless run can distinguish a
     persistent outage from a one-run blip and escalate at the threshold instead of
     re-deriving "transient" every run. The CLI never
-    auto-disables — escalation is a skill-side notification, not an action.
+    auto-disables — escalation is surfaced in the run summary, not a CLI action.
     """
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind == "forum"]
     now = int(time.time())

@@ -1,6 +1,6 @@
 ---
 name: kboat-manage-feed-sites
-description: Pause or resume a feed-filter site (disable/enable) and show which sites are currently paused vs active. Use when the user wants to disable/pause/stop a site, enable/resume one, or check the on/off status of registered sites — e.g. after a recurring site error surfaces in a run's push notification.
+description: Pause or resume a feed-filter site (disable/enable) and show which sites are currently paused vs active. Use when the user wants to disable/pause/stop a site, enable/resume one, or check the on/off status of registered sites — e.g. after a recurring site error surfaces in a run's notification.
 ---
 
 # Manage feed-filter sites (pause / resume / status)
@@ -22,8 +22,8 @@ This is the only place the on/off status lives; there is no separate state to co
 ## Pause a site
 
 `feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`.
-The run then skips it entirely — no fetch, no error, no push — while its `[[site]]` config and its seen-store stay intact.
-Use this when a site is chronically failing (a recurring error named in the run's push), temporarily noisy, or simply unwanted for now.
+The run then skips it entirely — no fetch, no error, no notification — while its `[[site]]` config and its seen-store stay intact.
+Use this when a site is chronically failing (a recurring error named in the run's summary), temporarily noisy, or simply unwanted for now.
 Prefer it over deleting the `[[site]]` block by hand: deleting loses the seen-store and re-runs discovery on re-add, whereas pause/resume is reversible and cheap.
 
 ## Resume a site

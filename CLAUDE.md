@@ -89,7 +89,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 Automation:
 
 - A Claude Code Desktop local scheduled task (`kboat-routine`, run daily) runs `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then `kboat-validate`, under a single auth refresh. It must be local — the queue lives in the iCloud vault, and the NotebookLM auth cookies, the vault itself, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
-- A failure that needs the user's action but would otherwise go unseen (auth unusable, the `k-boat-knowledge` project missing, Basic Memory down) sends one `PushNotification`; routine and self-healing outcomes stay in the run summary.
+- A failure that needs the user's action but would otherwise go unseen (auth unusable, the `k-boat-knowledge` project missing, Basic Memory down) posts one `osascript` desktop notification; routine and self-healing outcomes stay in the run summary.
 
 ## Tooling config
 
@@ -112,5 +112,5 @@ The shared vault mechanics (naming, the schema/validate/write contract, Base dis
 When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
-But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `PushNotification` trigger set.
+But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `osascript` notification trigger set.
 When a change alters any of those, reconcile that prompt in the same change and confirm it back.
