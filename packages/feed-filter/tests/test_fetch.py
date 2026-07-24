@@ -8,6 +8,7 @@ touching the network.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from typing import Any
 
 import httpx
 import pytest
@@ -185,5 +186,31 @@ def test_build_client_sets_user_agent() -> None:
     client = build_client()
     try:
         assert "feed-filter" in client.headers["user-agent"]
+    finally:
+        client.close()
+
+
+def test_build_client_verifies_via_os_trust_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    # TLS verification is delegated to the OS trust store (truststore) rather
+    # than the default certifi bundle, so an incomplete server chain still
+    # verifies. Guards against a regression that drops back to certifi (or, far
+    # worse, disables verification): the ``verify`` context handed to the client
+    # must be a truststore one. Spy on the constructor kwargs rather than httpx
+    # internals so the assertion survives httpx version changes.
+    import truststore
+
+    from feed_filter import fetch
+
+    captured: dict[str, Any] = {}
+    real_client = httpx.Client
+
+    def _spy(**kwargs: Any) -> httpx.Client:
+        captured.update(kwargs)
+        return real_client(**kwargs)
+
+    monkeypatch.setattr(fetch.httpx, "Client", _spy)
+    client = build_client()
+    try:
+        assert isinstance(captured["verify"], truststore.SSLContext)
     finally:
         client.close()

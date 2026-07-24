@@ -9,6 +9,8 @@ requires-python = ">=3.13"
 # `uv lock --upgrade`, where it is reviewed — a cap would just add churn-y bumps.
 dependencies = [
     "httpx>=0.28",
+    # OS trust store TLS verification; see fetch.build_client for the why.
+    "truststore>=0.10",
     "feedparser>=6.0",
     "selectolax>=0.4.10",
     "tomlkit>=0.15",
