@@ -34,6 +34,8 @@ def test_render_field_by_kind() -> None:
         ("[{a]", "likewise a mapping"),
         ("[a: b, c]", "a mapping entry, which needs no braces inside a sequence"),
         ("[a:]", "likewise a mapping key with nothing after it"),
+        ('["a":b]', "likewise a quoted key, where the `:` needs no space either"),
+        ('["a" trailing]', "a quoted scalar is its whole item, so nothing may follow it"),
     ],
 )
 def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why: str) -> None:

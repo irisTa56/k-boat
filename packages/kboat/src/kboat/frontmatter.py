@@ -503,6 +503,7 @@ def parse_flow_list(text: str) -> list[str] | None:
     escaped = False
     fresh = True  # whether an item can begin here, so a quote would open one
     colon = False  # an unquoted `:`, whose next character decides what it is
+    closed = False  # a quoted scalar just ended, so only a separator may follow
     i = 0
     while i < len(inner):
         ch = inner[i]
@@ -522,18 +523,23 @@ def parse_flow_list(text: str) -> list[str] | None:
             elif quote == '"' and ch == "\\":
                 escaped = True
             elif ch == quote:
-                quote = ""
+                quote, closed = "", True
             continue
         if colon and (ch.isspace() or ch == ","):
             # `a: b` is a mapping entry, which YAML writes inside a sequence
             # without braces — so the `[]{}` check below never sees it.
+            return None
+        if closed and not (ch.isspace() or ch == ","):
+            # A quoted scalar is the whole of its item, so anything but a
+            # separator after it says the item is something else: `"a":b` is
+            # that mapping again, with no space to give it away.
             return None
         colon = ch == ":"
         if ch in "[]{}":
             return None  # a nested collection; splitting on commas would mangle it
         if ch == ",":
             items.append("".join(current))
-            current, fresh = [], True
+            current, fresh, closed = [], True, False
             continue
         current.append(ch)
         if ch in "\"'" and fresh:
