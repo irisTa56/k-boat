@@ -96,6 +96,25 @@ def test_block_list_is_multiline() -> None:
     assert parse_frontmatter(note)["topics"] == ["a", "b"]
 
 
+@pytest.mark.parametrize(
+    ("value", "expected", "why"),
+    [
+        ("[a, b]", ["a", "b"], "an inline list re-read as its source becomes the block form"),
+        ("ai", "ai", "a plain string has no items, so it stays the value it is"),
+        (5, "5", "likewise anything else that is not a list"),
+        (None, [], "None is the absent value the empty list stands for"),
+    ],
+)
+def test_a_block_list_field_never_erases_what_it_was_given(
+    value: object, expected: object, why: str
+) -> None:
+    # `[]` for a value that is not a list would report a write that threw the
+    # value away. A wrong-typed one is left for `kboat-validate` to report.
+    note = build_note(SOURCE, {"type": "source", "title": "T", "topics": value})
+
+    assert parse_frontmatter(note)["topics"] == expected, why
+
+
 def test_inline_list_is_flow_style() -> None:
     note = build_note(REPO, {"type": "repo", "title": "r", "topics": ["x", "y"]})
     assert "topics: [x, y]" in note

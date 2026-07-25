@@ -56,7 +56,10 @@ def render_field(field: Field | None, value: object) -> str:
         if isinstance(value, str):
             items = parse_flow_list(value)
             return yaml_list(items) if items is not None else yaml_scalar(value)
-        return yaml_list([])
+        # `None` is the absent value an empty list stands for. Anything else is
+        # a value, and rendering it `[]` would report a write that erased what
+        # it was handed.
+        return yaml_list([]) if value is None else yaml_scalar(value)
     return yaml_scalar(value)
 
 
@@ -68,11 +71,22 @@ def _scalar_line(name: str, rendered: str) -> str:
     return f"{name}: {rendered}" if rendered else f"{name}:"
 
 
-def _block_list_lines(name: str, value: object) -> list[str]:
-    items = list(value) if isinstance(value, list) else []
-    if not items:
-        return [f"{name}: []"]  # an empty list stays a list (re-reads as [], not None)
-    return [f"{name}:"] + [f"  - {yaml_scalar(item)}" for item in items]
+def _block_list_lines(field: Field, value: object) -> list[str]:
+    """A block list's lines: `key:`, then one `- item` each.
+
+    A value that is not a list has no items to lay out, so it goes back to the
+    single-line rendering rather than to `[]` — the same rule `render_field`
+    keeps, since a write that reports success while erasing what it was given is
+    the worse outcome either way.
+    """
+    if not isinstance(value, list):
+        items = parse_flow_list(value) if isinstance(value, str) else None
+        if items is None:
+            return [_scalar_line(field.name, render_field(field, value))]
+        value = items
+    if not value:
+        return [f"{field.name}: []"]  # an empty list stays a list (re-reads as [], not None)
+    return [f"{field.name}:"] + [f"  - {yaml_scalar(item)}" for item in value]
 
 
 def build_note(
@@ -110,7 +124,7 @@ def build_note(
     for f in schema.fields:
         if f.name in fields:
             if f.kind is Kind.STR_LIST and f.list_style == "block":
-                lines.extend(_block_list_lines(f.name, fields[f.name]))
+                lines.extend(_block_list_lines(f, fields[f.name]))
             else:
                 lines.append(_scalar_line(f.name, render_field(f, fields[f.name])))
         elif f.name in last:
