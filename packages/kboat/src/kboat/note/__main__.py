@@ -17,6 +17,7 @@ from kboat.cli import (
     BadInputError,
     add_today_argument,
     add_vault_argument,
+    require_fields_mapping,
     run_write,
     vault_path,
 )
@@ -38,6 +39,7 @@ def _write(argv: list[str]) -> int:
     def write(record: dict) -> dict[str, object]:
         if "slug" not in record:
             raise BadInputError("record must carry a 'slug' key")
+        require_fields_mapping(record)
         return upsert(BY_TYPE[args.type], vault, record, today=args.today)
 
     return run_write(write)

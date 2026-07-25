@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from kboat.frontmatter import parse_frontmatter
+from kboat.frontmatter import parse_flow_list, parse_frontmatter, yaml_list
 from kboat.schema import REPO, SOURCE, Field, Kind
 from kboat.write import build_note, render_field
 
@@ -51,6 +51,12 @@ def test_a_string_that_is_no_flow_sequence_is_quoted(value: str, why: str) -> No
         ("  [a, b]  ", ["a", "b"], "edge whitespace would otherwise be spliced in bare"),
         ("[a,\nb]", ["a", "b"], "a second line, re-rendered onto one"),
         ('["a, b", plain]', ["a, b", "plain"], "a quoted item holding the separator"),
+        (
+            "[Moore's law, ai]",
+            ["Moore's law", "ai"],
+            "an apostrophe mid-item is a character, not the start of a quoted scalar",
+        ),
+        ("[a, b,]", ["a", "b"], "a trailing comma closes the last item, it does not open one"),
         ("[a\tb]", ["a\tb"], "a tab is a flow special, so the item comes back quoted"),
         ("[a #b]", ["a #b"], "likewise a comment marker"),
         ("[- a]", ["- a"], "likewise a leading indicator"),
@@ -65,6 +71,23 @@ def test_a_flow_sequence_is_read_back_and_re_rendered(
     note = build_note(REPO, {"type": "repo", "title": "r", "topics": value})
 
     assert yaml.safe_load(note.split("---\n")[1])["topics"] == expected, why
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        ['say "hi"', "plain"],
+        ["back\\slash", "ends with a backslash\\"],
+        ["a, b", "c"],
+        ["col\tumn", "line\none"],
+        ["[bracketed]", "{braced}"],
+        ["true", "42", "- dash", "# hash"],
+    ],
+)
+def test_parse_flow_list_inverts_yaml_list(items: list[str]) -> None:
+    # `parse_flow_list` is only safe to re-render through `yaml_list` because it
+    # is that function's inverse — including over the escaping `_quote` applies.
+    assert parse_flow_list(yaml_list(items)) == items
 
 
 def test_block_list_is_multiline() -> None:

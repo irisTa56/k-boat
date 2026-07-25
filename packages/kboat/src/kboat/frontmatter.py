@@ -481,13 +481,17 @@ def parse_flow_list(text: str) -> list[str] | None:
     syntax it holds into the frontmatter, and one such value costs the whole
     block rather than its own field.
 
-    Splitting is quote-aware, since a quoted item may hold the separator. None
-    where the text is not a sequence this can read whole — an unclosed quote, a
-    nested collection — so the caller has a value to quote rather than a shape
-    invented for it.
+    Splitting is quote-aware, since a quoted item may hold the separator — and
+    a quote counts as one only where an item can begin, the same rule
+    `_scan_value` follows and for the same reason: the apostrophe in
+    `[Moore's law, ai]` is a character, not the start of a quoted scalar.
+
+    None where the text is not a sequence this can read whole — an unclosed
+    quote, a nested collection — so the caller has a value to quote rather than
+    a shape invented for it.
     """
     stripped = text.strip()
-    if not (stripped.startswith("[") and stripped.endswith("]")) or len(stripped) < 2:
+    if not (stripped.startswith("[") and stripped.endswith("]")):
         return None
     inner = stripped[1:-1]
     if not inner.strip():
@@ -496,6 +500,7 @@ def parse_flow_list(text: str) -> list[str] | None:
     current: list[str] = []
     quote = ""
     escaped = False
+    fresh = True  # whether an item can begin here, so a quote would open one
     for ch in inner:
         if quote:
             current.append(ch)
@@ -505,17 +510,23 @@ def parse_flow_list(text: str) -> list[str] | None:
                 escaped = True
             elif ch == quote:
                 quote = ""
-        elif ch in "\"'":
-            quote = ch
-            current.append(ch)
-        elif ch in "[]{}":
+            continue
+        if ch in "[]{}":
             return None  # a nested collection; splitting on commas would mangle it
-        elif ch == ",":
+        if ch == ",":
             items.append("".join(current))
-            current = []
-        else:
-            current.append(ch)
+            current, fresh = [], True
+            continue
+        current.append(ch)
+        if ch in "\"'" and fresh:
+            quote, fresh = ch, False
+        elif not ch.isspace():
+            fresh = False
     if quote:
         return None
     items.append("".join(current))
+    # A trailing comma closes the last item rather than opening another, so the
+    # empty tail it leaves is not an item the note holds.
+    if len(items) > 1 and not items[-1].strip():
+        items.pop()
     return [_unquote(item) for item in items]

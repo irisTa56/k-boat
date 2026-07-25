@@ -78,6 +78,18 @@ def vault_path(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Pat
     return Path(args.vault).expanduser()
 
 
+def require_fields_mapping(record: dict) -> None:
+    """Raise `BadInputError` unless the record's `fields`, if it has one, is an object.
+
+    `upsert` reads a `fields` it cannot map as no fields at all, so on a create
+    this would land a note of nothing but defaults and report it as written. A
+    record that says something the writer cannot read is the agent's to fix, not
+    the vault's to absorb.
+    """
+    if not isinstance(record.get("fields", {}), dict):
+        raise BadInputError("record 'fields' must be a JSON object")
+
+
 def _read_json_record() -> dict:
     try:
         record = json.load(sys.stdin)
