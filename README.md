@@ -7,7 +7,7 @@ It reads each source through [NotebookLM](https://notebooklm.google.com/) (renam
 Each piece of content gets its own throwaway notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
 Two kinds are exceptions, each with no notebook. Books you read on **Kindle** are catalogued by ASIN in `Kindles/` and distilled from the highlights you paste into the note body. **GitHub repositories** are catalogued in `Repos/` — a tagged, searchable bookmark with GitHub metadata and a judged role/domain/summary, never distilled.
 
-This repository is a uv workspace. K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package; an upstream triage stage, [**feed-filter**](packages/feed-filter/), funnels new pages from registered feeds and forums into the same vault.
+This repository is a uv workspace. K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package; an upstream triage stage, [**feed-filter**](packages/feed-filter/), funnels new pages into the same vault — from registered feeds and forums, and from natural-language queries answered by neural search.
 
 ## Setup
 

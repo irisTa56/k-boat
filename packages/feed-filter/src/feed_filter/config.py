@@ -40,6 +40,20 @@ DEFAULT_GATHER_CONCURRENCY = 16
 # without fetching the body, and to keep the run transcript legible.
 SUMMARY_PREVIEW_CHARS = 500
 
+# Query gather (``query-new``). Exa's neural search endpoint, and how many results
+# one query asks for. Exa prices a search by request, including the first ten
+# results; a result beyond ten is billed on top. So ten is the point where a query
+# costs exactly one unit, and raising this raises the bill. Page text is billed per page, never
+# per character — the reported total did not move with `maxCharacters` (measured at
+# absent, 500, and 5000) — so the text cap in `exa.py` is not a cost knob.
+EXA_ENDPOINT = "https://api.exa.ai/search"
+DEFAULT_QUERY_RESULTS = 10
+
+# Provenance stamped on every query-gathered entry, in place of a registered site
+# id — what marks a Feeds/ note as query-found rather than feed-found. The note's
+# own url carries which publisher it came from.
+QUERY_SITE_ID = "exa"
+
 # Site-health escalation threshold. A site whose discovery feeds are
 # all unreachable for this many consecutive stateless runs is flagged
 # ``persistent`` so the run skill escalates instead of re-deriving "transient"
@@ -59,6 +73,10 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 ENV_DB = "FEED_FILTER_DB"
 ENV_SITES = "FEED_FILTER_SITES"
 ENV_SELECTION = "FEED_FILTER_SELECTION"
+
+# Exa API key for the query gather. Read from the workspace `.env` via mise, like
+# the vault path — a secret, never written to sites.toml or any emitted JSON.
+ENV_EXA_KEY = "EXA_API_KEY"
 
 # The shared Obsidian vault kept entries are written into (as `Feeds/` notes).
 # Read from the workspace `.env` via mise; a member never has its own default.
@@ -87,6 +105,15 @@ def db_path() -> Path:
     """Path to the seen-store SQLite DB. Overridable via ``FEED_FILTER_DB``."""
     override = os.environ.get(ENV_DB)
     return Path(override) if override else PACKAGE_ROOT / "feed-filter.db"
+
+
+def env_exa_key() -> str:
+    """The Exa API key for the query gather, or ``""`` when unset.
+
+    Returned rather than raised so ``exa.search`` owns the one error message; the
+    value is a secret, so it is read at call time and never emitted.
+    """
+    return os.environ.get(ENV_EXA_KEY, "").strip()
 
 
 def vault_path() -> Path:

@@ -16,16 +16,23 @@ from feed_filter import fetch
 
 
 @pytest.fixture(autouse=True)
-def isolate_vault(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never let a test see the real ``OBSIDIAN_VAULT_PATH``.
+def isolate_env_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never let a test see the real ``OBSIDIAN_VAULT_PATH`` or ``EXA_API_KEY``.
 
     The workspace ``.env`` exports it (the iCloud vault) into the environment the
     test suite runs under, so without this a ``remind`` test would write feed
     notes into the real vault. Clear it by default; a test that needs a vault
     sets it to a tmp dir (``state_dir`` does), and ``vault_path()`` otherwise
     raises, surfacing a test that forgot to.
+
+    ``EXA_API_KEY`` is the same hazard with worse stakes: the workspace ``.env``
+    exports a live API secret, so a test reaching the real ``exa.search`` would
+    spend real credit and could capture the key into an assertion or a failure
+    dump. Clear it here so "a test never sees the real key" is a property of the
+    harness; ``test_exa`` sets its own fake.
     """
     monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
 
 
 @pytest.fixture(autouse=True)

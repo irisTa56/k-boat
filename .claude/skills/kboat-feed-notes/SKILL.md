@@ -5,7 +5,7 @@ description: Conventions for the feed-filter member's Feeds vault notes. Use whe
 
 # Feed note conventions
 
-The feed-filter member triages new pages from registered feeds and Discourse forums, and files the survivors into the K-Boat Obsidian vault as **feed notes** (`Feeds/*.md`).
+The feed-filter member triages new pages — from registered feeds, from Discourse forums, and from natural-language queries answered by neural search — and files the survivors into the K-Boat Obsidian vault as **feed notes** (`Feeds/*.md`).
 A feed note is a lightweight triage card — a `type: feed` note, frontmatter only, no body — parallel to but far simpler than a K-Boat source note: there is no NotebookLM notebook, no distillation, and no cooldown.
 It is a "here is something worth a look" entry the human browses, shelves, dismisses, or promotes to a full K-Boat read.
 
@@ -26,8 +26,8 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 | `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Shelf view to look at when there is time. Always present (default `false`); feed-filter omits it on a re-write, so a shelved card stays shelved. |
 | `dismissed` | Checkbox, set by the **human**. "Cleanable": hide the card from the Inbox as a future auto-cleanup target. Always present (default `false`). feed-filter **resets it to `false` on every write**, so a re-reminded topic (a new qualifying forum post) resurfaces into the Inbox rather than staying dismissed. |
 | `wall` | Boolean, set by **feed-filter**. The page is behind a login or paywall, so it was admitted on its summary alone; surfaced in the Walls view for the human to judge. Always present (default `false`). |
-| `feed_kind` | `article` or `forum` — which gather produced it (`kboat-feed-run` vs `kboat-forum-run`). |
-| `site_id` | The registered site's id (from feed-filter's `sites.toml`); the provenance and grouping key. |
+| `feed_kind` | `article` or `forum`. Not a 1:1 record of which gather ran: feed-filter has three (registered feeds, Discourse forums, and neural-search queries), and a query keep is written `article` because that is the shape it has — a page, not a forum topic. `site_id` is what distinguishes a query keep. |
+| `site_id` | Where the page came from: a registered site's id (from feed-filter's `sites.toml`), or the literal `exa` for a page the query gather found, which belongs to no registered site. The provenance and grouping key. |
 | `summary` | A short summary or snippet from the feed entry, in the language it came in. Empty when the source gave none. Lets a card be judged at a glance in the Base. |
 | `added_date` | Date the note was filed into the vault. |
 

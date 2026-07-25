@@ -60,19 +60,37 @@ from feed_filter.config import (
     DEFAULT_GLOBAL_CAP,
     DEFAULT_PERSISTENT_FAILURE_RUNS,
     DEFAULT_POLL_OFFSETS_DAYS,
+    DEFAULT_QUERY_RESULTS,
+    QUERY_SITE_ID,
     SUMMARY_PREVIEW_CHARS,
     db_path,
     sites_path,
     vault_path,
 )
 from feed_filter.discover import DiscoveryCandidate, discover
+from feed_filter.exa import ExaError, search, usable_cost
 from feed_filter.fetch import FetchError, build_client
 from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
-from feed_filter.seen import open_db, record, snapshot
+from feed_filter.seen import is_seen, open_db, record, snapshot
 from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
 from feed_filter.vault import VaultError, write_feed_note
+
+
+def _positive_int(value: str) -> int:
+    """argparse type for a count that must be at least one.
+
+    ``--num-results`` is the one flag that multiplies an Exa bill rather than
+    bounding work already paid for, so a meaningless value should fail at parse
+    time instead of being forwarded to a billed request. No upper bound: a larger
+    value is the operator's own documented choice, and any ceiling would be made
+    up.
+    """
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {number}")
+    return number
 
 
 def _emit(obj: Any) -> None:
@@ -354,6 +372,76 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     finally:
         close_browser()  # tear down a lazily-launched browser (no-op for httpx-only runs)
     _emit({"entries": entries, "sites": site_status})
+    return 0
+
+
+def cmd_query_new(args: argparse.Namespace) -> int:
+    """Gather new, unseen pages by asking Exa one or more natural-language queries.
+
+    The third gather kind. The article and forum paths poll registered *places*, so
+    they can only ever return what a known publisher published; this one describes
+    what is wanted and gets back pages whose meaning matches, which is how a page
+    on a site nobody registered becomes reachable. Emits the same entry shape as
+    ``new-entries`` so the judging half of a run skill is identical.
+
+    Queries run in the order given and each is independent: one that errors records
+    nothing and is reported against itself, leaving the rest to emit — the
+    never-lost bias, since an unrecorded page is simply re-offered next run.
+
+    Two dedupe layers, both before the cap. The seen-store drops a page another
+    gather already dispositioned or snapshotted at registration (a query and a
+    registered feed reaching the same page is expected, not an error), and a
+    within-run set drops a page two queries both return, keeping the earlier
+    query's copy. Results are then interleaved
+    round-robin across queries *before* the global cap — the same fairness the
+    article path applies across sites, so a broad query cannot starve a narrow one.
+    Truncation leaves the remainder unseen, so it reappears next run rather than
+    being lost.
+    """
+    seen_this_run: set[str] = set()
+    groups: list[list[dict[str, Any]]] = []
+    query_status: list[dict[str, Any]] = []
+    cost = 0.0
+    with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
+        for query in args.query:
+            try:
+                outcome = search(client, query, num_results=args.num_results)
+            except ExaError as exc:  # unusable config (no key) — report, do not crash
+                query_status.append({"query": query, "found": 0, "new": 0, "error": str(exc)})
+                continue
+            cost += outcome.cost_dollars
+            group: list[dict[str, Any]] = []
+            for hit in outcome.hits:
+                cu = canonical_url(hit.url)
+                if cu in seen_this_run or is_seen(conn, cu):
+                    continue
+                seen_this_run.add(cu)
+                group.append(
+                    {
+                        "site_id": QUERY_SITE_ID,
+                        "url": str(cu),
+                        "title": hit.title,
+                        "summary": _preview(hit.text, SUMMARY_PREVIEW_CHARS),
+                        "kind": "query",
+                        "query": query,
+                    }
+                )
+            groups.append(group)
+            query_status.append(
+                {
+                    "query": query,
+                    "found": len(outcome.hits),
+                    "new": len(group),
+                    "error": outcome.error,
+                }
+            )
+    _emit(
+        {
+            "entries": _round_robin(groups)[: args.global_cap],
+            "queries": query_status,
+            "cost_dollars": round(usable_cost(cost), 4),
+        }
+    )
     return 0
 
 
@@ -788,6 +876,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("--site-id", dest="site_id")
     p_new.add_argument("--global-cap", dest="global_cap", type=int, default=DEFAULT_GLOBAL_CAP)
     p_new.set_defaults(handler=cmd_new_entries)
+
+    p_query = sub.add_parser(
+        "query-new", help="gather new, unseen pages by neural-searching one or more queries"
+    )
+    p_query.add_argument(
+        "--query",
+        action="append",
+        required=True,
+        help="a natural-language description of the wanted pages (repeatable)",
+    )
+    p_query.add_argument(
+        "--num-results", dest="num_results", type=_positive_int, default=DEFAULT_QUERY_RESULTS
+    )
+    p_query.add_argument("--global-cap", dest="global_cap", type=int, default=DEFAULT_GLOBAL_CAP)
+    p_query.set_defaults(handler=cmd_query_new)
 
     p_body = sub.add_parser(
         "entry-body", help="print one gathered entry's full cached body (for the judge)"
