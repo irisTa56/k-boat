@@ -10,12 +10,16 @@ this module is how a note is written from them.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
 from kboat.frontmatter import (
+    Entry,
     body_after_frontmatter,
-    parse_frontmatter,
+    continues_previous,
+    names_key,
+    parse_entries,
     yaml_list,
     yaml_scalar,
 )
@@ -64,25 +68,60 @@ def _block_list_lines(name: str, value: object) -> list[str]:
     return [f"{name}:"] + [f"  - {yaml_scalar(item)}" for item in items]
 
 
-def build_note(schema: NoteSchema, fields: Mapping[str, object], body: str = "") -> str:
+def build_note(
+    schema: NoteSchema,
+    fields: Mapping[str, object],
+    body: str = "",
+    carried: Sequence[Entry] = (),
+) -> str:
     """Assemble a note: frontmatter in `schema` field order, then `body`.
 
     Only keys present in `fields` are written; keys absent from the schema are
     appended after the ordered ones (rendered as plain scalars) so nothing is
-    silently dropped. `body` is appended verbatim after a blank line when
-    non-empty — a frontmatter-only note passes `body=""`.
+    silently dropped.
+
+    `carried` is frontmatter to put back **verbatim** rather than render —
+    `parse_entries` output for the entries this write is not changing. A carried
+    schema field keeps its canonical position; every other carried entry follows
+    the rendered ones, in the relative order the note already had. `fields` wins
+    over a carried entry for the same key, and a key carried twice keeps its last
+    entry, matching which of a repeated key the reader (and Obsidian) reads.
+
+    A carried entry that owns no key and would attach to the line above it goes
+    first, before anything else — there is nothing for it to attach to there.
+    Reordering is otherwise safe, but such a line takes its meaning from its
+    neighbour, so placing it after a key would hand it to a key that never had
+    it, and the write would invent a value it was never given.
+
+    `body` is appended verbatim after a blank line when non-empty — a
+    frontmatter-only note passes `body=""`.
     """
-    lines = ["---"]
+    last = {e.key: i for i, e in enumerate(carried) if e.key is not None}
+    loose = [i for i, e in enumerate(carried) if e.key is None and continues_previous(e.lines[0])]
+    emitted: set[str] = set()
+    lines = ["---", *(line for i in loose for line in carried[i].lines)]
     for f in schema.fields:
-        if f.name not in fields:
-            continue
-        if f.kind is Kind.STR_LIST and f.list_style == "block":
-            lines.extend(_block_list_lines(f.name, fields[f.name]))
+        if f.name in fields:
+            if f.kind is Kind.STR_LIST and f.list_style == "block":
+                lines.extend(_block_list_lines(f.name, fields[f.name]))
+            else:
+                lines.append(_scalar_line(f.name, render_field(f, fields[f.name])))
+        elif f.name in last:
+            lines.extend(carried[last[f.name]].lines)
         else:
-            lines.append(_scalar_line(f.name, render_field(f, fields[f.name])))
+            continue
+        emitted.add(f.name)
     for key in fields:
         if schema.get(key) is None:
             lines.append(_scalar_line(key, render_field(None, fields[key])))
+            emitted.add(key)
+    for i, entry in enumerate(carried):
+        if entry.key is None:
+            if i not in loose:
+                lines.extend(entry.lines)
+        elif entry.key not in emitted and last[entry.key] == i:
+            lines.extend(entry.lines)
+            emitted.add(entry.key)
     lines.append("---")
     out = "\n".join(lines) + "\n"
     body = body.strip("\n")
@@ -94,22 +133,96 @@ def build_note(schema: NoteSchema, fields: Mapping[str, object], body: str = "")
 # --------- upsert: read existing, merge, stamp, write ---------
 
 
-def _existing_body(text: str, schema: NoteSchema) -> str:
-    if schema.body == "notes":
-        _, sep, tail = body_after_frontmatter(text).partition("## Notes")
-        return tail.strip() if sep else ""
-    if schema.body == "verbatim":
-        return body_after_frontmatter(text).strip("\n")
-    return ""
+NOTES_HEADING = "## Notes"
 
 
-def _render_body(schema: NoteSchema, content: str) -> str:
-    content = content.strip("\n")
-    if schema.body == "notes":
-        return f"## Notes\n\n{content}\n" if content else "## Notes"
-    if schema.body == "verbatim":
-        return content + "\n" if content else ""
-    return ""
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def _fenced_lines(lines: list[str]) -> set[int]:
+    """The line indices inside a *balanced* code fence.
+
+    A closing fence has to use the opener's own character, be at least as long,
+    and carry no info string — otherwise documenting markdown inside markdown
+    (a four-backtick block quoting a three-backtick one) reads as two fences and
+    inverts what is inside.
+
+    An opener with no closer does not open a fence here. Markdown would run it
+    to the end of the document, but that hides the writer's own `## Notes`
+    heading — and a heading that cannot be found is one that gets written again,
+    one more per unattended run. Converging matters more than honouring a fence
+    the human left unterminated.
+    """
+    inside: set[int] = set()
+    opened_at: int | None = None
+    marker = ""
+    for i, line in enumerate(lines):
+        match = _FENCE_RE.match(line)
+        if match is None:
+            continue
+        fence, info = match.group(1), match.group(2)
+        if opened_at is None:
+            opened_at, marker = i, fence
+        elif fence[0] == marker[0] and len(fence) >= len(marker) and not info.strip():
+            inside.update(range(opened_at, i + 1))
+            opened_at = None
+    return inside
+
+
+def split_notes_section(body: str) -> tuple[str, str | None]:
+    """A `notes`-mode body as `(everything above the heading, the section)`.
+
+    The section is None when the body has no heading, which is not the same as
+    an empty section: a caller has to be able to tell "there is nowhere to put
+    notes" from "the place to put them is empty".
+
+    The heading is matched as a whole line and only outside a code fence.
+    `### Notes on chapter 3`, a sentence naming the section, and a fenced block
+    quoting the heading all contain it as a substring or a line, and splitting a
+    body at one of those rearranges the reader's own prose into a shape they
+    never wrote.
+    """
+    lines = body.splitlines()
+    fenced = _fenced_lines(lines)
+    for i, line in enumerate(lines):
+        if i not in fenced and line.rstrip() == NOTES_HEADING:
+            return "\n".join(lines[:i]).strip("\n"), "\n".join(lines[i + 1 :]).strip()
+    return body.strip("\n"), None
+
+
+def _compose_body(schema: NoteSchema, existing: str, authored: str) -> str:
+    """The body to write, from what the note already holds and what was authored.
+
+    The body mode says what the writer may *author*, never what it may delete: a
+    `none` schema writes no body of its own but keeps prose a human put under the
+    fence, and a `notes` schema owns its `## Notes` section only — anything above
+    that heading is the human's and stays.
+    """
+    if schema.body != "notes":
+        return (authored or existing).strip("\n")
+    head, existing_notes = split_notes_section(existing)
+    notes = authored.strip() or (existing_notes or "")
+    section = f"{NOTES_HEADING}\n\n{notes}\n" if notes else NOTES_HEADING
+    return f"{head}\n\n{section}" if head else section
+
+
+def carried_entries(entries: Sequence[Entry], written: Collection[str]) -> list[Entry]:
+    """The entries to put back verbatim: everything the write is not about.
+
+    Filtered on what an entry is *about*, not on what decoded from it. An entry
+    naming a written key that the reader cannot decode (`"url": x`, `url : x`) is
+    still that key: carried, it would be re-emitted after the rendered value and
+    win on YAML's last-key-wins, so the write would silently not take.
+
+    This is the one predicate here that *deletes* a source line, and it does so on
+    a deliberately loose match — which is why it is named rather than inlined, so
+    a test can hold the real thing rather than a re-implementation of it.
+    """
+    return [
+        e
+        for e in entries
+        if e.key not in written and not any(names_key(e.lines[0], k) for k in written)
+    ]
 
 
 def _empty_for(field: Field) -> object:
@@ -124,9 +237,17 @@ def upsert(
     The record's `fields` are merged over the existing note (provided keys win,
     absent keys preserved), the schema's `created`/`refreshed` date fields are
     stamped, empty present-required fields are filled on create, and the body is
-    preserved unless a new one is given. A different `identity` value at an
-    existing slug is a collision (never overwritten). Returns `{status, slug,
-    path}`, or a `collision` record.
+    preserved unless a new one is given.
+
+    An update **re-renders only what it changes**. Every other frontmatter entry
+    is put back as the note already had it, so a value the reader decodes only
+    approximately — an inline list, a quoted string, a property no schema knows —
+    cannot be degraded by a write that was never about it. That matters because
+    these notes are rewritten unattended: a lossy round-trip would compound
+    silently, once per run.
+
+    A different `identity` value at an existing slug is a collision (never
+    overwritten). Returns `{status, slug, path}`, or a `collision` record.
     """
     slug = record["slug"]
     fields_in = record.get("fields", {})
@@ -139,31 +260,61 @@ def upsert(
     path = vault / DIR_BY_TYPE[schema.type] / f"{slug}.md"
     created = not path.exists()
 
-    existing: dict[str, object] = {}
+    entries: list[Entry] = []
     existing_body = ""
     if not created:
         text = path.read_text(encoding="utf-8")
-        for key, value in parse_frontmatter(text).items():
-            existing[key] = value
+        entries = parse_entries(text)
         if schema.identity is not None:
-            old, new = existing.get(schema.identity), provided.get(schema.identity)
-            if isinstance(old, str) and isinstance(new, str) and old != new:
+            # The *last* entry naming the identity, and its value — one entry, so
+            # the two cannot disagree. Last, because that is the one the reader
+            # and Obsidian both take when a key repeats: reading the name off one
+            # line and the value off another would clear a write against a value
+            # the note does not actually hold.
+            held = next(
+                (e for e in reversed(entries) if names_key(e.lines[0], schema.identity)), None
+            )
+            old = held.value if held is not None and held.modelled else None
+            new = provided.get(schema.identity)
+            # An identity the reader cannot compare is not a licence to proceed:
+            # this check exists to refuse a write, so it has to fail closed. What
+            # decides it is comparability, not decodability — a `url` held as a
+            # one-item list (what Obsidian writes when a property's type is set
+            # to List) decodes perfectly well and still cannot be matched against
+            # a string. An identity that is plainly empty is a blank to fill
+            # rather than a claim to contradict, and an absent one leaves nothing
+            # to refuse.
+            unreadable = (
+                isinstance(new, str)
+                and held is not None
+                and not isinstance(old, str)
+                and not (held.modelled and old is None)
+            )
+            if unreadable or (isinstance(old, str) and isinstance(new, str) and old != new):
                 return {
                     "status": "collision",
+                    "reason": "unreadable_identity" if unreadable else "identity_differs",
                     "slug": slug,
                     "identity": schema.identity,
                     "existing": old,
                     "incoming": new,
                 }
-        existing_body = _existing_body(text, schema)
+        existing_body = body_after_frontmatter(text)
 
-    merged: dict[str, object] = {**existing, **provided}
+    # `written` is the whole worklist: what the record supplies, plus the stamps
+    # and create-time defaults the schema owns. Nothing else is re-rendered, so
+    # every remaining entry the note already held goes back verbatim.
+    written: dict[str, object] = dict(provided)
     for f in schema.fields:
         if f.stamp == "refreshed" or (f.stamp == "created" and created):
-            merged[f.name] = today
-        elif created and f.present and f.name not in merged:
-            merged[f.name] = f.default if f.default is not None else _empty_for(f)
+            written[f.name] = today
+        elif created and f.present and f.name not in written:
+            written[f.name] = f.default if f.default is not None else _empty_for(f)
+    carried = carried_entries(entries, written)
 
-    new_body = body_in if isinstance(body_in, str) and body_in.strip() else existing_body
-    atomic_write_text(path, build_note(schema, merged, _render_body(schema, new_body)))
+    # A `none` schema never authors a body — that is what the mode declares — and
+    # a blank one is not content, so neither replaces what the note already holds.
+    supplied = str(body_in) if isinstance(body_in, str) and schema.body != "none" else ""
+    body = _compose_body(schema, existing_body, supplied if supplied.strip() else "")
+    atomic_write_text(path, build_note(schema, written, body, carried))
     return {"status": "created" if created else "updated", "slug": slug, "path": rel}

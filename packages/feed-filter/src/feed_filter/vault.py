@@ -29,8 +29,11 @@ from kboat.write import upsert
 class VaultError(Exception):
     """A feed note could not be written durably.
 
-    Raised on a slug collision — a different `url` already occupies this slug, an
-    astronomically unlikely 48-bit SHA-256 clash between two canonical URLs. An
+    Raised when `upsert` refuses the write: a different `url` already occupies
+    this slug (an astronomically unlikely 48-bit SHA-256 clash between two
+    canonical URLs), or the note holds a `url` the reader cannot decode, so the
+    note cannot be shown to be this page at all. Both are reported as a
+    collision, distinguished by the record's `reason`, and both need a human. An
     `OSError` from the atomic write (disk full, permission, an iCloud-evicted
     placeholder) is left to propagate; the CLI maps both to a non-zero exit and
     skips the seen-record, so the entry is retried rather than silently lost.
@@ -75,6 +78,11 @@ def write_feed_note(
     }
     result = upsert(FEED, vault, record, today=today)
     if result.get("status") == "collision":
+        if result.get("reason") == "unreadable_identity":
+            raise VaultError(
+                f"slug {slug} holds a note whose url cannot be read, so it cannot be "
+                f"shown to be this page ({result.get('incoming')!r}) — repair the note by hand"
+            )
         raise VaultError(
             f"slug {slug} already holds a different url "
             f"({result.get('existing')!r} vs {result.get('incoming')!r})"

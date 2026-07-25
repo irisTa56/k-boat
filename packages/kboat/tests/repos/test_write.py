@@ -66,6 +66,37 @@ def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> N
     assert "my hand notes" in note  # body preserved
 
 
+def test_write_update_keeps_an_empty_notes_section_empty(tmp_path: Path) -> None:
+    # A fresh note ends at a bare `## Notes`. That is "nowhere to put notes yet",
+    # not "the body is what precedes the heading" — reading it as the latter
+    # would pull frontmatter-adjacent prose down into the section.
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+    path = tmp_path / "Repos" / "abc123def456.md"
+
+    write_note(RECORD, tmp_path, today_iso="2027-01-01")
+
+    assert path.read_text().rstrip().endswith("## Notes")
+
+
+def test_write_update_does_not_split_a_body_at_a_quoted_heading(tmp_path: Path) -> None:
+    # The quoted headings come *before* the real section, so a splitter that
+    # matched one of them would cut the body in the wrong place. A four-backtick
+    # block quoting a three-backtick one is the ordinary way to document
+    # markdown, and reads as two fences to anything that ignores marker length.
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+    path = tmp_path / "Repos" / "abc123def456.md"
+    body = (
+        "### Notes on the API\n\nSee the ## Notes section.\n\n"
+        "````markdown\n```\n## Notes\n```\n````\n\n"
+        "## Notes\n\nwhat I actually think"
+    )
+    path.write_text(path.read_text().replace("## Notes", body))
+
+    write_note(RECORD, tmp_path, today_iso="2027-01-01")
+
+    assert path.read_text().rstrip().endswith("## Notes\n\nwhat I actually think")
+
+
 def test_write_collision_refuses_overwrite(tmp_path: Path) -> None:
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
     # Same slug, different repo url → 48-bit collision; must not overwrite.

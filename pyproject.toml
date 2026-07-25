@@ -11,6 +11,11 @@ dev = [
     "ruff>=0.15.22",
     "ty>=0.0.61",
     "playwright",
+    # Tests only, never imported by the package: an independent oracle for the
+    # frontmatter round-trip. `kboat.frontmatter` is a scanner, not a parser, so
+    # asserting a rewritten note against it would let it grade its own homework —
+    # output that is no longer YAML re-scans to the same entries.
+    "pyyaml",
 ]
 
 # The one ruff config for every workspace member: same coding style everywhere.

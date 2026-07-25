@@ -14,6 +14,10 @@ def test_render_field_by_kind() -> None:
     assert render_field(Field("n", Kind.INT, default=0), None) == "0"
     assert render_field(Field("l", Kind.STR_LIST), ["a", "b"]) == "[a, b]"
     assert render_field(Field("l", Kind.STR_LIST), []) == "[]"
+    # A list re-read from a note as its raw inline text stays that text; reading
+    # it as "not a list" and emitting `[]` would delete the items.
+    assert render_field(Field("l", Kind.STR_LIST), "[a, b]") == "[a, b]"
+    assert render_field(Field("l", Kind.STR_LIST), None) == "[]"
     assert render_field(Field("s", Kind.STR), "hi") == "hi"
     assert render_field(None, "x") == "x"  # unknown field → plain scalar
 
