@@ -1,11 +1,12 @@
-"""`kboat-repos write`: assemble and write a repo note from gather + classification.
+"""`kboat-repos write`: write a repo note from gather + classification.
 
 Reads one JSON object on stdin — a `gather` record (its `slug`/`url`/`title`/
 `fields`) augmented by the skill with the judged `role`, `domain`, `summary` —
-and writes `Repos/<slug>.md` via `build_repo_note`. Frontmatter order, YAML
-quoting, de-dup, and `## Notes` body preservation are guaranteed by the package,
-so the agent never hand-writes frontmatter (which would risk a colon-bearing
-description producing invalid YAML, or field-order drift from the schema).
+and writes `Repos/<slug>.md` through `kboat.write.upsert` under the `REPO`
+schema. Everything mechanical (field order, YAML quoting, de-dup by `url`, body
+preservation, the date stamps) belongs to that shared writer, so this module is
+only the translation between the record shape `gather` speaks and the
+`{slug, fields}` one `upsert` speaks.
 """
 
 from __future__ import annotations
@@ -17,70 +18,43 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from kboat.io_utils import atomic_write_text
-
-from .notes import (
-    FrontmatterError,
-    body_after_frontmatter,
-    build_repo_note,
-    parse_frontmatter,
-    split_notes_section,
-)
+from kboat.frontmatter import FrontmatterError
+from kboat.schema import REPO
+from kboat.write import upsert
 
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")
 
+# Schema fields the record may not carry, because they are not its to know:
+# `reading` is the human's checkbox and the stamps are the schema's. `upsert`
+# preserves a field the write leaves alone and overwrites one it is given, so
+# dropping these is what keeps them the human's and the schema's.
+_NOT_FROM_THE_RECORD = frozenset({"reading"} | {f.name for f in REPO.fields if f.stamp})
 
-def _existing_notes_body(text: str) -> str:
-    """The content under `## Notes`, or the whole body when there is no heading."""
-    head, notes = split_notes_section(body_after_frontmatter(text))
-    return head if notes is None else notes
 
+def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object]:
+    """Create or update `Repos/<slug>.md` from a gather + classification record.
 
-def write_note(record: dict, vault: Path, *, today_iso: str) -> dict:
-    slug = record["slug"]
-    url = record["url"]
-    fields_in = record["fields"]
-    path = vault / "Repos" / f"{slug}.md"
-
-    body = ""
-    reading = False
-    added_date = today_iso
-    if path.exists():
-        existing = path.read_text(encoding="utf-8")
-        fm = parse_frontmatter(existing)
-        existing_url = fm.get("url")
-        if isinstance(existing_url, str) and existing_url != url:
-            # Same slug, different repo — a 48-bit hash collision. Never overwrite.
-            return {"status": "collision", "slug": slug, "url": url, "existing_url": existing_url}
-        body = _existing_notes_body(existing)  # preserve the human-edited body
-        reading = fm.get("reading") is True  # preserve the human's reading checkbox
-        if isinstance(fm.get("added_date"), str) and fm["added_date"]:
-            added_date = fm["added_date"]  # keep the original ingest date on update
-
+    `record["fields"]` is `gather`'s GitHub-derived block; the identity and the
+    judgement layer arrive as top-level keys. Only fields the schema knows pass
+    through, so a key the classifier invents cannot reach the frontmatter —
+    `upsert` would otherwise append it rather than drop it.
+    """
     fields: dict[str, object] = {
-        "type": "repo",
-        "title": record["title"],
-        "url": url,
-        "homepage": fields_in.get("homepage", ""),
-        "reading": reading,
-        "description": fields_in.get("description", ""),
-        "language": fields_in.get("language", []),
-        "topics": fields_in.get("topics", []),
-        "stars": fields_in.get("stars", 0),
-        "archived": bool(fields_in.get("archived")),
-        "created_at": fields_in.get("created_at", ""),
-        "last_commit": fields_in.get("last_commit", ""),
-        "license": fields_in.get("license", ""),
-        "role": record["role"],
-        "domain": record["domain"],
-        "summary": record["summary"],
-        "status": fields_in.get("status", "unknown"),
-        "added_date": added_date,
-        "refreshed_date": today_iso,
+        key: value
+        for key, value in record["fields"].items()
+        if REPO.get(key) is not None and key not in _NOT_FROM_THE_RECORD
     }
-    created = not path.exists()
-    atomic_write_text(path, build_repo_note(fields, notes_body=body))
-    return {"status": "created" if created else "updated", "slug": slug, "path": f"Repos/{slug}.md"}
+    fields.update(
+        {
+            "type": "repo",
+            "title": record["title"],
+            "url": record["url"],
+            "role": record["role"],
+            "domain": record["domain"],
+            "summary": record["summary"],
+        }
+    )
+    return upsert(REPO, vault, {"slug": record["slug"], "fields": fields}, today=today_iso)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,9 +86,15 @@ def main(argv: list[str] | None = None) -> int:
     except json.JSONDecodeError as e:
         sys.stderr.write(f"stdin is not valid JSON: {e}\n")
         return 2
+    if not isinstance(record, dict):
+        sys.stderr.write("record must be a JSON object\n")
+        return 2
     missing = [k for k in REQUIRED if k not in record]
     if missing:
         sys.stderr.write(f"record is missing required keys: {', '.join(missing)}\n")
+        return 2
+    if not isinstance(record["fields"], dict):
+        sys.stderr.write("record 'fields' must be a JSON object\n")
         return 2
 
     try:

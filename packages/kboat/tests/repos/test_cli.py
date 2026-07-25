@@ -1,0 +1,114 @@
+"""End-to-end tests for the `kboat-repos` CLI: subcommand dispatch and `write`."""
+
+from __future__ import annotations
+
+import io
+import json
+from pathlib import Path
+
+import pytest
+
+from kboat.repos.__main__ import main
+from kboat.repos.write import main as write_main
+
+RECORD = {
+    "slug": "abc123def456",
+    "url": "https://github.com/google/A2A",
+    "title": "google/A2A",
+    "fields": {"description": "An open protocol: agents talk.", "status": "recent"},
+    "role": "framework",
+    "domain": ["ai-agents"],
+    "summary": "エージェント間通信のプロトコル。",
+}
+
+
+def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO(text))
+
+
+def test_usage_and_unknown_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main([]) == 0
+    assert main(["--help"]) == 0
+    assert main(["bogus"]) == 2
+    assert "unknown subcommand: 'bogus'" in capsys.readouterr().err
+
+
+def test_gather_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
+    # A non-repo URL is decided before `gh` is reached, so this exercises the
+    # dispatch without a network call.
+    assert main(["gather", "https://example.com/not-github"]) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "skip-not-a-repo"
+
+
+def test_refresh_dispatches(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["refresh", "--vault", str(tmp_path)]) == 1  # no Repos/ under the vault
+    assert "no Repos/ directory" in json.loads(capsys.readouterr().out)["error"]
+
+
+def test_write_dispatches_and_creates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stdin(monkeypatch, json.dumps(RECORD))
+    assert main(["write", "--vault", str(tmp_path), "--today", "2026-06-06"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out == {"status": "created", "slug": "abc123def456", "path": "Repos/abc123def456.md"}
+    assert (tmp_path / "Repos" / "abc123def456.md").exists()
+
+
+def test_write_collision_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stdin(monkeypatch, json.dumps(RECORD))
+    write_main(["--vault", str(tmp_path), "--today", "2026-06-06"])
+    capsys.readouterr()
+
+    _stdin(monkeypatch, json.dumps({**RECORD, "url": "https://github.com/evil/clone"}))
+    assert write_main(["--vault", str(tmp_path), "--today", "2026-06-06"]) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "collision"
+
+
+@pytest.mark.parametrize(
+    ("stdin", "why"),
+    [
+        ("not json", "unparseable"),
+        ('["slug"]', "not an object"),
+        ('{"slug": "s"}', "missing the required keys"),
+        (json.dumps({**RECORD, "fields": "not an object"}), "`fields` is not an object"),
+    ],
+)
+def test_write_rejects_a_record_it_cannot_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdin: str, why: str
+) -> None:
+    # Exit 2 (bad input), not a traceback: the record is assembled by an agent,
+    # so a malformed one has to read as a diagnostic.
+    _stdin(monkeypatch, stdin)
+    assert write_main(["--vault", str(tmp_path)]) == 2, why
+    assert not (tmp_path / "Repos").exists()
+
+
+def test_write_reports_an_unreadable_existing_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The slug is taken by a file with no frontmatter at all. That is a note to
+    # repair, so it exits 1 with a diagnostic rather than a traceback.
+    path = tmp_path / "Repos" / "abc123def456.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("no frontmatter here\n")
+
+    _stdin(monkeypatch, json.dumps(RECORD))
+    assert write_main(["--vault", str(tmp_path), "--today", "2026-06-06"]) == 1
+    assert "write failed:" in capsys.readouterr().err
+    assert path.read_text() == "no frontmatter here\n"
+
+
+def test_write_requires_a_vault(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+    with pytest.raises(SystemExit) as excinfo:
+        write_main([])
+    assert excinfo.value.code == 2
+
+
+def test_write_rejects_a_malformed_today(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        write_main(["--vault", str(tmp_path), "--today", "6 June"])
+    assert excinfo.value.code == 2

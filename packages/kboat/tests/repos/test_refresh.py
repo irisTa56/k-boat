@@ -8,8 +8,10 @@ from pathlib import Path
 
 import kboat.repos.refresh as refresh_mod
 from kboat.repos.identity import canonical_slug
-from kboat.repos.notes import build_repo_note, parse_frontmatter
+from kboat.repos.notes import parse_frontmatter
 from kboat.repos.refresh import refresh
+from kboat.schema import REPO
+from kboat.write import upsert
 
 TODAY = date(2026, 6, 6)
 
@@ -33,18 +35,20 @@ def _note_fields(url: str, title: str) -> dict[str, object]:
         "domain": ["devtools"],
         "summary": "要約",
         "status": "dormant",
-        "added_date": "2024-01-01",
-        "refreshed_date": "2024-01-01",
     }
 
 
 def _write_note(vault: Path, url: str, title: str, body: str = "keep me") -> Path:
+    """A pre-existing repo note, laid down by the writer refresh reads back."""
     slug = canonical_slug(url)
     assert slug
-    path = vault / "Repos" / f"{slug}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(build_repo_note(_note_fields(url, title), notes_body=body))
-    return path
+    upsert(
+        REPO,
+        vault,
+        {"slug": slug, "fields": _note_fields(url, title), "body": body},
+        today="2024-01-01",
+    )
+    return vault / "Repos" / f"{slug}.md"
 
 
 def _meta(owner: str, name: str) -> dict:

@@ -1,4 +1,10 @@
-"""Tests for `write_note` — note assembly, body/reading/added_date preservation, de-dup."""
+"""Tests for `write_note` — the translation from a gather record to a `REPO` upsert.
+
+The write contract itself (merge, stamps, body preservation, the collision
+check) is `upsert`'s and is tested in `tests/test_upsert.py`; what is checked
+here is that a repo record reaches it intact and that nothing the record carries
+can reach a field the record does not own.
+"""
 
 from __future__ import annotations
 
@@ -30,28 +36,42 @@ RECORD: dict[str, Any] = {
 }
 
 
+def _note(vault: Path) -> Path:
+    return vault / "Repos" / "abc123def456.md"
+
+
 def test_write_creates_note(tmp_path: Path) -> None:
     result = write_note(RECORD, tmp_path, today_iso="2026-06-06")
     assert result["status"] == "created"
-    note = (tmp_path / "Repos" / "abc123def456.md").read_text()
+    note = _note(tmp_path).read_text()
     fm = parse_frontmatter(note)
     assert fm["type"] == "repo"
     assert fm["role"] == "framework"
     assert fm["status"] == "recent"
+    assert fm["reading"] is False  # the always-present boolean the Base filters on
     assert fm["added_date"] == "2026-06-06"
+    assert fm["refreshed_date"] == "2026-06-06"
     assert 'description: "An open protocol: agents talk."' in note  # quoted, valid YAML
     assert "topics: [a2a, agents]" in note
-    assert note.rstrip().endswith("## Notes")  # empty body
+    assert note.rstrip().endswith("## Notes")  # somewhere to put notes, still empty
+
+
+def test_write_creates_a_valid_note_from_a_record_without_a_status(tmp_path: Path) -> None:
+    # `status` is a required non-empty enum, so a record assembled without one
+    # (a gather that never reached `github_fields`) must still land a note the
+    # validator accepts — `unknown` is the enum's no-data member.
+    record = {**RECORD, "fields": {k: v for k, v in RECORD["fields"].items() if k != "status"}}
+    write_note(record, tmp_path, today_iso="2026-06-06")
+    assert parse_frontmatter(_note(tmp_path).read_text())["status"] == "unknown"
 
 
 def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> None:
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
-    path = tmp_path / "Repos" / "abc123def456.md"
+    path = _note(tmp_path)
     # Simulate the human editing the body and checking `reading`.
-    edited = (
-        path.read_text().replace("reading: false", "reading: true").rstrip() + "\nmy hand notes\n"
+    path.write_text(
+        path.read_text().replace("reading: false", "reading: true") + "\nmy hand notes\n"
     )
-    path.write_text(edited)
 
     bumped = {**RECORD, "fields": {**RECORD["fields"], "stars": 999}, "summary": "新しい要約。"}
     result = write_note(bumped, tmp_path, today_iso="2027-01-01")
@@ -66,35 +86,47 @@ def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> N
     assert "my hand notes" in note  # body preserved
 
 
-def test_write_update_keeps_an_empty_notes_section_empty(tmp_path: Path) -> None:
-    # A fresh note ends at a bare `## Notes`. That is "nowhere to put notes yet",
-    # not "the body is what precedes the heading" — reading it as the latter
-    # would pull frontmatter-adjacent prose down into the section.
+def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path: Path) -> None:
+    # `reading` is the human's and the date stamps are the schema's. A record
+    # carrying them (a hand-assembled one, or a gather record fed back in) must
+    # not reach them — nor may a key no schema knows reach the frontmatter.
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
-    path = tmp_path / "Repos" / "abc123def456.md"
+    path = _note(tmp_path)
+    path.write_text(path.read_text().replace("reading: false", "reading: true"))
 
-    write_note(RECORD, tmp_path, today_iso="2027-01-01")
-
-    assert path.read_text().rstrip().endswith("## Notes")
-
-
-def test_write_update_does_not_split_a_body_at_a_quoted_heading(tmp_path: Path) -> None:
-    # The quoted headings come *before* the real section, so a splitter that
-    # matched one of them would cut the body in the wrong place. A four-backtick
-    # block quoting a three-backtick one is the ordinary way to document
-    # markdown, and reads as two fences to anything that ignores marker length.
-    write_note(RECORD, tmp_path, today_iso="2026-06-06")
-    path = tmp_path / "Repos" / "abc123def456.md"
-    body = (
-        "### Notes on the API\n\nSee the ## Notes section.\n\n"
-        "````markdown\n```\n## Notes\n```\n````\n\n"
-        "## Notes\n\nwhat I actually think"
+    write_note(
+        {
+            **RECORD,
+            "fields": {
+                **RECORD["fields"],
+                "reading": False,
+                "added_date": "1999-01-01",
+                "refreshed_date": "1999-01-01",
+                "invented_by_the_classifier": "x",
+            },
+        },
+        tmp_path,
+        today_iso="2027-01-01",
     )
-    path.write_text(path.read_text().replace("## Notes", body))
+
+    note = path.read_text()
+    fm = parse_frontmatter(note)
+    assert fm["reading"] is True
+    assert fm["added_date"] == "2026-06-06"
+    assert fm["refreshed_date"] == "2027-01-01"
+    assert "invented_by_the_classifier" not in note
+
+
+def test_write_update_keeps_prose_above_the_notes_section(tmp_path: Path) -> None:
+    # `## Notes` is the writer's section; anything above it is the human's and
+    # is not pulled down into it.
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+    path = _note(tmp_path)
+    path.write_text(path.read_text().replace("## Notes", "why I saved this\n\n## Notes\n\nverdict"))
 
     write_note(RECORD, tmp_path, today_iso="2027-01-01")
 
-    assert path.read_text().rstrip().endswith("## Notes\n\nwhat I actually think")
+    assert path.read_text().rstrip().endswith("why I saved this\n\n## Notes\n\nverdict")
 
 
 def test_write_collision_refuses_overwrite(tmp_path: Path) -> None:
@@ -103,8 +135,25 @@ def test_write_collision_refuses_overwrite(tmp_path: Path) -> None:
     other = {**RECORD, "url": "https://github.com/evil/clone", "title": "evil/clone"}
     result = write_note(other, tmp_path, today_iso="2026-06-06")
     assert result["status"] == "collision"
+    assert result["reason"] == "identity_differs"
     # Original note untouched.
-    assert (
-        parse_frontmatter((tmp_path / "Repos" / "abc123def456.md").read_text())["title"]
-        == "google/A2A"
+    assert parse_frontmatter(_note(tmp_path).read_text())["title"] == "google/A2A"
+
+
+def test_write_refuses_a_url_it_cannot_compare(tmp_path: Path) -> None:
+    # A `url` hand-edited into a list (two clicks in Obsidian) decodes fine and
+    # still cannot be matched against a string, so nothing shows the note to be
+    # this repo. The check exists to refuse, so it fails closed rather than
+    # writing over whatever is there.
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+    path = _note(tmp_path)
+    path.write_text(path.read_text().replace(f"url: {RECORD['url']}", f"url:\n  - {RECORD['url']}"))
+    before = path.read_text()
+
+    result = write_note(
+        {**RECORD, "url": "https://github.com/evil/clone"}, tmp_path, today_iso="2027-01-01"
     )
+
+    assert result["status"] == "collision"
+    assert result["reason"] == "unreadable_identity"
+    assert path.read_text() == before

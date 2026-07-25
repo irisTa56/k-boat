@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pytest
 
 from kboat.repos.notes import (
     FrontmatterError,
     body_after_frontmatter,
-    build_repo_note,
     parse_frontmatter,
     set_fields,
     yaml_scalar,
 )
+from kboat.schema import REPO
+from kboat.write import build_note
 
 
 @pytest.mark.parametrize(
@@ -101,7 +104,7 @@ def test_quoted_scalar_round_trips(value: str) -> None:
     ],
 )
 def test_description_roundtrips_through_parser(description: str) -> None:
-    note = build_repo_note({**FIELDS, "description": description})
+    note = _repo_note({**FIELDS, "description": description})
     assert parse_frontmatter(note)["description"] == description
 
 
@@ -128,10 +131,14 @@ FIELDS = {
 }
 
 
-def test_build_repo_note_roundtrips_scalars() -> None:
-    note = build_repo_note(FIELDS, notes_body="my hand-written thoughts")
-    assert note.startswith("---\n")
-    assert "## Notes\n\nmy hand-written thoughts\n" in note
+def _repo_note(fields: Mapping[str, object], notes_body: str = "") -> str:
+    """A repo note in the shape `upsert` lays down, without touching a vault."""
+    body = f"## Notes\n\n{notes_body}" if notes_body else "## Notes"
+    return build_note(REPO, fields, body)
+
+
+def test_repo_scalars_roundtrip_through_the_parser() -> None:
+    note = _repo_note(FIELDS)
     fm = parse_frontmatter(note)
     assert fm["type"] == "repo"
     assert fm["title"] == "google/A2A"
@@ -145,19 +152,8 @@ def test_build_repo_note_roundtrips_scalars() -> None:
     assert "domain: [ai-agents, distributed-systems]" in note
 
 
-def test_build_repo_note_field_order() -> None:
-    note = build_repo_note(FIELDS)
-    idx = {k: note.index(f"\n{k}:") for k in ("type", "url", "role", "status", "refreshed_date")}
-    assert idx["type"] < idx["url"] < idx["role"] < idx["status"] < idx["refreshed_date"]
-
-
-def test_empty_body_emits_bare_notes_section() -> None:
-    note = build_repo_note(FIELDS)
-    assert note.rstrip().endswith("## Notes")
-
-
 def test_set_fields_preserves_other_fields_and_body() -> None:
-    note = build_repo_note(FIELDS, notes_body="keep me")
+    note = _repo_note(FIELDS, notes_body="keep me")
     updated = set_fields(note, {"stars": 99999, "status": "dormant", "topics": ["x", "y"]})
     fm = parse_frontmatter(updated)
     assert fm["stars"] == "99999"
@@ -170,7 +166,7 @@ def test_set_fields_preserves_other_fields_and_body() -> None:
 
 
 def test_set_fields_missing_key_raises() -> None:
-    note = build_repo_note(FIELDS)
+    note = _repo_note(FIELDS)
     with pytest.raises(FrontmatterError):
         set_fields(note, {"nonexistent_field": "x"})
 
