@@ -16,6 +16,8 @@ import subprocess
 import sys
 from datetime import date
 
+from kboat.cli import add_today_argument
+
 from .identity import canonical_slug, canonical_url, github_file_source, parse_repo
 from .status import derive_status
 
@@ -213,19 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         description="Fetch a GitHub repo's metadata + README excerpt as JSON.",
     )
     parser.add_argument("url", help="A GitHub repository URL (any variant).")
-    parser.add_argument(
-        "--today",
-        default=date.today().isoformat(),
-        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
-    )
+    add_today_argument(parser)
     args = parser.parse_args(argv)
 
-    try:
-        today = date.fromisoformat(args.today)
-    except ValueError:
-        parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
-
-    record = gather(args.url, today=today)
+    record = gather(args.url, today=date.fromisoformat(args.today))
     json.dump(record, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 0 if record.get("status") == "ok" else 1

@@ -13,7 +13,13 @@ from __future__ import annotations
 import argparse
 import sys
 
-from kboat.cli import BadInputError, add_write_arguments, run_write, vault_path
+from kboat.cli import (
+    BadInputError,
+    add_today_argument,
+    add_vault_argument,
+    run_write,
+    vault_path,
+)
 from kboat.schema import BY_TYPE
 from kboat.write import upsert
 
@@ -24,7 +30,8 @@ def _write(argv: list[str]) -> int:
         description="Create or update a vault note from a JSON record on stdin.",
     )
     parser.add_argument("--type", required=True, choices=sorted(BY_TYPE))
-    add_write_arguments(parser)
+    add_vault_argument(parser)
+    add_today_argument(parser)
     args = parser.parse_args(argv)
     vault = vault_path(parser, args)
 

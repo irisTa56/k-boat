@@ -14,7 +14,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from kboat.cli import BadInputError, add_write_arguments, run_write, vault_path
+from kboat.cli import (
+    BadInputError,
+    add_today_argument,
+    add_vault_argument,
+    run_write,
+    vault_path,
+)
 from kboat.schema import REPO
 from kboat.write import upsert
 
@@ -71,7 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="kboat-repos write",
         description="Write a Repos/<slug>.md note from a gather record + classification (JSON on stdin).",
     )
-    add_write_arguments(parser)
+    add_vault_argument(parser)
+    add_today_argument(parser)
     args = parser.parse_args(argv)
     vault = vault_path(parser, args)
 

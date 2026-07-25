@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+import yaml
+
 from kboat.frontmatter import parse_frontmatter
 from kboat.schema import REPO, SOURCE, Field, Kind
 from kboat.write import build_note, render_field
@@ -17,12 +20,28 @@ def test_render_field_by_kind() -> None:
     # A list re-read from a note as its raw inline text stays that text; reading
     # it as "not a list" and emitting `[]` would delete the items.
     assert render_field(Field("l", Kind.STR_LIST), "[a, b]") == "[a, b]"
-    # A string that is not a flow sequence is not a list; quoted, it cannot take
-    # the frontmatter block down with it.
-    assert render_field(Field("l", Kind.STR_LIST), "agents: tooling") == '"agents: tooling"'
     assert render_field(Field("l", Kind.STR_LIST), None) == "[]"
     assert render_field(Field("s", Kind.STR), "hi") == "hi"
     assert render_field(None, "x") == "x"  # unknown field → plain scalar
+
+
+@pytest.mark.parametrize(
+    ("value", "why"),
+    [
+        ("agents: tooling", "a plain string is not a list at all"),
+        ('[a, "b]', "an unclosed quote would swallow the lines after it"),
+        ("[a,\nb]", "a second line breaks the one-field-one-line rule"),
+        ("[a, [b]", "an unbalanced bracket leaves the sequence open"),
+    ],
+)
+def test_a_string_that_is_not_a_flow_sequence_is_quoted(value: str, why: str) -> None:
+    # A value that carries its own syntax into the block costs the whole note —
+    # the frontmatter stops parsing and Obsidian drops it from every Base.
+    # Quoted, a wrong-typed value costs only its own field.
+    note = build_note(REPO, {"type": "repo", "title": "r", "topics": value})
+
+    assert parse_frontmatter(note)["topics"] == value, why
+    assert yaml.safe_load(note.split("---\n")[1])["topics"] == value, why
 
 
 def test_block_list_is_multiline() -> None:

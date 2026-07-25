@@ -26,6 +26,28 @@ from kboat.frontmatter import (
 from kboat.io_utils import atomic_write_text
 from kboat.schema import DIR_BY_TYPE, Field, Kind, NoteSchema
 
+_FLOW_SEQUENCE_RE = re.compile(r"^\[[^\[\]\n]*\]$")
+
+
+def _is_flow_sequence(value: str) -> bool:
+    """Whether `value` is a self-contained one-line `[a, b]`.
+
+    The one string safe to re-emit as a list: what the reader hands back for an
+    inline list. Anything else — an unbalanced bracket or quote, a second line —
+    is emitted quoted instead, because a value that carries its own syntax into
+    the block costs the whole note rather than its own field, and because
+    `render_field` promises one line, which `set_fields` splices into one.
+
+    Deliberately not a parse; it only has to separate what the reader produced
+    from what it did not.
+    """
+    stripped = value.strip()
+    return (
+        _FLOW_SEQUENCE_RE.match(stripped) is not None
+        and stripped.count('"') % 2 == 0
+        and stripped.count("'") % 2 == 0
+    )
+
 
 def render_field(field: Field | None, value: object) -> str:
     """Render one value to its inline YAML text, by the field's kind.
@@ -46,15 +68,9 @@ def render_field(field: Field | None, value: object) -> str:
         if isinstance(value, list):
             return yaml_list(list(value))
         # An inline list re-read from a note parses as its raw `[a, b]` string;
-        # pass that through unchanged rather than dropping it to `[]`. Any other
-        # string is not a list at all, and emitting it bare would put its own
-        # `: ` or `#` into the frontmatter — one wrong-typed value would cost
-        # the whole block, where a quoted one costs only its own field.
+        # pass that through unchanged rather than dropping it to `[]`.
         if isinstance(value, str):
-            stripped = value.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                return value
-            return yaml_scalar(value)
+            return value if _is_flow_sequence(value) else yaml_scalar(value)
         return yaml_list([])
     return yaml_scalar(value)
 

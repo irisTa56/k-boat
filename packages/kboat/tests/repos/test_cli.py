@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from kboat.frontmatter import parse_frontmatter
 from kboat.repos.__main__ import main
 from kboat.repos.write import main as write_main
 
@@ -130,3 +131,14 @@ def test_write_rejects_a_malformed_today(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as excinfo:
         write_main(["--vault", str(tmp_path), "--today", "6 June"])
     assert excinfo.value.code == 2
+
+
+def test_write_stamps_today_in_canonical_form(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `fromisoformat` also reads the basic form, and the stamp goes into the
+    # note as given — so what a date parser accepts is not what a note may hold.
+    _stdin(monkeypatch, json.dumps(RECORD))
+    assert write_main(["--vault", str(tmp_path), "--today", "20260606"]) == 0
+    fm = parse_frontmatter((tmp_path / "Repos" / "abc123def456.md").read_text())
+    assert fm["added_date"] == "2026-06-06"

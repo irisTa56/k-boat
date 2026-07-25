@@ -1,15 +1,17 @@
-"""Shared plumbing for the note-writing entry points.
+"""Shared plumbing for the `kboat-*` CLIs.
 
-`kboat-note write` and `kboat-repos write` are two contracts over one writer.
-What they share is the shape of the transaction — the same flags, one JSON
-record on stdin, results on stdout and diagnostics on stderr, and one mapping
-from outcome to exit code — and holding it here is what keeps that from
-drifting apart. What each keeps is its own: the record shape it accepts, the
-diagnostics for a record it refuses, and any key it adds to the result.
+Two layers, because the sharing is at two scales. Every entry point that reaches
+the vault takes the same `--vault`, and every one that needs a date takes the
+same `--today` — so a flag means one thing across the whole surface rather than
+whatever each `main` re-declared. On top of that, `kboat-note write` and
+`kboat-repos write` are two contracts over one writer and share the shape of
+their whole transaction: one JSON record on stdin, results on stdout and
+diagnostics on stderr, one mapping from outcome to exit code. What each writer
+keeps is its own: the record shape it accepts, the diagnostics for a record it
+refuses, and any key it adds to the result.
 
-The other `kboat-*` CLIs stay out: they write no record, and each reads
-`--today` as a `date` rather than carrying the string through to a note, so
-what they share with these two is a flag name and not a contract.
+`kboat-bookmarklet` is the one CLI outside this: its `--vault` is the vault's
+*name*, for the Obsidian URI, not a path to read.
 """
 
 from __future__ import annotations
@@ -38,8 +40,8 @@ def _iso_date(value: str) -> str:
     """`value` as `YYYY-MM-DD`, or a usage error.
 
     Returned in canonical form rather than as given: `fromisoformat` also reads
-    the basic (`20260606`) and week-date (`2026-W23-1`) forms, and the value is
-    written into a note verbatim, where only `YYYY-MM-DD` is a date.
+    the basic (`20260606`) and week-date (`2026-W23-1`) forms, and a note writer
+    stamps the value verbatim, where only `YYYY-MM-DD` is a date.
     """
     try:
         return date.fromisoformat(value).isoformat()
@@ -47,12 +49,20 @@ def _iso_date(value: str) -> str:
         raise argparse.ArgumentTypeError(f"must be YYYY-MM-DD, got {value!r}") from e
 
 
-def add_write_arguments(parser: argparse.ArgumentParser) -> None:
+def add_vault_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vault",
         default=os.environ.get("OBSIDIAN_VAULT_PATH"),
         help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
     )
+
+
+def add_today_argument(parser: argparse.ArgumentParser) -> None:
+    """Add `--today`, validated and canonicalised by argparse itself.
+
+    A caller that wants a `date` reads `date.fromisoformat(args.today)` with no
+    guard of its own: by then the value has already been through `_iso_date`.
+    """
     parser.add_argument(
         "--today",
         type=_iso_date,
