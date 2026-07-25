@@ -136,6 +136,24 @@ def test_resolve_link_rejects_non_article_hrefs(href: str | None) -> None:
     assert resolve_link("https://example.com/", href) is None
 
 
+@pytest.mark.parametrize(
+    "href",
+    [
+        "http://[oops/a",  # malformed IPv6 literal — urlsplit raises
+        "https://example.com:99999999/a",  # port past 65535 — the lazy parse raises
+    ],
+)
+def test_resolve_link_rejects_unparseable_hrefs(href: str) -> None:
+    """An unparseable link is unusable, not fatal.
+
+    These raise ``ValueError`` out of ``urlsplit``/``port`` rather than returning
+    something odd, so without the guard one malformed anchor on an index page fails
+    that site's whole gather — every run, since the error also suppresses the
+    ``zero_links`` self-heal.
+    """
+    assert resolve_link("https://example.com/", href) is None
+
+
 def test_resolve_link_same_host_guard() -> None:
     # Cross-host is allowed by default (feed syndication) but rejected under the
     # scrape path's same-host guard.

@@ -18,22 +18,29 @@ from pathlib import Path
 
 from feed_filter.canonical import CanonicalUrl
 
-# Ordered schema migrations. ``open_db`` applies every entry past the DB's
-# current ``PRAGMA user_version``, then stamps the new version — so adding a
-# column in a later phase is an append here, not a break against an existing
-# feed-filter.db. v1 uses IF NOT EXISTS so it is also safe over a pre-versioning
-# database from before this migration framework existed.
-_MIGRATIONS: list[str] = [
+# Ordered schema migrations, each a tuple of individual statements. ``open_db``
+# applies every entry past the DB's current ``PRAGMA user_version`` and stamps the
+# new version in the same transaction — so adding a column in a later phase is an
+# append here, not a break against an existing feed-filter.db. v1 uses
+# IF NOT EXISTS so it is also safe over a pre-versioning database from before this
+# migration framework existed.
+#
+# One statement per element rather than one script per migration: ``executescript``
+# commits any open transaction before it runs, which would split a migration's DDL
+# from its version stamp (see ``_migrate``).
+_MIGRATIONS: list[tuple[str, ...]] = [
     # v1: initial schema
-    """
-    CREATE TABLE IF NOT EXISTS seen (
-        canonical_url TEXT PRIMARY KEY,
-        site_id       TEXT,
-        title         TEXT,
-        kept          INTEGER,
-        seen_at       INTEGER
-    );
-    """,
+    (
+        """
+        CREATE TABLE IF NOT EXISTS seen (
+            canonical_url TEXT PRIMARY KEY,
+            site_id       TEXT,
+            title         TEXT,
+            kept          INTEGER,
+            seen_at       INTEGER
+        );
+        """,
+    ),
     # v2: forum adapter tables.
     # These are the Discourse adapter's post-grain dedupe authority and
     # watch/poll throttle.  They are colocated here only because migrations
@@ -50,27 +57,30 @@ _MIGRATIONS: list[str] = [
     #
     # ``forum_post_seen``: one row per dispositioned post (kept or dropped),
     # enforcing post-grain dedupe.
-    """
-    CREATE TABLE IF NOT EXISTS forum_watch (
-        site_id          TEXT    NOT NULL,
-        topic_id         INTEGER NOT NULL,
-        first_seen_at    INTEGER NOT NULL,
-        op_interest_kept INTEGER,
-        completed_polls  INTEGER NOT NULL DEFAULT 0,
-        last_like_count  INTEGER,
-        retired          INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (site_id, topic_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS forum_post_seen (
-        site_id  TEXT    NOT NULL,
-        post_id  INTEGER NOT NULL,
-        topic_id INTEGER NOT NULL,
-        kept     INTEGER NOT NULL,
-        seen_at  INTEGER NOT NULL,
-        PRIMARY KEY (site_id, post_id)
-    );
-    """,
+    (
+        """
+        CREATE TABLE IF NOT EXISTS forum_watch (
+            site_id          TEXT    NOT NULL,
+            topic_id         INTEGER NOT NULL,
+            first_seen_at    INTEGER NOT NULL,
+            op_interest_kept INTEGER,
+            completed_polls  INTEGER NOT NULL DEFAULT 0,
+            last_like_count  INTEGER,
+            retired          INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (site_id, topic_id)
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS forum_post_seen (
+            site_id  TEXT    NOT NULL,
+            post_id  INTEGER NOT NULL,
+            topic_id INTEGER NOT NULL,
+            kept     INTEGER NOT NULL,
+            seen_at  INTEGER NOT NULL,
+            PRIMARY KEY (site_id, post_id)
+        );
+        """,
+    ),
     # v3: bound the Rule-B poll set to top-feed topics.
     # ``poll_eligible`` marks a watched topic as one to JSON-poll for Rule B.
     # Only topics surfaced by ``top.rss`` (daily/weekly) are poll-eligible; a
@@ -80,9 +90,11 @@ _MIGRATIONS: list[str] = [
     # forum's anonymous rate limit (429). Existing rows default to 0 (not polled)
     # and re-upgrade to 1 on their next top-feed admission (one-directional, see
     # ``forum_store.admit_topic``).
-    """
-    ALTER TABLE forum_watch ADD COLUMN poll_eligible INTEGER NOT NULL DEFAULT 0;
-    """,
+    (
+        """
+        ALTER TABLE forum_watch ADD COLUMN poll_eligible INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
     # v4: per-site consecutive-failure counter for gather-error escalation.
     # One row per site; ``consecutive_failures`` counts runs where
     # the site was genuinely unreachable, reset to 0 on any reachable run.
@@ -97,12 +109,14 @@ _MIGRATIONS: list[str] = [
     # deferred until a consumer exists; append-only migrations make adding one
     # later a one-line change (the current error is already emitted in
     # ``sites[].error`` every run).
-    """
-    CREATE TABLE IF NOT EXISTS site_health (
-        site_id              TEXT    PRIMARY KEY,
-        consecutive_failures INTEGER NOT NULL DEFAULT 0
-    );
-    """,
+    (
+        """
+        CREATE TABLE IF NOT EXISTS site_health (
+            site_id              TEXT    PRIMARY KEY,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0
+        );
+        """,
+    ),
     # v5: transient per-run cache of full feed bodies. ``new-entries`` stores each
     # emitted feed entry's full body here and puts only a short preview on stdout,
     # so the body reaches only the judging haiku (via the ``entry-body`` subcommand),
@@ -114,30 +128,58 @@ _MIGRATIONS: list[str] = [
     # simply falls the judge back to a full-page WebFetch, costing at most a
     # redundant fetch — never a lost entry. All queries live in ``body_cache.py``,
     # keeping ``seen.py`` the authority only for the ``seen`` table.
-    """
-    CREATE TABLE IF NOT EXISTS entry_body (
-        canonical_url TEXT PRIMARY KEY,
-        body          TEXT NOT NULL
-    );
-    """,
+    (
+        """
+        CREATE TABLE IF NOT EXISTS entry_body (
+            canonical_url TEXT PRIMARY KEY,
+            body          TEXT NOT NULL
+        );
+        """,
+    ),
 ]
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply every migration past the DB's ``user_version``, one transaction each.
+
+    A migration's statements and its version stamp commit together or not at all,
+    so a crash (or a failing statement) mid-migration rolls the step back and the
+    next ``open_db`` re-runs it against the previous version — never a database
+    carrying DDL its ``user_version`` denies, where re-running v3 would die on
+    ``duplicate column name`` and wedge every later run. SQLite makes DDL
+    transactional, so the whole step participates.
+
+    ``BEGIN IMMEDIATE`` is explicit because Python's sqlite3 opens a transaction
+    only for DML, leaving DDL to autocommit statement by statement; ``IMMEDIATE``
+    also takes the write lock up front, so two openers racing the same migration
+    serialize instead of interleaving. The version is then re-read under that lock,
+    because the loser of the race read its bound before waiting: without the
+    re-read it would re-apply a step the winner already committed, and v3's ALTER
+    (unlike the ``IF NOT EXISTS`` creates) would die on ``duplicate column name``.
+    """
     (version,) = conn.execute("PRAGMA user_version").fetchone()
     for target in range(version, len(_MIGRATIONS)):
-        conn.executescript(_MIGRATIONS[target])
-        # PRAGMA can't be parameterized; target+1 is a controlled int.
-        conn.execute(f"PRAGMA user_version = {target + 1}")
-    conn.commit()
+        with conn:  # commits on success, rolls back on any exception
+            conn.execute("BEGIN IMMEDIATE")
+            (current,) = conn.execute("PRAGMA user_version").fetchone()
+            if current > target:
+                continue  # another opener applied this step while we waited
+            for statement in _MIGRATIONS[target]:
+                conn.execute(statement)
+            # PRAGMA can't be parameterized; target+1 is a controlled int.
+            conn.execute(f"PRAGMA user_version = {target + 1}")
 
 
 def open_db(path: Path) -> sqlite3.Connection:
     """Open (creating + migrating) the seen-store at ``path`` in WAL mode."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    _migrate(conn)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        _migrate(conn)
+    except BaseException:
+        conn.close()  # a failed open returns no handle, so nothing else can close it
+        raise
     return conn
 
 

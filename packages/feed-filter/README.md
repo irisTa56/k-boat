@@ -169,6 +169,7 @@ The design favors **never-lost over never-duplicated**:
 
 - An entry that errors during judging is written as a feed note anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
 - A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
+- An *article* gather failure is contained to its own site, whether it is a fetch error or an unexpected one: one site cannot discard the entries the other ~80 already fetched. (The forum gather absorbs a fetch error per site but not yet an unexpected one.) An error the CLI could not classify is flagged as such, so the run summary reports it verbatim instead of narrating it as an unreachable site.
 - The seen-store is the dedupe authority for article sources at gather time. The write-then-record pair runs in one process; a crash in the sub-millisecond gap between them re-runs the write next time, but the hash-named upsert makes that write idempotent — so even the crash window duplicates nothing.
 - Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-write its feed note as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
   The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.

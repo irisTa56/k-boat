@@ -53,11 +53,14 @@ _MAX_BROWSER_BODY_BYTES = 10 * 1024 * 1024
 
 
 class MissingPlaywrightError(RuntimeError):
-    """Raised when a ``requires_browser`` site is registered but Playwright is absent.
+    """Raised when a ``requires_browser`` site has no usable browser to fetch with.
 
-    Failing fast at the startup gate (rather than at the first fetch) means the
-    operator sees the exact install command instead of a raw ``ModuleNotFoundError``
-    deep in the gather path.
+    Either the package is absent (the startup gates) or Chromium will not launch
+    (``get_browser``). Failing fast with one type, rather than at the first fetch,
+    means the operator sees an install command instead of a raw
+    ``ModuleNotFoundError`` deep in the gather path — and means the gather can tell
+    "no browser site can run at all" apart from a single site's failure, which it
+    must not absorb as one site's error.
     """
 
 
@@ -67,6 +70,9 @@ _INSTALL_HINT = (
     "the 'playwright' package is not installed. Install it with:\n"
     "  uv sync --extra browser && uv run playwright install chromium"
 )
+
+# The launch path is past the package check, so it names only the browser install.
+_CHROMIUM_INSTALL_COMMAND = "  uv run playwright install chromium"
 
 
 class BrowserFetchError(RuntimeError):
@@ -151,7 +157,21 @@ def get_browser() -> BrowserBundle:
     from playwright.sync_api import sync_playwright
 
     playwright = sync_playwright().start()
-    browser = playwright.chromium.launch()
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:
+        # The startup gate resolves the *package*; the Chromium binary is installed
+        # separately and can be absent or stale under a package that imports fine.
+        # Raising the gate's own error type keeps any launch failure a fail-fast
+        # environment problem, rather than one the gather absorbs once per browser
+        # site as if each site were unreachable. The cause is left to the chained
+        # message — a missing binary is the common one, not the only one.
+        with contextlib.suppress(Exception):
+            playwright.stop()  # nothing else holds the driver — the bundle is unset
+        raise MissingPlaywrightError(
+            "Chromium failed to launch. If it is not installed, install it with:\n"
+            f"{_CHROMIUM_INSTALL_COMMAND}\n\n{exc}"
+        ) from exc
     context = browser.new_context(user_agent=_desktop_user_agent(browser.version))
     _bundle = BrowserBundle(playwright=playwright, browser=browser, context=context)
     return _bundle

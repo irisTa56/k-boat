@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,18 @@ def _url(s: str) -> CanonicalUrl:
     # Keys are canonical by construction in these store-mechanics tests; the
     # canonicalization itself is covered in test_canonical.py.
     return CanonicalUrl(s)
+
+
+def _apply(conn: sqlite3.Connection, upto: int) -> None:
+    """Hand-build a DB at version ``upto`` by running migrations 0..upto-1.
+
+    Lets the next migration be exercised as an upgrade over pre-existing data,
+    rather than as part of a fresh all-at-once create.
+    """
+    for migration in seen._MIGRATIONS[:upto]:
+        for statement in migration:
+            conn.execute(statement)
+    conn.execute(f"PRAGMA user_version = {upto}")
 
 
 @pytest.fixture
@@ -53,9 +66,7 @@ def test_v3_upgrade_defaults_existing_rows_to_not_poll_eligible(tmp_path: Path) 
     """
     path = tmp_path / "v2.db"
     raw = sqlite3.connect(path)
-    raw.executescript(seen._MIGRATIONS[0])  # v1: seen
-    raw.executescript(seen._MIGRATIONS[1])  # v2: forum tables (no poll_eligible)
-    raw.execute("PRAGMA user_version = 2")
+    _apply(raw, 2)  # v1: seen, v2: forum tables (no poll_eligible)
     raw.execute(
         "INSERT INTO forum_watch (site_id, topic_id, first_seen_at, completed_polls, retired) "
         "VALUES ('s1', 42, 1000, 0, 0)"
@@ -94,10 +105,7 @@ def test_v4_migration_applies_over_v3_without_touching_existing_tables(tmp_path:
     """
     path = tmp_path / "v3.db"
     raw = sqlite3.connect(path)
-    raw.executescript(seen._MIGRATIONS[0])  # v1: seen
-    raw.executescript(seen._MIGRATIONS[1])  # v2: forum tables
-    raw.executescript(seen._MIGRATIONS[2])  # v3: poll_eligible
-    raw.execute("PRAGMA user_version = 3")
+    _apply(raw, 3)  # v1: seen, v2: forum tables, v3: poll_eligible
     raw.execute(
         "INSERT INTO forum_watch (site_id, topic_id, first_seen_at, completed_polls, retired) "
         "VALUES ('s1', 42, 1000, 0, 0)"
@@ -126,6 +134,106 @@ def test_migration_stamps_user_version(tmp_path: Path) -> None:
         assert version == len(seen._MIGRATIONS)
     finally:
         c.close()
+
+
+def test_failed_migration_rolls_back_so_the_next_open_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A migration that dies partway leaves the DB at its previous version.
+
+    Each migration's statements and its ``user_version`` stamp share one
+    transaction, so "DDL applied, version not stamped" is not a reachable state.
+    Without that, an interrupted v3 would leave ``poll_eligible`` added with the
+    version still at 2, and every later open would re-run the ALTER and die on
+    ``duplicate column name`` — a permanently wedged store, recoverable only by
+    hand. The crash is injected as a statement failing *after* the real DDL, which
+    is what a process killed mid-migration looks like to the database.
+    """
+    path = tmp_path / "v2.db"
+    raw = sqlite3.connect(path)
+    _apply(raw, 2)  # v1: seen, v2: forum tables (no poll_eligible)
+    raw.commit()
+    raw.close()
+
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def spy(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    crashing = list(seen._MIGRATIONS)
+    crashing[2] = (*crashing[2], "INSERT INTO no_such_table VALUES (1)")
+    monkeypatch.setattr(seen, "_MIGRATIONS", crashing)
+    monkeypatch.setattr(seen.sqlite3, "connect", spy)
+    with pytest.raises(sqlite3.OperationalError):
+        seen.open_db(path)
+    monkeypatch.undo()
+
+    # A failed open returns no handle, so nothing else can close one it left behind
+    # — and an open handle holds the WAL sidecars and the write lock.
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[-1].execute("SELECT 1")
+
+    raw = sqlite3.connect(path)
+    try:
+        (version,) = raw.execute("PRAGMA user_version").fetchone()
+        assert version == 2, "the interrupted migration must not have stamped its version"
+        cols = {row[1] for row in raw.execute("PRAGMA table_info(forum_watch)")}
+        assert "poll_eligible" not in cols, "its DDL must roll back with the stamp"
+    finally:
+        raw.close()
+
+    conn = seen.open_db(path)  # recovers by re-running v3 over a clean v2
+    try:
+        (version,) = conn.execute("PRAGMA user_version").fetchone()
+        assert version == len(seen._MIGRATIONS)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(forum_watch)")}
+        assert "poll_eligible" in cols, "the retry must apply the rolled-back migration"
+    finally:
+        conn.close()
+
+
+def test_opener_that_loses_the_migration_race_skips_the_applied_step(tmp_path: Path) -> None:
+    """Two openers migrating the same DB at once: the loser must not re-apply.
+
+    Both read ``user_version`` before contending for the write lock, so the loser
+    holds a stale bound. Re-running v3's ALTER over the winner's database would die
+    on ``duplicate column name`` (the other migrations are ``IF NOT EXISTS``, so
+    only an ALTER exposes this) and fail whichever run lost — the scheduled routine
+    overlapping a manual invocation on the first run after a schema release.
+
+    The interleaving is forced deterministically rather than with threads: a trace
+    callback on the loser's connection lets the winner migrate the file to
+    completion at the instant the loser's ``BEGIN IMMEDIATE`` starts, the widest
+    that window ever gets. Driving ``_migrate`` directly is what makes the callback
+    placeable between connect and migrate; the assertions are on database state.
+    """
+    path = tmp_path / "v2.db"
+    raw = sqlite3.connect(path)
+    raw.execute("PRAGMA journal_mode=WAL")  # as open_db leaves it, so the race is real
+    _apply(raw, 2)
+    raw.commit()
+    raw.close()
+
+    loser = sqlite3.connect(path)
+    raced = False
+
+    def race_ahead(statement: str) -> None:
+        nonlocal raced
+        if statement.startswith("BEGIN") and not raced:
+            raced = True
+            seen.open_db(path).close()  # the winner migrates all the way
+
+    loser.set_trace_callback(race_ahead)
+    try:
+        seen._migrate(loser)  # must not raise duplicate column name
+        assert raced, "the winner never ran — the test would pass without the race"
+        (version,) = loser.execute("PRAGMA user_version").fetchone()
+        assert version == len(seen._MIGRATIONS)
+    finally:
+        loser.close()
 
 
 def test_reopen_is_idempotent(tmp_path: Path) -> None:

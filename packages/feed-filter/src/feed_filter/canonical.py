@@ -138,15 +138,28 @@ def resolve_link(base_url: str, href: str | None, *, require_same_host: bool = F
     Returns ``None`` (caller skips the link) when ``href`` is missing, blank,
     fragment-only (``#anchor`` — these collapse to the base URL once the
     fragment is stripped), non-http(s) (``javascript:`` / ``mailto:`` would
-    explode in ``httpx``), or — under ``require_same_host`` — points off-host.
+    explode in ``httpx``), unparseable, or — under ``require_same_host`` —
+    points off-host.
+
+    Unparseable is one more flavor of unusable: an index page carrying a single
+    malformed link (``http://[oops``, a port past 65535) must cost that link, not
+    the site — the resolution raises ``ValueError`` there, and a gather error would
+    both suppress the ``zero_links`` self-heal and make the site yield nothing every
+    run thereafter.
     """
     if href is None:
         return None
     stripped = str(href).strip()
     if not stripped or stripped.startswith("#"):
         return None
-    absolute = urljoin(base_url, stripped)
-    parts = urlsplit(absolute)
+    try:
+        absolute = urljoin(base_url, stripped)
+        parts = urlsplit(absolute)
+        # ``port`` parses lazily, so read it here: otherwise an out-of-range port
+        # passes this guard and raises later, inside ``canonical_url``.
+        parts.port  # noqa: B018 — raises on a malformed port, which is the check
+    except ValueError:
+        return None
     if parts.scheme not in ("http", "https"):
         return None
     if require_same_host and (parts.hostname or "") != (urlsplit(base_url).hostname or ""):

@@ -294,6 +294,44 @@ def test_add_site_rejects_duplicate_id(tmp_path: Path) -> None:
     assert [s.id for s in load_sites(path)] == ["dup"]
 
 
+def test_writers_reject_an_uncompilable_pattern(tmp_path: Path) -> None:
+    """Neither writer may put a pattern on disk that `scrape_index` cannot compile.
+
+    ``scrape_index`` compiles it per fetch, so a bad one errors the site's gather
+    every run — and a gather error suppresses the ``zero_links`` signal that would
+    trigger the self-heal, so the site yields nothing until a human intervenes.
+    Both writers are guarded: ``add-site`` goes through ``add_site``, ``heal-site``
+    through ``update_pattern``.
+    """
+    path = tmp_path / "sites.toml"
+    with pytest.raises(ValueError, match="not a valid regex"):
+        add_site(path, _scrape(site_id="bad", pattern="/a("))
+    assert not path.exists()  # nothing written
+
+    add_site(path, _scrape(site_id="s1"))
+    with pytest.raises(ValueError, match="not a valid regex"):
+        update_pattern(path, "s1", "/a(")
+    assert load_sites(path)[0].article_url_pattern == r"^/blog/[^/]+/?$"  # unchanged
+
+
+def test_load_tolerates_an_uncompilable_pattern_already_on_disk(tmp_path: Path) -> None:
+    """One hand-edited bad pattern must not take the whole registry down with it.
+
+    The writers cannot produce this state, but a hand-edited ``sites.toml`` can, and
+    a failed load would stop every *other* site from gathering — for a defect local
+    to one row that the gather already isolates as that site's own error. The
+    structural checks in ``__post_init__`` stay at load time because a row failing
+    them cannot be interpreted at all; a pattern is only needed to fetch its own
+    site.
+    """
+    path = tmp_path / "sites.toml"
+    add_site(path, _feed(site_id="good"))
+    add_site(path, _scrape(site_id="bad"))
+    path.write_text(path.read_text(encoding="utf-8").replace(r"^/blog/[^/]+/?$", "/a("), "utf-8")
+
+    assert [s.id for s in load_sites(path)] == ["good", "bad"]
+
+
 def test_load_rejects_duplicate_ids(tmp_path: Path) -> None:
     # A hand-edited file can contain duplicate ids that add_site never produced;
     # load_sites must surface it loudly rather than routing to the first match.
