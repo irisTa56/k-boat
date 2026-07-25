@@ -32,8 +32,9 @@ def render_field(field: Field | None, value: object) -> str:
     """Render one value to its inline YAML text, by the field's kind.
 
     An unknown field (`None`) falls back to a plain scalar. This always returns a
-    single line: a block list is rendered multi-line by `build_note`, not here, so
-    `render_field` only sees inline-style lists.
+    single line: a block list's items are laid out by `build_note`, and a block
+    field reaches here only for a value with no items to lay out, which renders
+    as the scalar it is.
     """
     if field is None:
         return yaml_scalar(value)
@@ -74,10 +75,12 @@ def _scalar_line(name: str, rendered: str) -> str:
 def _block_list_lines(field: Field, value: object) -> list[str]:
     """A block list's lines: `key:`, then one `- item` each.
 
-    A value that is not a list has no items to lay out, so it goes back to the
-    single-line rendering rather than to `[]` — the same rule `render_field`
-    keeps, since a write that reports success while erasing what it was given is
-    the worse outcome either way.
+    A string holding an inline sequence is read into its items and laid out —
+    the reader hands an inline list back that way, and the note's own style is
+    what decides the shape it is written in. Anything else has no items to lay
+    out and goes back to the single-line rendering rather than to `[]`, the
+    same rule `render_field` keeps: a write that reports success while erasing
+    what it was given is the worse outcome either way.
     """
     if not isinstance(value, list):
         items = parse_flow_list(value) if isinstance(value, str) else None
