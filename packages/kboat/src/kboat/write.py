@@ -46,9 +46,15 @@ def render_field(field: Field | None, value: object) -> str:
         if isinstance(value, list):
             return yaml_list(list(value))
         # An inline list re-read from a note parses as its raw `[a, b]` string;
-        # pass it through unchanged rather than dropping it to `[]`.
+        # pass that through unchanged rather than dropping it to `[]`. Any other
+        # string is not a list at all, and emitting it bare would put its own
+        # `: ` or `#` into the frontmatter — one wrong-typed value would cost
+        # the whole block, where a quoted one costs only its own field.
         if isinstance(value, str):
-            return value
+            stripped = value.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                return value
+            return yaml_scalar(value)
         return yaml_list([])
     return yaml_scalar(value)
 

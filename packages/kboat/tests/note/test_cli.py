@@ -72,11 +72,16 @@ def test_collision_exits_nonzero(
     assert json.loads(capsys.readouterr().out)["status"] == "collision"
 
 
-def test_bad_input_and_usage(vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bad_input_and_usage(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stderr line says which refusal it was, so the agent knows what to fix.
     assert _run(["write", "--type", "source", "--vault", str(vault)], "not json", monkeypatch) == 2
+    assert "not valid JSON" in capsys.readouterr().err
     assert (
         _run(["write", "--type", "source", "--vault", str(vault)], '{"no":"slug"}', monkeypatch)
         == 2
     )
+    assert "'slug' key" in capsys.readouterr().err
     assert main([]) == 0  # bare usage
     assert main(["bogus"]) == 2  # unknown subcommand

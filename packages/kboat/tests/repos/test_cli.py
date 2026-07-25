@@ -81,21 +81,26 @@ def test_write_collision_exits_nonzero(
 
 
 @pytest.mark.parametrize(
-    ("stdin", "why"),
+    ("stdin", "diagnostic"),
     [
-        ("not json", "unparseable"),
-        ('["slug"]', "not an object"),
-        ('{"slug": "s"}', "missing the required keys"),
-        (json.dumps({**RECORD, "fields": "not an object"}), "`fields` is not an object"),
+        ("not json", "not valid JSON"),
+        ('["slug"]', "must be a JSON object"),
+        ('{"slug": "s"}', "missing required keys: url, title"),
+        (json.dumps({**RECORD, "fields": "not an object"}), "'fields' must be a JSON object"),
     ],
 )
 def test_write_rejects_a_record_it_cannot_use(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdin: str, why: str
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    stdin: str,
+    diagnostic: str,
 ) -> None:
-    # Exit 2 (bad input), not a traceback: the record is assembled by an agent,
-    # so a malformed one has to read as a diagnostic.
+    # Exit 2 (bad input), not a traceback — and the stderr line is the product:
+    # the record is assembled by an agent, which reads it to know what to re-send.
     _stdin(monkeypatch, stdin)
-    assert write_main(["--vault", str(tmp_path)]) == 2, why
+    assert write_main(["--vault", str(tmp_path)]) == 2
+    assert diagnostic in capsys.readouterr().err
     assert not (tmp_path / "Repos").exists()
 
 

@@ -16,18 +16,37 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
 from kboat.frontmatter import FrontmatterError, parse_frontmatter
+from kboat.frontmatter import set_fields as _set_rendered_fields
 from kboat.io_utils import atomic_write_text
+from kboat.schema import REPO
+from kboat.write import render_field
 
 from .gather import gh_repo_view, github_fields, resolved_identity
 from .identity import canonical_slug, canonical_url, parse_repo
-from .notes import set_fields
 
 MAX_WORKERS = 10
+
+
+def set_fields(text: str, updates: Mapping[str, object]) -> str:
+    """Rewrite the named top-level frontmatter lines in place.
+
+    Each key in `updates` must already exist as a top-level line (refresh targets
+    always-present GitHub-derived fields); a missing key is a `FrontmatterError`,
+    not a silent insert. The field order, every other field, and the body survive.
+
+    An in-place line rewrite rather than a re-write of the whole note, which is
+    what makes the judgement layer and the body untouchable here. It works
+    because every repo list (`language`, `topics`, `domain`) is inline
+    (`topics: [a, b]`), so each top-level field occupies exactly one line.
+    """
+    rendered = {key: render_field(REPO.get(key), value) for key, value in updates.items()}
+    return _set_rendered_fields(text, rendered)
 
 
 def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dict[str, str]]]:

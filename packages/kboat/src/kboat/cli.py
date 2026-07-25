@@ -6,6 +6,10 @@ record on stdin, results on stdout and diagnostics on stderr, and one mapping
 from outcome to exit code — and holding it here is what keeps that from
 drifting apart. What each keeps is its own: the record shape it accepts, the
 diagnostics for a record it refuses, and any key it adds to the result.
+
+The other `kboat-*` CLIs stay out: they write no record, and each reads
+`--today` as a `date` rather than carrying the string through to a note, so
+what they share with these two is a flag name and not a contract.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -31,11 +35,16 @@ class BadInputError(Exception):
 
 
 def _iso_date(value: str) -> str:
+    """`value` as `YYYY-MM-DD`, or a usage error.
+
+    Returned in canonical form rather than as given: `fromisoformat` also reads
+    the basic (`20260606`) and week-date (`2026-W23-1`) forms, and the value is
+    written into a note verbatim, where only `YYYY-MM-DD` is a date.
+    """
     try:
-        date.fromisoformat(value)
+        return date.fromisoformat(value).isoformat()
     except ValueError as e:
         raise argparse.ArgumentTypeError(f"must be YYYY-MM-DD, got {value!r}") from e
-    return value
 
 
 def add_write_arguments(parser: argparse.ArgumentParser) -> None:
@@ -69,7 +78,7 @@ def _read_json_record() -> dict:
     return record
 
 
-def run_write(write: Callable[[dict], Mapping[str, object]]) -> int:
+def run_write(write: Callable[[dict], dict[str, object]]) -> int:
     """Hand the JSON record on stdin to `write`, print its result, and return the exit code.
 
     Reading stdin here rather than in the caller is what makes exit 2 reachable:

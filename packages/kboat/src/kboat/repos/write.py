@@ -35,10 +35,12 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
     through, so a key the classifier invents cannot reach the frontmatter —
     `upsert` would otherwise append it rather than drop it.
 
-    Everything the block did not own comes back as `dropped_fields`. It reaches
-    here by way of the skill re-serialising the gather record, so a key that
-    arrives misspelled is a field left quietly unset; having decided to discard,
-    saying what was discarded is what keeps that visible.
+    Everything the block did not own comes back as `dropped_fields` — but only
+    on a write that happened, since a refused collision leaves every field
+    unset and the collision is the thing to report. The block reaches here by
+    way of the skill re-serialising the gather record, so a key that arrives
+    misspelled is a field left quietly unset; having decided to discard, saying
+    what was discarded is what keeps that visible.
     """
     # The identity and the judgement layer are read off the top level, so a copy
     # of one under `fields` is a duplicate this write would silently overrule.
@@ -59,7 +61,9 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
             dropped.append(key)
     fields.update(top_level)
     result = upsert(REPO, vault, {"slug": record["slug"], "fields": fields}, today=today_iso)
-    return {**result, "dropped_fields": dropped} if dropped else result
+    if dropped and result["status"] != "collision":
+        return {**result, "dropped_fields": dropped}
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,15 +1,18 @@
-"""Tests for `refresh` — metadata update, judgement/body preservation, and the
-adopt-rename of renamed/transferred/case-changed repos. `gh` is monkeypatched."""
+"""Tests for `refresh` — its in-place field rewrite, the metadata update,
+judgement/body preservation, and the adopt-rename of renamed/transferred/
+case-changed repos. `gh` is monkeypatched."""
 
 from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 import kboat.repos.refresh as refresh_mod
-from kboat.frontmatter import parse_frontmatter
+from kboat.frontmatter import FrontmatterError, body_after_frontmatter, parse_frontmatter
 from kboat.repos.identity import canonical_slug
-from kboat.repos.refresh import refresh
+from kboat.repos.refresh import refresh, set_fields
 from kboat.schema import REPO
 from kboat.write import upsert
 
@@ -66,6 +69,29 @@ def _meta(owner: str, name: str) -> dict:
         "createdAt": "2024-01-01T00:00:00Z",
         "stargazerCount": 42,
     }
+
+
+def test_set_fields_preserves_other_fields_and_body(tmp_path: Path) -> None:
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool").read_text()
+
+    updated = set_fields(note, {"stars": 99999, "status": "dormant", "topics": ["x", "y"]})
+
+    fm = parse_frontmatter(updated)
+    assert fm["stars"] == "99999"
+    assert fm["status"] == "dormant"
+    assert "topics: [x, y]" in updated
+    # Untouched judgement + body survive.
+    assert fm["role"] == "library"
+    assert fm["summary"] == "要約"
+    assert body_after_frontmatter(updated).strip().endswith("keep me")
+
+
+def test_set_fields_missing_key_raises(tmp_path: Path) -> None:
+    # A key that is not already a top-level line is a note to look at, not a
+    # field to insert — refresh only ever rewrites fields every note carries.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool").read_text()
+    with pytest.raises(FrontmatterError):
+        set_fields(note, {"nonexistent_field": "x"})
 
 
 def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, monkeypatch) -> None:
