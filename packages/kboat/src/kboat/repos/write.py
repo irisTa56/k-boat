@@ -19,16 +19,21 @@ from pathlib import Path
 
 from kboat.io_utils import atomic_write_text
 
-from .notes import FrontmatterError, body_after_frontmatter, build_repo_note, parse_frontmatter
+from .notes import (
+    FrontmatterError,
+    body_after_frontmatter,
+    build_repo_note,
+    parse_frontmatter,
+    split_notes_section,
+)
 
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")
 
 
 def _existing_notes_body(text: str) -> str:
-    """The content under `## Notes` in an existing note (empty if none)."""
-    after = body_after_frontmatter(text)
-    _, sep, tail = after.partition("## Notes")
-    return tail.strip() if sep else after.strip()
+    """The content under `## Notes`, or the whole body when there is no heading."""
+    head, notes = split_notes_section(body_after_frontmatter(text))
+    return head if notes is None else notes
 
 
 def write_note(record: dict, vault: Path, *, today_iso: str) -> dict:

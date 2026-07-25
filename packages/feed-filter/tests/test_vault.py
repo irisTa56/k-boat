@@ -131,6 +131,30 @@ def test_rewrite_resurfaces_hidden_cards_preserves_shelved(tmp_path: Path) -> No
     assert fm["added_date"] == "2026-07-19"  # created stamp stable across the re-write
 
 
+def test_an_unreadable_url_says_so_rather_than_blaming_a_hash_clash(tmp_path: Path) -> None:
+    # The two refusals need different words: this one is a note to repair by
+    # hand, not the astronomically-unlikely 48-bit clash the other message names.
+    slug = url_slug(str(CU))
+    (tmp_path / "Feeds").mkdir()
+    (tmp_path / "Feeds" / f"{slug}.md").write_text(
+        "---\ntype: feed\ntitle: T\nurl: >-\n  https://example.com/post\n"
+        "shelved: false\ndismissed: false\nwall: false\n"
+        "feed_kind: article\nsite_id: ex\nsummary:\nadded_date: 2026-07-01\n---\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(VaultError, match="cannot be read"):
+        write_feed_note(
+            tmp_path,
+            CU,
+            title="Mine",
+            feed_kind="article",
+            site_id="ex",
+            summary="",
+            wall=False,
+            today="2026-07-19",
+        )
+
+
 def test_collision_raises_vault_error(tmp_path: Path) -> None:
     # A note already at this slug carrying a DIFFERENT url is a collision.
     slug = url_slug(str(CU))

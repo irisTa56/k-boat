@@ -21,7 +21,7 @@ from kboat.frontmatter import (
 )
 from kboat.frontmatter import set_fields as _set_rendered_fields
 from kboat.schema import REPO
-from kboat.write import build_note, render_field
+from kboat.write import build_note, render_field, split_notes_section
 
 __all__ = [
     "FrontmatterError",
@@ -29,6 +29,7 @@ __all__ = [
     "build_repo_note",
     "parse_frontmatter",
     "set_fields",
+    "split_notes_section",
     "yaml_scalar",
 ]
 
