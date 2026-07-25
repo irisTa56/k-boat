@@ -78,16 +78,19 @@ def vault_path(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Pat
     return Path(args.vault).expanduser()
 
 
-def require_fields_mapping(record: dict) -> None:
-    """Raise `BadInputError` unless the record's `fields`, if it has one, is an object.
+def require_readable_payload(record: dict) -> None:
+    """Raise `BadInputError` unless the record's content keys are shapes the writer reads.
 
-    `upsert` reads a `fields` it cannot map as no fields at all, so on a create
-    this would land a note of nothing but defaults and report it as written. A
-    record that says something the writer cannot read is the agent's to fix, not
-    the vault's to absorb.
+    `upsert` reads a `fields` it cannot map as no fields and a `body` it cannot
+    read as no body, so on a create either would land an empty note and report
+    it as written — and for a `verbatim` schema the body is the whole point of
+    the write. A record that says something the writer cannot read is the
+    agent's to fix, not the vault's to absorb.
     """
     if not isinstance(record.get("fields", {}), dict):
         raise BadInputError("record 'fields' must be a JSON object")
+    if not isinstance(record.get("body", ""), str):
+        raise BadInputError("record 'body' must be a string")
 
 
 def _read_json_record() -> dict:

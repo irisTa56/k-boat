@@ -83,12 +83,16 @@ def test_bad_input_and_usage(
         == 2
     )
     assert "'slug' key" in capsys.readouterr().err
-    # A `fields` the writer cannot read would otherwise land a note of nothing
-    # but defaults, reported as written — the same refusal `kboat-repos write`
-    # makes, since the two are one contract.
+    # A content key the writer cannot read would otherwise land an empty note,
+    # reported as written — and for a Kindle book the body is the write. The
+    # same refusal `kboat-repos write` makes, since the two are one contract.
     bad_fields = json.dumps({"slug": "s1", "fields": "oops"})
     assert _run(["write", "--type", "source", "--vault", str(vault)], bad_fields, monkeypatch) == 2
     assert "'fields' must be a JSON object" in capsys.readouterr().err
+    bad_body = json.dumps({"slug": "B1", "fields": {"type": "kindle"}, "body": ["a quote"]})
+    assert _run(["write", "--type", "kindle", "--vault", str(vault)], bad_body, monkeypatch) == 2
+    assert "'body' must be a string" in capsys.readouterr().err
     assert not (vault / "Sources" / "s1.md").exists()
+    assert not (vault / "Kindles" / "B1.md").exists()
     assert main([]) == 0  # bare usage
     assert main(["bogus"]) == 2  # unknown subcommand

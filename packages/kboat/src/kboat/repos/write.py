@@ -18,7 +18,7 @@ from kboat.cli import (
     BadInputError,
     add_today_argument,
     add_vault_argument,
-    require_fields_mapping,
+    require_readable_payload,
     run_write,
     vault_path,
 )
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         missing = [k for k in REQUIRED if k not in record]
         if missing:
             raise BadInputError(f"record is missing required keys: {', '.join(missing)}")
-        require_fields_mapping(record)
+        require_readable_payload(record)
         return write_note(record, vault, today_iso=args.today)
 
     return run_write(write)
