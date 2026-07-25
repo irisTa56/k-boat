@@ -18,6 +18,18 @@ def _url(s: str) -> CanonicalUrl:
     return CanonicalUrl(s)
 
 
+def _apply(conn: sqlite3.Connection, upto: int) -> None:
+    """Hand-build a DB at version ``upto`` by running migrations 0..upto-1.
+
+    Lets the next migration be exercised as an upgrade over pre-existing data,
+    rather than as part of a fresh all-at-once create.
+    """
+    for migration in seen._MIGRATIONS[:upto]:
+        for statement in migration:
+            conn.execute(statement)
+    conn.execute(f"PRAGMA user_version = {upto}")
+
+
 @pytest.fixture
 def conn(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     c = seen.open_db(tmp_path / "feed-filter.db")
@@ -53,9 +65,7 @@ def test_v3_upgrade_defaults_existing_rows_to_not_poll_eligible(tmp_path: Path) 
     """
     path = tmp_path / "v2.db"
     raw = sqlite3.connect(path)
-    raw.executescript(seen._MIGRATIONS[0])  # v1: seen
-    raw.executescript(seen._MIGRATIONS[1])  # v2: forum tables (no poll_eligible)
-    raw.execute("PRAGMA user_version = 2")
+    _apply(raw, 2)  # v1: seen, v2: forum tables (no poll_eligible)
     raw.execute(
         "INSERT INTO forum_watch (site_id, topic_id, first_seen_at, completed_polls, retired) "
         "VALUES ('s1', 42, 1000, 0, 0)"
@@ -94,10 +104,7 @@ def test_v4_migration_applies_over_v3_without_touching_existing_tables(tmp_path:
     """
     path = tmp_path / "v3.db"
     raw = sqlite3.connect(path)
-    raw.executescript(seen._MIGRATIONS[0])  # v1: seen
-    raw.executescript(seen._MIGRATIONS[1])  # v2: forum tables
-    raw.executescript(seen._MIGRATIONS[2])  # v3: poll_eligible
-    raw.execute("PRAGMA user_version = 3")
+    _apply(raw, 3)  # v1: seen, v2: forum tables, v3: poll_eligible
     raw.execute(
         "INSERT INTO forum_watch (site_id, topic_id, first_seen_at, completed_polls, retired) "
         "VALUES ('s1', 42, 1000, 0, 0)"
@@ -126,6 +133,51 @@ def test_migration_stamps_user_version(tmp_path: Path) -> None:
         assert version == len(seen._MIGRATIONS)
     finally:
         c.close()
+
+
+def test_failed_migration_rolls_back_so_the_next_open_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A migration that dies partway leaves the DB at its previous version.
+
+    Each migration's statements and its ``user_version`` stamp share one
+    transaction, so "DDL applied, version not stamped" is not a reachable state.
+    Without that, an interrupted v3 would leave ``poll_eligible`` added with the
+    version still at 2, and every later open would re-run the ALTER and die on
+    ``duplicate column name`` — a permanently wedged store, recoverable only by
+    hand. The crash is injected as a statement failing *after* the real DDL, which
+    is what a process killed mid-migration looks like to the database.
+    """
+    path = tmp_path / "v2.db"
+    raw = sqlite3.connect(path)
+    _apply(raw, 2)  # v1: seen, v2: forum tables (no poll_eligible)
+    raw.commit()
+    raw.close()
+
+    crashing = list(seen._MIGRATIONS)
+    crashing[2] = (*crashing[2], "INSERT INTO no_such_table VALUES (1)")
+    monkeypatch.setattr(seen, "_MIGRATIONS", crashing)
+    with pytest.raises(sqlite3.OperationalError):
+        seen.open_db(path)
+    monkeypatch.undo()
+
+    raw = sqlite3.connect(path)
+    try:
+        (version,) = raw.execute("PRAGMA user_version").fetchone()
+        assert version == 2, "the interrupted migration must not have stamped its version"
+        cols = {row[1] for row in raw.execute("PRAGMA table_info(forum_watch)")}
+        assert "poll_eligible" not in cols, "its DDL must roll back with the stamp"
+    finally:
+        raw.close()
+
+    conn = seen.open_db(path)  # recovers by re-running v3 over a clean v2
+    try:
+        (version,) = conn.execute("PRAGMA user_version").fetchone()
+        assert version == len(seen._MIGRATIONS)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(forum_watch)")}
+        assert "poll_eligible" in cols, "the retry must apply the rolled-back migration"
+    finally:
+        conn.close()
 
 
 def test_reopen_is_idempotent(tmp_path: Path) -> None:

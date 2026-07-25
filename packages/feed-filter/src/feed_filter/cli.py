@@ -250,9 +250,13 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
     worker fetches its host's sites in turn, so a host is never hit concurrently.
     ``requires_browser`` sites are fetched on the main thread because Playwright's
     sync API is not thread-safe. ``fetch_site`` absorbs a fetch failure into the
-    outcome's ``error``; an *unexpected* exception in a worker surfaces
-    when its future is drained here, propagating out of the run exactly as the
-    former sequential gather would have.
+    outcome's ``error``; an *unexpected* exception is absorbed the same way, per
+    site, so one bad site costs its own entries and nothing else — the rest of its
+    host group and every other group still complete. That keeps the failure in the
+    run summary (``sites[].error``, and the site-health counter it increments)
+    instead of aborting the gather, and records nothing seen for the failed site,
+    so the next run retries it. ``BaseException`` still propagates: a
+    ``KeyboardInterrupt`` or ``MemoryError`` is not a site's fault to absorb.
     """
     outcomes: dict[str, FetchOutcome] = {}
 
@@ -262,9 +266,17 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
             continue
         host_groups.setdefault(_gather_host_key(site), []).append(site)
 
+    def fetch_one(site: SiteConfig) -> FetchOutcome:
+        try:
+            return fetch_site(site, client=client)
+        except Exception as exc:
+            # The type name matters: an unexpected exception's str() is often empty
+            # (``RuntimeError()``), which would surface as a blank error.
+            return FetchOutcome(entries=[], error=f"unexpected {type(exc).__name__}: {exc}")
+
     def fetch_group(group: list[SiteConfig]) -> list[tuple[str, FetchOutcome]]:
         # One host per worker: fetch its sites sequentially (never concurrently).
-        return [(s.id, fetch_site(s, client=client)) for s in group]
+        return [(s.id, fetch_one(s)) for s in group]
 
     if host_groups:
         with ThreadPoolExecutor(
@@ -277,7 +289,7 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
     # Browser sites on the main thread (Playwright is single-threaded).
     for site in sites:
         if site.requires_browser:
-            outcomes[site.id] = fetch_site(site, client=client)
+            outcomes[site.id] = fetch_one(site)
 
     return outcomes
 
@@ -455,10 +467,16 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
     ``null`` on a cache miss — a non-feed entry (scrape entries carry no body), an
     interrupted run, or a body evicted by a later ``new-entries`` — and the judge
     falls back to a full-page WebFetch, so never-lost holds.
+
+    The lookup canonicalizes first, like ``remind`` and ``mark-seen``: the cache is
+    keyed by the canonical URL ``new-entries`` emitted, so a caller holding a
+    variant of that URL would otherwise miss a body that is cached. The emitted
+    ``url`` is the canonical form the body was found under.
     """
+    cu = canonical_url(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
-        body = body_cache.get(conn, args.url)
-    _emit({"url": args.url, "body": body})
+        body = body_cache.get(conn, cu)
+    _emit({"url": str(cu), "body": body})
     return 0
 
 

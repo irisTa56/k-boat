@@ -408,6 +408,36 @@ def test_entry_body_cache_miss_returns_null(
     assert _out(capsys) == {"url": url, "body": None}
 
 
+def test_entry_body_canonicalizes_the_lookup_url(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-canonical variant of a cached entry's URL still hits the cache.
+
+    The cache is keyed by the canonical URL ``new-entries`` emitted, so a caller
+    holding a tracking-tagged or fragment-bearing variant of it — the same page —
+    must be normalized to that key, matching ``remind`` and ``mark-seen``, rather
+    than reported as a miss and re-fetched in full.
+    """
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    body = "Full article body."
+
+    def fake_fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
+        url = canonical_url("https://a.example.com/deep")
+        return FetchOutcome(entries=[Entry(url, "Deep", body, None, "feed")], error=None)
+
+    monkeypatch.setattr(cli, "fetch_site", fake_fetch)
+
+    assert cli.main(["new-entries"]) == 0
+    cached = _out(capsys)["entries"][0]["url"]
+
+    variant = "https://a.example.com/deep?utm_source=rss#intro"
+    assert str(canonical_url(variant)) == cached, "premise: the variant is the same page"
+    assert cli.main(["entry-body", "--url", variant]) == 0
+    # The emitted url is the canonical key the body was found under, not the input.
+    assert _out(capsys) == {"url": cached, "body": body}
+
+
 def test_new_entries_caches_duplicate_canonical_url_without_crashing(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -548,36 +578,49 @@ def test_new_entries_fetches_hosts_concurrently_but_serializes_same_host(
     assert max(peak.values()) == 1
 
 
-def test_new_entries_unexpected_worker_exception_aborts_run(
+def test_new_entries_unexpected_worker_exception_is_isolated_to_its_site(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An *unexpected* (non-``FetchError``) exception in a fetch worker surfaces and
-    aborts the run — it is never swallowed into a partial, exit-0 emit.
+    """An *unexpected* (non-``FetchError``) exception costs only its own site.
 
-    A ``FetchError`` is absorbed per site, but a genuine bug is not: it
-    propagates out of the pool when the future is drained, exactly as the former
-    sequential gather would have. This guards the documented "propagates out of the
-    run" invariant against a future ``try/except`` around ``pool.map`` that would
-    silently emit an incomplete run.
+    It is absorbed into that site's ``error`` exactly as a fetch failure is, so
+    every other site's entries still reach stdout — a bug on one of ~80 sites must
+    not discard the whole gather. The failure stays visible (``sites[].error``, and
+    the site-health counter it increments) and records nothing seen, so the next
+    run retries it.
+
+    ``b1`` and ``b2`` share a host, so they run in one worker: the isolation has to
+    be per site, not per host group, or ``b2`` would be lost with ``b1``.
     """
-    for host in ("a", "b"):  # two hosts so the failing one runs in a pool worker
-        add_site(
-            sites_path(),
-            SiteConfig(id=host, name=host, feed_url=f"https://{host}.example.com/f.xml"),
-        )
+    hosts = {"a": ["a1"], "b": ["b1", "b2"], "c": ["c1"]}
+    for host, ids in hosts.items():
+        for site_id in ids:
+            add_site(
+                sites_path(),
+                SiteConfig(
+                    id=site_id,
+                    name=site_id,
+                    feed_url=f"https://{host}.example.com/{site_id}.xml",
+                ),
+            )
     _no_client(monkeypatch)
 
     def boom(site: SiteConfig, *, client: object) -> FetchOutcome:
-        if site.id == "b":
+        if site.id == "b1":
             raise RuntimeError("bug in a worker")
-        return FetchOutcome(entries=[], error=None)
+        return FetchOutcome(entries=[_entry(f"https://e.example.com/{site.id}")], error=None)
 
     monkeypatch.setattr(cli, "fetch_site", boom)
     capsys.readouterr()  # drop the add-site output
 
-    with pytest.raises(RuntimeError, match="bug in a worker"):
-        cli.main(["new-entries"])
-    assert capsys.readouterr().out == ""  # aborted before the final _emit — nothing emitted
+    assert cli.main(["new-entries"]) == 0
+    out = _out(capsys)
+    assert [e["site_id"] for e in out["entries"]] == ["a1", "b2", "c1"]
+
+    status = {s["site_id"]: s for s in out["sites"]}
+    assert status["b1"]["error"] == "unexpected RuntimeError: bug in a worker"
+    assert status["b1"]["consecutive_failures"] == 1  # escalates like any outage
+    assert all(status[i]["error"] is None for i in ("a1", "b2", "c1"))
 
 
 def test_new_entries_unknown_site_id_exits_nonzero(
