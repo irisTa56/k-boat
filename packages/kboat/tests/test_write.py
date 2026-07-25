@@ -34,10 +34,10 @@ def test_render_field_by_kind() -> None:
         ("[{a]", "likewise a mapping"),
     ],
 )
-def test_a_string_that_is_no_flow_sequence_is_quoted(value: str, why: str) -> None:
+def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why: str) -> None:
     # A value that carries its own syntax into the block costs the whole note —
-    # the frontmatter stops parsing and Obsidian drops it from every Base.
-    # Quoted, a wrong-typed value costs only its own field.
+    # the frontmatter stops parsing and Obsidian drops it from every Base. Read
+    # as a scalar, a wrong-typed value costs only its own field.
     note = build_note(REPO, {"type": "repo", "title": "r", "topics": value})
 
     assert parse_frontmatter(note)["topics"] == value, why

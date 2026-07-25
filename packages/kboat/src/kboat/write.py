@@ -49,9 +49,10 @@ def render_field(field: Field | None, value: object) -> str:
         # An inline list re-read from a note comes back as its raw `[a, b]`
         # source. Read it and re-render rather than pass it through, so what
         # reaches the note has been through the one renderer that knows how to
-        # quote a flow item. A string that is no sequence at all is quoted: a
-        # wrong-typed value then costs its own field, where a bare one would
-        # cost the whole block.
+        # quote a flow item. A string that is no sequence at all goes through
+        # `yaml_scalar` instead and so stays a valid scalar: a wrong-typed value
+        # then costs its own field, where a bare flow fragment would cost the
+        # whole block.
         if isinstance(value, str):
             items = parse_flow_list(value)
             return yaml_list(items) if items is not None else yaml_scalar(value)

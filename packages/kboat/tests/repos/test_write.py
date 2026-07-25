@@ -8,12 +8,14 @@ can reach a field the record does not own.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from kboat.frontmatter import parse_frontmatter
+from kboat.repos.gather import github_fields
 from kboat.repos.write import write_note
 from kboat.validate.core import check_note
 
@@ -164,6 +166,19 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
 
 def test_write_reports_nothing_dropped_when_nothing_was(tmp_path: Path) -> None:
     assert "dropped_fields" not in write_note(RECORD, tmp_path, today_iso="2026-06-06")
+
+
+def test_every_field_gather_produces_is_one_the_note_takes(tmp_path: Path) -> None:
+    # `dropped_fields` is a signal only if the happy path never trips it — the
+    # skill relays it on every unattended run. Driven by the real producer, so a
+    # key added to `github_fields` that `REPO` does not declare fails here
+    # rather than turning every run into noise.
+    result = write_note(
+        {**RECORD, "fields": github_fields({}, today=date(2026, 6, 6))},
+        tmp_path,
+        today_iso="2026-06-06",
+    )
+    assert "dropped_fields" not in result
 
 
 def test_write_update_preserves_a_github_field_the_record_omits(tmp_path: Path) -> None:
