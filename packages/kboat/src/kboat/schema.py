@@ -159,6 +159,7 @@ FEED = NoteSchema(
         Field("type", Kind.ENUM, enum=("feed",), default="feed"),
         Field("title", Kind.STR),
         Field("url", Kind.STR),
+        _bool("read"),
         _bool("shelved"),
         _bool("dismissed"),
         _bool("wall"),

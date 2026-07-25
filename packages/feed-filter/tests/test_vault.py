@@ -44,7 +44,10 @@ def test_create_writes_a_feed_note_with_defaults(tmp_path: Path) -> None:
     assert fm["site_id"] == "ex"
     assert fm["summary"] == "a snippet"
     assert fm["added_date"] == "2026-07-19"
-    # Always-present booleans defaulted false — feed-filter never wrote them.
+    # All four status booleans are present and false on a fresh card. `shelved`
+    # is the one feed-filter never writes — `upsert`'s always-present default
+    # fills it; the other three feed-filter writes itself.
+    assert fm["read"] is False
     assert fm["shelved"] is False
     assert fm["dismissed"] is False
     assert fm["wall"] is False
@@ -85,7 +88,7 @@ def test_wall_and_forum_kind_are_written(tmp_path: Path) -> None:
     assert fm["wall"] is True
 
 
-def test_rewrite_resurfaces_dismissed_preserves_shelved(tmp_path: Path) -> None:
+def test_rewrite_resurfaces_hidden_cards_preserves_shelved(tmp_path: Path) -> None:
     write_feed_note(
         tmp_path,
         CU,
@@ -97,9 +100,11 @@ def test_rewrite_resurfaces_dismissed_preserves_shelved(tmp_path: Path) -> None:
         today="2026-07-19",
     )
     note = tmp_path / "Feeds" / f"{url_slug(str(CU))}.md"
-    # The human shelves and dismisses the card.
+    # The human ticks every disposition box at once, so each flag's treatment on
+    # the re-write has to hold on its own rather than only one of them.
     note.write_text(
         note.read_text()
+        .replace("read: false", "read: true")
         .replace("shelved: false", "shelved: true")
         .replace("dismissed: false", "dismissed: true"),
         encoding="utf-8",
@@ -118,7 +123,9 @@ def test_rewrite_resurfaces_dismissed_preserves_shelved(tmp_path: Path) -> None:
     assert result["status"] == "updated"
     fm = _fm(tmp_path, str(CU))
     assert fm["shelved"] is True  # the reader's "read later" is preserved
-    assert fm["dismissed"] is False  # reset to false — the topic resurfaces on new activity
+    # Both hiding flags reset — the topic resurfaces on new activity.
+    assert fm["read"] is False
+    assert fm["dismissed"] is False
     assert fm["wall"] is True  # feed-filter's field refreshed
     assert fm["summary"] == "second"
     assert fm["added_date"] == "2026-07-19"  # created stamp stable across the re-write
@@ -130,7 +137,7 @@ def test_collision_raises_vault_error(tmp_path: Path) -> None:
     (tmp_path / "Feeds").mkdir()
     (tmp_path / "Feeds" / f"{slug}.md").write_text(
         "---\ntype: feed\ntitle: Other\nurl: https://other.example/x\n"
-        "shelved: false\ndismissed: false\nwall: false\n"
+        "read: false\nshelved: false\ndismissed: false\nwall: false\n"
         "feed_kind: article\nsite_id: ex\nsummary:\nadded_date: 2026-07-01\n---\n",
         encoding="utf-8",
     )

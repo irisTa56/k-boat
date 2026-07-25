@@ -168,6 +168,7 @@ def _feed(**over: Value) -> dict[str, Value]:
         "type": "feed",
         "title": "An article",
         "url": "https://example.com/post",
+        "read": False,
         "shelved": False,
         "dismissed": False,
         "wall": False,
@@ -183,9 +184,11 @@ def _feed(**over: Value) -> dict[str, Value]:
 def test_valid_feed() -> None:
     assert check_note("feed", _feed(), "p") == []
     assert check_note("feed", _feed(feed_kind="forum", summary="a topic"), "p") == []
-    # shelved + dismissed together is valid by design (orthogonal, unlike a
-    # source's exclusive dispositions), so the feed type has no cross-field rule.
-    assert check_note("feed", _feed(shelved=True, dismissed=True), "p") == []
+    # Two dispositions at once is not a schema violation, unlike a source's
+    # exclusive ones. The feed booleans are independent: one-tick-per-exit is a
+    # triage convention (kboat-feed-notes), and a stray extra tick is something
+    # the reader sees and undoes in the Base, not vault drift worth reporting.
+    assert check_note("feed", _feed(read=True, shelved=True, dismissed=True), "p") == []
     # The status booleans are always-present: a null one is empty_required.
     assert "empty_required" in _codes("feed", _feed(dismissed=None))
     assert "bad_enum" in _codes("feed", _feed(feed_kind="video"))
