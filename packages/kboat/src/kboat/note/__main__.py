@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from kboat.cli import BadInputError, add_write_arguments, read_json_record, run_write, vault_path
+from kboat.cli import BadInputError, add_write_arguments, run_write, vault_path
 from kboat.schema import BY_TYPE
 from kboat.write import upsert
 
@@ -28,8 +28,7 @@ def _write(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     vault = vault_path(parser, args)
 
-    def write() -> dict[str, object]:
-        record = read_json_record()
+    def write(record: dict) -> dict[str, object]:
         if "slug" not in record:
             raise BadInputError("record must carry a 'slug' key")
         return upsert(BY_TYPE[args.type], vault, record, today=args.today)

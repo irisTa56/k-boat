@@ -34,8 +34,8 @@ def test_booleans_are_never_empty_ok() -> None:
                 assert not f.empty_ok and f.present, f"{schema.type}.{f.name}"
 
 
-def test_repo_writer_emits_schema_field_order() -> None:
-    # The order now lives only in the schema; the writer reads it.
+def test_build_note_emits_schema_field_order() -> None:
+    # The order lives only in the schema; the writer reads it.
     from kboat.frontmatter import parse_frontmatter
     from kboat.write import build_note
 

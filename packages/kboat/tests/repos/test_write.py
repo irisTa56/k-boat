@@ -87,9 +87,10 @@ def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> N
 
 
 def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path: Path) -> None:
-    # `reading` is the human's and the date stamps are the schema's. A record
-    # carrying them (a hand-assembled one, or a gather record fed back in) must
-    # not reach them — nor may a key no schema knows reach the frontmatter.
+    # `reading` is the human's, the date stamps are the schema's, and `title` is
+    # read off the top level. A `fields` block carrying any of them (a
+    # hand-assembled record, or a gather record fed back in) must not reach
+    # them — nor may a key no schema knows reach the frontmatter.
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
     path = _note(tmp_path)
     path.write_text(path.read_text().replace("reading: false", "reading: true"))
@@ -102,6 +103,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
                 "reading": False,
                 "added_date": "1999-01-01",
                 "refreshed_date": "1999-01-01",
+                "title": "someone/else",
                 "invented_by_the_classifier": "x",
             },
         },
@@ -114,12 +116,14 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     assert fm["reading"] is True
     assert fm["added_date"] == "2026-06-06"
     assert fm["refreshed_date"] == "2027-01-01"
+    assert fm["title"] == "google/A2A"  # the top-level value, not the one under `fields`
     assert "invented_by_the_classifier" not in note
     # Dropped, but not in silence — the caller is told what it sent that did not land.
     assert result["dropped_fields"] == [
         "reading",
         "added_date",
         "refreshed_date",
+        "title",
         "invented_by_the_classifier",
     ]
 

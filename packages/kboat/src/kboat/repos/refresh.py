@@ -20,11 +20,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
+from kboat.frontmatter import FrontmatterError, parse_frontmatter
 from kboat.io_utils import atomic_write_text
 
 from .gather import gh_repo_view, github_fields, resolved_identity
 from .identity import canonical_slug, canonical_url, parse_repo
-from .notes import FrontmatterError, parse_frontmatter, set_fields
+from .notes import set_fields
 
 MAX_WORKERS = 10
 

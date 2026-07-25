@@ -14,16 +14,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from kboat.cli import BadInputError, add_write_arguments, read_json_record, run_write, vault_path
+from kboat.cli import BadInputError, add_write_arguments, run_write, vault_path
 from kboat.schema import REPO
 from kboat.write import upsert
 
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")
 
-# Schema fields the record may not carry, because they are not its to know:
-# `reading` is the human's checkbox and the stamps are the schema's. `upsert`
-# preserves a field the write leaves alone and overwrites one it is given, so
-# dropping these is what keeps them the human's and the schema's.
+# Schema fields the `fields` block may not carry, because they are not its to
+# know: `reading` is the human's checkbox and the stamps are the schema's.
+# `upsert` preserves a field the write leaves alone and overwrites one it is
+# given, so dropping these is what keeps them the human's and the schema's.
 _NOT_FROM_THE_RECORD = frozenset({"reading"} | {f.name for f in REPO.fields if f.stamp})
 
 
@@ -31,32 +31,33 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
     """Create or update `Repos/<slug>.md` from a gather + classification record.
 
     `record["fields"]` is `gather`'s GitHub-derived block; the identity and the
-    judgement layer arrive as top-level keys. Only fields the schema knows pass
+    judgement layer arrive as top-level keys. Only a field the block owns passes
     through, so a key the classifier invents cannot reach the frontmatter —
     `upsert` would otherwise append it rather than drop it.
 
-    What was dropped comes back as `dropped_fields`. The block reaches here by
-    way of the skill re-serialising the gather record, so a key that arrives
-    misspelled is a field left quietly unset; having decided to discard, saying
-    what was discarded is what keeps that visible.
+    Everything the block did not own comes back as `dropped_fields`. It reaches
+    here by way of the skill re-serialising the gather record, so a key that
+    arrives misspelled is a field left quietly unset; having decided to discard,
+    saying what was discarded is what keeps that visible.
     """
+    # The identity and the judgement layer are read off the top level, so a copy
+    # of one under `fields` is a duplicate this write would silently overrule.
+    top_level: dict[str, object] = {
+        "type": "repo",
+        "title": record["title"],
+        "url": record["url"],
+        "role": record["role"],
+        "domain": record["domain"],
+        "summary": record["summary"],
+    }
     fields: dict[str, object] = {}
     dropped: list[str] = []
     for key, value in record["fields"].items():
-        if REPO.get(key) is not None and key not in _NOT_FROM_THE_RECORD:
+        if REPO.get(key) is not None and key not in _NOT_FROM_THE_RECORD and key not in top_level:
             fields[key] = value
         else:
             dropped.append(key)
-    fields.update(
-        {
-            "type": "repo",
-            "title": record["title"],
-            "url": record["url"],
-            "role": record["role"],
-            "domain": record["domain"],
-            "summary": record["summary"],
-        }
-    )
+    fields.update(top_level)
     result = upsert(REPO, vault, {"slug": record["slug"], "fields": fields}, today=today_iso)
     return {**result, "dropped_fields": dropped} if dropped else result
 
@@ -70,8 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     vault = vault_path(parser, args)
 
-    def write() -> dict[str, object]:
-        record = read_json_record()
+    def write(record: dict) -> dict[str, object]:
         missing = [k for k in REQUIRED if k not in record]
         if missing:
             raise BadInputError(f"record is missing required keys: {', '.join(missing)}")

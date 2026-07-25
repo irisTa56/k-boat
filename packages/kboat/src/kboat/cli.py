@@ -1,10 +1,11 @@
 """Shared plumbing for the note-writing entry points.
 
-`kboat-note write` and `kboat-repos write` are two contracts over one writer:
-they differ in the record shape they accept and must otherwise behave
-identically — same flags, same exit codes, same diagnostics, same JSON on
-stdout. Holding that here is what makes "identically" a fact rather than a
-convention two files happen to share.
+`kboat-note write` and `kboat-repos write` are two contracts over one writer.
+What they share is the shape of the transaction — the same flags, one JSON
+record on stdin, results on stdout and diagnostics on stderr, and one mapping
+from outcome to exit code — and holding it here is what keeps that from
+drifting apart. What each keeps is its own: the record shape it accepts, the
+diagnostics for a record it refuses, and any key it adds to the result.
 """
 
 from __future__ import annotations
@@ -29,6 +30,14 @@ class BadInputError(Exception):
     """
 
 
+def _iso_date(value: str) -> str:
+    try:
+        date.fromisoformat(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"must be YYYY-MM-DD, got {value!r}") from e
+    return value
+
+
 def add_write_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vault",
@@ -37,24 +46,20 @@ def add_write_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--today",
+        type=_iso_date,
         default=date.today().isoformat(),
         help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
     )
 
 
 def vault_path(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Path:
-    """The validated vault root; a usage error (exit 2) if the arguments are unusable."""
+    """The vault root, or a usage error (exit 2) when neither flag nor env gives one."""
     if not args.vault:
         parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
-    try:
-        date.fromisoformat(args.today)
-    except ValueError:
-        parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
     return Path(args.vault).expanduser()
 
 
-def read_json_record() -> dict:
-    """The JSON object on stdin. Raises `BadInputError` if it is not one."""
+def _read_json_record() -> dict:
     try:
         record = json.load(sys.stdin)
     except json.JSONDecodeError as e:
@@ -64,14 +69,19 @@ def read_json_record() -> dict:
     return record
 
 
-def run_write(write: Callable[[], Mapping[str, object]]) -> int:
-    """Run one write, print its result as JSON, and return the process exit code.
+def run_write(write: Callable[[dict], Mapping[str, object]]) -> int:
+    """Hand the JSON record on stdin to `write`, print its result, and return the exit code.
+
+    Reading stdin here rather than in the caller is what makes exit 2 reachable:
+    a `BadInputError` raised while decoding the record has to be caught by the
+    same frame that maps it. `write` returns an `upsert` result — it is read for
+    `status`, a key an unwritten note still carries.
 
     Exit 2 is a record to fix, 1 a write that did not happen (a failure, or a
     refused collision), 0 a note on disk.
     """
     try:
-        result = write()
+        result = write(_read_json_record())
     except BadInputError as e:
         sys.stderr.write(f"{e}\n")
         return 2

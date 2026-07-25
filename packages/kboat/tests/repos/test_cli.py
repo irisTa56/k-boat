@@ -5,13 +5,14 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from kboat.repos.__main__ import main
 from kboat.repos.write import main as write_main
 
-RECORD = {
+RECORD: dict[str, Any] = {
     "slug": "abc123def456",
     "url": "https://github.com/google/A2A",
     "title": "google/A2A",
@@ -53,6 +54,18 @@ def test_write_dispatches_and_creates(
     out = json.loads(capsys.readouterr().out)
     assert out == {"status": "created", "slug": "abc123def456", "path": "Repos/abc123def456.md"}
     assert (tmp_path / "Repos" / "abc123def456.md").exists()
+
+
+def test_write_reports_dropped_keys_on_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The skill reads `dropped_fields` off the CLI's JSON, so that is where the
+    # report has to survive — not just in the library's return value.
+    _stdin(
+        monkeypatch, json.dumps({**RECORD, "fields": {**RECORD["fields"], "descrption": "typo"}})
+    )
+    assert write_main(["--vault", str(tmp_path), "--today", "2026-06-06"]) == 0
+    assert json.loads(capsys.readouterr().out)["dropped_fields"] == ["descrption"]
 
 
 def test_write_collision_exits_nonzero(
