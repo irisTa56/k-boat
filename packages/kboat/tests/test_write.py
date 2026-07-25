@@ -115,6 +115,8 @@ def test_block_list_is_multiline() -> None:
         ("ai", "ai", "a plain string has no items, so it stays the value it is"),
         (5, "5", "likewise anything else that is not a list"),
         (None, [], "None is the absent value the empty list stands for"),
+        ("", [], "so is a blank string, which has nothing to preserve"),
+        ("   ", [], "likewise one that is only whitespace"),
     ],
 )
 def test_a_block_list_field_never_erases_what_it_was_given(

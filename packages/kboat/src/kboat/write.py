@@ -47,20 +47,21 @@ def render_field(field: Field | None, value: object) -> str:
     if field.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return yaml_list(list(value))
+        # `None` and a blank string say the field holds nothing, which for a
+        # list is the empty one — there is no content here to preserve.
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return yaml_list([])
         # An inline list re-read from a note comes back as its raw `[a, b]`
         # source. Read it and re-render rather than pass it through, so what
         # reaches the note has been through the one renderer that knows how to
-        # quote a flow item. A string that is no sequence at all goes through
-        # `yaml_scalar` instead and so stays a valid scalar: a wrong-typed value
-        # then costs its own field, where a bare flow fragment would cost the
-        # whole block.
+        # quote a flow item.
         if isinstance(value, str):
             items = parse_flow_list(value)
             return yaml_list(items) if items is not None else yaml_scalar(value)
-        # `None` is the absent value an empty list stands for. Anything else is
-        # a value, and rendering it `[]` would report a write that erased what
-        # it was handed.
-        return yaml_list([]) if value is None else yaml_scalar(value)
+        # Anything else is a value the field cannot hold, and `[]` would report
+        # a write that erased it. Rendered as the scalar it is, it stays valid
+        # YAML and reaches `kboat-validate` as the wrong type it is.
+        return yaml_scalar(value)
     return yaml_scalar(value)
 
 

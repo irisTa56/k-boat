@@ -4,12 +4,11 @@ Two layers, because the sharing is at two scales. Every `kboat-*` entry point
 that reaches the vault takes the same `--vault`, and every one that needs a date
 takes the same `--today` — so a flag means one thing across this package's
 surface rather than whatever each `main` re-declared. On top of that,
-`kboat-note write` and
-`kboat-repos write` are two contracts over one writer and share the shape of
-their whole transaction: one JSON record on stdin, results on stdout and
-diagnostics on stderr, one mapping from outcome to exit code. What each writer
-keeps is its own: the record shape it accepts, the diagnostics for a record it
-refuses, and any key it adds to the result.
+`kboat-note write` and `kboat-repos write` are two contracts over one writer and
+share the shape of their whole transaction: one JSON record on stdin, results on
+stdout and diagnostics on stderr, one mapping from outcome to exit code. What
+each writer keeps is its own: the record shape it accepts, the diagnostics for a
+record it refuses, and any key it adds to the result.
 
 `kboat-bookmarklet` is the one CLI outside this: its `--vault` is the vault's
 *name*, for the Obsidian URI, not a path to read.
