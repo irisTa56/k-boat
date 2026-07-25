@@ -23,7 +23,7 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 | `type` | Always `feed`. |
 | `title` | The entry or topic title. |
 | `url` | The page's canonical URL — the read link and the de-dup identity. Immutable. |
-| `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Later view to look at when there is time. Always present (default `false`); feed-filter omits it on a re-write, so a shelved card stays shelved. |
+| `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Shelf view to look at when there is time. Always present (default `false`); feed-filter omits it on a re-write, so a shelved card stays shelved. |
 | `dismissed` | Checkbox, set by the **human**. "Cleanable": hide the card from the Inbox as a future auto-cleanup target. Always present (default `false`). feed-filter **resets it to `false` on every write**, so a re-reminded topic (a new qualifying forum post) resurfaces into the Inbox rather than staying dismissed. |
 | `wall` | Boolean, set by **feed-filter**. The page is behind a login or paywall, so it was admitted on its summary alone; surfaced in the Walls view for the human to judge. Always present (default `false`). |
 | `feed_kind` | `article` or `forum` — which gather produced it (`kboat-feed-run` vs `kboat-forum-run`). |
@@ -49,14 +49,20 @@ A feed note has no destructive routine action and no cooldown, so its lifecycle 
 A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human four table views of the triage queue.
 Every filter is a plain boolean over an always-present property, per the Base-authoring discipline in `kboat-vault-conventions` — never a `!=` over a possibly-missing property, never a date-emptiness test.
 
-The lead column is a `title_summary` formula — `note.title + " 💬 " + note.summary` — so each row shows the title and its summary together in one wide (`columnSize` 360), `tall`-row cell.
-The title is plain text there, not a link: an Obsidian Bases formula that concatenates `file.asLink(...)` with a string coerces the link to plain text, so a clickable title cannot be combined with the summary in one cell.
-The 💬 separator is an emoji on purpose — a plain punctuation separator could itself occur inside a title or summary and blur the boundary, which an emoji will not.
-Navigation moves to two dedicated link columns instead: `url_link` (`link(url)`) opens the web page, and `note_link` (`file.asLink("↗")`, the last column) opens the feed note itself.
+The column set is driven by the triage motion: read the summary, open the page when it looks worth it, tick a checkbox.
+Every step has to be reachable without scrolling sideways, so a view carries only what that motion needs — the card, and the two checkboxes.
 
-- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row still appears here (it is an untriaged keep); the `wall` column flags it.
+The lead column is a `title_summary` formula that folds the whole card into one cell and makes that cell the link to the page.
+[Both `link()` and `file.asLink()` take display text as an argument](https://help.obsidian.md/bases/functions), so a whole card can serve as the anchor text of a single link — built inside that argument, since in practice concatenating a Link with a string renders as plain text.
+The formula points at `url` rather than at the note's own file because a feed note has no body: `site_id` and `feed_kind` are provenance the reader does not weigh at triage time, so there is nothing behind the row worth opening.
+The 💬 separator is an emoji on purpose: a plain punctuation separator could itself occur inside a title or summary and blur the boundary, which an emoji will not.
+`wall` rides in the same cell as a 🔒 prefix rather than spending a column of its own: a glyph on the card costs no horizontal room, and being feed-filter's read-only flag it is not a third checkbox either.
+The other two columns are the human's triage checkboxes, `dismissed` first (the more frequent action) then `shelved`.
+`added_date` orders the rows without being displayed.
+
+- **Inbox** (`dismissed != true && shelved != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row still appears here (it is an untriaged keep); the 🔒 prefix flags it.
 - **Shelf** (`shelved && dismissed != true`) — the read-later shelf; a card the reader later dismisses drops out of here too, since `dismissed` hides from both working views.
-- **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing.
+- **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing. It is a flag view rather than a working view, so unlike the Inbox and the Shelf it does not exclude dismissed rows.
 - **Dismissed** (`dismissed`) — the cleanable rows, kept visible here so a dismissal can be undone before any future cleanup.
 
 ```yaml
@@ -64,9 +70,7 @@ filters:
   and:
     - type == "feed"
 formulas:
-  title_summary: note.title + " 💬 " + note.summary
-  url_link: link(url)
-  note_link: file.asLink("↗")
+  title_summary: link(url, if(wall, "🔒 ", "") + note.title + " 💬 " + note.summary)
 views:
   - type: table
     name: Inbox
@@ -76,18 +80,11 @@ views:
         - shelved != true
     order:
       - formula.title_summary
-      - formula.url_link
       - dismissed
       - shelved
-      - added_date
-      - wall
-      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    rowHeight: tall
-    columnSize:
-      formula.title_summary: 360
   - type: table
     name: Shelf
     filters:
@@ -96,18 +93,11 @@ views:
         - dismissed != true
     order:
       - formula.title_summary
-      - formula.url_link
       - dismissed
       - shelved
-      - added_date
-      - wall
-      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    rowHeight: tall
-    columnSize:
-      formula.title_summary: 360
   - type: table
     name: Walls
     filters:
@@ -115,17 +105,11 @@ views:
         - wall
     order:
       - formula.title_summary
-      - formula.url_link
       - dismissed
       - shelved
-      - added_date
-      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    rowHeight: tall
-    columnSize:
-      formula.title_summary: 360
   - type: table
     name: Dismissed
     filters:
@@ -133,19 +117,12 @@ views:
         - dismissed
     order:
       - formula.title_summary
-      - formula.url_link
       - dismissed
       - shelved
-      - added_date
-      - wall
-      - formula.note_link
     sort:
       - property: added_date
         direction: DESC
-    rowHeight: tall
-    columnSize:
-      formula.title_summary: 360
 ```
 
-The views are `table` at `rowHeight: tall`, with the composite column widened to 360; the two human triage checkboxes sit together with `dismissed` first (the more frequent action) then `shelved`, `wall` follows them (it is feed-filter's read-only flag, not something the reader ticks), and the `↗` note link is last.
-Row height, column width, the separator emoji, and other cosmetics are per-vault tweaks.
+The views are `table`.
+The lead column's width and the row height are tuned together — the column narrow enough that both checkboxes fit beside it, the row tall enough that the narrowed card still shows in full — but both are per-vault tweaks, so the live `Feeds.base` carries a `columnSize` and `rowHeight: extra` not shown here.
