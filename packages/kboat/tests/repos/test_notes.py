@@ -6,13 +6,13 @@ from collections.abc import Mapping
 
 import pytest
 
-from kboat.repos.notes import (
+from kboat.frontmatter import (
     FrontmatterError,
     body_after_frontmatter,
     parse_frontmatter,
-    set_fields,
     yaml_scalar,
 )
+from kboat.repos.notes import set_fields
 from kboat.schema import REPO
 from kboat.write import build_note
 
@@ -131,9 +131,8 @@ FIELDS = {
 }
 
 
-def _repo_note(fields: Mapping[str, object], notes_body: str = "") -> str:
-    """A repo note in the shape `upsert` lays down, without touching a vault."""
-    body = f"## Notes\n\n{notes_body}" if notes_body else "## Notes"
+def _repo_note(fields: Mapping[str, object], body: str = "") -> str:
+    """A repo note's frontmatter, rendered without touching a vault."""
     return build_note(REPO, fields, body)
 
 
@@ -153,7 +152,7 @@ def test_repo_scalars_roundtrip_through_the_parser() -> None:
 
 
 def test_set_fields_preserves_other_fields_and_body() -> None:
-    note = _repo_note(FIELDS, notes_body="keep me")
+    note = _repo_note(FIELDS, body="## Notes\n\nkeep me")
     updated = set_fields(note, {"stars": 99999, "status": "dormant", "topics": ["x", "y"]})
     fm = parse_frontmatter(updated)
     assert fm["stars"] == "99999"

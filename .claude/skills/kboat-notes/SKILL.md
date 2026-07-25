@@ -276,7 +276,7 @@ Fields are ordered for reading — the links you open and the `reading` checkbox
 | `role` | Closed enum, judged by the subagent: `library` / `framework` / `cli-tool` / `application` / `recipe` / `sample`. |
 | `domain` | YAML list from the controlled 14-word vocabulary below, judged by the subagent. The coarse browse axis. |
 | `summary` | A one- or two-sentence summary (Japanese), judged by the subagent. The durable, searchable description, in frontmatter so the Base is browsable and a future recall can read it. |
-| `status` | Derived from `last_commit` by the `kboat-repos` tool: `recent` (≤60d) / `active` (≤180d) / `slow` (≤730d) / `dormant` (>730d) / `archived` (flag set) / `unknown` (no push date). |
+| `status` | Derived from `last_commit` by the `kboat-repos` tool: `recent` (≤60d) / `active` (≤180d) / `slow` (≤730d) / `dormant` (>730d) / `archived` (flag set) / `unknown` (no push date, or no `status` in the record at all — it is the field's create-time default). |
 | `added_date` | Date the note was created. |
 | `refreshed_date` | Date the GitHub metadata was last refreshed (`kboat-repos refresh`). |
 

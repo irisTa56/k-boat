@@ -7,8 +7,8 @@ from datetime import date
 from pathlib import Path
 
 import kboat.repos.refresh as refresh_mod
+from kboat.frontmatter import parse_frontmatter
 from kboat.repos.identity import canonical_slug
-from kboat.repos.notes import parse_frontmatter
 from kboat.repos.refresh import refresh
 from kboat.schema import REPO
 from kboat.write import upsert

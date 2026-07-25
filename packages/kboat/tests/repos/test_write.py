@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from kboat.repos.notes import parse_frontmatter
+from kboat.frontmatter import parse_frontmatter
 from kboat.repos.write import write_note
 
 RECORD: dict[str, Any] = {
@@ -57,9 +57,9 @@ def test_write_creates_note(tmp_path: Path) -> None:
 
 
 def test_write_creates_a_valid_note_from_a_record_without_a_status(tmp_path: Path) -> None:
-    # `status` is a required non-empty enum, so a record assembled without one
-    # (a gather that never reached `github_fields`) must still land a note the
-    # validator accepts — `unknown` is the enum's no-data member.
+    # `status` is a required non-empty enum, so a record assembled by hand or by
+    # the skill rather than piped straight from `gather` must still land a note
+    # the validator accepts — `unknown` is the enum's no-data member.
     record = {**RECORD, "fields": {k: v for k, v in RECORD["fields"].items() if k != "status"}}
     write_note(record, tmp_path, today_iso="2026-06-06")
     assert parse_frontmatter(_note(tmp_path).read_text())["status"] == "unknown"
