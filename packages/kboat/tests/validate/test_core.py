@@ -62,6 +62,15 @@ def test_block_list_must_be_a_list() -> None:
     assert "not_list" in _codes("source", _source(topics="notalist"))
 
 
+def test_an_inline_list_must_still_be_a_sequence() -> None:
+    # An inline list reads back as its raw source, so a string is the only shape
+    # a valid one has. That is not a licence for any string: the writer keeps a
+    # wrong-typed value rather than erasing it, and this is where it shows.
+    assert _codes("source", _source(tags="[a, b]")) == set()
+    assert "not_list" in _codes("source", _source(tags="ai, agents"))
+    assert "not_list" in _codes("source", _source(tags="[a: b]"))
+
+
 def test_missing_field() -> None:
     fm = _source()
     del fm["title"]
