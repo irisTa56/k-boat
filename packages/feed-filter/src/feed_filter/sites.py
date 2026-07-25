@@ -21,6 +21,8 @@ from pathlib import Path
 import tomlkit
 from tomlkit.items import Table
 
+from feed_filter.config import QUERY_SITE_ID
+
 # String optional fields: blank-normalized and emitted as strings. ``id`` and
 # ``name`` are required and handled separately.
 _OPTIONAL_FIELDS = (
@@ -215,9 +217,12 @@ def _iter_site_tables(doc: tomlkit.TOMLDocument) -> list[Table]:
 def load_sites(path: Path) -> list[SiteConfig]:
     """Parse ``sites.toml`` into validated SiteConfigs; missing file → ``[]``.
 
-    Raises ``ValueError`` on a duplicate id, a missing required key, or a
-    shape-invalid entry: a corrupt registry surfaces loudly rather than silently
-    routing to the wrong site.
+    Raises ``ValueError`` on a duplicate id, on ``QUERY_SITE_ID`` (reserved for the
+    query gather, which belongs to no registered site), on a missing required key,
+    or on a shape-invalid entry: a corrupt registry surfaces loudly rather than
+    silently routing to the wrong site. Enforced here and not only in ``add_site``
+    because ``sites.toml`` is hand-edited personal state, so a row can arrive
+    without ever passing through the write path.
     """
     if not path.exists():
         return []
@@ -242,6 +247,8 @@ def load_sites(path: Path) -> list[SiteConfig]:
             weekly_watch_count=_opt_int(table, "weekly_watch_count"),
             poll_offsets_days=_opt_int_list(table, "poll_offsets_days"),
         )
+        if site.id == QUERY_SITE_ID:
+            raise ValueError(f"site id {site.id!r} is reserved for the query gather, in {path}")
         if site.id in seen_ids:
             raise ValueError(f"duplicate site id {site.id!r} in {path}")
         seen_ids.add(site.id)
@@ -252,10 +259,15 @@ def load_sites(path: Path) -> list[SiteConfig]:
 def add_site(path: Path, site: SiteConfig) -> None:
     """Append ``site`` as a new ``[[site]]`` table and atomically rewrite the file.
 
-    Raises ``ValueError`` if ``site.id`` is already registered (ids are unique).
+    Raises ``ValueError`` if ``site.id`` is already registered (ids are unique), or
+    if it is ``QUERY_SITE_ID`` — the query gather stamps that id on entries that
+    belong to no registered site, so letting a real site take it would make the two
+    indistinguishable as ``Feeds/``-note provenance.
     """
     doc = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
 
+    if site.id == QUERY_SITE_ID:
+        raise ValueError(f"site id {site.id!r} is reserved for the query gather")
     if any(_req_str(t, "id", path) == site.id for t in _iter_site_tables(doc)):
         raise ValueError(f"site id {site.id!r} already exists in {path}")
 

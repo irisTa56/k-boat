@@ -1,4 +1,4 @@
-# feed-filter — feed and forum triage
+# feed-filter — feed, forum, and query triage
 
 A simplified, Claude-Code-native reimplementation of the sibling project `loose-feeds` (a local checkout at `../loose-feeds`, not a public repo).
 
@@ -9,7 +9,9 @@ A second routine does the same for registered Discourse forums, judging topics a
 
 Responsibilities split deterministically.
 Plain Python owns everything verifiable and cheap — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer — exposed as a single `feed-filter` CLI.
-The LLM owns only the two genuinely fuzzy judgments: picking the article cluster during site registration, and per-page keep/drop selection.
+The LLM owns only the genuinely fuzzy judgments: picking the article cluster during site registration, authoring the descriptions the query gather searches on (ad hoc — no skill drives it yet), and per-page keep/drop selection.
+
+There are three ways a page reaches the filter. Two of them poll places you registered — article feeds and Discourse forums — so they return only what a known publisher published. The third, `query-new`, describes what you want in natural language and asks Exa for pages whose meaning matches, which is how a page on a site nobody registered becomes reachable.
 
 The `feed-filter` CLI emits JSON on stdout and is the only contract between the Python core and the Claude Code skills; the skills never reach into Python internals.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the behavioral invariants.
@@ -18,6 +20,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the beha
 
 - `OBSIDIAN_VAULT_PATH` set (via the workspace `.env`) to the Obsidian vault; kept entries are written as `Feeds/` notes under it. An unset vault path makes a write fail loudly rather than silently dropping kept entries.
 - `mise` for the toolchain and tasks.
+- `EXA_API_KEY` (workspace `.env`) for the query gather only. The feed and forum paths need no key; without one, `query-new` reports the missing key rather than failing.
 
 ## Setup
 
@@ -99,6 +102,19 @@ A body behind the same gate the browser gather passed is therefore unreadable to
 
 Use the `kboat-feed-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
+
+### Search for pages by description
+
+The query gather takes one or more natural-language descriptions instead of a site:
+
+```sh
+feed-filter query-new --query "personal write-ups about building your own map rendering or GPS trace tooling"
+```
+
+It emits the same entry shape as `new-entries` (plus the `query` that found each page), so the judging half of a run is identical — with one difference: a query entry has no cached body, so `entry-body` always misses for one and the judge fetches the page, exactly as it does for a scrape entry.
+Pages already dispositioned (kept or dropped), or snapshotted at registration are dropped against the shared seen-store, so a query overlapping a registered feed costs no *judging*; the Exa request itself is already paid for by then, since the search precedes the dedupe.
+Exa bills once per request, covering the first ten results; a result beyond ten is billed on top, so raising `--num-results` raises the per-query price.
+A failed query is reported against itself and retried on the next run, leaving the others' results intact.
 
 ### Register a Discourse forum
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from tomlkit.items import Table
 
+from feed_filter.config import QUERY_SITE_ID
 from feed_filter.sites import (
     SiteConfig,
     _opt_int,
@@ -259,6 +260,29 @@ def test_load_rejects_non_bool_requires_browser(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="requires_browser must be a bool"):
         load_sites(path)
+
+
+def test_load_sites_rejects_a_hand_written_query_gather_id(tmp_path: Path) -> None:
+    """sites.toml is hand-edited, so the reserved id must be caught on read too."""
+    path = tmp_path / "sites.toml"
+    path.write_text(
+        "[[site]]\n"
+        'id = "exa"\n'
+        'name = "Sneaked in by hand"\n'
+        'feed_url = "https://e.example.com/f.xml"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="reserved"):
+        load_sites(path)
+
+
+def test_add_site_rejects_the_query_gather_id(tmp_path: Path) -> None:
+    """`exa` marks an entry as belonging to no registered site, so a real site
+    taking that id would make the two indistinguishable as note provenance."""
+    path = tmp_path / "sites.toml"
+    with pytest.raises(ValueError, match="reserved"):
+        add_site(path, _feed(site_id=QUERY_SITE_ID))
+    assert not path.exists()
 
 
 def test_add_site_rejects_duplicate_id(tmp_path: Path) -> None:

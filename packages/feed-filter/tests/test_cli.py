@@ -22,8 +22,15 @@ import pytest
 from feed_filter import browser, cli
 from feed_filter.browser import BrowserFetchError
 from feed_filter.canonical import CanonicalUrl, canonical_url
-from feed_filter.config import SUMMARY_PREVIEW_CHARS, db_path, sites_path, vault_path
+from feed_filter.config import (
+    DEFAULT_QUERY_RESULTS,
+    SUMMARY_PREVIEW_CHARS,
+    db_path,
+    sites_path,
+    vault_path,
+)
 from feed_filter.discover import DiscoveryCandidate, DiscoveryRejection, DiscoveryResult
+from feed_filter.exa import ExaError, QueryHit, QueryOutcome
 from feed_filter.feeds import Entry, EntryKind
 from feed_filter.fetch import FetchError
 from feed_filter.forum_pipeline import (
@@ -1696,3 +1703,283 @@ def test_forum_poll_done_unknown_site_exits_nonzero(
     rc = cli.main(["forum-poll-done", "--site-id", "nope", "--topic-id", "1", "--like-count", "0"])
     assert rc == 1
     assert "error:" in capsys.readouterr().err
+
+
+# --- query-new ------------------------------------------------------------
+
+
+def _query_stub(monkeypatch: pytest.MonkeyPatch, by_query: dict[str, Any]) -> list[tuple[str, int]]:
+    """Replace the Exa call with a canned per-query outcome.
+
+    Returns the call log as ``(query, num_results)`` pairs — Exa bills per request
+    and again per result past ten, so how many requests a run makes and how large
+    each one asks for are both cost invariants worth asserting.
+    """
+    calls: list[tuple[str, int]] = []
+
+    def fake_search(_client: Any, query: str, *, num_results: int) -> Any:
+        calls.append((query, num_results))
+        outcome = by_query[query]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    _no_client(monkeypatch)
+    monkeypatch.setattr(cli, "search", fake_search)
+    return calls
+
+
+def _outcome(query: str, urls: list[str], *, error: str | None = None, cost: float = 0.007) -> Any:
+    return QueryOutcome(
+        query=query,
+        hits=tuple(QueryHit(url=u, title=f"T {u}", text="body text") for u in urls),
+        cost_dollars=cost,
+        error=error,
+    )
+
+
+def test_query_new_emits_entries_with_query_provenance(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls = _query_stub(
+        monkeypatch, {"walking maps": _outcome("walking maps", ["https://a.example/p"])}
+    )
+
+    assert cli.main(["query-new", "--query", "walking maps"]) == 0
+
+    # One request per query, asking for the billed-as-one-unit default.
+    assert calls == [("walking maps", DEFAULT_QUERY_RESULTS)]
+
+    out = _out(capsys)
+    assert out["entries"] == [
+        {
+            "site_id": cli.QUERY_SITE_ID,
+            "url": "https://a.example/p",
+            "title": "T https://a.example/p",
+            "summary": "body text",
+            "kind": "query",
+            "query": "walking maps",
+        }
+    ]
+    assert out["queries"] == [{"query": "walking maps", "found": 1, "new": 1, "error": None}]
+    assert out["cost_dollars"] == 0.007
+
+
+def test_query_new_drops_already_seen_pages(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A page another gather already dispositioned is not re-offered by a query."""
+    with contextlib.closing(open_db(db_path())) as conn:
+        conn.execute(
+            "INSERT INTO seen (canonical_url, site_id, title, kept, seen_at) VALUES (?,?,?,?,?)",
+            (str(canonical_url("https://old.example/p")), "some-feed", "t", 1, 0),
+        )
+        conn.commit()
+    # Non-canonical spellings: the seen-store match and the emitted URL both have
+    # to go through canonical_url, not the raw hit URL.
+    _query_stub(
+        monkeypatch,
+        {"q": _outcome("q", ["https://OLD.example/p/?utm_source=exa", "https://new.example/p/"])},
+    )
+
+    assert cli.main(["query-new", "--query", "q"]) == 0
+
+    out = _out(capsys)
+    assert [e["url"] for e in out["entries"]] == [str(canonical_url("https://new.example/p/"))]
+    assert out["queries"][0] == {"query": "q", "found": 2, "new": 1, "error": None}
+
+
+def test_query_new_dedupes_across_queries_keeping_the_first(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    shared = "https://both.example/p"
+    _query_stub(
+        monkeypatch,
+        {
+            "first": _outcome("first", [shared]),
+            "second": _outcome("second", [shared, "https://only2.example/p"]),
+        },
+    )
+
+    assert cli.main(["query-new", "--query", "first", "--query", "second"]) == 0
+
+    out = _out(capsys)
+    assert [(e["url"], e["query"]) for e in out["entries"]] == [
+        (shared, "first"),
+        ("https://only2.example/p", "second"),
+    ]
+    assert [q["new"] for q in out["queries"]] == [1, 1]
+
+
+def test_query_new_one_failing_query_does_not_lose_the_others(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _query_stub(
+        monkeypatch,
+        {
+            "bad": _outcome("bad", [], error="HTTPStatusError: 500"),
+            "good": _outcome("good", ["https://a.example/p"]),
+        },
+    )
+
+    assert cli.main(["query-new", "--query", "bad", "--query", "good"]) == 0
+
+    out = _out(capsys)
+    assert [e["url"] for e in out["entries"]] == ["https://a.example/p"]
+    assert out["queries"][0]["error"] == "HTTPStatusError: 500"
+    assert out["queries"][1]["error"] is None
+
+
+def test_query_new_missing_key_is_reported_per_query_not_a_crash(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _query_stub(monkeypatch, {"q": ExaError("EXA_API_KEY is unset")})
+
+    assert cli.main(["query-new", "--query", "q"]) == 0
+
+    out = _out(capsys)
+    assert out["entries"] == []
+    assert "EXA_API_KEY" in out["queries"][0]["error"]
+
+
+def test_query_new_records_nothing_seen(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Like the other gathers, query-new only offers — remind/mark-seen record."""
+    _query_stub(monkeypatch, {"q": _outcome("q", ["https://a.example/p"])})
+
+    assert cli.main(["query-new", "--query", "q"]) == 0
+
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert count(conn) == 0
+
+
+def test_query_new_global_cap_truncates_and_leaves_the_rest_unseen(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    urls = [f"https://a.example/p{i}" for i in range(5)]
+    _query_stub(monkeypatch, {"q": _outcome("q", urls)})
+
+    assert cli.main(["query-new", "--query", "q", "--global-cap", "2"]) == 0
+
+    out = _out(capsys)
+    assert len(out["entries"]) == 2
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert count(conn) == 0
+
+
+def test_query_new_previews_long_page_text(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    long_outcome = QueryOutcome(
+        query="q",
+        hits=(
+            QueryHit(url="https://a.example/p", title="T", text="x" * (SUMMARY_PREVIEW_CHARS + 50)),
+        ),
+        cost_dollars=0.007,
+    )
+    _query_stub(monkeypatch, {"q": long_outcome})
+
+    assert cli.main(["query-new", "--query", "q"]) == 0
+
+    summary = _out(capsys)["entries"][0]["summary"]
+    assert len(summary) == SUMMARY_PREVIEW_CHARS + 1  # + the ellipsis
+    assert summary.endswith("…")
+
+
+def test_query_new_sums_cost_across_queries(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _query_stub(
+        monkeypatch,
+        {
+            "a": _outcome("a", ["https://a.example/p"], cost=0.007),
+            "b": _outcome("b", ["https://b.example/p"], cost=0.008),
+        },
+    )
+
+    assert cli.main(["query-new", "--query", "a", "--query", "b"]) == 0
+
+    assert _out(capsys)["cost_dollars"] == 0.015
+
+
+def test_query_new_issues_one_request_per_query_in_order(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Exa bills per request, so a run must not re-ask or reorder."""
+    calls = _query_stub(
+        monkeypatch,
+        {"a": _outcome("a", ["https://a.example/p"]), "b": _outcome("b", ["https://b.example/p"])},
+    )
+
+    assert cli.main(["query-new", "--query", "a", "--query", "b"]) == 0
+
+    assert calls == [("a", DEFAULT_QUERY_RESULTS), ("b", DEFAULT_QUERY_RESULTS)]
+
+
+def test_query_new_num_results_reaches_the_search(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls = _query_stub(monkeypatch, {"q": _outcome("q", [])})
+
+    assert cli.main(["query-new", "--query", "q", "--num-results", "3"]) == 0
+
+    assert calls == [("q", 3)]
+
+
+def test_query_new_interleaves_queries_before_the_cap(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A broad query must not starve a narrow one at the cap, and `new` is pre-cap."""
+    _query_stub(
+        monkeypatch,
+        {
+            "broad": _outcome("broad", [f"https://b.example/p{i}" for i in range(3)]),
+            "narrow": _outcome("narrow", ["https://n.example/p"]),
+        },
+    )
+
+    rc = cli.main(["query-new", "--query", "broad", "--query", "narrow", "--global-cap", "2"])
+    assert rc == 0
+
+    out = _out(capsys)
+    # Plain concatenation would emit ["broad", "broad"] and drop the narrow query.
+    assert [e["query"] for e in out["entries"]] == ["broad", "narrow"]
+    assert [q["new"] for q in out["queries"]] == [3, 1]
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_query_new_rejects_a_meaningless_num_results(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """The one flag that multiplies a bill fails at parse time, before any request."""
+    calls = _query_stub(monkeypatch, {"q": _outcome("q", [])})
+
+    with pytest.raises(SystemExit):
+        cli.main(["query-new", "--query", "q", "--num-results", value])
+
+    assert calls == []
+
+
+def test_query_new_never_emits_a_non_json_cost(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each query's cost is finite, but their sum can still overflow — and the
+    emitted document is the only contract with the skills, so it must parse."""
+    huge = 1e308
+    _query_stub(
+        monkeypatch,
+        {
+            "a": _outcome("a", ["https://a.example/p"], cost=huge),
+            "b": _outcome("b", ["https://b.example/p"], cost=huge),
+        },
+    )
+
+    assert cli.main(["query-new", "--query", "a", "--query", "b"]) == 0
+
+    raw = capsys.readouterr().out
+
+    def _reject(token: str) -> float:
+        raise AssertionError(f"emitted a non-JSON token: {token}")
+
+    assert json.loads(raw, parse_constant=_reject)["cost_dollars"] == 0.0

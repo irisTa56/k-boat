@@ -7,7 +7,7 @@ Read this when a change touches more than one module or the Python ↔ skills co
 ## The split: deterministic Python vs. LLM
 
 Everything verifiable and cheap is plain Python — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer.
-The LLM is reserved for the two genuinely fuzzy judgments: picking the article cluster during site registration, and per-page keep/drop at run time.
+The LLM is reserved for the genuinely fuzzy judgments: picking the article cluster during site registration, authoring the descriptions `query-new` searches on (ad hoc — no skill drives it yet), and per-page keep/drop at run time.
 
 A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the **only** contract between the Python core and the Claude Code skills.
 Skills never reach into Python internals.
@@ -31,6 +31,7 @@ Deterministic httpx ingestion:
 - `fetch.py` — sync `httpx` fetch; retries throttling statuses (`429`/`503`) up to a bounded count, honoring `Retry-After`, so the forum gather loop survives Discourse rate limits instead of shedding topics to the next run.
 - `feeds.py` — feed parsing (`feedparser`). The entry `summary` is the richest available body flattened to plain text (`html_to_text`) and capped at `MAX_BODY_CHARS` (50k): a full-text feed (WordPress/Medium/Substack, e.g. thenewstack.io) ships the whole article in `content:encoded` (exposed by feedparser as `entry.content`) while `<description>` (`entry.summary`) is a truncated excerpt, so `_entry_body` prefers `content:encoded` and falls back to `<description>`. Handing the judge the full body lets it assess depth from the feed itself instead of forcing a per-article fetch that a gated site (Cloudflare) returns as a wall; the cap only guards against a pathological megabyte-scale body, never a normal article. That body reaches the judge through `body_cache` (not the run orchestrator's stdout, which carries only a preview), so the full article lands only in the cheap judge's context. The dedupe key is normally the resolved entry link, but a Medium item (`<guid>` of the form `medium.com/p/<hash>`) keys on that guid instead (`_dedupe_url`): Medium serves the same article under shifting link hosts (`medium.com/<pub>/` vs a publication custom domain like `netflixtechblog.com`), so the link forks the key and re-reminds when the host flips, while the `/p/<hash>` guid is invariant and 302-redirects to the live article. (The other historical fork, a `?source=` attribution param, is handled separately by `canonical.py`'s tracking-param stripping; the host shift is the residual cause the guid addresses.)
 - `scrape.py` — index-page scraping (`selectolax`).
+- `exa.py` — the query gather's network layer: one neural search per `--query` against Exa, returning `QueryHit`s (url, title, Exa's cached page text) plus the request's reported cost. Network-only and per-query fail-soft — a failed query returns an outcome carrying its error so the run's other queries still emit. `EXA_API_KEY` is read at call time and never emitted.
 
 Discovery:
 
@@ -98,6 +99,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `add-site` | register a site (snapshots seen, then writes config) |
 | `list-sites` | list registered sites (with enabled/disabled status) |
 | `new-entries` | gather new, unseen entries across non-forum sites (each entry's `summary` is a preview; the full body is cached for `entry-body`) |
+| `query-new` | gather new, unseen pages by neural-searching one or more `--query` descriptions (Exa); same entry shape as `new-entries`, plus `query` provenance. `queries[].new` counts pages that survived both dedupe layers, *before* the global cap, and `cost_dollars` is a floor (a request answered with an unparseable body reports nothing) |
 | `entry-body` | print one gathered entry's full cached body (`{url, body}`; `body` is `null` on a cache miss) for the judge |
 | `remind` | write a kept entry as a `Feeds/` note and record it seen (`--wall` flags a login/paywall page, `--summary` optional) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
@@ -110,11 +112,12 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `forum-poll-done` | advance the poll counter for one topic (call last, after all posts dispositioned) |
 
 `new-entries` filters to `kind != "forum"` and `forum-new` filters to `kind == "forum"` — neither path ever sees the other's sites.
+`query-new` is registry-free: it belongs to no site, stamps every entry `site_id: "exa"`, and shares only the seen-store, so a page another gather already dispositioned (kept or dropped), or snapshotted at registration is dropped rather than re-offered.
 `new-entries` puts only a preview of each entry's body on stdout and caches the full body (`body_cache`); the judge pulls it with `entry-body`, so a full article is loaded into the cheap judging subagent's context, never the run orchestrator's.
 
 ## Skills (the orchestration layer)
 
-`.claude/skills/` holds the four skills that drive the CLI. `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
+`.claude/skills/` holds the four skills that drive the CLI. `query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it. `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
 
 - `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
@@ -132,6 +135,8 @@ The user-facing narrative of the observable behavior is README's "Failure and se
 - **Seen-store is the dedupe authority at gather time (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; the sink now also dedupes (a hash-named `kboat.write.upsert` is idempotent), but the seen-store remains the authority that stops an already-processed article from being re-gathered and re-judged. A gather-time fetch failure records nothing, so the next run retries — there is no *cross-run* backoff (within a single fetch, `fetch.py` does retry transient `429`/`503` throttling per `Retry-After`).
   **Forum carve-out:** the forum adapter is a second, post-grain dedupe authority in `forum_store.py` / `forum_post_seen`.
   Post-grain re-reminding is deliberate (a later post on a watched topic crosses the like bar); this suspends the "seen is final" invariant for forum sources only, leaving `seen.py` and every non-forum path untouched.
+- **A query gather offers, never records.** `cmd_query_new` (`cli.py`) reads the seen-store and writes nothing to it, exactly like `new-entries` — the disposition commands (`remind` / `mark-seen`) are the sole recorders. Two dedupe layers run before the cap: the seen-store (a page already dispositioned (kept or dropped), or snapshotted at registration), then a within-run set (a page two queries both return, keeping the earlier query's copy). A page truncated by the global cap stays unrecorded and reappears next run.
+- **A failed query loses only itself.** Each `--query` is independent in `cmd_query_new`: a transport, status, or malformed-payload failure is reported in that query's `queries[]` row and records nothing, so the run's other queries still emit and the failed one retries next run. A missing `EXA_API_KEY` surfaces the same way (an `ExaError` per query) rather than aborting the run — the same never-lost bias as a gather-time fetch failure.
 - **Operational notices never become notes.** The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's summary, not as feed notes.
 - **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index. `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it).
 - **Run bounds.** Per-site cap 20 and global cap 80 on entries/candidates judged (`DEFAULT_PER_SITE_CAP` / `DEFAULT_GLOBAL_CAP` in `config.py`).
