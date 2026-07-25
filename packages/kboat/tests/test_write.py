@@ -32,6 +32,8 @@ def test_render_field_by_kind() -> None:
         ('[a, "b]', "an unclosed quote"),
         ("[a, [b]", "a nested collection commas cannot be split on"),
         ("[{a]", "likewise a mapping"),
+        ("[a: b, c]", "a mapping entry, which needs no braces inside a sequence"),
+        ("[a:]", "likewise a mapping key with nothing after it"),
     ],
 )
 def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why: str) -> None:
@@ -57,6 +59,11 @@ def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why:
             "an apostrophe mid-item is a character, not the start of a quoted scalar",
         ),
         ("[a, b,]", ["a", "b"], "a trailing comma closes the last item, it does not open one"),
+        (
+            "[https://x.com/y, z]",
+            ["https://x.com/y", "z"],
+            "a colon with nothing after it is part of the scalar, not a mapping",
+        ),
         ("[a\tb]", ["a\tb"], "a tab is a flow special, so the item comes back quoted"),
         ("[a #b]", ["a #b"], "likewise a comment marker"),
         ("[- a]", ["- a"], "likewise a leading indicator"),

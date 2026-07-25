@@ -487,7 +487,8 @@ def parse_flow_list(text: str) -> list[str] | None:
     `[Moore's law, ai]` is a character, not the start of a quoted scalar.
 
     None where the text is not a sequence this can read whole — an unclosed
-    quote, a nested collection — so the caller has a value to quote rather than
+    quote, a nested collection, an item that is a mapping entry (`[a: b]`, which
+    needs no braces to be one) — so the caller has a value to quote rather than
     a shape invented for it.
     """
     stripped = text.strip()
@@ -501,6 +502,7 @@ def parse_flow_list(text: str) -> list[str] | None:
     quote = ""
     escaped = False
     fresh = True  # whether an item can begin here, so a quote would open one
+    colon = False  # an unquoted `:`, whose next character decides what it is
     for ch in inner:
         if quote:
             current.append(ch)
@@ -511,6 +513,11 @@ def parse_flow_list(text: str) -> list[str] | None:
             elif ch == quote:
                 quote = ""
             continue
+        if colon and (ch.isspace() or ch == ","):
+            # `a: b` is a mapping entry, which YAML writes inside a sequence
+            # without braces — so the `[]{}` check below never sees it.
+            return None
+        colon = ch == ":"
         if ch in "[]{}":
             return None  # a nested collection; splitting on commas would mangle it
         if ch == ",":
@@ -522,7 +529,7 @@ def parse_flow_list(text: str) -> list[str] | None:
             quote, fresh = ch, False
         elif not ch.isspace():
             fresh = False
-    if quote:
+    if quote or colon:  # a trailing `:` is a mapping key with nothing after it
         return None
     items.append("".join(current))
     # A trailing comma closes the last item rather than opening another, so the
