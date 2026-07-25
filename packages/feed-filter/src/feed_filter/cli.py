@@ -22,8 +22,9 @@ Ordering invariants enforced here, not in the skills:
   non-forum sites — neither path ever sees the other's sites.
 - **forum-remind**: write the ``Feeds/`` note *then* ``record_post`` (and
   ``set_op_verdict`` for the OP), record only on a successful write. A
-  re-reminded topic upserts the *same* hash-named note, so the human's
-  ``shelved``/``dismissed`` triage survives and no suppression is needed.
+  re-reminded topic upserts the *same* hash-named note, so no suppression is
+  needed: the re-write preserves the human's ``shelved`` and clears ``read`` and
+  ``dismissed`` so the new activity has somewhere to surface (``vault.py``).
 - **forum-poll-done**: must be the **last** call for a topic in a run, after every
   candidate post has been dispositioned.
 """

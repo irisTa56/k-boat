@@ -88,7 +88,7 @@ The two rules:
   Emitted by `gather_forum` from the topic JSON (`/t/<id>.json`).
 
 Forum keeps become `Feeds/` notes like article keeps, hash-named by the topic URL and carrying `feed_kind: forum`; each note points at the topic top.
-A re-reminded topic (a later qualifying post) upserts the *same* note idempotently — no duplicate — which subsumes the old "at most one open reminder per topic" suppression; the re-write resurfaces the topic by resetting `dismissed` to `false`, while the reader's `shelved` flag is preserved.
+A re-reminded topic (a later qualifying post) upserts the *same* note idempotently — no duplicate — which subsumes the old "at most one open reminder per topic" suppression; the re-write resurfaces the topic by resetting the two hiding flags, `read` and `dismissed`, to `false`, while the reader's `shelved` flag is preserved.
 The forum path deliberately re-writes the note as new posts qualify, which is why it dedupes in its own tables (`forum_store.py`) rather than `seen.py` (see the dedupe-authority carve-out under Behavioral invariants).
 
 ## CLI subcommands (the JSON contract)

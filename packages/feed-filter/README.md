@@ -147,7 +147,7 @@ Use the `kboat-forum-run` skill. One pass gathers Rule-A and Rule-B candidates f
 The two rules are independent axes. An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is recorded under both axes, but resolves to a single `Feeds/` note (see below).
 
 Topics are polled on a sparse schedule (`--poll-offsets-days`, default 0, 1, and 7 days from first-seen) and retire after the last offset.
-A re-reminded topic upserts the *same* `Feeds/` note (hash-named by the topic URL), so a topic never produces duplicate notes; the re-write resurfaces it by resetting the note's `dismissed` flag to `false`, so a topic the reader dismissed reappears when a new qualifying post arrives.
+A re-reminded topic upserts the *same* `Feeds/` note (hash-named by the topic URL), so a topic never produces duplicate notes; the re-write resurfaces it by resetting the note's `read` and `dismissed` flags to `false`, so a topic the reader already finished with reappears when a new qualifying post arrives.
 
 ## Scheduling
 
