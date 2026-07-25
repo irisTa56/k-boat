@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -125,6 +126,27 @@ class SiteConfig:
         if self.forum_url is not None:
             return "forum"
         return "scrape" if self.article_url_pattern else "feed"
+
+
+def validate_article_url_pattern(pattern: str, site_id: str) -> None:
+    """Raise ``ValueError`` unless ``pattern`` compiles as a regex.
+
+    Guards the writers (and the CLI commands that fetch before reaching one) rather
+    than construction, because the two failures are not symmetric. A pattern that
+    cannot compile makes *its own* site raise on every fetch — and a gather error
+    suppresses the ``zero_links`` self-heal, so the site yields nothing until a human
+    intervenes. Refusing to write it is therefore the fix; refusing to *load* it
+    would take the other registered sites down with it, for a defect that is local to
+    one row and that the gather already isolates as a per-site error. The other
+    ``__post_init__`` checks stay at construction because the loader cannot interpret
+    a row that fails them at all.
+    """
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(
+            f"article_url_pattern is not a valid regex (site {site_id!r}): {exc}"
+        ) from exc
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -259,13 +281,16 @@ def load_sites(path: Path) -> list[SiteConfig]:
 def add_site(path: Path, site: SiteConfig) -> None:
     """Append ``site`` as a new ``[[site]]`` table and atomically rewrite the file.
 
-    Raises ``ValueError`` if ``site.id`` is already registered (ids are unique), or
-    if it is ``QUERY_SITE_ID`` — the query gather stamps that id on entries that
+    Raises ``ValueError`` if ``site.id`` is already registered (ids are unique), if
+    it is ``QUERY_SITE_ID`` — the query gather stamps that id on entries that
     belong to no registered site, so letting a real site take it would make the two
-    indistinguishable as ``Feeds/``-note provenance.
+    indistinguishable as ``Feeds/``-note provenance — or if its
+    ``article_url_pattern`` does not compile.
     """
     doc = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
 
+    if site.article_url_pattern is not None:
+        validate_article_url_pattern(site.article_url_pattern, site.id)
     if site.id == QUERY_SITE_ID:
         raise ValueError(f"site id {site.id!r} is reserved for the query gather")
     if any(_req_str(t, "id", path) == site.id for t in _iter_site_tables(doc)):
@@ -308,10 +333,12 @@ def add_site(path: Path, site: SiteConfig) -> None:
 def update_pattern(path: Path, site_id: str, pattern: str) -> None:
     """Rewrite only ``site_id``'s ``article_url_pattern`` (self-heal).
 
-    Raises ``KeyError`` if the id is absent, ``ValueError`` if it names a non-scrape
-    site (feed or forum): writing a pattern there would corrupt the exactly-one-of
-    invariant and break ``load_sites`` for the whole file.
+    Raises ``KeyError`` if the id is absent, and ``ValueError`` if ``pattern`` does
+    not compile or the id names a non-scrape site (feed or forum): writing a pattern
+    there would corrupt the exactly-one-of invariant and break ``load_sites`` for
+    the whole file.
     """
+    validate_article_url_pattern(pattern, site_id)
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     for table in _iter_site_tables(doc):
         if _req_str(table, "id", path) == site_id:

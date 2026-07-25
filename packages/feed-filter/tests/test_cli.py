@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from feed_filter import browser, cli
-from feed_filter.browser import BrowserFetchError
+from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.canonical import CanonicalUrl, canonical_url
 from feed_filter.config import (
     DEFAULT_QUERY_RESULTS,
@@ -180,6 +180,37 @@ def test_add_site_fetch_error_writes_no_config(
     assert not sites_path().exists()  # config never written on a gather failure
 
 
+def test_add_site_rejects_an_uncompilable_pattern_before_fetching(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bad pattern fails registration up front, not as a traceback from the snapshot.
+
+    The cold-start snapshot scrapes the index under the new pattern, so it compiles
+    it before ``add_site``'s own guard is ever reached — an unguarded CLI would exit
+    on a raw ``re.error`` instead of the ``error: …`` contract.
+    """
+    _no_client(monkeypatch)
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
+
+    rc = cli.main(
+        [
+            "add-site",
+            "--id",
+            "s1",
+            "--name",
+            "S",
+            "--index-url",
+            "https://e.example.com/blog",
+            "--article-url-pattern",
+            "/a(",
+        ]
+    )
+
+    assert rc == 1
+    assert "not a valid regex" in capsys.readouterr().err
+    assert not sites_path().exists()  # nothing registered
+
+
 def test_filesystem_error_surfaces_as_clean_exit(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -198,6 +229,29 @@ def test_filesystem_error_surfaces_as_clean_exit(
     )
     assert rc == 1
     assert "error: disk full" in capsys.readouterr().err
+
+
+def test_seen_store_error_surfaces_as_clean_exit(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A seen-store failure reports like any other operational one, not as a traceback.
+
+    The case this exists for is a lock timeout: two processes opening the store at
+    once serialize on the migration's ``BEGIN IMMEDIATE``, and the loser can exceed
+    the busy timeout. Every skill parses the ``error: …`` + exit 1 contract, so a
+    traceback there would break the run summary rather than report a retryable run.
+    """
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+
+    def boom(path: Path) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(cli, "open_db", boom)
+    capsys.readouterr()  # drop the add-site output
+
+    assert cli.main(["new-entries"]) == 1
+    assert "error: database is locked" in capsys.readouterr().err
 
 
 # --- list-sites -----------------------------------------------------------
@@ -354,6 +408,7 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
             "site_id": "a",
             "zero_links": False,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         },
@@ -361,6 +416,7 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
             "site_id": "b",
             "zero_links": False,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         },
@@ -590,7 +646,11 @@ def test_new_entries_unexpected_worker_exception_is_isolated_to_its_site(
     run retries it.
 
     ``b1`` and ``b2`` share a host, so they run in one worker: the isolation has to
-    be per site, not per host group, or ``b2`` would be lost with ``b1``.
+    be per site, not per host group, or ``b2`` would be lost with ``b1``. ``c1``
+    fails the classified way (as ``fetch_site`` absorbs a ``FetchError``) so the two
+    kinds are asserted side by side: only the unclassified one is flagged, which is
+    what lets the run summary recommend a site remedy for one and a bug report for
+    the other.
     """
     hosts = {"a": ["a1"], "b": ["b1", "b2"], "c": ["c1"]}
     for host, ids in hosts.items():
@@ -608,6 +668,8 @@ def test_new_entries_unexpected_worker_exception_is_isolated_to_its_site(
     def boom(site: SiteConfig, *, client: object) -> FetchOutcome:
         if site.id == "b1":
             raise RuntimeError("bug in a worker")
+        if site.id == "c1":
+            return FetchOutcome(entries=[], error="fetch of 'https://c…' failed")
         return FetchOutcome(entries=[_entry(f"https://e.example.com/{site.id}")], error=None)
 
     monkeypatch.setattr(cli, "fetch_site", boom)
@@ -615,12 +677,46 @@ def test_new_entries_unexpected_worker_exception_is_isolated_to_its_site(
 
     assert cli.main(["new-entries"]) == 0
     out = _out(capsys)
-    assert [e["site_id"] for e in out["entries"]] == ["a1", "b2", "c1"]
+    assert [e["site_id"] for e in out["entries"]] == ["a1", "b2"]
 
     status = {s["site_id"]: s for s in out["sites"]}
-    assert status["b1"]["error"] == "unexpected RuntimeError: bug in a worker"
+    assert status["b1"]["error"] == "RuntimeError: bug in a worker"
+    assert status["b1"]["unexpected_error"] is True  # a bug, not an outage
     assert status["b1"]["consecutive_failures"] == 1  # escalates like any outage
-    assert all(status[i]["error"] is None for i in ("a1", "b2", "c1"))
+    assert status["c1"]["error"] is not None  # a real outage, reported as one
+    assert status["c1"]["unexpected_error"] is False
+    assert all(status[i]["error"] is None for i in ("a1", "b2"))
+    assert all(status[i]["unexpected_error"] is False for i in ("a1", "b2"))
+
+
+def test_new_entries_does_not_absorb_a_missing_browser(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unusable browser install fails the run instead of becoming a site error.
+
+    It is the run's failure, not the site's: absorbing it would report one
+    environment problem as N site outages, escalate them through the site-health
+    counter, and bury the install command the operator needs in a per-site message.
+    """
+    add_site(
+        sites_path(),
+        SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml", requires_browser=True),
+    )
+    add_site(sites_path(), SiteConfig(id="b", name="B", feed_url="https://b.example.com/f.xml"))
+    _no_client(monkeypatch)
+
+    def boom(site: SiteConfig, *, client: object) -> FetchOutcome:
+        if site.requires_browser:
+            raise MissingPlaywrightError("install chromium")
+        return FetchOutcome(entries=[], error=None)
+
+    monkeypatch.setattr(cli, "fetch_site", boom)
+    capsys.readouterr()  # drop the add-site output
+
+    assert cli.main(["new-entries"]) == 1
+    captured = capsys.readouterr()
+    assert "install chromium" in captured.err
+    assert captured.out == ""  # no partial, exit-0 gather emitted
 
 
 def test_new_entries_unknown_site_id_exits_nonzero(
@@ -825,6 +921,33 @@ def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
     assert load_sites(sites_path())[0].article_url_pattern == old_pattern
     with contextlib.closing(open_db(db_path())) as conn:
         assert count(conn) == 0
+
+
+def test_heal_site_rejects_an_uncompilable_pattern_before_fetching(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pattern the self-heal picked but cannot compile fails before any side effect.
+
+    The re-scrape would raise a raw ``re.error`` (a traceback, not the CLI's
+    ``error: …`` contract), and `update_pattern` refuses it at the end anyway — so
+    the check belongs up front, where the skill's "non-zero exit means the re-scrape
+    failed before the config write" reading still holds.
+    """
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
+
+    assert cli.main(["heal-site", "--site-id", "s1", "--pattern", "/a("]) == 1
+    assert "not a valid regex" in capsys.readouterr().err
+    assert load_sites(sites_path())[0].article_url_pattern == r"^/posts/[^/]+/?$"
 
 
 def test_heal_site_rejects_feed_site(

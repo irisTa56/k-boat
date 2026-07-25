@@ -165,6 +165,25 @@ def test_lazy_singleton_launches_once(monkeypatch: pytest.MonkeyPatch) -> None:
     assert handles.chromium.launch_count == 1  # one Chromium for the whole process
 
 
+def test_launch_failure_raises_the_install_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Chromium that will not launch is an environment failure, not a fetch one.
+
+    The startup gate resolves the ``playwright`` *package*; its browser binary is
+    installed separately, so it can be absent under a package that imports fine.
+    Raising the gate's own error (with the install command) is what keeps the
+    gather from absorbing one environment problem as N separate site outages.
+    """
+    ctx = FakeContext(html="<html/>")
+    handles = install_fake_playwright(
+        monkeypatch, context=ctx, launch_error=RuntimeError("Executable doesn't exist")
+    )
+
+    with pytest.raises(MissingPlaywrightError, match="playwright install chromium"):
+        get_browser()
+    assert handles.playwright.stopped is True  # no driver process left behind
+    assert browser._bundle is None  # nothing half-built for the next caller to reuse
+
+
 def test_close_browser_tears_down(monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = FakeContext(html="<html/>", response=FakeResponse(status=200))
     handles = install_fake_playwright(monkeypatch, context=ctx)

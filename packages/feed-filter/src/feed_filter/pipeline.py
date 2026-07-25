@@ -48,13 +48,16 @@ class GatherResult:
     ``entries`` are the new (unseen), capped items to judge. ``index_matches`` is
     the pre-filter count of feed entries / pattern matches. ``zero_links`` is the
     self-heal signal (scrape site, live page matched nothing). ``error`` is the
-    fetch failure message, if any — when set, ``entries`` is empty.
+    fetch failure message, if any — when set, ``entries`` is empty, and
+    ``unexpected`` says whether it came from an exception the gather did not
+    classify (carried from ``FetchOutcome``).
     """
 
     entries: list[Entry]
     index_matches: int
     zero_links: bool
     error: str | None
+    unexpected: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,13 +66,20 @@ class FetchOutcome:
 
     ``entries`` are the site's current items, uncapped and unfiltered (as
     ``fetch_entries`` returns them); ``error`` is the fetch failure message, if
-    any — when set, ``entries`` is empty. Carries no DB-derived state,
+    any — when set, ``entries`` is empty. ``unexpected`` marks an error the gather
+    could **not** classify — that and no more: it says the failure did not arrive as
+    a ``FetchError``/``BrowserFetchError``, not whose fault it is. ``fetch_site``
+    only ever produces the classified kind, so the flag is set by whoever absorbs
+    the unclassified one (``cli._fetch_all``), and it is a typed signal rather than
+    a prefix the reader has to parse back out of ``error``. Carries no DB-derived
+    state,
     so it can be produced off the main thread and handed to ``filter_gathered``
     later (``cmd_new_entries`` fetches hosts concurrently, then filters serially).
     """
 
     entries: list[Entry]
     error: str | None
+    unexpected: bool = False
 
 
 def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
@@ -139,7 +149,13 @@ def filter_gathered(
     passes straight through as an empty, error-bearing result.
     """
     if outcome.error is not None:
-        return GatherResult(entries=[], index_matches=0, zero_links=False, error=outcome.error)
+        return GatherResult(
+            entries=[],
+            index_matches=0,
+            zero_links=False,
+            error=outcome.error,
+            unexpected=outcome.unexpected,
+        )
 
     index_matches = len(outcome.entries)
     fresh = [e for e in outcome.entries if not is_seen(conn, e.canonical_url)]

@@ -123,12 +123,15 @@ class FakeBrowser:
 
 
 class FakeChromium:
-    def __init__(self, browser: FakeBrowser) -> None:
+    def __init__(self, browser: FakeBrowser, launch_error: Exception | None = None) -> None:
         self._browser = browser
+        self._launch_error = launch_error
         self.launch_count = 0
 
     def launch(self, **_: Any) -> FakeBrowser:
         self.launch_count += 1
+        if self._launch_error is not None:
+            raise self._launch_error
         return self._browser
 
 
@@ -142,15 +145,18 @@ class FakePlaywright:
 
 
 def install_fake_playwright(
-    monkeypatch: pytest.MonkeyPatch, *, context: FakeContext
+    monkeypatch: pytest.MonkeyPatch, *, context: FakeContext, launch_error: Exception | None = None
 ) -> SimpleNamespace:
     """Inject a fake ``playwright.sync_api`` so ``browser.get_browser`` resolves to it.
+
+    ``launch_error`` makes ``chromium.launch()`` raise it, standing in for a machine
+    where the package imports but the Chromium binary will not start.
 
     Returns a namespace of ``playwright`` / ``chromium`` / ``browser`` / ``context``
     handles for assertions.
     """
     browser = FakeBrowser(context)
-    chromium = FakeChromium(browser)
+    chromium = FakeChromium(browser, launch_error)
     playwright = FakePlaywright(chromium)
 
     starter = SimpleNamespace(start=lambda: playwright)  # sync_playwright().start()

@@ -151,13 +151,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
     ``BEGIN IMMEDIATE`` is explicit because Python's sqlite3 opens a transaction
     only for DML, leaving DDL to autocommit statement by statement; ``IMMEDIATE``
-    also takes the write lock up front, so a second opener racing the same
-    migration blocks on the lock instead of colliding partway through.
+    also takes the write lock up front, so two openers racing the same migration
+    serialize instead of interleaving. The version is then re-read under that lock,
+    because the loser of the race read its bound before waiting: without the
+    re-read it would re-apply a step the winner already committed, and v3's ALTER
+    (unlike the ``IF NOT EXISTS`` creates) would die on ``duplicate column name``.
     """
     (version,) = conn.execute("PRAGMA user_version").fetchone()
     for target in range(version, len(_MIGRATIONS)):
         with conn:  # commits on success, rolls back on any exception
             conn.execute("BEGIN IMMEDIATE")
+            (current,) = conn.execute("PRAGMA user_version").fetchone()
+            if current > target:
+                continue  # another opener applied this step while we waited
             for statement in _MIGRATIONS[target]:
                 conn.execute(statement)
             # PRAGMA can't be parameterized; target+1 is a controlled int.

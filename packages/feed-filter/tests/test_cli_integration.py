@@ -124,6 +124,7 @@ def test_add_site_then_run_has_no_duplicate(
             "site_id": "ex",
             "zero_links": False,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         }
@@ -201,6 +202,7 @@ def test_scrape_site_self_heal_end_to_end(
             "site_id": "blg",
             "zero_links": False,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         }
@@ -219,6 +221,7 @@ def test_scrape_site_self_heal_end_to_end(
             "site_id": "blg",
             "zero_links": True,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         }
@@ -241,6 +244,7 @@ def test_scrape_site_self_heal_end_to_end(
             "site_id": "blg",
             "zero_links": False,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         }

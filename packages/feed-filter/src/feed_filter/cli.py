@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import sqlite3
 import sys
 import time
 from collections import Counter
@@ -75,7 +76,14 @@ from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
 from feed_filter.seen import is_seen, open_db, record, snapshot
-from feed_filter.sites import SiteConfig, add_site, load_sites, set_enabled, update_pattern
+from feed_filter.sites import (
+    SiteConfig,
+    add_site,
+    load_sites,
+    set_enabled,
+    update_pattern,
+    validate_article_url_pattern,
+)
 from feed_filter.vault import VaultError, write_feed_note
 
 
@@ -151,7 +159,15 @@ def _site_to_dict(s: SiteConfig) -> dict[str, Any]:
 
 
 def _site_from_args(args: argparse.Namespace) -> SiteConfig:
-    """Build (and shape-validate) a SiteConfig from add-site args."""
+    """Build (and shape-validate) a SiteConfig from add-site args.
+
+    The pattern is checked here rather than left to ``add_site``'s own guard: the
+    snapshot fetch runs first and would compile it, so without this the operator
+    gets a raw ``re.error`` traceback instead of the CLI's ``error: …`` exit. Same
+    reason ``cmd_heal_site`` validates before its re-scrape.
+    """
+    if args.article_url_pattern is not None:
+        validate_article_url_pattern(args.article_url_pattern, args.id)
     return SiteConfig(
         id=args.id,
         name=args.name,
@@ -255,8 +271,14 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
     host group and every other group still complete. That keeps the failure in the
     run summary (``sites[].error``, and the site-health counter it increments)
     instead of aborting the gather, and records nothing seen for the failed site,
-    so the next run retries it. ``BaseException`` still propagates: a
-    ``KeyboardInterrupt`` or ``MemoryError`` is not a site's fault to absorb.
+    so the next run retries it. It is flagged ``unexpected`` so the summary can tell
+    it from a classified fetch failure without parsing the message.
+
+    What is *not* absorbed is a failure of the run rather than of a site: a
+    ``MissingPlaywrightError`` means no browser site can be fetched at all, so
+    absorbing it would report the same environment problem as N separate site
+    outages. ``BaseException`` (an interrupt, a ``SystemExit``) propagates for the
+    same reason.
     """
     outcomes: dict[str, FetchOutcome] = {}
 
@@ -269,10 +291,12 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
     def fetch_one(site: SiteConfig) -> FetchOutcome:
         try:
             return fetch_site(site, client=client)
+        except MissingPlaywrightError:
+            raise  # the run's failure, not this site's
         except Exception as exc:
             # The type name matters: an unexpected exception's str() is often empty
             # (``RuntimeError()``), which would surface as a blank error.
-            return FetchOutcome(entries=[], error=f"unexpected {type(exc).__name__}: {exc}")
+            return FetchOutcome(entries=[], error=f"{type(exc).__name__}: {exc}", unexpected=True)
 
     def fetch_group(group: list[SiteConfig]) -> list[tuple[str, FetchOutcome]]:
         # One host per worker: fetch its sites sequentially (never concurrently).
@@ -312,7 +336,13 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     round-robin ordering is unchanged — concurrency only collapses the
     network wall-clock, it does not reorder results.
 
-    Each ``sites[]`` entry also carries ``consecutive_failures`` (the durable
+    Each ``sites[]`` entry also carries ``unexpected_error`` — the error came from
+    an exception the gather could not classify, so the run summary reports what it
+    is instead of narrating it as an unreachable site. It does not attribute the
+    fault: an unclassified exception is usually feed-filter's own, but a page can
+    also feed the parser something it rejects.
+
+    It also carries ``consecutive_failures`` (the durable
     per-site count from ``site_health``) and ``persistent`` (that count has
     reached ``DEFAULT_PERSISTENT_FAILURE_RUNS``), the article-path mirror of
     ``cmd_forum_new``. The count increments only when the site's gather errored
@@ -367,6 +397,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                         "site_id": site.id,
                         "zero_links": gathered.zero_links,
                         "error": gathered.error,
+                        "unexpected_error": gathered.unexpected,
                         "consecutive_failures": failure_count,
                         "persistent": site_health.is_persistent(
                             failure_count, DEFAULT_PERSISTENT_FAILURE_RUNS
@@ -537,6 +568,10 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
         )
     if site.kind != "scrape":
         raise ValueError(f"heal-site targets scrape sites only (site {site.id!r})")
+    # ``update_pattern`` rejects an uncompilable pattern too, but that is the last
+    # step: checking here turns the re-scrape's raw ``re.error`` into the same
+    # ``error: …`` exit as any other bad argument, before any fetch.
+    validate_article_url_pattern(args.pattern, site.id)
     # The healed site is already on disk, so the on-disk gate sees it: fail fast if
     # it is browser-flagged but the extra is missing before the re-scrape.
     require_playwright_if_needed(sites_path())
@@ -1061,7 +1096,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (add-site / heal-site snapshot), the browser analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
-      extra (the message carries the install command).
+      extra, or Chromium would not launch (the message carries the install command);
+    - ``sqlite3.Error`` — the seen-store could not be opened or written; the case
+      this exists for is a lock timeout, when two processes opening the store at
+      once serialize on the migration's ``BEGIN IMMEDIATE`` and the loser exceeds
+      the busy timeout. Like ``ValueError`` and ``OSError`` above it, the catch is
+      broader than that one case and will report a SQL bug of ours the same way —
+      accepted, because a CLI whose contract is ``error: …`` + exit 1 should not
+      dump a traceback for a failing statement either.
     """
     args = build_parser().parse_args(argv)
     try:
@@ -1074,6 +1116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         KeyError,
         OSError,
         MissingPlaywrightError,
+        sqlite3.Error,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

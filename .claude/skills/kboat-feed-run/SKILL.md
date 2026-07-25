@@ -22,11 +22,12 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Procedure
 
 1. **Gather.** Run `eval "$(mise env)" && feed-filter new-entries`.
-   The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, consecutive_failures, persistent}]}`.
+   The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
    - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap. Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
    - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text, and is `null` for `kind == "scrape"` (scrape entries carry no feed metadata). The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url <url>` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
-   - Each `sites` entry is `{site_id, zero_links, error, consecutive_failures, persistent}`.
+   - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
      `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
+     `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
      `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip. A `zero_links` scrape does not count as a failure — it is a broken pattern healed in step 4, not an outage.
    - Keep `sites` aside for steps 3–5.
 
@@ -54,11 +55,13 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last. It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead. On success the output is `{site_id, pattern, snapshotted}`.
    - A non-zero exit means the index re-scrape failed *before* the config write (snapshot-first / config-last), so `sites.toml` still carries the old pattern and nothing was snapshotted; report it in the summary and let the next run retry the heal.
 
-5. **Surface errors.** For each site in `sites` with a non-null `error`, the gather fetch failed; the entry list was empty and nothing was recorded, so it retries naturally next run. By design there is no backoff, so use the durable `consecutive_failures`/`persistent` fields to decide how hard to escalate:
-   - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next successful gather, so do not escalate on a single bad run.
-   - **`persistent == true`**: the site's gather has errored for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
-     1. **Check first for a moved or renamed feed/index URL.** A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated. If the site moved, updating its `index_url`/`feed_url` (see `kboat-manage-feed-sites`) restores it with no loss — the seen-store keys on `canonical_url`, not the domain.
-     2. **Only if the site is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
+5. **Surface errors.** For each site in `sites` with a non-null `error`, that site's gather failed; the entry list was empty and nothing was recorded, so it retries naturally next run. Two independent fields decide what to write: `unexpected_error` says what **kind** of failure it was, and `persistent` says how hard to **escalate**.
+   - **Kind — `unexpected_error == true`**: the CLI could not classify this failure — it did not arrive as a fetch error. That is all the flag asserts: it is usually a feed-filter bug, but a page feeding the parser something it rejects looks the same. So report the `error` **verbatim** with the site id and say it is unclassified, rather than narrating it as an unreachable site; do not diagnose it beyond what the message says.
+   - **Escalation** — by design there is no backoff, so the durable `consecutive_failures`/`persistent` fields carry it (both kinds count toward them):
+     - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next successful gather, so do not escalate on a single bad run. An `unexpected_error` is worth reporting even on one run, because a failure the CLI could not classify is not self-evidently transient — report it, but still do not escalate it.
+     - **`persistent == true`**: the site's gather has errored for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site. When it is also an `unexpected_error`, say so and lead with the message: the investigation may end at "this is a bug to fix", but a chronically failing site still needs one.
+       1. **Check first for a moved or renamed feed/index URL.** A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated. If the site moved, updating its `index_url`/`feed_url` (see `kboat-manage-feed-sites`) restores it with no loss — the seen-store keys on `canonical_url`, not the domain.
+       2. **Only if the site is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
 
 ## Run summary
 
@@ -66,12 +69,12 @@ Emit a run summary as the run's text output — the pass's durable record, and t
 Lead with what is **actionable** — a gather `error` or an operational failure (a `remind` / `heal-site` non-zero exit, a missing-Playwright gate) — and name the offending sites so they can be fixed or paused.
 A self-heal is worth surfacing too, but as an informational record (the run repaired the scrape pattern itself), not an action.
 Routine keeps and walls need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
-A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's URL-change recommendation (first check for a moved feed/index URL, else the remedy is `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill).
+A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's recommendation (first check for a moved feed/index URL, else `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill), noting the `error` verbatim when it is an `unexpected_error`.
 Whether to escalate this summary to a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
-- Errors: each site with a gather `error` (noting its `consecutive_failures` and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
+- Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)
 

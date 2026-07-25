@@ -63,6 +63,15 @@ def test_matches_double_slash_variant_via_canonical_path() -> None:
     assert [e.canonical_url for e in entries] == ["https://blog.example.com/blog/x"]
 
 
+def test_malformed_link_is_skipped_not_fatal() -> None:
+    # One unparseable href among good ones costs that link only. Letting it raise
+    # would error the site's gather every run — and a gather error suppresses the
+    # zero_links self-heal, so nothing would ever repair it.
+    html = '<a href="http://[oops/blog/bad">bad</a><a href="https://blog.example.com/blog/x">x</a>'
+    entries = scrape_index(html, "https://blog.example.com/", ARTICLE_PATTERN)
+    assert [e.canonical_url for e in entries] == ["https://blog.example.com/blog/x"]
+
+
 def test_invalid_pattern_propagates() -> None:
     # A broken pattern must raise, not return [] — the caller distinguishes a
     # 0-match index (the self-heal signal) from a quiet healthy day, and a
