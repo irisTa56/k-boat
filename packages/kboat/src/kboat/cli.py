@@ -1,9 +1,10 @@
 """Shared plumbing for the `kboat-*` CLIs.
 
-Two layers, because the sharing is at two scales. Every entry point that reaches
-the vault takes the same `--vault`, and every one that needs a date takes the
-same `--today` — so a flag means one thing across the whole surface rather than
-whatever each `main` re-declared. On top of that, `kboat-note write` and
+Two layers, because the sharing is at two scales. Every `kboat-*` entry point
+that reaches the vault takes the same `--vault`, and every one that needs a date
+takes the same `--today` — so a flag means one thing across this package's
+surface rather than whatever each `main` re-declared. On top of that,
+`kboat-note write` and
 `kboat-repos write` are two contracts over one writer and share the shape of
 their whole transaction: one JSON record on stdin, results on stdout and
 diagnostics on stderr, one mapping from outcome to exit code. What each writer

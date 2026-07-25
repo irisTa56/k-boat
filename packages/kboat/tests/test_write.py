@@ -54,6 +54,11 @@ def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why:
         ("[a,\nb]", ["a", "b"], "a second line, re-rendered onto one"),
         ('["a, b", plain]', ["a, b", "plain"], "a quoted item holding the separator"),
         (
+            "['it''s, ok', ai]",
+            ["it's, ok", "ai"],
+            "a single-quoted item escapes its quote by doubling it, so `''` is a character",
+        ),
+        (
             "[Moore's law, ai]",
             ["Moore's law", "ai"],
             "an apostrophe mid-item is a character, not the start of a quoted scalar",

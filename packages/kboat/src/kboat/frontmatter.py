@@ -503,8 +503,19 @@ def parse_flow_list(text: str) -> list[str] | None:
     escaped = False
     fresh = True  # whether an item can begin here, so a quote would open one
     colon = False  # an unquoted `:`, whose next character decides what it is
-    for ch in inner:
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        i += 1
         if quote:
+            # A single-quoted scalar escapes its own quote by doubling it, so a
+            # `''` is a character and not the end of the item — the same rule
+            # `_unquote` reverses, and the two have to agree or a comma inside
+            # the item splits it.
+            if quote == "'" and ch == "'" and inner[i : i + 1] == "'":
+                current.append("''")
+                i += 1
+                continue
             current.append(ch)
             if escaped:
                 escaped = False
