@@ -9,8 +9,8 @@ renderer live here once rather than in three copies.
 The reader is a focused scanner, not a full YAML parser: it pulls top-level
 `key: value` scalars and top-level block lists (`key:` then indented `- item`
 lines), and an inline `key: []` empty list. Inline non-empty flow lists
-(`key: [a, b]`) parse as the raw string — no current consumer reads one back as a
-list (repos overwrites them, sources use block lists). Because the scanner
+(`key: [a, b]`) parse as the raw string; a writer handed one back reads its items
+with `parse_flow_list` rather than splicing the source in. Because the scanner
 decodes less than it reads, `parse_entries` hands back every entry's verbatim
 source alongside the value — a whole-note writer puts back what it is not
 changing rather than re-rendering it out of a lossy read, which is the only way
@@ -31,7 +31,7 @@ affected such pathological values.)
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 _KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(.*)$")
@@ -464,8 +464,58 @@ def yaml_scalar(value: object) -> str:
     return _quote(text) if _needs_quote(text) else text
 
 
-def yaml_list(items: list[object] | None) -> str:
+def yaml_list(items: Sequence[object] | None) -> str:
     if not items:
         return "[]"
     rendered = [_quote(s) if _needs_quote_flow(s) else s for s in (str(x) for x in items)]
     return "[" + ", ".join(rendered) + "]"
+
+
+def parse_flow_list(text: str) -> list[str] | None:
+    """The items of an inline `[a, b]` sequence, or None when `text` is not one.
+
+    The inverse of `yaml_list`, for a writer handed an inline list as the raw
+    source the reader returns for one. Reading it back into items is what lets
+    the value be re-emitted through `yaml_list`, which is the only thing that
+    knows how to quote a flow item — a string spliced in as-is carries whatever
+    syntax it holds into the frontmatter, and one such value costs the whole
+    block rather than its own field.
+
+    Splitting is quote-aware, since a quoted item may hold the separator. None
+    where the text is not a sequence this can read whole — an unclosed quote, a
+    nested collection — so the caller has a value to quote rather than a shape
+    invented for it.
+    """
+    stripped = text.strip()
+    if not (stripped.startswith("[") and stripped.endswith("]")) or len(stripped) < 2:
+        return None
+    inner = stripped[1:-1]
+    if not inner.strip():
+        return []
+    items: list[str] = []
+    current: list[str] = []
+    quote = ""
+    escaped = False
+    for ch in inner:
+        if quote:
+            current.append(ch)
+            if escaped:
+                escaped = False
+            elif quote == '"' and ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+            current.append(ch)
+        elif ch in "[]{}":
+            return None  # a nested collection; splitting on commas would mangle it
+        elif ch == ",":
+            items.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if quote:
+        return None
+    items.append("".join(current))
+    return [_unquote(item) for item in items]

@@ -15,6 +15,7 @@ import pytest
 
 from kboat.frontmatter import parse_frontmatter
 from kboat.repos.write import write_note
+from kboat.validate.core import check_note
 
 RECORD: dict[str, Any] = {
     "slug": "abc123def456",
@@ -86,13 +87,16 @@ def test_a_github_description_survives_the_round_trip(tmp_path: Path, descriptio
     assert parse_frontmatter(_note(tmp_path).read_text())["description"] == description
 
 
-def test_write_creates_a_valid_note_from_a_record_without_a_status(tmp_path: Path) -> None:
-    # `status` is a required non-empty enum, so a record assembled by hand or by
-    # the skill rather than piped straight from `gather` must still land a note
-    # the validator accepts — `unknown` is the enum's no-data member.
-    record = {**RECORD, "fields": {k: v for k, v in RECORD["fields"].items() if k != "status"}}
-    write_note(record, tmp_path, today_iso="2026-06-06")
-    assert parse_frontmatter(_note(tmp_path).read_text())["status"] == "unknown"
+def test_write_creates_a_valid_note_from_a_sparse_record(tmp_path: Path) -> None:
+    # A record assembled by hand or by the skill rather than piped straight from
+    # `gather` still has to land a note `kboat-validate` accepts. `status` is
+    # what makes it one: a required non-empty enum whose `unknown` member is the
+    # schema default that fills it.
+    write_note({**RECORD, "fields": {}}, tmp_path, today_iso="2026-06-06")
+
+    fm = parse_frontmatter(_note(tmp_path).read_text())
+    assert fm["status"] == "unknown"
+    assert check_note("repo", dict(fm), "Repos/abc123def456.md") == []
 
 
 def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> None:
@@ -193,10 +197,18 @@ def test_write_update_keeps_prose_above_the_notes_section(tmp_path: Path) -> Non
 def test_write_collision_refuses_overwrite(tmp_path: Path) -> None:
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
     # Same slug, different repo url → 48-bit collision; must not overwrite.
-    other = {**RECORD, "url": "https://github.com/evil/clone", "title": "evil/clone"}
+    other = {
+        **RECORD,
+        "url": "https://github.com/evil/clone",
+        "title": "evil/clone",
+        "fields": {**RECORD["fields"], "descrption": "typo"},
+    }
     result = write_note(other, tmp_path, today_iso="2026-06-06")
     assert result["status"] == "collision"
     assert result["reason"] == "identity_differs"
+    # No per-key report on a write that did not happen: every field is unset,
+    # and the collision is the thing to act on.
+    assert "dropped_fields" not in result
     # Original note untouched.
     assert parse_frontmatter(_note(tmp_path).read_text())["title"] == "google/A2A"
 

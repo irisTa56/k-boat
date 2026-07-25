@@ -28,13 +28,13 @@ def test_render_field_by_kind() -> None:
 @pytest.mark.parametrize(
     ("value", "why"),
     [
-        ("agents: tooling", "a plain string is not a list at all"),
-        ('[a, "b]', "an unclosed quote would swallow the lines after it"),
-        ("[a,\nb]", "a second line breaks the one-field-one-line rule"),
-        ("[a, [b]", "an unbalanced bracket leaves the sequence open"),
+        ("agents: tooling", "a plain string is no sequence at all"),
+        ('[a, "b]', "an unclosed quote"),
+        ("[a, [b]", "a nested collection commas cannot be split on"),
+        ("[{a]", "likewise a mapping"),
     ],
 )
-def test_a_string_that_is_not_a_flow_sequence_is_quoted(value: str, why: str) -> None:
+def test_a_string_that_is_no_flow_sequence_is_quoted(value: str, why: str) -> None:
     # A value that carries its own syntax into the block costs the whole note —
     # the frontmatter stops parsing and Obsidian drops it from every Base.
     # Quoted, a wrong-typed value costs only its own field.
@@ -42,6 +42,29 @@ def test_a_string_that_is_not_a_flow_sequence_is_quoted(value: str, why: str) ->
 
     assert parse_frontmatter(note)["topics"] == value, why
     assert yaml.safe_load(note.split("---\n")[1])["topics"] == value, why
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "why"),
+    [
+        ("[a, b]", ["a", "b"], "the plain shape the reader hands back"),
+        ("  [a, b]  ", ["a", "b"], "edge whitespace would otherwise be spliced in bare"),
+        ("[a,\nb]", ["a", "b"], "a second line, re-rendered onto one"),
+        ('["a, b", plain]', ["a, b", "plain"], "a quoted item holding the separator"),
+        ("[a\tb]", ["a\tb"], "a tab is a flow special, so the item comes back quoted"),
+        ("[a #b]", ["a #b"], "likewise a comment marker"),
+        ("[- a]", ["- a"], "likewise a leading indicator"),
+        ("[]", [], "an empty sequence stays one"),
+    ],
+)
+def test_a_flow_sequence_is_read_back_and_re_rendered(
+    value: str, expected: list[str], why: str
+) -> None:
+    # Re-rendering rather than passing the source through is what puts every
+    # item through `yaml_list`'s quoting, whatever the string it arrived in.
+    note = build_note(REPO, {"type": "repo", "title": "r", "topics": value})
+
+    assert yaml.safe_load(note.split("---\n")[1])["topics"] == expected, why
 
 
 def test_block_list_is_multiline() -> None:

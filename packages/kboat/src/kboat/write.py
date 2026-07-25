@@ -20,33 +20,12 @@ from kboat.frontmatter import (
     continues_previous,
     names_key,
     parse_entries,
+    parse_flow_list,
     yaml_list,
     yaml_scalar,
 )
 from kboat.io_utils import atomic_write_text
 from kboat.schema import DIR_BY_TYPE, Field, Kind, NoteSchema
-
-_FLOW_SEQUENCE_RE = re.compile(r"^\[[^\[\]\n]*\]$")
-
-
-def _is_flow_sequence(value: str) -> bool:
-    """Whether `value` is a self-contained one-line `[a, b]`.
-
-    The one string safe to re-emit as a list: what the reader hands back for an
-    inline list. Anything else — an unbalanced bracket or quote, a second line —
-    is emitted quoted instead, because a value that carries its own syntax into
-    the block costs the whole note rather than its own field, and because
-    `render_field` promises one line, which `set_fields` splices into one.
-
-    Deliberately not a parse; it only has to separate what the reader produced
-    from what it did not.
-    """
-    stripped = value.strip()
-    return (
-        _FLOW_SEQUENCE_RE.match(stripped) is not None
-        and stripped.count('"') % 2 == 0
-        and stripped.count("'") % 2 == 0
-    )
 
 
 def render_field(field: Field | None, value: object) -> str:
@@ -67,10 +46,15 @@ def render_field(field: Field | None, value: object) -> str:
     if field.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return yaml_list(list(value))
-        # An inline list re-read from a note parses as its raw `[a, b]` string;
-        # pass that through unchanged rather than dropping it to `[]`.
+        # An inline list re-read from a note comes back as its raw `[a, b]`
+        # source. Read it and re-render rather than pass it through, so what
+        # reaches the note has been through the one renderer that knows how to
+        # quote a flow item. A string that is no sequence at all is quoted: a
+        # wrong-typed value then costs its own field, where a bare one would
+        # cost the whole block.
         if isinstance(value, str):
-            return value if _is_flow_sequence(value) else yaml_scalar(value)
+            items = parse_flow_list(value)
+            return yaml_list(items) if items is not None else yaml_scalar(value)
         return yaml_list([])
     return yaml_scalar(value)
 
