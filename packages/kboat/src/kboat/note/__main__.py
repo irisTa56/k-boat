@@ -11,13 +11,9 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
-from datetime import date
-from pathlib import Path
 
-from kboat.frontmatter import FrontmatterError
+from kboat.cli import BadInputError, add_write_arguments, read_json_record, run_write, vault_path
 from kboat.schema import BY_TYPE
 from kboat.write import upsert
 
@@ -28,42 +24,17 @@ def _write(argv: list[str]) -> int:
         description="Create or update a vault note from a JSON record on stdin.",
     )
     parser.add_argument("--type", required=True, choices=sorted(BY_TYPE))
-    parser.add_argument(
-        "--vault",
-        default=os.environ.get("OBSIDIAN_VAULT_PATH"),
-        help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
-    )
-    parser.add_argument(
-        "--today",
-        default=date.today().isoformat(),
-        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
-    )
+    add_write_arguments(parser)
     args = parser.parse_args(argv)
+    vault = vault_path(parser, args)
 
-    if not args.vault:
-        parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
-    try:
-        date.fromisoformat(args.today)
-    except ValueError:
-        parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
+    def write() -> dict[str, object]:
+        record = read_json_record()
+        if "slug" not in record:
+            raise BadInputError("record must carry a 'slug' key")
+        return upsert(BY_TYPE[args.type], vault, record, today=args.today)
 
-    try:
-        record = json.load(sys.stdin)
-    except json.JSONDecodeError as e:
-        sys.stderr.write(f"stdin is not valid JSON: {e}\n")
-        return 2
-    if not isinstance(record, dict) or "slug" not in record:
-        sys.stderr.write("record must be a JSON object with a 'slug' key\n")
-        return 2
-
-    try:
-        result = upsert(BY_TYPE[args.type], Path(args.vault).expanduser(), record, today=args.today)
-    except (FrontmatterError, OSError) as e:
-        sys.stderr.write(f"write failed: {e}\n")
-        return 1
-    json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
-    sys.stdout.write("\n")
-    return 1 if result["status"] == "collision" else 0
+    return run_write(write)
 
 
 _COMMANDS = {"write": _write}

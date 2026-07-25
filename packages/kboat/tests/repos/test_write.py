@@ -94,7 +94,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     path = _note(tmp_path)
     path.write_text(path.read_text().replace("reading: false", "reading: true"))
 
-    write_note(
+    result = write_note(
         {
             **RECORD,
             "fields": {
@@ -115,6 +115,17 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     assert fm["added_date"] == "2026-06-06"
     assert fm["refreshed_date"] == "2027-01-01"
     assert "invented_by_the_classifier" not in note
+    # Dropped, but not in silence — the caller is told what it sent that did not land.
+    assert result["dropped_fields"] == [
+        "reading",
+        "added_date",
+        "refreshed_date",
+        "invented_by_the_classifier",
+    ]
+
+
+def test_write_reports_nothing_dropped_when_nothing_was(tmp_path: Path) -> None:
+    assert "dropped_fields" not in write_note(RECORD, tmp_path, today_iso="2026-06-06")
 
 
 def test_write_update_keeps_prose_above_the_notes_section(tmp_path: Path) -> None:

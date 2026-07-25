@@ -55,7 +55,7 @@ It is read-only and report-only by default (exit 0; `--strict` exits non-zero), 
 A note is never hand-assembled.
 The write is owned by `kboat.write.upsert(schema, vault, record, *, today)` in the `kboat` library, with a CLI wrapper `kboat-note write --type <t>` that reads a `{slug, fields, body?}` JSON record on stdin.
 K-Boat's prose skills pipe a record to the CLI; a Python member such as feed-filter calls `upsert` directly.
-`kboat-repos write` is a second CLI over the same `upsert`, differing only in the record shape it accepts (a `gather` record plus the judged fields, rather than `{slug, fields, body?}`); everything below holds for it too.
+`kboat-repos write` is a second CLI over the same `upsert`, differing in the record shape it accepts (a `gather` record plus the judged fields, rather than `{slug, fields, body?}`), in that it drops a record key the schema does not declare rather than writing it, and in that it authors no body of its own; everything else below holds for it too.
 
 From a `{slug, fields, body?}` record, `upsert` guarantees:
 
