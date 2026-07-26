@@ -5,17 +5,15 @@ against links on an ``index_url``), or a *forum* (``forum_url`` pointing at a
 Discourse instance); exactly one of the three, validated at construction. Forum
 sites carry optional tuning fields; the per-site values override
 the config-level defaults at use time. Site ids are unique (the seen-store and
-self-heal route by id). Writes are atomic and durable (temp file + fsync +
-``os.replace`` + dir fsync) and go through tomlkit so existing entries
-keep their formatting.
+self-heal route by id). Writes go through the shared atomic writer
+(``kboat.io_utils.atomic_write_text`` — temp file + fsync + ``os.replace`` + dir
+fsync), so a crash never leaves a half-written registry, and through tomlkit so
+existing entries keep their formatting.
 """
 
 from __future__ import annotations
 
-import contextlib
-import os
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +21,7 @@ import tomlkit
 from tomlkit.items import Table
 
 from feed_filter.config import QUERY_SITE_ID
+from kboat.io_utils import atomic_write_text
 
 # String optional fields: blank-normalized and emitted as strings. ``id`` and
 # ``name`` are required and handled separately.
@@ -147,29 +146,6 @@ def validate_article_url_pattern(pattern: str, site_id: str) -> None:
         raise ValueError(
             f"article_url_pattern is not a valid regex (site {site_id!r}): {exc}"
         ) from exc
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Temp file in the same dir so os.replace is an atomic intra-filesystem move.
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-            f.flush()
-            os.fsync(f.fileno())  # contents durable before the rename
-        os.replace(tmp, path)
-        # Durably persist the rename itself, so a crash can't lose a "registered"
-        # config that must be committed before the snapshot is trusted.
-        dir_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    except BaseException:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(tmp)
-        raise
 
 
 def _opt_str(table: Table, key: str) -> str | None:
@@ -327,7 +303,7 @@ def add_site(path: Path, site: SiteConfig) -> None:
         doc["site"] = aot
     aot.append(table)
 
-    _atomic_write(path, tomlkit.dumps(doc))
+    atomic_write_text(path, tomlkit.dumps(doc))
 
 
 def update_pattern(path: Path, site_id: str, pattern: str) -> None:
@@ -350,7 +326,7 @@ def update_pattern(path: Path, site_id: str, pattern: str) -> None:
             if _opt_str(table, "feed_url") is not None or _opt_str(table, "forum_url") is not None:
                 raise ValueError(f"update_pattern targets scrape sites only (site {site_id!r})")
             table["article_url_pattern"] = pattern
-            _atomic_write(path, tomlkit.dumps(doc))
+            atomic_write_text(path, tomlkit.dumps(doc))
             return
     raise KeyError(f"no site with id {site_id!r}")
 
@@ -370,6 +346,6 @@ def set_enabled(path: Path, site_id: str, enabled: bool) -> None:
                 table.pop("enabled", None)
             else:
                 table["enabled"] = False
-            _atomic_write(path, tomlkit.dumps(doc))
+            atomic_write_text(path, tomlkit.dumps(doc))
             return
     raise KeyError(f"no site with id {site_id!r}")

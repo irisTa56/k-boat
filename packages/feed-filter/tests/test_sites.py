@@ -407,13 +407,15 @@ def test_update_pattern_rewrites_only_target(tmp_path: Path) -> None:
 
 def test_failed_write_leaves_no_temp_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # If the rename fails mid-write, the temp file must be cleaned up and the
-    # error propagated — no half-written .tmp litter, no silent swallow.
-    import feed_filter.sites as sites_mod
+    # error propagated — no half-written .tmp litter, no silent swallow. The
+    # registry write goes through the shared atomic writer, so that is where the
+    # rename is broken.
+    import kboat.io_utils as io_utils
 
     def boom(*_args: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(sites_mod.os, "replace", boom)
+    monkeypatch.setattr(io_utils.os, "replace", boom)
     path = tmp_path / "sites.toml"
     with pytest.raises(OSError, match="disk full"):
         add_site(path, _feed())
