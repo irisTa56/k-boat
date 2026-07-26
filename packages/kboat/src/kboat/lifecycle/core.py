@@ -26,7 +26,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from .notes import Value
+from .notes import Value, is_iso_date
 
 COOLDOWN_DAYS = 7
 
@@ -58,6 +58,7 @@ class Source:
     keep: bool
     dismiss: bool
     blocked: bool
+    added_date: str | None
     filed_date: str | None
     distilled_date: str | None
     notebooklm_id: str | None
@@ -90,6 +91,7 @@ class Source:
             keep=boolean("keep"),
             dismiss=boolean("dismiss"),
             blocked=boolean("blocked"),
+            added_date=_nonblank(fm.get("added_date")),
             filed_date=_nonblank(fm.get("filed_date")),
             distilled_date=_nonblank(fm.get("distilled_date")),
             notebooklm_id=_nonblank(fm.get("notebooklm_id")),
@@ -122,20 +124,63 @@ class Source:
             and (self.summary_empty or self.topics_empty)
         )
 
+    @property
+    def summary_unrecoverable(self) -> bool:
+        """The same gap as `needs_summary` with no notebook left to close it.
+
+        Between them the pair holds every source whose durable description is
+        missing. Two kinds are excluded because neither lost one: a `blocked`
+        source never ingested, and a `dismiss`ed one is outside recall's reach by
+        design. What a nonzero count asks of a reader is `kboat-notes`, "Backlog
+        stats".
+        """
+        return (
+            self.notebooklm_id is None
+            and not self.blocked
+            and not self.dismiss
+            and (self.summary_empty or self.topics_empty)
+        )
+
+
+def older_than(day: str | None, today: date, days: int) -> bool:
+    """True once `day` (a `YYYY-MM-DD` string) is at least `days` old.
+
+    Canonical ISO dates compare lexicographically in chronological order, so once
+    `is_iso_date` has vouched for the form, a string compare against the cutoff is
+    exact and needs no parse. Anything else is no clock at all and nothing has
+    aged: a blank string would otherwise sort before any cutoff and read as
+    instantly old, which for the cooldown means discarding a notebook before the
+    week ever ran.
+
+    One predicate for every "has enough time passed" question, so the cooldown
+    and the backlog stats cannot disagree about what an age is.
+    """
+    return is_iso_date(day) and day <= (today - timedelta(days=days)).isoformat()
+
 
 def cooldown_elapsed(filed_date: str | None, today: date) -> bool:
-    """True once `filed_date` is at least COOLDOWN_DAYS old.
+    """True once `filed_date` is at least COOLDOWN_DAYS old — the gate the
+    lifecycle puts in front of every destructive action."""
+    return older_than(filed_date, today, COOLDOWN_DAYS)
 
-    ISO `YYYY-MM-DD` strings compare lexicographically in chronological order,
-    so a string compare against the cutoff is exact. A missing or blank
-    `filed_date` is no clock at all — the cooldown has not elapsed (a blank
-    string would otherwise sort before any cutoff and read as instantly ripe,
-    discarding the notebook before the cooldown ever ran).
+
+def age_in_days(day: str | None, today: date) -> int | None:
+    """How many days ago `day` was, or None when `day` is not a date in the past.
+
+    Unlike `older_than` this has to parse, since no number falls out of a string
+    compare — but it admits exactly the same values, so the pair cannot report an
+    age for a date the other treats as no clock.
+
+    A future date is no age either, and None rather than a negative number is
+    what keeps it from reading as healthy: a caller comparing an age against a
+    ceiling would take -3 for the newest entry there is, hiding the very note
+    whose date is wrong.
     """
-    if filed_date is None or not filed_date.strip():
-        return False
-    cutoff = (today - timedelta(days=COOLDOWN_DAYS)).isoformat()
-    return filed_date <= cutoff
+    if is_iso_date(day):
+        age = (today - date.fromisoformat(day)).days
+        if age >= 0:
+            return age
+    return None
 
 
 @dataclass

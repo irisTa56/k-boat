@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from kboat.cli import add_vault_argument, vault_path
+from kboat.schema import QUEUE_DIR
 
 from .parse import parse_capture
 
@@ -53,8 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     add_vault_argument(parser)
     parser.add_argument(
         "--folder",
-        default="Queue",
-        help="Vault-relative queue folder to read (default: Queue).",
+        default=QUEUE_DIR,
+        help=f"Vault-relative queue folder to read (default: {QUEUE_DIR}).",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="Print each Queue/*.md capture as {path, url, title} JSON.")

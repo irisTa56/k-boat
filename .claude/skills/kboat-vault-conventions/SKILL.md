@@ -1,6 +1,6 @@
 ---
 name: kboat-vault-conventions
-description: Shared conventions and the mechanical contract for writing any note into the K-Boat Obsidian vault (OBSIDIAN_VAULT_PATH) — URL-hash naming, frontmatter rules, the code-authoritative kboat.schema and its sync gate, the kboat.write.upsert write contract, and Base-authoring discipline. Use when adding or changing a vault note type, writing a note into the vault, or authoring a Base. Every vault writer defers here for how the vault works; a note type's own fields, semantics, and lifecycle live in the owning member's spec (K-Boat's in kboat-notes).
+description: Shared conventions and the mechanical contract for writing any note into the K-Boat Obsidian vault (OBSIDIAN_VAULT_PATH) — URL-hash naming, frontmatter rules, the code-authoritative kboat.schema and its sync gate, the kboat.write.upsert write contract, Base-authoring discipline, and the vault's environment preconditions (the kboat-doctor check). Use when adding or changing a vault note type, writing a note into the vault, authoring a Base, or working out what kboat-doctor checks and why a precondition failed. Every vault writer defers here for how the vault works; a note type's own fields, semantics, and lifecycle live in the owning member's spec (K-Boat's in kboat-notes).
 ---
 
 # Vault conventions
@@ -12,6 +12,39 @@ These conventions are the rules-of-the-road every writer follows so the vault st
 This spec owns *how the vault works*, not *what any one note type is*.
 A note type's own fields, semantics, and lifecycle live in the owning member's spec — K-Boat's in the `kboat-notes` skill.
 The mechanical schema of every type is code-authoritative in `kboat.schema` (the `kboat` library); this spec explains the contract around it.
+
+## Vault preconditions
+
+The vault is one shared directory on an iCloud-synced volume, so before an unattended run reads or writes anything it has to establish that the vault is there and that its contents are actually local.
+`kboat-doctor` (in the `kboat` library) is that check: it prints every check as JSON on stdout with diagnostics on stderr, and exits 0 when nothing failed, 1 when anything did.
+It is read-only apart from one probe file it creates and removes again.
+The root, folder, and placeholder checks are vault-wide: they assert the shared vault is present and fully local, `Feeds/` included, because a member's folder missing or half-synced means the vault is, whoever reads it.
+Only `Questions.md` and the K-Boat-owned `Queue/`, `Reviews/`, and `PDFs/` narrow the set to the K-Boat routine, which is why the set as it stands is that routine's precondition and a second member wanting one needs its own.
+
+The check is stricter than any single phase, on purpose.
+A phase tolerates a folder that is not there — the lifecycle CLI reads an absent `Kindles/` as no Kindle notes, the validator as nothing to validate — and that tolerance is exactly how a vault that failed to sync gets processed as though it were complete.
+So a folder in the set is required even where a phase would have shrugged, and creating it belongs to declaring the note type rather than to the run.
+
+The set is what a run cannot proceed without, not everything the vault holds.
+An input a phase degrades over by design is deliberately out — the daily pick's `Daily/` notes are its ambient signal and it ranks without them, so their absence is not a precondition failure, whereas `Questions.md` below is the deliberate signal the pick is steered by.
+
+- **The root exists** and is a directory. A missing root short-circuits the rest: every other check would only restate the same fact.
+- **The root is writable** — the root itself, not each folder the run writes into. Proven by creating a uniquely-named probe file with `O_EXCL` and unlinking it: permission bits are not the whole story on a synced volume, so the check writes rather than inspects. A probe that cannot be removed again fails too, since a file left in the vault is itself drift. A single folder made read-only under a writable root therefore passes here and fails mid-run; the check is aimed at a vault that is absent or not mounted, which is the failure that takes the root with it.
+- **The required folders exist**, and separately that **no required name is taken by a non-directory** (a file, or a dangling symlink). Two checks, because the first wants `mkdir` and the second wants the name freed first — `mkdir` on a taken name fails. The set is every note type's directory (from `kboat.schema`'s `DIR_BY_TYPE`, so declaring a new type requires its folder) plus `Queue/`, `Reviews/`, and `PDFs/` (named beside `DIR_BY_TYPE` in `kboat.schema`, so the layout has one home). The writer would create a missing one on first write, but the check does not defer to that: an absent folder is indistinguishable from a vault that has not synced, and auto-creating it is how a run comes to write into a half-synced vault.
+- **The questions file exists** — `Questions.md` at the vault root, the daily pick's backlog.
+- **No iCloud placeholder shadows a file** in the scanned set: the note directories and `PDFs/` (each recursively, since a placeholder in a subfolder hides a file just as completely — though not into a symlinked subdirectory, since one symlink loop would hang the check every run waits on), plus `Questions.md` by name — that one is reported by the `questions_file` check rather than `icloud_notes`, since from there an evicted backlog and an absent one are the same finding with different remedies. An evicted file leaves a `.<name>.icloud` placeholder where the file was, which means the vault is not fully synced locally. The vault root is not otherwise swept, so an evicted `Sources.base` is not caught — a Base is Obsidian's view, which no phase reads.
+
+The placeholder check is split by what an eviction actually costs, because a doctor failure stops the whole routine and must not stop it over a file the routine never reads.
+
+- A placeholder under a note directory (`Queue/`, `Reviews/`, and every `DIR_BY_TYPE` folder) **fails**. A run that walks past one silently processes a vault missing content it has no way to know about. Most of those directories hold the run's input; `Reviews/` earns its place differently — the distill pass *appends* to a dated report there, and an evicted one reads as absent, so the append would start a second file and the earlier sections would return as a sync conflict.
+- A placeholder under `PDFs/` is a **warning** that does not fail. It is the one directory a run neither reads nor writes: the file is only ever uploaded at ingest, and distillation reads the content back from the notebook. The eviction costs the human their reading copy, which is not worth stopping a run over.
+
+The report on stdout is a JSON object with `vault`, `ok` (true when nothing failed), `checks`, and `counts`.
+Each entry in `checks` carries `name`, `status` (`ok`, `warning`, or `failed`), `detail`, `paths`, and `path_count` — every key on every entry, and `counts` likewise carries `total` plus one count per status even at zero, so a reader never has to decide whether an absent key means empty or means nothing.
+A check's names live in its `paths` alone, never restated in `detail`, so a reader acting on one list is not left wondering whether the other holds more.
+`paths` names at most five, with `path_count` giving the true total: the failure these checks exist for can evict thousands of files at once, and the caller is an unattended agent whose context both streams land in, so the report is bounded rather than answering a question about the vault with the vault itself.
+A failing root is reported alone, so a short-circuited run has fewer entries but never fewer keys.
+Every non-`ok` check is also written to stderr, one line per finding, so an unattended log shows the reason without parsing the JSON back.
 
 ## Naming
 
@@ -49,6 +82,8 @@ When a field changes, update the owning spec's table and `kboat.schema` together
 
 `kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines and `parse_error`.
 It is read-only and report-only by default (exit 0; `--strict` exits non-zero), so a routine runs it last and surfaces the violations as drift for a human to fix.
+`--stats` adds a block of backlog-health counts, defined by the owning member over its own lifecycle predicates rather than over the schema; K-Boat's set is in `kboat-notes` ("Backlog stats").
+Stats never affect the exit code — they describe how the backlog is moving, not whether a note is well-formed.
 
 ## The write contract
 

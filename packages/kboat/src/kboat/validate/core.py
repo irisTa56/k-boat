@@ -1,21 +1,43 @@
 """Check one note's frontmatter against its schema.
 
-Per-field checks (presence, emptiness, kind/enum/date) plus a few cross-field
-rules that a single field can't express (contradictory dispositions, a blocked
-source that still carries a notebook, a non-web pick). The rules encode the
-load-bearing invariants from `kboat-notes`; they are deliberately conservative so
-a valid vault reports nothing.
+Per-field checks (presence, emptiness, kind/enum/date) plus the cross-field rules
+a single field can't express, enumerated by `CrossFieldCode` below. The rules
+encode the load-bearing invariants from `kboat-notes` ("Cross-field rules"); they
+are deliberately conservative so a valid vault reports nothing.
+
+A state the routine itself is about to resolve is not a rule here: a disposition
+with no `filed_date` is reported as a backlog stat instead (`kboat.validate.stats`,
+and `kboat-notes` "Backlog stats" for why).
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+from enum import StrEnum
 
-from kboat.frontmatter import Value, is_yaml_int, parse_flow_list
+from kboat.frontmatter import Value, is_iso_date, is_yaml_int, parse_flow_list
 from kboat.schema import BY_TYPE, Field, Kind, NoteSchema
 
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+class CrossFieldCode(StrEnum):
+    """Every cross-field code, in the order the owning skill's rule table lists them.
+
+    An enum rather than constants beside a tuple, so that declaring a code and
+    enrolling it in the set are one act: the doc-sync gate compares the table's
+    `Code` column against `list(CrossFieldCode)`, and a new rule cannot emit
+    something the table does not describe and the gate does not see.
+
+    The per-field codes (`missing_field`, `bad_date`, …) are not here — they are
+    generated from the schema rather than written per rule, and their prose lives
+    in `kboat-vault-conventions`, not in the table this gates.
+    """
+
+    AMBIGUOUS = "ambiguous"
+    DISTILLED_WITHOUT_DISTILL = "distilled_without_distill"
+    BLOCKED_HAS_NOTEBOOK = "blocked_has_notebook"
+    PICKED_NON_WEB = "picked_non_web"
+    WEB_MISSING_URL = "web_missing_url"
+    STATUS_ARCHIVED_MISMATCH = "status_archived_mismatch"
 
 
 @dataclass(frozen=True)
@@ -47,7 +69,7 @@ def _kind_violation(f: Field, value: Value) -> str | None:
     if f.kind is Kind.ENUM:
         return None if (isinstance(value, str) and value in f.enum) else "bad_enum"
     if f.kind is Kind.DATE:
-        return None if (isinstance(value, str) and _DATE_RE.match(value)) else "bad_date"
+        return None if is_iso_date(value) else "bad_date"
     if f.kind is Kind.INT:
         # The writer's own definition of a number, so the pair cannot disagree:
         # what it writes bare is what this accepts, and what it had to quote is
@@ -85,19 +107,44 @@ def _check_fields(schema: NoteSchema, fm: dict[str, Value], path: str) -> list[V
     return out
 
 
+def _distilled_without_distill(fm: dict[str, Value], path: str) -> list[Violation]:
+    """The one check for both distillable kinds, so they cannot drift apart.
+
+    `distilled_date` is the terminal marker of a distillation `distill` asked for,
+    so the date without the flag records a request the note says was never made.
+    What follows differs by kind — a source with no disposition left reads as
+    active again and has its `filed_date` cleared, returning something already in
+    the knowledge graph to the inbox, while a Kindle book has no `filed_date` to
+    lose — but the contradiction is the same, and so is the repair.
+    """
+    if _is_empty(fm.get("distilled_date")) or fm.get("distill") is True:
+        return []
+    return [
+        Violation(
+            path, "distilled_date", CrossFieldCode.DISTILLED_WITHOUT_DISTILL, "distill not set"
+        )
+    ]
+
+
 def _source_rules(fm: dict[str, Value], path: str) -> list[Violation]:
     out: list[Violation] = []
     dismiss = fm.get("dismiss") is True
     if dismiss and (fm.get("keep") is True or fm.get("distill") is True):
         out.append(
-            Violation(path, "_dispositions", "ambiguous", "dismiss combined with keep/distill")
+            Violation(
+                path,
+                "_dispositions",
+                CrossFieldCode.AMBIGUOUS,
+                "dismiss combined with keep/distill",
+            )
         )
+    out += _distilled_without_distill(fm, path)
     if fm.get("blocked") is True and not _is_empty(fm.get("notebooklm_id")):
-        out.append(Violation(path, "notebooklm_id", "blocked_has_notebook"))
+        out.append(Violation(path, "notebooklm_id", CrossFieldCode.BLOCKED_HAS_NOTEBOOK))
     if fm.get("picked") is True and fm.get("source_type") != "web_page":
-        out.append(Violation(path, "picked", "picked_non_web"))
+        out.append(Violation(path, "picked", CrossFieldCode.PICKED_NON_WEB))
     if fm.get("source_type") == "web_page" and _is_empty(fm.get("url")):
-        out.append(Violation(path, "url", "web_missing_url"))
+        out.append(Violation(path, "url", CrossFieldCode.WEB_MISSING_URL))
     return out
 
 
@@ -108,19 +155,25 @@ def _repo_rules(fm: dict[str, Value], path: str) -> list[Violation]:
     if archived and fm.get("status") != "archived":
         return [
             Violation(
-                path, "status", "status_archived_mismatch", "archived repo, status != archived"
+                path,
+                "status",
+                CrossFieldCode.STATUS_ARCHIVED_MISMATCH,
+                "archived repo, status != archived",
             )
         ]
     if fm.get("status") == "archived" and not archived:
         return [
             Violation(
-                path, "archived", "status_archived_mismatch", "status == archived, flag not set"
+                path,
+                "archived",
+                CrossFieldCode.STATUS_ARCHIVED_MISMATCH,
+                "status == archived, flag not set",
             )
         ]
     return []
 
 
-_RULES = {"source": _source_rules, "repo": _repo_rules}
+_RULES = {"source": _source_rules, "kindle": _distilled_without_distill, "repo": _repo_rules}
 
 
 def check_note(note_type: str, fm: dict[str, Value], path: str) -> list[Violation]:

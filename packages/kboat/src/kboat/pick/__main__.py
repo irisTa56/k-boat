@@ -23,6 +23,7 @@ from datetime import date
 from pathlib import Path
 
 from kboat.cli import add_today_argument, add_vault_argument, vault_path
+from kboat.schema import DAILY_DIR, DIR_BY_TYPE, QUESTIONS_FILE
 
 from .candidates import candidate_from, is_active_web
 from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_daily_notes
@@ -37,7 +38,7 @@ def _load_sources(
     note is `(slug, rel_path, frontmatter)`."""
     notes: list[tuple[str, str, dict[str, Value]]] = []
     anomalies: list[dict[str, str]] = []
-    for path in sorted((vault / "Sources").glob("*.md")):
+    for path in sorted((vault / DIR_BY_TYPE["source"]).glob("*.md")):
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -55,11 +56,11 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
     ]
     daily_notes = [
         {"date": dn.date, "body": dn.body}
-        for dn in extract_daily_notes(vault / "Daily", today, lookback_days)
+        for dn in extract_daily_notes(vault / DAILY_DIR, today, lookback_days)
     ]
     questions = [
         {"rank": q.rank, "question": q.question, "note": q.note}
-        for q in extract_questions(vault / "Questions.md")
+        for q in extract_questions(vault / QUESTIONS_FILE)
     ]
     return {
         "today": today.isoformat(),
@@ -142,8 +143,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     vault = vault_path(parser, args)
-    if not (vault / "Sources").is_dir():
-        parser.error(f"no Sources/ directory under vault: {vault / 'Sources'}")
+    sources_dir = vault / DIR_BY_TYPE["source"]
+    if not sources_dir.is_dir():
+        parser.error(f"no {DIR_BY_TYPE['source']}/ directory under vault: {sources_dir}")
 
     if args.command == "candidates":
         today = date.fromisoformat(args.today)

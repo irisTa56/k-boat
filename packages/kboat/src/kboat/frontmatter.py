@@ -40,6 +40,8 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
+from typing import TypeGuard
 
 _PLAIN_KEY = r"[A-Za-z_][A-Za-z0-9_]*"
 _KEY_RE = re.compile(rf"^({_PLAIN_KEY}):(.*)$")
@@ -580,6 +582,12 @@ def _needs_quote_flow(text: str) -> bool:
 # whatever else opens the vault, so "an integer" has to mean one thing to all.
 _YAML_INT_RE = re.compile(r"-?(0|[1-9][0-9]*)")
 
+# `\d` here is Unicode-wide, so this pattern alone would admit a date written in
+# non-ASCII digits. What closes that is `is_iso_date`'s parse: `date.fromisoformat`
+# is ASCII-only, so such a value is rejected there rather than reaching a
+# lexicographic compare that would order it against nothing.
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
 
 _PLAIN_KEY_RE = re.compile(_PLAIN_KEY)
 
@@ -606,6 +614,30 @@ def is_yaml_int(text: str) -> bool:
     they disagree on is exactly a value written as valid and reported as not.
     """
     return bool(_YAML_INT_RE.fullmatch(text))
+
+
+def is_iso_date(value: object) -> TypeGuard[str]:
+    """Whether `value` is a `YYYY-MM-DD` calendar date, matched exactly.
+
+    The one definition of "this field holds a date", shared by the validator
+    (which reports `bad_date` everywhere else) and by every predicate that ages a
+    date. Two definitions would disagree somewhere, and the pair they disagree on
+    is exactly a value one reads as a date and the other as no clock at all.
+
+    Both halves of the test are load-bearing. The pattern rejects the other forms
+    `date.fromisoformat` accepts (`20260601`, `2026-W23-1`), which no note writer
+    emits and which do not order lexicographically alongside the canonical form;
+    the parse rejects a well-shaped impossibility like `2026-13-45`, which a
+    pattern alone cannot tell from a date. `TypeGuard` rather than `TypeIs`,
+    since a false answer says nothing about the value's type.
+    """
+    if not isinstance(value, str) or _ISO_DATE_RE.fullmatch(value) is None:
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def yaml_scalar(value: object) -> str:
