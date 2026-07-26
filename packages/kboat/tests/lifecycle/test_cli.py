@@ -2,12 +2,13 @@
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from kboat.lifecycle.__main__ import main
-from kboat.lock import LOCK_NAME, vault_lock
+from kboat.lock import vault_lock
 
 NOTE_TEMPLATE = """\
 ---
@@ -226,7 +227,7 @@ def test_missing_vault_errors(tmp_path: Path):
     assert exc.value.code != 0
 
 
-def test_refuses_a_locked_vault_without_writing(vault: Path, capsys):
+def test_refuses_a_locked_vault_without_writing(vault: Path, capsys, brief_lock_wait: None):
     # A run that cannot take the lock reports who holds it and touches nothing:
     # the note keeps its unstamped filed_date for the next run to stamp.
     sources = vault / "Sources"
@@ -270,20 +271,21 @@ def test_the_filed_date_stamp_goes_through_the_atomic_writer(vault: Path) -> Non
     assert "filed_date: 2026-06-15" in (sources / "a.md").read_text(encoding="utf-8")
 
 
-def test_the_plan_is_computed_inside_the_hold(vault: Path) -> None:
+def test_the_plan_is_computed_inside_the_hold(
+    vault: Path, lock_is_held: Callable[[Path], bool]
+) -> None:
     # The read and the write are one step so they happen under one hold: a plan
     # computed before another run's writes would stamp dates the notes no longer
     # call for. Nothing else would notice the read moving out of the block — the
     # write would still be refused, and the suite would still pass.
     sources = vault / "Sources"
     write_note(sources, "a", distill=True)
-    lock_file = vault / LOCK_NAME
     held: list[bool] = []
     real_read_text = Path.read_text
 
     def spy(self: Path, *args: object, **kwargs: object) -> str:
         if self.parent == sources:
-            held.append(lock_file.exists())
+            held.append(lock_is_held(vault))
         return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
 
     with pytest.MonkeyPatch.context() as mp:
@@ -293,12 +295,14 @@ def test_the_plan_is_computed_inside_the_hold(vault: Path) -> None:
     assert held and all(held), "every Sources/ read must happen while the lock is held"
 
 
-def test_a_vault_whose_lock_cannot_be_created_is_reported_not_dumped(
+def test_a_vault_whose_lock_cannot_be_opened_is_reported_not_dumped(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The contract is JSON on stdout and a diagnostic on stderr, never a traceback.
-    # An unwritable vault root is the reachable case — the iCloud tree can deny a
-    # write — and before it was caught it aborted the run with an empty stdout.
+    # The contract is JSON on stdout and a diagnostic on stderr, never a traceback;
+    # before this was caught it aborted the run with an empty stdout. A vault root that
+    # cannot be written stands in for the reachable cases (a denied iCloud tree, a
+    # filesystem refusing the lock) — it reaches the same failure, and is the real one
+    # on the single run that creates the lock file.
     write_note(vault / "Sources", "a", distill=True)
     vault.chmod(0o555)
     try:

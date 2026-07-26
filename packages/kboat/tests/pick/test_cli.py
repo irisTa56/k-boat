@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from kboat.lock import LOCK_NAME, vault_lock
+from kboat.lock import vault_lock
 from kboat.pick.__main__ import main
 from kboat.pick.notes import parse_frontmatter
 
@@ -150,7 +151,7 @@ def test_empty_slugs_clears_all(vault: Path, capsys: pytest.CaptureFixture[str])
 
 
 def test_set_refuses_a_locked_vault_without_writing(
-    vault: Path, capsys: pytest.CaptureFixture[str]
+    vault: Path, capsys: pytest.CaptureFixture[str], brief_lock_wait: None
 ) -> None:
     before = (vault / "Sources" / "web1.md").read_text(encoding="utf-8")
     with vault_lock(vault):
@@ -193,17 +194,18 @@ def test_the_picked_flag_goes_through_the_atomic_writer(vault: Path) -> None:
     assert parse_frontmatter((sources / "reading1.md").read_text())["picked"] is False
 
 
-def test_the_sources_scan_happens_inside_the_hold(vault: Path) -> None:
+def test_the_sources_scan_happens_inside_the_hold(
+    vault: Path, lock_is_held: Callable[[Path], bool]
+) -> None:
     # As in `kboat-lifecycle`: `set` reads every source to decide which notes
     # change, and that read belongs under the same hold as the writes it feeds.
     sources = vault / "Sources"
-    lock_file = vault / LOCK_NAME
     held: list[bool] = []
     real_read_text = Path.read_text
 
     def spy(self: Path, *args: object, **kwargs: object) -> str:
         if self.parent == sources:
-            held.append(lock_file.exists())
+            held.append(lock_is_held(vault))
         return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
 
     with pytest.MonkeyPatch.context() as mp:
@@ -213,7 +215,7 @@ def test_the_sources_scan_happens_inside_the_hold(vault: Path) -> None:
     assert held and all(held), "every Sources/ read must happen while the lock is held"
 
 
-def test_a_vault_whose_lock_cannot_be_created_is_reported_not_dumped(
+def test_a_vault_whose_lock_cannot_be_opened_is_reported_not_dumped(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # As in `kboat-lifecycle`: reported on stderr with an empty stdout, never a

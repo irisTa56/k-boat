@@ -147,7 +147,10 @@ def test_write_stamps_today_in_canonical_form(
 
 
 def test_write_refuses_a_locked_vault(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    brief_lock_wait: None,
 ) -> None:
     _stdin(monkeypatch, json.dumps(RECORD))
     with vault_lock(tmp_path):

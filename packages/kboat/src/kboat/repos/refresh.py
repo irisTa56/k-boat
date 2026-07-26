@@ -11,11 +11,19 @@ not patched. The report is JSON on stdout for the `kboat-repos` skill to relay.
 
 An applying run holds the vault lock for its whole pass and reports a `locked`
 record rather than racing a run that already has it; a `--dry-run` writes nothing,
-so it takes no lock. The hold spans the `gh` fetch as well as the rewrites, which is
-the simple placement rather than the tight one: narrowing it to the writes would
-mean reshaping this function, and the cost of the wide hold is that a feed-filter
-entry written during the pass can exhaust its wait and be deferred to the next
-gather — a deferred write, which is what this vault trades away freely.
+so it takes no lock.
+
+The hold spans the `gh` fetch as well as the rewrites, and has to: the identity each
+note is fetched under is read before the fetch and rewritten after it, so this pass
+is one read-modify-write and narrowing the hold to the writes would open the
+lost-update window the lock is here to close.
+
+It is also the longest hold in the system, and the one `kboat.lock`'s wait is *not*
+sized for: that wait covers overlapping a single note write, so another writer meeting
+this pass waits its few seconds and is then refused. What that costs is the *other*
+run's work — a feed entry deferred to the next gather, a phase left for tomorrow —
+which is the trade the wide hold is worth, since narrowing it would lose an update
+rather than defer one.
 """
 
 from __future__ import annotations

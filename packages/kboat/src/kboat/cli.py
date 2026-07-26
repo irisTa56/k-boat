@@ -115,8 +115,10 @@ def emit_locked(exc: VaultLockedError) -> int:
 def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
     """Print the failure for a vault lock that could not be taken at all.
 
-    Not a refusal — nobody holds the vault; the lock file itself could not be
-    created, which is a read-only vault root, a denied iCloud tree, or a full disk.
+    Not a refusal — nobody holds the vault; the lock itself could not be operated. A
+    vault root that is not there, a denied iCloud tree, a filesystem that will not take
+    an `flock`, or — on the first run in a vault, the one that creates the lock file —
+    a root that cannot be written to.
     There is no holder to name, so there is no `locked` record either: a caller that
     branched on one would read this as a run it may retry, when what it needs is a
     human. Stdout stays empty rather than carrying a report the run never produced.

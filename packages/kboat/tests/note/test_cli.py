@@ -106,7 +106,10 @@ def test_bad_input_and_usage(
 
 
 def test_refuses_a_locked_vault(
-    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    vault: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    brief_lock_wait: None,
 ) -> None:
     rec = json.dumps(
         {

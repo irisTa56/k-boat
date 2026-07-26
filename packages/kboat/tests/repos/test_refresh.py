@@ -5,6 +5,7 @@ case-changed repos. `gh` is monkeypatched."""
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -12,7 +13,7 @@ import pytest
 
 import kboat.repos.refresh as refresh_mod
 from kboat.frontmatter import FrontmatterError, body_after_frontmatter, parse_frontmatter
-from kboat.lock import LOCK_NAME, vault_lock
+from kboat.lock import vault_lock
 from kboat.repos.identity import canonical_slug
 from kboat.repos.refresh import main as refresh_main
 from kboat.repos.refresh import refresh, set_fields
@@ -196,59 +197,77 @@ def test_refresh_reports_failed_repo(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_an_applying_run_holds_the_lock_over_its_whole_pass(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lock_is_held: Callable[[Path], bool]
 ) -> None:
     # The hold spans the pass, fetch included: the simple placement, and what makes
     # the read-modify-write of every note serialized without reshaping `refresh`.
-    lock_file = tmp_path / LOCK_NAME
     held: dict[str, bool] = {}
+    reads: list[bool] = []
 
     def fake_gh(owner: str, name: str) -> tuple[dict, str | None]:
-        held["during_fetch"] = lock_file.exists()
+        held["during_fetch"] = lock_is_held(tmp_path)
         return _meta(owner, name), None
+
+    real_read_text = Path.read_text
+
+    def spy_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        # The identity each note is fetched under is read here, before the fetch. It is
+        # what makes the pass one read-modify-write, so it has to be inside the hold
+        # too — and it is the read a narrower placement would have left outside.
+        if self.parent == tmp_path / "Repos":
+            reads.append(lock_is_held(tmp_path))
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
 
     real_set_fields = refresh_mod.set_fields
 
     def spy_set_fields(text: str, updates: object) -> str:
         # `set_fields` is handed the note's freshly-read text, so this is the read and
         # the write it feeds, both inside the hold.
-        held["during_rewrite"] = lock_file.exists()
+        held["during_rewrite"] = lock_is_held(tmp_path)
         return real_set_fields(text, updates)  # ty: ignore[invalid-argument-type]
 
     _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", fake_gh)
     monkeypatch.setattr(refresh_mod, "set_fields", spy_set_fields)
+    monkeypatch.setattr(Path, "read_text", spy_read_text)
 
     assert refresh_main(["--vault", str(tmp_path), "--today", "2026-06-06"]) == 0
 
     assert held == {"during_fetch": True, "during_rewrite": True}
-    assert not lock_file.exists(), "the hold ends with the run"
+    assert reads and all(reads), "every Repos/ read must happen while the lock is held"
+    assert not lock_is_held(tmp_path), "the hold ends with the run"
 
 
-def test_a_dry_run_rewrites_nothing_and_takes_no_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_dry_run_reads_a_held_vault_and_rewrites_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    lock_file = tmp_path / LOCK_NAME
-    held: list[bool] = []
+    # The dry-run guard is in `main`, not in `refresh`, so this has to go through the
+    # CLI: calling `refresh(dry_run=True)` directly would assert only that the library
+    # function is lock-free, which it is in every branch. Held throughout, so dropping
+    # the guard turns this into a refusal.
+    fetched: list[str] = []
 
     def fake_gh(owner: str, name: str) -> tuple[dict, str | None]:
-        held.append(lock_file.exists())
+        fetched.append(f"{owner}/{name}")
         return _meta(owner, name), None
 
     note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
     before = note.read_text(encoding="utf-8")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", fake_gh)
 
-    report = refresh(tmp_path, today=TODAY, dry_run=True)
+    with vault_lock(tmp_path):
+        assert refresh_main(["--vault", str(tmp_path), "--dry-run", "--today", "2026-06-06"]) == 0
 
-    assert report["counts"]["updated"] == 1  # would update
+    out = json.loads(capsys.readouterr().out)
+    # A dry run still fetches and still reports what it would change — otherwise this
+    # would pass for a run that did nothing at all, which is not the same thing.
+    assert fetched == ["acme/tool"]
+    assert out["counts"]["updated"] == 1
     assert note.read_text(encoding="utf-8") == before
-    assert held == [False]
-    assert not lock_file.exists()
 
 
 def test_a_held_vault_is_refused_before_anything_is_fetched_or_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, brief_lock_wait: None
 ) -> None:
     # The lock is taken first, so a held vault costs no `gh` call and leaves the note
     # exactly as it was.
@@ -269,7 +288,10 @@ def test_a_held_vault_is_refused_before_anything_is_fetched_or_written(
 
 
 def test_the_cli_reports_a_locked_vault_in_place_of_its_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    brief_lock_wait: None,
 ) -> None:
     # With a note to rewrite, the hold is taken and the refusal is what stdout
     # carries — the report the skill would have parsed is not there.
@@ -283,7 +305,7 @@ def test_the_cli_reports_a_locked_vault_in_place_of_its_report(
     assert "vault is locked" in captured.err
 
 
-def test_the_cli_reports_a_vault_whose_lock_cannot_be_created(
+def test_the_cli_reports_a_vault_whose_lock_cannot_be_opened(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `refresh` also shells out to `gh`, whose own failures are `OSError` too — which
