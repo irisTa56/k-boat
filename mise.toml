@@ -31,9 +31,22 @@ description = "Format markdown files"
 run = "rumdl check --fix"
 
 # Not in `qa:*`: full-repo external link check is too slow / network-bound for pre-commit.
+# `--hidden`: without it lychee skips every dotdir, including `.claude/skills` --
+# the actual product content, and the one place most likely to accumulate a
+# stale relative link. `.gitignore`d paths (e.g. `.venv/`) stay excluded either
+# way -- a directory target makes lychee walk it through the same
+# gitignore-aware walker as `git status`, unlike a `**` glob target, which does not.
 [tasks."check:links"]
 description = "Check links in the repo"
-run = "lychee -v ."
+run = "lychee -v --hidden ."
+
+# In `qa:*` (unlike `check:links` above): offline-only, so it stays fast and
+# network-independent enough to gate every commit -- mirrors CI's
+# `link-check-offline` job so a broken relative link is caught locally, not
+# only in CI. Same scope as `check:links` (see its comment for `--hidden`).
+[tasks."qa:links:offline"]
+description = "Check markdown links offline (no network)"
+run = "lychee --offline --no-progress --hidden ."
 
 [tasks."nblm:login"]
 description = "Log in to NotebookLM with a Google account"
@@ -68,6 +81,7 @@ uv run ruff check
 uv run ruff format --check
 uv run ty check
 uv run pytest
+uv run python ../../scripts/coverage_floor.py coverage.json
 """
 
 [tasks."qa:py:feed-filter"]
@@ -78,6 +92,20 @@ uv run ruff check
 uv run ruff format --check
 uv run ty check
 uv run pytest
+uv run python ../../scripts/coverage_floor.py coverage.json
+"""
+
+# `scripts/` is flat tooling, not a workspace member (no `pyproject.toml` of its
+# own, no `--cov-fail-under`) -- but `coverage_floor.py` gates every `qa:py:*`
+# run, so it gets the same lint/type/test commands rather than being the one
+# ungated piece of the gate.
+[tasks."qa:py:scripts"]
+description = "Lint, type-check, and test the coverage-floor script"
+run = """
+uv run ruff check scripts
+uv run ruff format --check scripts
+uv run ty check scripts
+uv run pytest scripts/tests
 """
 
 [tasks."qa:py"]
@@ -98,6 +126,13 @@ dir = "packages/feed-filter"
 run = """
 uv run ruff check --fix
 uv run ruff format
+"""
+
+[tasks."fmt:py:scripts"]
+description = "Autofix coverage-floor script lint and formatting"
+run = """
+uv run ruff check --fix scripts
+uv run ruff format scripts
 """
 
 [tasks."fmt:py"]

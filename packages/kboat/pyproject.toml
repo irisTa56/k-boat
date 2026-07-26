@@ -26,7 +26,7 @@ module-name = "kboat"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --cov=kboat --cov-report=term-missing --cov-fail-under=80"
+addopts = "-ra --cov=kboat --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=80"
 # Promote ResourceWarning to error so a leaked file handle fails loudly
 # instead of surfacing as a cryptic GC-time warning during collection.
 filterwarnings = [

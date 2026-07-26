@@ -6,11 +6,12 @@ name: Dependabot auto-merge
 # semver level, majors included. No approval step is needed: the ruleset requires
 # no review.
 #
-# PRECONDITION: this is only safe once the main ruleset requires the CI checks
-# (python-qa / markdown-lint / secret-scan) — that requirement is what makes
-# `--auto` wait for CI. Keep the repo's "Allow auto-merge" setting OFF until the
-# ruleset is in place; with it off, `gh pr merge --auto` fails loudly here rather
-# than merging a PR before its checks have run.
+# PRECONDITION: this is only safe once the main ruleset requires every blocking
+# CI check (python-qa / markdown-lint / secret-scan / link-check-offline) — that
+# requirement is what makes `--auto` wait for CI. Keep the repo's "Allow
+# auto-merge" setting OFF until the ruleset covers all of them; with it off,
+# `gh pr merge --auto` fails loudly here rather than merging a PR before its
+# checks have run.
 
 on: pull_request
 

@@ -1,5 +1,9 @@
 __pycache__/
 .claude/settings.local.json
+# Nested worktree checkouts the Claude Code harness creates here -- each is a
+# full copy of the repo. Without this, `--hidden` (used by `check:links` /
+# `qa:links:offline` to reach `.claude/skills`) would recurse into them too.
+.claude/worktrees/
 .DS_Store
 .env
 .venv/
@@ -11,6 +15,11 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+# Per-member `coverage json` report, written by `pytest` (`--cov-report=json`
+# in each member's `addopts`) for `scripts/coverage_floor.py` to read. Anchored
+# to the member dirs, not `coverage.json` anywhere, so a same-named test
+# fixture nested deeper (e.g. under `tests/fixtures/`) stays trackable.
+/packages/*/coverage.json
 # mise resolves external QA tools at `latest`; the lockfile is not pinned, so a
 # locally-generated one is never committed.
 mise.lock

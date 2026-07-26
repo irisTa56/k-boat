@@ -2,20 +2,44 @@ name: CI
 
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
 # to main), but without mise: CI needs neither the notebooklm tool nor a browser.
-# It runs the same ruff / ty / pytest / rumdl / gitleaks checks — uv for the
-# Python gates, official actions for rumdl and gitleaks. Keep the checks here in
-# sync with mise.toml's `qa:*` tasks.
+# It runs the same ruff / ty / pytest / coverage-floor / rumdl / gitleaks /
+# offline-link-check checks -- uv for the Python gates, official actions for
+# rumdl, gitleaks, and lychee. Keep the checks here in sync with mise.toml's
+# `qa:*` tasks.
+#
+# The weekly schedule re-runs this same workflow so a drift in something no PR
+# exercises surfaces even during a quiet week with no open PRs. Concretely:
+# the `ubuntu-latest` runner image; `actions/checkout@v7` and
+# `gitleaks/gitleaks-action@v3`, both floating major-version tags; and the
+# `uv` and `rumdl` binaries themselves -- pinning `setup-uv`/`rumdl`'s own
+# *action* tag exactly (as done below) does not also pin the tool version
+# each installs, since neither step sets that action's `version` input, so
+# both resolve to whatever release is current at run time. `uv.lock` keeps
+# dependency resolution reproducible regardless (`UV_FROZEN` below).
+# `lychee-action@v2.9.0` is the one exception that is genuinely immune: its
+# own default `lycheeVersion` is fixed inside that exact tag. GitHub disables
+# a `schedule` trigger after 60 days with no repository activity, so this
+# canary itself goes quiet on a truly dormant repo -- past the quiet-week
+# case it exists to cover, but worth knowing rather than assuming it always runs.
+#
+# The full networked link check is a separate, non-blocking, weekly workflow --
+# see link-check-weekly.yml.
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # `event_name` in the key: without it, the Monday-morning schedule run and a
+  # same-moment push to `main` would resolve to the same group (both target
+  # `refs/heads/main`) and cancel each other under `cancel-in-progress`.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
@@ -36,29 +60,44 @@ jobs:
         run: uv sync
       # Per-member, each in its own dir so that package's pyproject config applies
       # (ruff selects, ty root, pytest coverage) — matching mise's `qa:py:<member>`.
-      - name: kboat — ruff, ty, pytest
+      # `pytest` itself writes `coverage.json` (`--cov-report=json:...` in each
+      # member's `addopts`), so the floor check that follows can read it directly.
+      - name: kboat — ruff, ty, pytest, coverage floor
         working-directory: packages/kboat
         run: |
           uv run ruff check
           uv run ruff format --check
           uv run ty check
           uv run pytest
-      - name: feed-filter — ruff, ty, pytest
+          uv run python ../../scripts/coverage_floor.py coverage.json
+      - name: feed-filter — ruff, ty, pytest, coverage floor
         working-directory: packages/feed-filter
         run: |
           uv run ruff check
           uv run ruff format --check
           uv run ty check
           uv run pytest
+          uv run python ../../scripts/coverage_floor.py coverage.json
+      # No coverage-floor check for this one: `scripts/` is flat tooling, not a
+      # workspace member with a `--cov-fail-under` of its own.
+      - name: coverage-floor script — ruff, ty, pytest
+        run: |
+          uv run ruff check scripts
+          uv run ruff format --check scripts
+          uv run ty check scripts
+          uv run pytest scripts/tests
 
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # Official rumdl action (Dependabot-tracked), not `uvx rumdl`: it avoids an
-      # unpinned PyPI install on every run. The rumdl version defaults to latest,
-      # matching mise's `rumdl = "latest"`; it auto-detects .rumdl.toml at the root.
-      - uses: rvben/rumdl@v0
+      # unpinned PyPI install on every run. Pinned to an exact tag, matching the
+      # `setup-uv` pin above -- a reproducible action body, with each bump a
+      # visible, reviewable diff instead of a silent `@v0` re-resolve. This
+      # pins the action's own code, not the `rumdl` binary version it installs
+      # (see the header comment). It auto-detects .rumdl.toml at the root.
+      - uses: rvben/rumdl@v0.2.43
 
   secret-scan:
     runs-on: ubuntu-latest
@@ -69,3 +108,21 @@ jobs:
       - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  link-check-offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Offline-only: catches broken relative links inside the repo's own
+      # markdown without depending on the network, so it is cheap enough to run
+      # (and block) on every PR -- matching the local `mise run qa:links:offline`
+      # task. `--hidden` reaches `.claude/skills`, the product content, which
+      # lychee otherwise skips as a dotdir; a directory target (not a `**` glob)
+      # is what keeps `.gitignore`d paths like `.venv/` excluded regardless.
+      # Fragment/anchor checking is not enabled (`--include-fragments` is not
+      # passed), only the link target itself. The full networked check runs
+      # separately, non-blocking, in link-check-weekly.yml.
+      - uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          args: --offline --no-progress --hidden .
+          fail: true

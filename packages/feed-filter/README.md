@@ -27,8 +27,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the beha
 ```sh
 mise install          # install tools + generate the git pre-commit hook
 cp prompts/selection.example.md prompts/selection.md   # then edit your keep/drop criteria
-mise run pre-commit   # run the full QA gate (Python + markdown + secrets)
-mise run qa:py:feed-filter   # run this member's Python gate (ruff, ty, pytest)
+mise run pre-commit   # run the full QA gate (Python + markdown + secrets + link check)
+mise run qa:py:feed-filter   # run this member's Python gate (ruff, ty, pytest, coverage floor)
 ```
 
 ## Usage
