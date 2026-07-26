@@ -8,8 +8,8 @@ members = ["packages/*"]
 dev = [
     "pytest>=9",
     "pytest-cov",
-    "ruff>=0.15.22",
-    "ty>=0.0.61",
+    "ruff>=0.16.0",
+    "ty>=0.0.63",
     "playwright",
     # Tests only, never imported by the package: an independent oracle for the
     # frontmatter round-trip. `kboat.frontmatter` is a scanner, not a parser, so
