@@ -286,11 +286,11 @@ def _filename_slug(slug: object) -> str:
     """`slug` as the one path component it names, or `BadInputError`.
 
     The slug is interpolated into the note's path, and every caller assembles it
-    — from a URL hash, an ASIN, or a name it chose. A separator or a leading dot
-    in one is therefore never a slug at all: it is a record that would write
-    outside the directory its type owns, or as a file the vault does not show.
-    This is the single place every note type is written through, which is what
-    makes one check enough.
+    — from a URL hash, an ASIN, or a name it chose. Anything the vault's naming
+    rule does not allow in a filename is therefore not a slug at all but a record
+    that would write outside the directory its type owns, or under a name the
+    vault does not show. This is the single place every note type is written
+    through, which is what makes one check enough.
     """
     if not isinstance(slug, str) or not slug.strip():
         raise BadInputError("record 'slug' must be a non-empty string")

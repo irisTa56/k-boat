@@ -515,11 +515,12 @@ _NAMED_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t
 def is_unprintable(char: str) -> bool:
     """Whether `char` may not stand for itself inside a quoted scalar.
 
-    The C0 and C1 control ranges plus the Unicode line and paragraph separators
-    — YAML's own non-printable set. What matters here is that they never reach
-    the note raw: several of them end a line for one reader of this vault and
-    not for another, so a value carrying one would be a different value
-    depending on who opened the file.
+    The C0 and C1 control ranges plus the Unicode line and paragraph separators.
+    What matters is that none of them reaches the note raw: several end a line
+    for one reader of this vault and not for another, so a value carrying one
+    would be a different value depending on who opened the file. (The few with
+    an escape of their own — tab, newline, carriage return — are written by that
+    name instead, which `_quote` decides before it asks this.)
     """
     code = ord(char)
     return code < 0x20 or 0x7F <= code <= 0x9F or code in (0x2028, 0x2029)
