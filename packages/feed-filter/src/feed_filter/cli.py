@@ -41,7 +41,6 @@ from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import date
 from itertools import zip_longest
 from typing import Any
 from urllib.parse import urlsplit
@@ -85,6 +84,7 @@ from feed_filter.sites import (
     validate_article_url_pattern,
 )
 from feed_filter.vault import VaultError, write_feed_note
+from kboat.cli import add_today_argument
 
 
 def _positive_int(value: str) -> int:
@@ -966,7 +966,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="the page is behind a login/paywall (judged on its summary alone)",
     )
-    p_remind.add_argument("--today", default=date.today().isoformat(), help=argparse.SUPPRESS)
+    # A test hook, not part of the CLI's documented surface — but it stamps a
+    # note through the shared writer, so it takes the shared flag's validation.
+    add_today_argument(p_remind, hidden=True)
     p_remind.set_defaults(handler=cmd_remind)
 
     p_mark = sub.add_parser("mark-seen", help="record a dropped entry seen (kept=0)")
@@ -1044,7 +1046,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="this is the Rule-A OP disposition; records the topic-grain interest verdict",
     )
-    p_forum_remind.add_argument("--today", default=date.today().isoformat(), help=argparse.SUPPRESS)
+    add_today_argument(p_forum_remind, hidden=True)  # as in `remind`, above
     p_forum_remind.set_defaults(handler=cmd_forum_remind)
 
     p_forum_mark = sub.add_parser(

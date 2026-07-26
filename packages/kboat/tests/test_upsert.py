@@ -9,7 +9,7 @@ import yaml
 
 from kboat.frontmatter import body_after_frontmatter, parse_frontmatter
 from kboat.schema import FEED, KINDLE, REPO, SOURCE
-from kboat.write import upsert
+from kboat.write import BadInputError, upsert
 
 
 @pytest.fixture
@@ -624,3 +624,65 @@ def test_source_body_survives_a_metadata_backfill(vault: Path) -> None:
     assert "- a thought" in body_after_frontmatter(text)
     fm = parse_frontmatter(text)
     assert fm["summary"] == "s" and fm["topics"] == ["mapping"]
+
+
+@pytest.mark.parametrize(
+    ("slug", "why"),
+    [
+        ("../../evil", "a traversal out of the type's own directory"),
+        ("Sources/s1", "a separator, which names a directory the type does not own"),
+        ("a\\b", "the other platform's separator, which macOS keeps in the name"),
+        (".hidden", "a leading dot, which the vault does not show"),
+        ("", "no name at all"),
+        ("   ", "nor whitespace"),
+        (None, "a record with no slug key reads as this one"),
+        (7, "a slug that is not even text"),
+    ],
+)
+def test_a_slug_that_is_no_filename_is_refused(vault: Path, slug: object, why: str) -> None:
+    # `upsert` interpolates the slug into the note's path, and every caller
+    # assembles that slug — so this is where a record that would write outside
+    # its type's directory has to stop, for every note type at once.
+    with pytest.raises(BadInputError):
+        upsert(SOURCE, vault, {"slug": slug, "fields": {"type": "source", "title": "T"}}, today="x")
+
+    assert list(vault.rglob("*.md")) == [], why
+
+
+def test_a_slug_may_hold_a_dot_that_does_not_lead(vault: Path) -> None:
+    # The rule is about what a slug can reach, not about the characters in it:
+    # a caller-chosen name is free to carry a dot anywhere else.
+    result = upsert(
+        SOURCE,
+        vault,
+        {"slug": "a.b", "fields": {"type": "source", "title": "T"}},
+        today="2026-07-25",
+    )
+    assert result["status"] == "created"
+    assert (vault / "Sources" / "a.b.md").exists()
+
+
+def test_a_value_the_field_cannot_hold_still_settles(vault: Path) -> None:
+    # The write contract's fixpoint, over exactly the values that have no valid
+    # rendering: what the writer emits it reads back as itself, so the second
+    # write is handed what the first one wrote and emits it again. Otherwise a
+    # note holding one drifts every day, with no edit behind it.
+    hostile = {
+        "type": "repo",
+        "url": "https://github.com/o/r",
+        "title": "o/r",
+        "stars": "a: b",
+        "topics": "not a list",
+        "domain": ["ok", None],
+    }
+    upsert(REPO, vault, {"slug": "r9", "fields": hostile}, today="2026-07-25")
+    path = vault / "Repos" / "r9.md"
+    first = path.read_text()
+
+    # Re-written from what the note now holds, as a refresh reads it back.
+    upsert(
+        REPO, vault, {"slug": "r9", "fields": dict(parse_frontmatter(first))}, today="2026-07-25"
+    )
+
+    assert path.read_text() == first
+    assert yaml.safe_load(first.split("---\n")[1])["stars"] == "a: b"

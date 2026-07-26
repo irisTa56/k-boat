@@ -28,6 +28,22 @@ from kboat.io_utils import atomic_write_text
 from kboat.schema import DIR_BY_TYPE, Field, Kind, NoteSchema
 
 
+class BadInputError(Exception):
+    """A record the writer refuses to act on, because it does not say a note.
+
+    Distinct from a failed write: nothing about the vault would make this record
+    writable, so the caller's move is to fix the record and send it again. The
+    CLI boundary (`kboat.cli`) maps it to its own exit code for exactly that.
+    """
+
+
+# A value YAML reads back as the integer it was written from. `\d` is ASCII-only
+# here because YAML's own int resolver is: an Arabic-Indic digit renders bare
+# without breaking anything but reads back as a string, and the field would then
+# hold something other than what it emitted.
+_INT_RE = re.compile(r"^[+-]?\d+$", re.ASCII)
+
+
 def render_field(field: Field | None, value: object) -> str:
     """Render one value to its inline YAML text, by the field's kind.
 
@@ -41,9 +57,13 @@ def render_field(field: Field | None, value: object) -> str:
     if field.kind is Kind.BOOL:
         return "true" if value else "false"
     if field.kind is Kind.INT:
-        if value is not None:
-            return str(value)
-        return str(field.default) if field.default is not None else "0"
+        default = field.default if field.default is not None else 0
+        text = str(value if value is not None else default)
+        # An int is written bare, which is only safe while it is one: a value
+        # carrying `: ` or a newline would take the whole frontmatter block out
+        # of YAML rather than cost its own field. Quoted, it stays a scalar and
+        # reaches `kboat-validate` as the `not_int` it is.
+        return text if _INT_RE.match(text) else yaml_scalar(text)
     if field.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return yaml_list(list(value))
@@ -90,7 +110,11 @@ def _block_list_lines(field: Field, value: object) -> list[str]:
         value = items
     if not value:
         return [f"{field.name}: []"]  # an empty list stays a list (re-reads as [], not None)
-    return [f"{field.name}:"] + [f"  - {yaml_scalar(item)}" for item in value]
+    # An empty rendering is made explicit: a bare `-` is not an empty item, and
+    # it reads back as `""` — so the note would come back from the write holding
+    # something the write was never given, and settle only on the one after.
+    rendered = [yaml_scalar(item) or '""' for item in value]
+    return [f"{field.name}:"] + [f"  - {text}" for text in rendered]
 
 
 def build_note(
@@ -254,6 +278,23 @@ def _empty_for(field: Field) -> object:
     return [] if field.kind is Kind.STR_LIST else None
 
 
+def _filename_slug(slug: object) -> str:
+    """`slug` as the one path component it names, or `BadInputError`.
+
+    The slug is interpolated into the note's path, and every caller assembles it
+    — from a URL hash, an ASIN, or a name it chose. A separator or a leading dot
+    in one is therefore never a slug at all: it is a record that would write
+    outside the directory its type owns, or as a file the vault does not show.
+    This is the single place every note type is written through, which is what
+    makes one check enough.
+    """
+    if not isinstance(slug, str) or not slug.strip():
+        raise BadInputError("record 'slug' must be a non-empty string")
+    if slug.startswith(".") or any(c in slug for c in "/\\\x00"):
+        raise BadInputError(f"record 'slug' is not a filename: {slug!r}")
+    return slug
+
+
 def upsert(
     schema: NoteSchema, vault: Path, record: Mapping[str, object], *, today: str
 ) -> dict[str, object]:
@@ -272,9 +313,10 @@ def upsert(
     silently, once per run.
 
     A different `identity` value at an existing slug is a collision (never
-    overwritten). Returns `{status, slug, path}`, or a `collision` record.
+    overwritten). Returns `{status, slug, path}`, or a `collision` record; a
+    record whose slug is no filename raises `BadInputError` and writes nothing.
     """
-    slug = record["slug"]
+    slug = _filename_slug(record.get("slug"))
     fields_in = record.get("fields", {})
     provided: dict[str, object] = {}
     if isinstance(fields_in, Mapping):

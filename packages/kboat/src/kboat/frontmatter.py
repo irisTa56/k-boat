@@ -467,7 +467,10 @@ def yaml_scalar(value: object) -> str:
 def yaml_list(items: Sequence[object] | None) -> str:
     if not items:
         return "[]"
-    rendered = [_quote(s) if _needs_quote_flow(s) else s for s in (str(x) for x in items)]
+    # A null item is the empty item, as it is for `yaml_scalar` — `str(None)`
+    # would write the word `None` into the note, a value nobody supplied.
+    texts = ("" if x is None else str(x) for x in items)
+    rendered = [_quote(s) if _needs_quote_flow(s) else s for s in texts]
     return "[" + ", ".join(rendered) + "]"
 
 
