@@ -632,6 +632,8 @@ def test_source_body_survives_a_metadata_backfill(vault: Path) -> None:
         ("../../evil", "a traversal out of the type's own directory"),
         ("Sources/s1", "a separator, which names a directory the type does not own"),
         ("a\\b", "the other platform's separator, which macOS keeps in the name"),
+        ("a:b", "a character the vault's own naming rule forbids in a filename"),
+        ("a\nb", "a name that is two lines"),
         (".hidden", "a leading dot, which the vault does not show"),
         ("", "no name at all"),
         ("   ", "nor whitespace"),
@@ -662,6 +664,29 @@ def test_a_slug_may_hold_a_dot_that_does_not_lead(vault: Path) -> None:
     )
     assert result["status"] == "created"
     assert (vault / "Sources" / "a.b.md").exists()
+
+
+def test_a_block_list_the_field_cannot_hold_still_settles(vault: Path) -> None:
+    # The same fixpoint through the merge path, for the other list style: a null
+    # item written into a block list is read back and re-written unchanged, so
+    # it does not move the note a little on every unattended run.
+    fields = {
+        "type": "source",
+        "title": "T",
+        "url": "https://x",
+        "source_type": "web_page",
+        "topics": ["a", None],
+    }
+    upsert(SOURCE, vault, {"slug": "s6", "fields": fields}, today="2026-07-25")
+    path = vault / "Sources" / "s6.md"
+    first = path.read_text()
+
+    upsert(
+        SOURCE, vault, {"slug": "s6", "fields": dict(parse_frontmatter(first))}, today="2026-07-25"
+    )
+
+    assert path.read_text() == first
+    assert parse_frontmatter(first)["topics"] == ["a", ""]
 
 
 def test_a_value_the_field_cannot_hold_still_settles(vault: Path) -> None:
@@ -726,3 +751,47 @@ def test_a_hand_added_property_the_writer_would_refuse_still_survives_a_write(va
     upsert(SOURCE, vault, {"slug": "s8", "fields": {"summary": "s"}}, today="2026-07-26")
 
     assert "\nmy-rating: 4\n" in path.read_text()
+
+
+@pytest.mark.parametrize(
+    ("break_char", "why"),
+    [
+        ("\u2028", "the Unicode line separator"),
+        ("\u2029", "the paragraph separator"),
+        ("\x85", "NEL"),
+        ("\x0b", "the vertical tab"),
+        ("\x1e", "the record separator"),
+        ("\n", "and the ordinary newline"),
+    ],
+)
+def test_a_line_break_inside_a_value_cannot_become_a_property(
+    vault: Path, break_char: str, why: str
+) -> None:
+    # `summary` is written from model output over page text, and `title` from a
+    # captured page — untrusted both. A break character in one used to end the
+    # line here (though not for YAML or Obsidian), so its tail arrived as a
+    # property, overwriting the note's own `url` identity on an unattended run.
+    hostile = f"a summary{break_char}url: https://evil/x{break_char}dismiss: true"
+    upsert(
+        SOURCE,
+        vault,
+        {
+            "slug": "s7",
+            "fields": {
+                "type": "source",
+                "title": "T",
+                "url": "https://real/a",
+                "source_type": "web_page",
+                "summary": hostile,
+            },
+        },
+        today="2026-07-26",
+    )
+
+    text = (vault / "Sources" / "s7.md").read_text()
+    fm = parse_frontmatter(text)
+    assert fm["summary"] == hostile, why  # kept whole, in its own field
+    assert fm["url"] == "https://real/a", why  # the identity is untouched
+    assert fm["dismiss"] is False, why  # and no disposition was invented
+    # The note says the same to a reader that is not this one.
+    assert yaml.safe_load(text.split("---\n")[1])["url"] == "https://real/a", why

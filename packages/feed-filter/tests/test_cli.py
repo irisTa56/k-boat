@@ -1124,9 +1124,10 @@ def test_the_today_hook_stamps_a_date_the_note_can_hold(
 
 @pytest.mark.parametrize("command", ["remind", "forum-remind"])
 def test_the_today_hook_refuses_what_is_no_date(
-    command: str, capsys: pytest.CaptureFixture[str]
+    command: str, state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # And a value that is no date at all fails at parse time, before the vault.
+    # And a value that is no date at all fails at parse time — with a vault to
+    # write into, so what stops the run is the flag rather than the sandbox.
     with pytest.raises(SystemExit) as excinfo:
         cli.main([command, *_remind_args(command), "--url", "https://e.x/a", "--today", "soon"])
     assert excinfo.value.code == 2

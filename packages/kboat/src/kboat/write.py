@@ -23,6 +23,7 @@ from kboat.frontmatter import (
     names_key,
     parse_entries,
     parse_flow_list,
+    split_lines,
     yaml_list,
     yaml_scalar,
 )
@@ -227,7 +228,7 @@ def split_notes_section(body: str) -> tuple[str, str | None]:
     body at one of those rearranges the reader's own prose into a shape they
     never wrote.
     """
-    lines = body.splitlines()
+    lines = split_lines(body)
     fenced = _fenced_lines(lines)
     for i, line in enumerate(lines):
         if i not in fenced and line.rstrip() == NOTES_HEADING:
@@ -274,6 +275,12 @@ def _empty_for(field: Field) -> object:
     return [] if field.kind is Kind.STR_LIST else None
 
 
+# One alphabet for a note's name: the characters Obsidian forbids in a filename
+# (the naming rule every note type follows), plus the separators and control
+# characters a filesystem or a terminal would read as something other than text.
+_NOT_IN_A_SLUG = re.compile(r'[/\\:*?"<>|\x00-\x1f\x7f]')
+
+
 def _filename_slug(slug: object) -> str:
     """`slug` as the one path component it names, or `BadInputError`.
 
@@ -290,7 +297,7 @@ def _filename_slug(slug: object) -> str:
     # identifier for the note and comes back in the result, so a writer that
     # quietly wrote a different one would hand back a name for a file it did
     # not write.
-    if slug != slug.strip() or slug.startswith(".") or any(c in slug for c in "/\\\x00"):
+    if slug != slug.strip() or slug.startswith(".") or _NOT_IN_A_SLUG.search(slug):
         raise BadInputError(f"record 'slug' is not a filename: {slug!r}")
     return slug
 

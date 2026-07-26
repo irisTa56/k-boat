@@ -530,7 +530,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
         summary=args.summary or "",
         wall=args.wall,
         today=args.today,
-    )  # VaultError / OSError → exit 1, no record
+    )  # any write failure → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         record(conn, cu, args.site_id, args.title or None, kept=1)
     _emit({"slug": result["slug"], "url": str(cu), "kept": True, "status": result["status"]})
@@ -826,7 +826,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
         summary=args.summary or "",
         wall=False,
         today=args.today,
-    )  # VaultError / OSError → exit 1, no record
+    )  # any write failure → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         if args.post_id is not None:
             record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
