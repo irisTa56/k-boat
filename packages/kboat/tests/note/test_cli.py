@@ -82,7 +82,12 @@ def test_bad_input_and_usage(
         _run(["write", "--type", "source", "--vault", str(vault)], '{"no":"slug"}', monkeypatch)
         == 2
     )
-    assert "'slug' key" in capsys.readouterr().err
+    assert "'slug' must be a non-empty string" in capsys.readouterr().err
+    # A slug that is no filename is a refusal too, not a path the write follows.
+    escaping = json.dumps({"slug": "../../evil", "fields": {"type": "source", "title": "T"}})
+    assert _run(["write", "--type", "source", "--vault", str(vault)], escaping, monkeypatch) == 2
+    assert "not a filename" in capsys.readouterr().err
+    assert list(vault.parent.glob("evil.md")) == []
     # A content key the writer cannot read would otherwise land an empty note,
     # reported as written — and for a Kindle book the body is the write. The
     # same refusal `kboat-repos write` makes, since the two are one contract.

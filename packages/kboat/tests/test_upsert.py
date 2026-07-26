@@ -9,7 +9,7 @@ import yaml
 
 from kboat.frontmatter import body_after_frontmatter, parse_frontmatter
 from kboat.schema import FEED, KINDLE, REPO, SOURCE
-from kboat.write import upsert
+from kboat.write import BadInputError, upsert
 
 
 @pytest.fixture
@@ -624,3 +624,183 @@ def test_source_body_survives_a_metadata_backfill(vault: Path) -> None:
     assert "- a thought" in body_after_frontmatter(text)
     fm = parse_frontmatter(text)
     assert fm["summary"] == "s" and fm["topics"] == ["mapping"]
+
+
+@pytest.mark.parametrize(
+    ("slug", "why"),
+    [
+        ("../../evil", "a traversal out of the type's own directory"),
+        ("Sources/s1", "a separator, which names a directory the type does not own"),
+        ("a\\b", "the other platform's separator, which macOS keeps in the name"),
+        ("a:b", "a character the vault's own naming rule forbids in a filename"),
+        ("a\nb", "a name that is two lines"),
+        (".hidden", "a leading dot, which the vault does not show"),
+        ("", "no name at all"),
+        ("   ", "nor whitespace"),
+        (" a ", "a name the writer would have to change to write, and then misreport"),
+        (None, "a record with no slug key reads as this one"),
+        (7, "a slug that is not even text"),
+    ],
+)
+def test_a_slug_that_is_no_filename_is_refused(vault: Path, slug: object, why: str) -> None:
+    # `upsert` interpolates the slug into the note's path, and every caller
+    # assembles that slug — so this is where a record that would write outside
+    # its type's directory has to stop, for every note type at once.
+    with pytest.raises(BadInputError):
+        upsert(SOURCE, vault, {"slug": slug, "fields": {"type": "source", "title": "T"}}, today="x")
+
+    assert list(vault.rglob("*.md")) == [], why
+    assert list(vault.parent.glob("*.md")) == [], why  # nor outside it
+
+
+def test_a_slug_may_hold_a_dot_that_does_not_lead(vault: Path) -> None:
+    # The rule is about what a slug can reach, not about the characters in it:
+    # a caller-chosen name is free to carry a dot anywhere else.
+    result = upsert(
+        SOURCE,
+        vault,
+        {"slug": "a.b", "fields": {"type": "source", "title": "T"}},
+        today="2026-07-25",
+    )
+    assert result["status"] == "created"
+    assert (vault / "Sources" / "a.b.md").exists()
+
+
+def test_a_block_list_the_field_cannot_hold_still_settles(vault: Path) -> None:
+    # The same fixpoint through the merge path, for the other list style: a null
+    # item written into a block list is read back and re-written unchanged, so
+    # it does not move the note a little on every unattended run.
+    fields = {
+        "type": "source",
+        "title": "T",
+        "url": "https://x",
+        "source_type": "web_page",
+        "topics": ["a", None],
+    }
+    upsert(SOURCE, vault, {"slug": "s6", "fields": fields}, today="2026-07-25")
+    path = vault / "Sources" / "s6.md"
+    first = path.read_text()
+
+    upsert(
+        SOURCE, vault, {"slug": "s6", "fields": dict(parse_frontmatter(first))}, today="2026-07-25"
+    )
+
+    assert path.read_text() == first
+    assert parse_frontmatter(first)["topics"] == ["a", ""]
+
+
+def test_a_value_the_field_cannot_hold_still_settles(vault: Path) -> None:
+    # The write contract's fixpoint, over exactly the values that have no valid
+    # rendering: what the writer emits it reads back as itself, so the second
+    # write is handed what the first one wrote and emits it again. Otherwise a
+    # note holding one drifts every day, with no edit behind it.
+    hostile = {
+        "type": "repo",
+        "url": "https://github.com/o/r",
+        "title": "o/r",
+        "stars": "a: b",
+        "topics": "not a list",
+        "domain": ["ok", None],
+    }
+    upsert(REPO, vault, {"slug": "r9", "fields": hostile}, today="2026-07-25")
+    path = vault / "Repos" / "r9.md"
+    first = path.read_text()
+
+    # Re-written from what the note now holds, as a refresh reads it back.
+    upsert(
+        REPO, vault, {"slug": "r9", "fields": dict(parse_frontmatter(first))}, today="2026-07-25"
+    )
+
+    assert path.read_text() == first
+    assert yaml.safe_load(first.split("---\n")[1])["stars"] == "a: b"
+
+
+@pytest.mark.parametrize(
+    ("key", "why"),
+    [
+        ("a: b", "a name that would end the entry in the middle of itself"),
+        ("weird\n---\nkey", "one that would close the frontmatter fence early"),
+        ("", "a name that is no name"),
+        ("my-rating", "one outside the reader's grammar, so written and then unreadable"),
+        ("summary\n", "a newline at the very end, which a `$` anchor would have let through"),
+    ],
+)
+def test_a_field_name_that_is_no_property_key_is_refused(vault: Path, key: str, why: str) -> None:
+    # A wrong value is quoted and costs its own field. A name has no such
+    # fallback — quoted, the property it writes is one the reader cannot decode
+    # and `kboat-validate` cannot see — so the record is refused whole.
+    with pytest.raises(BadInputError):
+        upsert(
+            SOURCE,
+            vault,
+            {"slug": "s9", "fields": {"type": "source", "title": "T", key: "v"}},
+            today="2026-07-25",
+        )
+
+    assert not (vault / "Sources" / "s9.md").exists(), why
+
+
+def test_a_hand_added_property_the_writer_would_refuse_still_survives_a_write(vault: Path) -> None:
+    # The refusal is about what a record may *name*, not about what the note may
+    # hold: a property the human wrote under a name of their own is carried back
+    # untouched, which is the whole point of re-rendering only what changes.
+    fields = {"type": "source", "title": "T", "url": "https://x", "source_type": "web_page"}
+    upsert(SOURCE, vault, {"slug": "s8", "fields": fields}, today="2026-07-25")
+    path = vault / "Sources" / "s8.md"
+    path.write_text(path.read_text().replace("---\ntype:", "---\nmy-rating: 4\ntype:", 1))
+
+    upsert(SOURCE, vault, {"slug": "s8", "fields": {"summary": "s"}}, today="2026-07-26")
+
+    assert "\nmy-rating: 4\n" in path.read_text()
+
+
+@pytest.mark.parametrize(
+    ("break_char", "why"),
+    [
+        ("\u2028", "the Unicode line separator"),
+        ("\u2029", "the paragraph separator"),
+        ("\x85", "NEL"),
+        ("\x0b", "the vertical tab"),
+        ("\x1e", "the record separator"),
+        ("\n", "and the ordinary newline"),
+    ],
+)
+def test_a_line_break_inside_a_value_cannot_become_a_property(
+    vault: Path, break_char: str, why: str
+) -> None:
+    # `summary` is written from model output over page text, and `title` from a
+    # captured page — untrusted both. A break character in one used to end the
+    # line here (though not for YAML or Obsidian), so its tail arrived as a
+    # property, overwriting the note's own `url` identity on an unattended run.
+    hostile = f"a summary{break_char}url: https://evil/x{break_char}dismiss: true"
+    # No other flow special in the item, so quoting it is the break's own doing.
+    item = f"topic{break_char}tail"
+    upsert(
+        SOURCE,
+        vault,
+        {
+            "slug": "s7",
+            "fields": {
+                "type": "source",
+                "title": "T",
+                "url": "https://real/a",
+                "source_type": "web_page",
+                "summary": hostile,
+                "topics": ["a", item],  # block style
+                "tags": ["a", item],  # inline style, quoted by the stricter rule
+            },
+        },
+        today="2026-07-26",
+    )
+
+    text = (vault / "Sources" / "s7.md").read_text()
+    fm = parse_frontmatter(text)
+    assert fm["summary"] == hostile, why  # kept whole, in its own field
+    assert fm["topics"] == ["a", item], why  # and so is a list item, either style
+    assert fm["url"] == "https://real/a", why  # the identity is untouched
+    assert fm["dismiss"] is False, why  # and no disposition was invented
+    # The note says the same to a reader that is not this one.
+    loaded = yaml.safe_load(text.split("---\n")[1])
+    assert loaded["url"] == "https://real/a", why
+    assert loaded["summary"] == hostile and loaded["topics"] == ["a", item], why
+    assert loaded["tags"] == ["a", item], why

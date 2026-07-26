@@ -12,9 +12,10 @@ preserved — it relocates the card rather than hiding it, so feed-filter omits 
 and `upsert` keeps the existing value.
 
 `write_feed_note`'s failure contract is never-lost: a write that cannot complete
-raises `VaultError` (or lets the underlying `OSError` from the atomic write
-propagate), so the CLI records nothing seen and the next run retries — never-lost
-over never-duplicated.
+raises — `VaultError` for a refused write, or the `OSError`/`BadInputError` the
+shared writer raises itself — so the CLI records nothing seen and the next run
+retries, never-lost over never-duplicated. The CLI reports all three the same
+way; whichever it is, it is raised before the seen-record.
 """
 
 from __future__ import annotations

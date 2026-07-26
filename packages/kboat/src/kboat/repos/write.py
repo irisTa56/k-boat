@@ -15,7 +15,6 @@ import argparse
 from pathlib import Path
 
 from kboat.cli import (
-    BadInputError,
     add_today_argument,
     add_vault_argument,
     require_readable_payload,
@@ -23,7 +22,7 @@ from kboat.cli import (
     vault_path,
 )
 from kboat.schema import REPO
-from kboat.write import upsert
+from kboat.write import BadInputError, upsert
 
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")
 

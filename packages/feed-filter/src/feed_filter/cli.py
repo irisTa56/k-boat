@@ -41,7 +41,6 @@ from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import date
 from itertools import zip_longest
 from typing import Any
 from urllib.parse import urlsplit
@@ -85,6 +84,8 @@ from feed_filter.sites import (
     validate_article_url_pattern,
 )
 from feed_filter.vault import VaultError, write_feed_note
+from kboat.cli import add_today_argument
+from kboat.write import BadInputError
 
 
 def _positive_int(value: str) -> int:
@@ -530,7 +531,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
         summary=args.summary or "",
         wall=args.wall,
         today=args.today,
-    )  # VaultError / OSError → exit 1, no record
+    )  # any write failure → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         record(conn, cu, args.site_id, args.title or None, kept=1)
     _emit({"slug": result["slug"], "url": str(cu), "kept": True, "status": result["status"]})
@@ -826,7 +827,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
         summary=args.summary or "",
         wall=False,
         today=args.today,
-    )  # VaultError / OSError → exit 1, no record
+    )  # any write failure → exit 1, no record
     with contextlib.closing(open_db(db_path())) as conn:
         if args.post_id is not None:
             record_post(conn, args.site_id, args.topic_id, args.post_id, kept=1)
@@ -966,7 +967,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="the page is behind a login/paywall (judged on its summary alone)",
     )
-    p_remind.add_argument("--today", default=date.today().isoformat(), help=argparse.SUPPRESS)
+    # A test hook, not part of the CLI's documented surface — but it stamps a
+    # note through the shared writer, so it takes the shared flag's validation.
+    add_today_argument(p_remind, hidden=True)
     p_remind.set_defaults(handler=cmd_remind)
 
     p_mark = sub.add_parser("mark-seen", help="record a dropped entry seen (kept=0)")
@@ -1044,7 +1047,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="this is the Rule-A OP disposition; records the topic-grain interest verdict",
     )
-    p_forum_remind.add_argument("--today", default=date.today().isoformat(), help=argparse.SUPPRESS)
+    add_today_argument(p_forum_remind, hidden=True)  # as in `remind`, above
     p_forum_remind.set_defaults(handler=cmd_forum_remind)
 
     p_forum_mark = sub.add_parser(
@@ -1086,6 +1089,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (slug collision);
+    - ``BadInputError`` — the shared writer refused the record itself. Nothing
+      feed-filter assembles can trip it (its slug is a URL hash and its field
+      names are literals), so this is the writer's contract being honoured here
+      rather than a case that arises: an exception it can raise is one this CLI
+      reports, or the ``error: …`` promise holds only for the failures foreseen;
     - ``ValueError`` — shape/validation (bad site config, non-scrape heal, an
       unset ``OBSIDIAN_VAULT_PATH``);
     - ``KeyError`` — unknown site id;
@@ -1112,6 +1120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         FetchError,
         BrowserFetchError,
         VaultError,
+        BadInputError,
         ValueError,
         KeyError,
         OSError,

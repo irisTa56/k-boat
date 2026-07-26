@@ -10,6 +10,7 @@ from kboat.frontmatter import (
     body_after_frontmatter,
     parse_entries,
     parse_frontmatter,
+    set_field,
     strip_frontmatter,
     yaml_scalar,
 )
@@ -101,6 +102,19 @@ def test_yaml_scalar_leaves_safe_values_bare(value: str) -> None:
         'mix "q" and\nnewline\tand tab',
         "literal backslash-n: a\\nb",  # a `\` + `n`, NOT a newline — stays literal
         "ends with a backslash\\",  # a trailing backslash
+        # Characters that end a line for one reader of this vault and not
+        # another: `str.splitlines` breaks on all of them, YAML and Obsidian on
+        # none. Raw in a note they would make the value two lines here and one
+        # everywhere else — so they are escaped, and the tail of a summary
+        # cannot arrive as a property of the note.
+        "line\u2028separator",
+        "paragraph\u2029separator",
+        "next\x85line",
+        "vertical\x0btab",
+        "form\x0cfeed",
+        "record\x1eseparator",
+        "escape\x1bchar",
+        "null\x00byte",
     ],
 )
 def test_quoted_scalar_round_trips(value: str) -> None:
@@ -109,6 +123,48 @@ def test_quoted_scalar_round_trips(value: str) -> None:
     note = f"---\nx: {yaml_scalar(value)}\n---\n"
     assert "\n" not in note.split("---")[1].strip()  # the value stays on one line
     assert parse_frontmatter(note)["x"] == value
+    assert yaml.safe_load(note.split("---\n")[1])["x"] == value  # and to another reader
+
+
+@pytest.mark.parametrize(
+    ("written", "expected", "why"),
+    [
+        ('"a\\u2028b"', "a\u2028b", "the escape Obsidian writes for a line separator"),
+        ('"a\\x1bb"', "a\x1bb", "and the two-digit form of the same idea"),
+        ('"a\\Nb"', "a\x85b", "a named escape this writer never emits but YAML defines"),
+        ('"a\\x1"', "a\\x1", "an escape short of its width names nothing"),
+        ('"a\\ud800b"', "a\\ud800b", "nor does a surrogate, which no UTF-8 file can hold"),
+        ('"a\\qb"', "a\\qb", "nor an escape YAML does not define"),
+        ('"a\\U0001f600b"', "a\U0001f600b", "the eight-digit form, which YAML also defines"),
+        ('"a\\U00110000b"', "a\\U00110000b", "though not one naming no code point at all"),
+    ],
+)
+def test_an_escape_this_writer_never_emits_is_still_read_as_what_it_means(
+    written: str, expected: str, why: str
+) -> None:
+    # A note is written by Obsidian too, and read back here. An escape decoded as
+    # its own literal text would be a value that changes each time it passes
+    # through — and one invented from an escape that names nothing would be worse.
+    assert parse_frontmatter(f"---\nx: {written}\n---\n")["x"] == expected, why
+
+
+@pytest.mark.parametrize(
+    ("value", "why"),
+    [
+        ("Rust\xa0#1 の話", "a non-breaking space, which is what scraped HTML leaves"),
+        ("要約\u3000#補足 と続き", "an ideographic space, ordinary in Japanese page text"),
+    ],
+)
+def test_a_hash_after_a_space_yaml_does_not_know_is_not_a_comment(value: str, why: str) -> None:
+    # A comment opens after a space or a tab. Reading a wider set as whitespace
+    # would cut the value off at a character YAML keeps — and `title` and
+    # `summary` are written from page text, where those characters live.
+    note = f"---\nx: {yaml_scalar(value)}\n---\n"
+
+    assert parse_frontmatter(note)["x"] == value, why
+    assert yaml.safe_load(note.split("---\n")[1])["x"] == value, why
+    # A comment after a space kept being one, which is the reason for the rule.
+    assert parse_frontmatter("---\nx: kept # dropped\n---\n")["x"] == "kept"
 
 
 def test_parse_requires_frontmatter() -> None:
@@ -128,9 +184,18 @@ def test_strip_frontmatter_keeps_thematic_break_in_body() -> None:
     assert strip_frontmatter(text) == "intro\n\n---\n\nmore\n"
 
 
-def test_strip_frontmatter_handles_crlf() -> None:
-    text = "---\r\ntags: x\r\n---\r\nbody\r\n"
-    assert strip_frontmatter(text) == "body\r\n"
+@pytest.mark.parametrize("ending", ["\r\n", "\r"], ids=["crlf", "cr"])
+def test_a_note_written_with_another_line_ending_reads_and_rewrites_as_itself(
+    ending: str,
+) -> None:
+    # Each of YAML's three terminators, because a rewriter puts back what it took
+    # off: read one as no terminator at all and the rewritten line runs into the
+    # one below it, joining two properties into nonsense.
+    text = ending.join(["---", "tags: x", "n: 1", "---", "body", ""])
+
+    assert strip_frontmatter(text) == f"body{ending}"
+    assert parse_frontmatter(text)["tags"] == "x"
+    assert set_field(text, "n", "2") == text.replace("n: 1", "n: 2")
 
 
 def test_strip_frontmatter_tolerates_whitespace_around_fence() -> None:

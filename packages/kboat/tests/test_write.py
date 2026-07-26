@@ -15,6 +15,7 @@ def test_render_field_by_kind() -> None:
     assert render_field(Field("b", Kind.BOOL), False) == "false"
     assert render_field(Field("n", Kind.INT, default=0), 42) == "42"
     assert render_field(Field("n", Kind.INT, default=0), None) == "0"
+    assert render_field(Field("n", Kind.INT), None) == "0"  # no default → still a number
     assert render_field(Field("l", Kind.STR_LIST), ["a", "b"]) == "[a, b]"
     assert render_field(Field("l", Kind.STR_LIST), []) == "[]"
     # A list re-read from a note as its raw inline text stays that text; reading
@@ -46,6 +47,34 @@ def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why:
 
     assert parse_frontmatter(note)["topics"] == value, why
     assert yaml.safe_load(note.split("---\n")[1])["topics"] == value, why
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "why"),
+    [
+        (42, 42, "an integer is written bare, as YAML reads it back"),
+        ("42", 42, "including one the reader handed back as its source text"),
+        ("-7", -7, "likewise a negative one"),
+        ("a: b", "a: b", "a value carrying YAML syntax would otherwise end the block"),
+        ("3.5", "3.5", "a number that is not an integer is not this field's type either"),
+        ("lots", "lots", "nor is a word"),
+        ("1\n2", "1\n2", "a newline would put the rest of the value outside the note"),
+        (True, "True", "a boolean is no integer, and bare it would read back as one"),
+        ("007", "007", "a leading zero reads back as octal under YAML 1.1, so it is not one"),
+        ("+7", "+7", "nor is a signed form the reader hands back as its own text"),
+        ("42\n", "42\n", "nor a number with a line break after it, bare a blank line in the block"),
+        ("٧", "٧", "nor a digit outside ASCII, which YAML resolves as a string"),
+    ],
+)
+def test_an_int_field_holds_what_it_was_given_without_costing_the_block(
+    value: object, expected: object, why: str
+) -> None:
+    # `stars` is written bare, which is safe only while it is a number. A wrong
+    # value is quoted instead, so it costs its own field — `kboat-validate`
+    # reports it as `not_int` — rather than taking the frontmatter out of YAML.
+    note = build_note(REPO, {"type": "repo", "title": "r", "stars": value})
+
+    assert yaml.safe_load(note.split("---\n")[1])["stars"] == expected, why
 
 
 @pytest.mark.parametrize(
@@ -129,6 +158,20 @@ def test_a_block_list_field_never_erases_what_it_was_given(
     note = build_note(SOURCE, {"type": "source", "title": "T", "topics": value})
 
     assert parse_frontmatter(note)["topics"] == expected, why
+
+
+def test_a_null_item_is_the_empty_item_in_either_list_style() -> None:
+    # Written bare a null item is no item at all: `- ` re-reads as `""` and the
+    # inline form would write the word `None`. Either way the note comes back
+    # from the write holding something the write was never given.
+    block = build_note(SOURCE, {"type": "source", "topics": ["a", None]})
+    inline = build_note(REPO, {"type": "repo", "topics": ["a", None]})
+
+    assert parse_frontmatter(block)["topics"] == ["a", ""]
+    assert 'topics: [a, ""]' in inline
+    # And what it reads back as is what a re-write of that emits: a fixpoint.
+    assert build_note(SOURCE, {"type": "source", "topics": ["a", ""]}) == block
+    assert build_note(REPO, {"type": "repo", "topics": ["a", ""]}) == inline
 
 
 def test_inline_list_is_flow_style() -> None:

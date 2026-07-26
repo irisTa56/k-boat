@@ -3,12 +3,17 @@
 Two layers, because the sharing is at two scales. Every `kboat-*` entry point
 that reaches the vault takes the same `--vault`, and every one that needs a date
 takes the same `--today` — so a flag means one thing across this package's
-surface rather than whatever each `main` re-declared. On top of that,
-`kboat-note write` and `kboat-repos write` are two contracts over one writer and
-share the shape of their whole transaction: one JSON record on stdin, results on
-stdout and diagnostics on stderr, one mapping from outcome to exit code. What
-each writer keeps is its own: the record shape it accepts, the diagnostics for a
-record it refuses, and any key it adds to the result.
+surface rather than whatever each `main` re-declared. `--today` reaches beyond
+this package: a member CLI that stamps a note takes the flag from here, because
+a date reaching the same writer has to have been through the same validation
+whatever CLI it arrived at. (`--vault` does not — a member resolves the vault
+its own way.)
+
+On top of that, `kboat-note write` and `kboat-repos write` are two contracts over
+one writer and share the shape of their whole transaction: one JSON record on
+stdin, results on stdout and diagnostics on stderr, one mapping from outcome to
+exit code. What each writer keeps is its own: the record shape it accepts, the
+diagnostics for a record it refuses, and any key it adds to the result.
 
 `kboat-bookmarklet` is the one CLI outside this: its `--vault` is the vault's
 *name*, for the Obsidian URI, not a path to read.
@@ -25,15 +30,7 @@ from datetime import date
 from pathlib import Path
 
 from kboat.frontmatter import FrontmatterError
-
-
-class BadInputError(Exception):
-    """A record the CLI refuses to act on: reported on stderr, exit 2.
-
-    Separate from a write failure (exit 1) because the caller's response
-    differs: a malformed record is the agent's to fix and re-send, where a
-    failed write is the vault's to repair.
-    """
+from kboat.write import BadInputError
 
 
 def _iso_date(value: str) -> str:
@@ -57,17 +54,24 @@ def add_vault_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_today_argument(parser: argparse.ArgumentParser) -> None:
+def add_today_argument(parser: argparse.ArgumentParser, *, hidden: bool = False) -> None:
     """Add `--today`, validated and canonicalised by argparse itself.
 
     A caller that wants a `date` reads `date.fromisoformat(args.today)` with no
     guard of its own: by then the value has already been through `_iso_date`.
+
+    `hidden` keeps the flag out of `--help` for a CLI where it is a test hook
+    rather than part of the documented surface. That is a presentational choice
+    each CLI makes; the value still reaches a note through the same writer, so
+    the validation is not one of them.
     """
     parser.add_argument(
         "--today",
         type=_iso_date,
         default=date.today().isoformat(),
-        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
+        help=argparse.SUPPRESS
+        if hidden
+        else "Override today's date (YYYY-MM-DD); for testing and reproducibility.",
     )
 
 

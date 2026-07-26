@@ -26,6 +26,13 @@ Reading is the exact inverse of `yaml_scalar`'s quoting, so a scalar with an
 embedded quote or backslash round-trips losslessly. (This unifies on the old
 repos reader; the old lifecycle/pick readers did not unescape, which only ever
 affected such pathological values.)
+
+Where a line ends is the one thing this scanner may not decide for itself: the
+note is also read by Obsidian and by whatever else opens the vault, and a value
+carrying a character only *this* reader breaks on would be a different value to
+each of them — the tail of a page summary arriving as a property of the note.
+So the split is YAML's own (`\\n`, `\\r`, `\\r\\n`), and every other character
+that could pass for a break is escaped on the way out rather than written raw.
 """
 
 from __future__ import annotations
@@ -34,7 +41,8 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(.*)$")
+_PLAIN_KEY = r"[A-Za-z_][A-Za-z0-9_]*"
+_KEY_RE = re.compile(rf"^({_PLAIN_KEY}):(.*)$")
 
 Scalar = str | bool | None
 Value = Scalar | list[str]
@@ -44,20 +52,115 @@ class FrontmatterError(ValueError):
     """The note has no parseable `---` frontmatter block, or lacks a required field."""
 
 
+# --------- lines ---------
+
+
+# Where a line ends, for YAML and for Markdown alike: `\n`, `\r`, `\r\n`, and
+# nothing else. `str.splitlines` also breaks on the vertical tab, form feed, file
+# and group and record separators, NEL, and the Unicode line and paragraph
+# separators, which YAML 1.2 and Obsidian both read as ordinary characters
+# inside a scalar — so a value carrying one would be read here as two lines, and
+# the tail of somebody's summary would become a property of the note.
+_LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
+
+
+def _split_newline(line: str) -> tuple[str, str]:
+    """A line from `_lines_keepends`, split from its own terminator.
+
+    All three terminators, because a rewriter puts back what it took off: drop a
+    lone `\\r` here and the rewritten line would run into the one below it.
+    """
+    for ending in ("\r\n", "\n", "\r"):
+        if line.endswith(ending):
+            return line[: -len(ending)], ending
+    return line, ""
+
+
+def _lines_keepends(text: str) -> list[str]:
+    """`text` split into lines, each with its own terminator still on it."""
+    out: list[str] = []
+    start = 0
+    for match in _LINE_BREAK_RE.finditer(text):
+        out.append(text[start : match.end()])
+        start = match.end()
+    if start < len(text):
+        out.append(text[start:])
+    return out
+
+
+def split_lines(text: str) -> list[str]:
+    """`text` split into lines, without their terminators.
+
+    Derived from `_lines_keepends` rather than restated, and shared with the note
+    writer, so that where a line ends is one rule and not three that agree by
+    inspection — two readers of this vault disagreeing about it is how a value
+    ends up read as two things.
+    """
+    return [_split_newline(line)[0] for line in _lines_keepends(text)]
+
+
 # --------- reading ---------
 
 
-_DQ_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
+# YAML's double-quoted escapes, all of them: `yaml_scalar` emits only a few, but
+# a note is also written by Obsidian and read back here, and an escape decoded as
+# its own literal text is a value that changes every time it passes through.
+_DQ_ESCAPES = {
+    "n": "\n",
+    "t": "\t",
+    "r": "\r",
+    '"': '"',
+    "\\": "\\",
+    "0": "\0",
+    "a": "\a",
+    "b": "\b",
+    "v": "\v",
+    "f": "\f",
+    "e": "\x1b",
+    "N": "\x85",
+    "_": "\xa0",
+    "L": "\u2028",
+    "P": "\u2029",
+    "/": "/",
+    " ": " ",
+}
+# The numeric escapes, by how many hex digits each takes.
+_DQ_HEX_WIDTHS = {"x": 2, "u": 4, "U": 8}
+
+
+_HEX_RE = re.compile(r"[0-9A-Fa-f]+")
+
+
+def _decode_numeric(digits: str, width: int) -> str | None:
+    """The character `digits` names, or None if they name none.
+
+    An escape shorter than its width names nothing — `\\x1` is not U+0001 — and
+    neither does a lone surrogate: that is a code point no UTF-8 file can hold,
+    so decoding one would leave a value the note cannot be written back with.
+    """
+    if len(digits) != width or not _HEX_RE.fullmatch(digits):
+        return None
+    code = int(digits, 16)
+    if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
+        return None
+    return chr(code)
 
 
 def _decode_double(inner: str) -> str:
-    """Reverse `_quote`'s double-quoted escaping (`\\\\`, `\\"`, `\\n`, `\\t`,
-    `\\r`) in one left-to-right pass; an unrecognised `\\x` keeps its backslash."""
+    """Reverse double-quoted escaping — the named escapes and the numeric
+    (`\\xNN`, `\\uNNNN`, `\\UNNNNNNNN`) ones — in one left-to-right pass; an
+    escape that is neither keeps its backslash rather than being invented."""
     out: list[str] = []
     i = 0
     while i < len(inner):
         ch = inner[i]
         if ch == "\\" and i + 1 < len(inner):
+            width = _DQ_HEX_WIDTHS.get(inner[i + 1], 0)
+            decoded = _decode_numeric(inner[i + 2 : i + 2 + width], width) if width else None
+            if decoded is not None:
+                out.append(decoded)
+                i += 2 + width
+                continue
             out.append(_DQ_ESCAPES.get(inner[i + 1], "\\" + inner[i + 1]))
             i += 2
         else:
@@ -99,14 +202,6 @@ def _fence_bounds(lines: list[str]) -> tuple[int, int]:
     raise FrontmatterError("frontmatter block is not closed by a '---' fence")
 
 
-def _split_newline(line: str) -> tuple[str, str]:
-    if line.endswith("\r\n"):
-        return line[:-2], "\r\n"
-    if line.endswith("\n"):
-        return line[:-1], "\n"
-    return line, ""
-
-
 def _scan_value(text: str) -> tuple[str, int]:
     """`text` up to any comment, and how many `[`/`{` it leaves open.
 
@@ -131,7 +226,11 @@ def _scan_value(text: str) -> tuple[str, int]:
                 continue
             if char == quote:
                 quote = ""
-        elif char == "#" and (i == 0 or text[i - 1].isspace()):
+        # A comment opens after YAML's own whitespace — a space or a tab — and
+        # nowhere else. `str.isspace()` is wider: it counts NBSP and the ideographic
+        # space, both of which turn up in scraped page text right before a `#`, and
+        # reading one as a comment would cut a title off at a character YAML keeps.
+        elif char == "#" and (i == 0 or text[i - 1] in " \t"):
             return text[:i], depth
         elif char in "\"'" and fresh:
             quote, fresh = char, False
@@ -209,7 +308,7 @@ def parse_entries(text: str) -> list[Entry]:
     but one inside a block is content (a paragraph break in a block scalar) and
     stays with it.
     """
-    source = text.splitlines()
+    source = split_lines(text)
     start, close = _fence_bounds(source)
     lines = source[start:close]
     entries: list[Entry] = []
@@ -307,7 +406,7 @@ def parse_frontmatter(text: str) -> dict[str, Value]:
 
 def body_after_frontmatter(text: str) -> str:
     """Return the note body (everything after the closing `---` fence)."""
-    lines = text.splitlines(keepends=True)
+    lines = _lines_keepends(text)
     _, end = _fence_bounds(lines)
     return "".join(lines[end + 1 :])
 
@@ -344,7 +443,7 @@ def set_field(
     `FrontmatterError`. Only that one line, inside the frontmatter, changes.
     """
     rendered = f"{key}:" if value is None else f"{key}: {value}"
-    lines = text.splitlines(keepends=True)
+    lines = _lines_keepends(text)
     start, end = _fence_bounds(lines)
     anchor: int | None = None
     for i in range(start, end):
@@ -372,7 +471,7 @@ def set_fields(text: str, rendered: Mapping[str, str | None]) -> str:
     them, rather than a silent insert. Values are already-rendered text. Field
     order and the body are preserved.
     """
-    lines = text.splitlines(keepends=True)
+    lines = _lines_keepends(text)
     start, end = _fence_bounds(lines)
     remaining = dict(rendered)
     for i in range(start, end):
@@ -405,23 +504,42 @@ _YAML_NUMBER_RE = re.compile(r"^[+-]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)([eE][+-]?\d+
 # are only checked at position 0 (see `_needs_quote`).
 _LEADING_INDICATORS = "-?:,[]{}#&*!|>@%`\"'"
 # In a *flow* context (an inline `[a, b]` list item) these are special anywhere,
-# not just at the start, so a list item carrying one must be quoted.
-_FLOW_SPECIAL = ":,?#&*!|>'\"%@`[]{}\t\n\r"
-_CONTROL = "\t\n\r"
+# not just at the start, so a list item carrying one must be quoted. The
+# characters that may not stand for themselves at all are `is_unprintable`'s,
+# asked separately so the two contexts cannot answer it differently.
+_FLOW_SPECIAL = ":,?#&*!|>'\"%@`[]{}"
+# The escapes `_quote` writes by name, for the characters that read best that way.
+_NAMED_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def is_unprintable(char: str) -> bool:
+    """Whether `char` may not stand for itself inside a quoted scalar.
+
+    The C0 and C1 control ranges plus the Unicode line and paragraph separators.
+    What matters is that none of them reaches the note raw: several end a line
+    for one reader of this vault and not for another, so a value carrying one
+    would be a different value depending on who opened the file. (The few with
+    an escape of their own — tab, newline, carriage return — are written by that
+    name instead, which `_quote` decides before it asks this.)
+    """
+    code = ord(char)
+    return code < 0x20 or 0x7F <= code <= 0x9F or code in (0x2028, 0x2029)
 
 
 def _quote(text: str) -> str:
-    # Escape backslash first, then the quote and the control chars a double-quoted
-    # YAML scalar represents with a backslash escape — a raw newline/tab inside the
-    # quotes would otherwise break the line. `_unquote` reverses these.
-    body = (
-        text.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-    )
-    return '"' + body + '"'
+    # Escape the backslash and the quote, then every character that cannot stand
+    # for itself — by name where YAML has one, numerically otherwise. `_unquote`
+    # reverses all of it.
+    body = []
+    for char in text:
+        if char in _NAMED_ESCAPES:
+            body.append(_NAMED_ESCAPES[char])
+        elif is_unprintable(char):
+            code = ord(char)
+            body.append(f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}")
+        else:
+            body.append(char)
+    return '"' + "".join(body) + '"'
 
 
 def _needs_quote(text: str) -> bool:
@@ -440,7 +558,7 @@ def _needs_quote(text: str) -> bool:
         return True
     if ": " in text or " #" in text or text.endswith(":"):
         return True
-    return any(c in _CONTROL for c in text)
+    return any(is_unprintable(c) for c in text)
 
 
 def _needs_quote_flow(text: str) -> bool:
@@ -452,7 +570,42 @@ def _needs_quote_flow(text: str) -> bool:
         return True
     if text[0] == "-":
         return True
-    return any(c in text for c in _FLOW_SPECIAL)
+    return any(c in _FLOW_SPECIAL or is_unprintable(c) for c in text)
+
+
+# A text every YAML reader reads back as the integer it spells: ASCII digits
+# only, because YAML's own int resolver is (an Arabic-Indic digit passes
+# `isdigit` and reads back as a string), and no leading zero, because YAML 1.1
+# reads `010` as octal. A note is read by kboat's scanner, by Obsidian, and by
+# whatever else opens the vault, so "an integer" has to mean one thing to all.
+_YAML_INT_RE = re.compile(r"-?(0|[1-9][0-9]*)")
+
+
+_PLAIN_KEY_RE = re.compile(_PLAIN_KEY)
+
+
+def is_plain_key(key: str) -> bool:
+    """Whether `key` can be written in front of a `:` as the property it is.
+
+    The reader's own key grammar (`_KEY_RE`) with nothing after it, so what a
+    writer emits by this rule is exactly what the reader takes back out. That is
+    the point: a key holding a `:` or a newline would end the entry, or the
+    whole block, in the middle of itself, and one merely outside the grammar
+    would be written and then be unreadable — a property `kboat-validate` cannot
+    see, on a note that reports itself as written.
+    """
+    return bool(_PLAIN_KEY_RE.fullmatch(key))
+
+
+def is_yaml_int(text: str) -> bool:
+    """Whether `text` is an integer to every YAML reader, and so safe unquoted.
+
+    The one definition of "this field holds a number", shared by the writer
+    (which emits it bare only here) and the validator (which reports `not_int`
+    everywhere else). Two definitions would disagree somewhere, and the pair
+    they disagree on is exactly a value written as valid and reported as not.
+    """
+    return bool(_YAML_INT_RE.fullmatch(text))
 
 
 def yaml_scalar(value: object) -> str:
@@ -467,7 +620,10 @@ def yaml_scalar(value: object) -> str:
 def yaml_list(items: Sequence[object] | None) -> str:
     if not items:
         return "[]"
-    rendered = [_quote(s) if _needs_quote_flow(s) else s for s in (str(x) for x in items)]
+    # A null item is the empty item, as it is for `yaml_scalar` — `str(None)`
+    # would write the word `None` into the note, a value nobody supplied.
+    texts = ("" if x is None else str(x) for x in items)
+    rendered = [_quote(s) if _needs_quote_flow(s) else s for s in texts]
     return "[" + ", ".join(rendered) + "]"
 
 
