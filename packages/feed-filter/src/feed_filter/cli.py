@@ -85,6 +85,7 @@ from feed_filter.sites import (
 )
 from feed_filter.vault import VaultError, write_feed_note
 from kboat.cli import add_today_argument
+from kboat.lock import VaultLockedError
 from kboat.write import BadInputError
 
 
@@ -1089,6 +1090,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (slug collision);
+    - ``VaultLockedError`` — a K-Boat run held the vault for longer than the write was
+      willing to wait, so the note was not written and the entry stays unseen. This
+      one also prints ``{"status": "locked", …}`` on stdout, because it is the only
+      failure in this list that will *not* recur: the holder finishes. A run skill
+      needs to tell it apart from a collision or a disk error, which recur and mean
+      stop, so it can leave this entry for the next run and keep reminding;
     - ``BadInputError`` — the shared writer refused the record itself. Nothing
       feed-filter assembles can trip it (its slug is a URL hash and its field
       names are literals), so this is the writer's contract being honoured here
@@ -1116,6 +1123,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.handler(args)
+    except VaultLockedError as exc:
+        _emit({"status": "locked", "holder": exc.holder})
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     except (
         FetchError,
         BrowserFetchError,

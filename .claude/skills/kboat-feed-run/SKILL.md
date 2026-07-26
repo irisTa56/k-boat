@@ -44,7 +44,9 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - **Keep** → `feed-filter remind --site-id <id> --url <url> --title <title> --summary <gist>`.
      This writes the `Feeds/` note **and** records the entry seen (kept=1) in one process.
      Do **not** also call `mark-seen` — that would double-record.
-     A non-zero exit means the vault write failed (a slug collision, an unset vault, a disk error) and the entry was **not** recorded seen; surface it and stop reminding (the failure will recur).
+     A non-zero exit means the vault write failed and the entry was **not** recorded seen. Two cases, and the stdout tells them apart:
+     - `{"status": "locked", "holder": …}` — a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock"). This does **not** recur, because the holder finishes: leave this entry for the next run and **carry on** with the remaining keeps. Report how many were deferred this way.
+     - No `locked` record (a slug collision, an unset vault, a disk error) — surface it and stop reminding, since the failure will recur.
    - **Drop** → `feed-filter mark-seen --site-id <id> --url <url> --title <title>`.
      Records the entry seen (kept=0) with no note, so it is not judged again.
    - **Subagent or fetch error** on an entry → do not silently lose it. Call `feed-filter remind` anyway with the entry's `title` when it has one, otherwise `--title ""` so the CLI falls back to the URL, plus a `--summary` line saying judging failed: `feed-filter remind --site-id <id> --url <url> --title "<entry title or empty>" --summary "judging failed: <cause>"`. This deliberately favors never-lost over never-duplicated.

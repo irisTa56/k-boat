@@ -7,13 +7,17 @@ checked against real files written through ``kboat.write.upsert``.
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
+import feed_filter.vault as vault_mod
 from feed_filter.canonical import CanonicalUrl
 from feed_filter.vault import VaultError, write_feed_note
 from kboat.frontmatter import Value, parse_frontmatter
+from kboat.lock import LOCK_NAME, VaultLockedError, vault_lock
 from kboat.naming import url_slug
 
 CU = CanonicalUrl("https://example.com/post")
@@ -176,3 +180,71 @@ def test_collision_raises_vault_error(tmp_path: Path) -> None:
             wall=False,
             today="2026-07-19",
         )
+
+
+def _write(vault: Path) -> dict[str, object]:
+    return write_feed_note(
+        vault,
+        CU,
+        title="A post",
+        feed_kind="article",
+        site_id="ex",
+        summary="",
+        wall=False,
+        today="2026-07-19",
+    )
+
+
+def test_the_write_is_held_under_the_vault_lock(tmp_path: Path) -> None:
+    # Serialized against a K-Boat run writing the same vault: while the note is
+    # being written, nobody else can take the lock.
+    real_upsert = vault_mod.upsert
+
+    def upsert_under_lock(*args: object, **kwargs: object) -> dict[str, object]:
+        with pytest.raises(VaultLockedError), vault_lock(tmp_path):
+            pytest.fail("the write must hold the lock while it runs")
+        return real_upsert(*args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(vault_mod, "upsert", upsert_under_lock)
+        assert _write(tmp_path)["status"] == "created"
+    assert not (tmp_path / LOCK_NAME).exists()
+
+
+def test_a_held_vault_is_waited_for_rather_than_refused(tmp_path: Path) -> None:
+    # One note per process, so an immediate refusal would cost this entry a whole
+    # run; the write waits for the holder instead. No monkeypatch: the shipped
+    # `VAULT_LOCK_WAIT_S` is what makes this pass, so setting it to zero — which
+    # would collapse the asymmetry the docstring promises — fails here.
+    took_the_lock = threading.Event()
+    released = threading.Event()
+
+    def hold() -> None:
+        with vault_lock(tmp_path):
+            took_the_lock.set()
+            time.sleep(0.1)
+        released.set()
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    try:
+        assert took_the_lock.wait(timeout=5), "the holder never took the lock"
+        result = _write(tmp_path)
+    finally:
+        holder.join()
+    # Waiting is the assertion, not a side effect of losing the start race: the
+    # holder had the lock before the write began, and the write only got it back
+    # once the holder let go.
+    assert released.is_set()
+    assert result["status"] == "created"
+
+
+def test_an_expired_wait_raises_and_writes_no_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The never-lost half: the entry is not written, so the caller raises before
+    # its seen-record and the next run retries it.
+    monkeypatch.setattr(vault_mod, "VAULT_LOCK_WAIT_S", 0.1)
+    with vault_lock(tmp_path), pytest.raises(VaultLockedError):
+        _write(tmp_path)
+    assert not (tmp_path / "Feeds").exists()

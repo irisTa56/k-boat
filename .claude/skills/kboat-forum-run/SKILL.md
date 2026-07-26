@@ -85,7 +85,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
    - **Keep** (Rule A) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --summary <summary> --is-op` (the note carries the `summary`).
      Writes the `Feeds/` note AND records the interest verdict (kept=1) in one process; vault write first, verdict only on success.
-     A non-zero exit means the vault write failed; surface it and stop reminding (the failure will recur).
+     A non-zero exit means the vault write failed. A `{"status": "locked", "holder": …}` record on stdout means a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock"): it does not recur, so leave this topic for the next run and carry on with the remaining keeps. Any other non-zero exit will recur — surface it and stop reminding.
    - **Drop** (Rule A) → `feed-filter forum-mark-seen --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --is-op`.
      Records the interest verdict (kept=0); no note, and **no** post-grain seen — so if the OP later gains likes, Rule B re-judges it.
    - **Keep** (Rule B, per trigger post) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --post-id <post_id> --url <topic_url> --title <title> --summary <summary>` (the note carries the `summary`).
