@@ -49,8 +49,8 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 - Quality gates (`mise run pre-commit` runs them all; the git pre-commit hook calls it, so a failure blocks commits):
   - `mise run qa:md` / `fmt:md` — markdown lint / autofix (rumdl).
   - `mise run qa:secrets` — gitleaks over staged changes.
-  - `mise run qa:py` / `fmt:py` — ruff + ty + pytest across both members; per-member as `qa:py:kboat` / `qa:py:feed-filter` (and `fmt:py:*`).
-- `mise run check:links` — lychee link check (network; not in pre-commit).
+  - `mise run qa:py` / `fmt:py` — ruff + ty + pytest across both members; per-member as `qa:py:kboat` / `qa:py:feed-filter` (and `fmt:py:*`). Each also runs `scripts/coverage_floor.py` against its `coverage json` output, failing under an 80% per-`src/`-file floor — a collapse in one file can't hide behind a healthy package average.
+- `mise run check:links` — lychee link check (network; not in pre-commit). CI runs an offline lychee pass on every PR and mirrors this full networked check, non-blocking, on a weekly schedule (`.github/workflows/link-check-weekly.yml`); `ci.yml` itself also runs weekly so toolchain drift surfaces between PRs.
 
 ## Architecture (K-Boat)
 

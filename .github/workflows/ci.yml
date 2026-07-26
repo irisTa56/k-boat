@@ -2,14 +2,22 @@ name: CI
 
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
 # to main), but without mise: CI needs neither the notebooklm tool nor a browser.
-# It runs the same ruff / ty / pytest / rumdl / gitleaks checks — uv for the
-# Python gates, official actions for rumdl and gitleaks. Keep the checks here in
-# sync with mise.toml's `qa:*` tasks.
+# It runs the same ruff / ty / pytest / coverage-floor / rumdl / gitleaks checks —
+# uv for the Python gates, official actions for rumdl and gitleaks. Keep the
+# checks here in sync with mise.toml's `qa:*` tasks. Also runs offline link-check
+# on every PR (the networked check is a separate, non-blocking, weekly workflow —
+# see link-check-weekly.yml) and, on a weekly schedule, the whole workflow again
+# so toolchain drift surfaces between PRs.
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Weekly, independent of any PR, so toolchain drift (a new ruff/ty/uv
+    # release, a rumdl or gitleaks action update) surfaces even during a quiet
+    # week with no open PRs.
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -36,6 +44,8 @@ jobs:
         run: uv sync
       # Per-member, each in its own dir so that package's pyproject config applies
       # (ruff selects, ty root, pytest coverage) — matching mise's `qa:py:<member>`.
+      # Each member's coverage-floor step depends on its own `uv run pytest`
+      # step above having just written the `.coverage` data file it reads.
       - name: kboat — ruff, ty, pytest
         working-directory: packages/kboat
         run: |
@@ -43,6 +53,8 @@ jobs:
           uv run ruff format --check
           uv run ty check
           uv run pytest
+          uv run coverage json -o coverage.json
+          uv run python ../../scripts/coverage_floor.py coverage.json
       - name: feed-filter — ruff, ty, pytest
         working-directory: packages/feed-filter
         run: |
@@ -50,15 +62,18 @@ jobs:
           uv run ruff format --check
           uv run ty check
           uv run pytest
+          uv run coverage json -o coverage.json
+          uv run python ../../scripts/coverage_floor.py coverage.json
 
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # Official rumdl action (Dependabot-tracked), not `uvx rumdl`: it avoids an
-      # unpinned PyPI install on every run. The rumdl version defaults to latest,
-      # matching mise's `rumdl = "latest"`; it auto-detects .rumdl.toml at the root.
-      - uses: rvben/rumdl@v0
+      # unpinned PyPI install on every run. Pinned to an exact tag (matching the
+      # setup-uv discipline above), not the floating `v0`; it auto-detects
+      # .rumdl.toml at the root.
+      - uses: rvben/rumdl@v0.2.43
 
   secret-scan:
     runs-on: ubuntu-latest
@@ -69,3 +84,17 @@ jobs:
       - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  link-check-offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Offline-only: catches broken relative links and anchors inside the
+      # repo's own markdown without depending on the network, so it is cheap
+      # enough to run (and block) on every PR. The full networked check runs
+      # separately, non-blocking, in link-check-weekly.yml — offline mode
+      # can't verify a remote URL still resolves.
+      - uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          args: --offline --no-progress "./**/*.md"
+          fail: true

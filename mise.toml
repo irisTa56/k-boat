@@ -68,6 +68,8 @@ uv run ruff check
 uv run ruff format --check
 uv run ty check
 uv run pytest
+uv run coverage json -o coverage.json
+uv run python ../../scripts/coverage_floor.py coverage.json
 """
 
 [tasks."qa:py:feed-filter"]
@@ -78,6 +80,8 @@ uv run ruff check
 uv run ruff format --check
 uv run ty check
 uv run pytest
+uv run coverage json -o coverage.json
+uv run python ../../scripts/coverage_floor.py coverage.json
 """
 
 [tasks."qa:py"]

@@ -1,0 +1,26 @@
+name: Link check (weekly)
+
+# The full networked lychee run: every link in the repo, hitting the network,
+# same scope as `mise run check:links` locally. Kept out of ci.yml on purpose
+# (mirroring why `check:links` is kept out of `qa:*`) -- it is too slow and
+# too flaky on external hosts to gate a PR. Runs weekly instead, and
+# non-blocking (`fail: false`): a report worth reading, never a red merge
+# button over a link some third-party site took down.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          args: --verbose --no-progress .
+          fail: false

@@ -11,6 +11,8 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+# Per-member `coverage json` output, written by `qa:py:*` for coverage_floor.py.
+coverage.json
 # mise resolves external QA tools at `latest`; the lockfile is not pinned, so a
 # locally-generated one is never committed.
 mise.lock
