@@ -30,6 +30,7 @@ from datetime import date
 from pathlib import Path
 
 from kboat.frontmatter import FrontmatterError
+from kboat.lock import VaultLockedError, VaultLockUnavailableError
 from kboat.write import BadInputError
 
 
@@ -97,6 +98,40 @@ def require_readable_payload(record: dict) -> None:
         raise BadInputError("record 'body' must be a string")
 
 
+def emit_locked(exc: VaultLockedError) -> int:
+    """Print the refusal for a vault another process holds, and return the exit code.
+
+    Stdout carries the machine-readable `{status, holder}` record and stderr the
+    line naming the holder, like every other diagnostic. The record has the same
+    shape whichever CLI was refused, because the caller's move is the same one:
+    nothing was written, so re-run once the holding run finishes.
+    """
+    sys.stderr.write(f"{exc}\n")
+    json.dump({"status": "locked", "holder": exc.holder}, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
+    return 1
+
+
+def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
+    """Print the failure for a vault lock that could not be taken at all.
+
+    Not a refusal — nobody holds the vault; the lock file itself could not be
+    created, which is a read-only vault root, a denied iCloud tree, or a full disk.
+    There is no holder to name, so there is no `locked` record either: a caller that
+    branched on one would read this as a run it may retry, when what it needs is a
+    human. Stdout stays empty rather than carrying a report the run never produced.
+
+    For the CLIs whose output *is* a report — `kboat-lifecycle`, `kboat-pick set`,
+    `kboat-repos refresh`. Their contract is JSON on stdout and a diagnostic on
+    stderr, and an uncaught `OSError` from acquisition would break it with a
+    traceback and no output at all. The two note writers do not come through here:
+    `run_write` already folds an unusable lock into its `write failed: …`, which is
+    the right shape for a CLI whose whole output is the fate of one write.
+    """
+    sys.stderr.write(f"vault lock unavailable: {exc}\n")
+    return 1
+
+
 def _read_json_record() -> dict:
     try:
         record = json.load(sys.stdin)
@@ -115,14 +150,16 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
     same frame that maps it. `write` returns an `upsert` result — it is read for
     `status`, a key an unwritten note still carries.
 
-    Exit 2 is a record to fix, 1 a write that did not happen (a failure, or a
-    refused collision), 0 a note on disk.
+    Exit 2 is a record to fix, 1 a write that did not happen (a failure, a
+    refused collision, or a vault another run holds), 0 a note on disk.
     """
     try:
         result = write(_read_json_record())
     except BadInputError as e:
         sys.stderr.write(f"{e}\n")
         return 2
+    except VaultLockedError as e:
+        return emit_locked(e)
     except (FrontmatterError, OSError) as e:
         sys.stderr.write(f"write failed: {e}\n")
         return 1

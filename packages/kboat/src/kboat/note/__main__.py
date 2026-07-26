@@ -5,7 +5,9 @@
   (`upsert`): frontmatter order, YAML quoting, the always-present fields, body
   preservation, slug de-dup, and the `added_date`/`refreshed_date` stamps are all
   guaranteed by the package, so the agent never hand-writes frontmatter. Prints
-  the result (`{status, slug, path}`, or a `collision`) as JSON.
+  the result (`{status, slug, path}`, or a `collision`) as JSON. The write is
+  held under the vault lock, so a refused vault prints a `locked` record and
+  exits non-zero instead of racing the run that holds it.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from kboat.cli import (
     run_write,
     vault_path,
 )
+from kboat.lock import vault_lock
 from kboat.schema import BY_TYPE
 from kboat.write import upsert
 
@@ -36,8 +39,11 @@ def _write(argv: list[str]) -> int:
     vault = vault_path(parser, args)
 
     def write(record: dict) -> dict[str, object]:
+        # The record is checked before the lock is taken: one this writer cannot
+        # read is the agent's to fix, and it never reaches the vault.
         require_readable_payload(record)
-        return upsert(BY_TYPE[args.type], vault, record, today=args.today)
+        with vault_lock(vault):
+            return upsert(BY_TYPE[args.type], vault, record, today=args.today)
 
     return run_write(write)
 

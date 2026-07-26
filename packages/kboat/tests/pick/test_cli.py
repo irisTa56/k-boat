@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from kboat.lock import LOCK_NAME, vault_lock
 from kboat.pick.__main__ import main
 from kboat.pick.notes import parse_frontmatter
 
@@ -145,3 +147,83 @@ def test_empty_slugs_clears_all(vault: Path, capsys: pytest.CaptureFixture[str])
     assert out["reset"] == 5
     fm = parse_frontmatter((vault / "Sources" / "web1.md").read_text(encoding="utf-8"))
     assert fm["picked"] is False
+
+
+def test_set_refuses_a_locked_vault_without_writing(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = (vault / "Sources" / "web1.md").read_text(encoding="utf-8")
+    with vault_lock(vault):
+        rc = main(["--vault", str(vault), "set", "--slugs", "web1"])
+    assert rc == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "locked"
+    assert out["holder"]["pid"] == os.getpid()
+    assert (vault / "Sources" / "web1.md").read_text(encoding="utf-8") == before
+
+
+def test_candidates_reads_a_locked_vault(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # Read-only, so it neither takes the lock nor waits on one.
+    with vault_lock(vault):
+        assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [c["slug"] for c in out["candidates"]] == ["web1", "web2"]
+
+
+def test_the_picked_flag_goes_through_the_atomic_writer(vault: Path) -> None:
+    # As in `kboat-lifecycle`: the flag is flipped by replacing the note, never by
+    # writing over it, so a rewrite that stopped using `os.replace` would silently
+    # give up atomicity on a note the routine touches every day.
+    replaced: list[str] = []
+    real_replace = os.replace
+
+    def spy(src: object, dst: object) -> None:
+        replaced.append(str(dst))
+        real_replace(src, dst)  # ty: ignore[invalid-argument-type]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(os, "replace", spy)
+        assert main(["--vault", str(vault), "set", "--slugs", "web1"]) == 0
+
+    sources = vault / "Sources"
+    # Exactly the two notes whose `picked` changed — the new pick and the stale one
+    # being cleared — and each of them by a replace rather than a write in place.
+    assert sorted(replaced) == sorted([str(sources / "web1.md"), str(sources / "reading1.md")])
+    assert parse_frontmatter((sources / "web1.md").read_text())["picked"] is True
+    assert parse_frontmatter((sources / "reading1.md").read_text())["picked"] is False
+
+
+def test_the_sources_scan_happens_inside_the_hold(vault: Path) -> None:
+    # As in `kboat-lifecycle`: `set` reads every source to decide which notes
+    # change, and that read belongs under the same hold as the writes it feeds.
+    sources = vault / "Sources"
+    lock_file = vault / LOCK_NAME
+    held: list[bool] = []
+    real_read_text = Path.read_text
+
+    def spy(self: Path, *args: object, **kwargs: object) -> str:
+        if self.parent == sources:
+            held.append(lock_file.exists())
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(Path, "read_text", spy)
+        assert main(["--vault", str(vault), "set", "--slugs", "web1"]) == 0
+
+    assert held and all(held), "every Sources/ read must happen while the lock is held"
+
+
+def test_a_vault_whose_lock_cannot_be_created_is_reported_not_dumped(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # As in `kboat-lifecycle`: reported on stderr with an empty stdout, never a
+    # traceback, and without a `locked` record that would invite a retry.
+    vault.chmod(0o555)
+    try:
+        rc = main(["--vault", str(vault), "set", "--slugs", "web1"])
+    finally:
+        vault.chmod(0o755)
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "vault lock unavailable" in captured.err
+    assert captured.out == ""

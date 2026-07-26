@@ -7,6 +7,10 @@ schema. Everything mechanical (field order, YAML quoting, de-dup by `url`, body
 preservation, the date stamps) belongs to that shared writer, so this module is
 only the translation between the record shape `gather` speaks and the
 `{slug, fields}` one `upsert` speaks.
+
+Like `kboat-note write`, the write is held under the vault lock, so a refused
+vault prints a `locked` record and exits non-zero instead of racing the run that
+holds it.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from kboat.cli import (
     run_write,
     vault_path,
 )
+from kboat.lock import vault_lock
 from kboat.schema import REPO
 from kboat.write import BadInputError, upsert
 
@@ -86,8 +91,11 @@ def main(argv: list[str] | None = None) -> int:
         missing = [k for k in REQUIRED if k not in record]
         if missing:
             raise BadInputError(f"record is missing required keys: {', '.join(missing)}")
+        # The record is checked before the lock is taken: one this writer cannot
+        # read is the agent's to fix, and it never reaches the vault.
         require_readable_payload(record)
-        return write_note(record, vault, today_iso=args.today)
+        with vault_lock(vault):
+            return write_note(record, vault, today_iso=args.today)
 
     return run_write(write)
 

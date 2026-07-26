@@ -1,11 +1,13 @@
 """End-to-end CLI tests over a temporary vault."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from kboat.lifecycle.__main__ import main
+from kboat.lock import LOCK_NAME, vault_lock
 
 NOTE_TEMPLATE = """\
 ---
@@ -222,3 +224,89 @@ def test_missing_vault_errors(tmp_path: Path):
     with pytest.raises(SystemExit) as exc:
         main(["--vault", str(tmp_path / "nope"), "--today", "2026-06-15"])
     assert exc.value.code != 0
+
+
+def test_refuses_a_locked_vault_without_writing(vault: Path, capsys):
+    # A run that cannot take the lock reports who holds it and touches nothing:
+    # the note keeps its unstamped filed_date for the next run to stamp.
+    sources = vault / "Sources"
+    write_note(sources, "a", distill=True)
+    before = (sources / "a.md").read_text(encoding="utf-8")
+    with vault_lock(vault):
+        rc = main(["--vault", str(vault), "--today", "2026-06-15"])
+    assert rc == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "locked"
+    assert out["holder"]["pid"] == os.getpid()
+    assert (sources / "a.md").read_text(encoding="utf-8") == before
+
+
+def test_dry_run_reads_a_locked_vault(vault: Path, capsys):
+    # Read-only, so it neither takes the lock nor waits on one.
+    write_note(vault / "Sources", "a", distill=True)
+    with vault_lock(vault):
+        out = run(vault, capsys, "--dry-run")
+    assert [s["slug"] for s in out["phase_a"]["stamped"]] == ["a"]
+
+
+def test_the_filed_date_stamp_goes_through_the_atomic_writer(vault: Path) -> None:
+    # The whole point of routing this rewrite through the shared writer is that no
+    # note is ever written in place: `os.replace` is what makes the stamp land
+    # whole, and a rewrite that stopped using it would be invisible otherwise.
+    sources = vault / "Sources"
+    write_note(sources, "a", distill=True)
+    replaced: list[str] = []
+    real_replace = os.replace
+
+    def spy(src: object, dst: object) -> None:
+        replaced.append(str(dst))
+        real_replace(src, dst)  # ty: ignore[invalid-argument-type]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(os, "replace", spy)
+        assert main(["--vault", str(vault), "--today", "2026-06-15"]) == 0
+
+    assert replaced == [str(sources / "a.md")]
+    assert "filed_date: 2026-06-15" in (sources / "a.md").read_text(encoding="utf-8")
+
+
+def test_the_plan_is_computed_inside_the_hold(vault: Path) -> None:
+    # The read and the write are one step so they happen under one hold: a plan
+    # computed before another run's writes would stamp dates the notes no longer
+    # call for. Nothing else would notice the read moving out of the block — the
+    # write would still be refused, and the suite would still pass.
+    sources = vault / "Sources"
+    write_note(sources, "a", distill=True)
+    lock_file = vault / LOCK_NAME
+    held: list[bool] = []
+    real_read_text = Path.read_text
+
+    def spy(self: Path, *args: object, **kwargs: object) -> str:
+        if self.parent == sources:
+            held.append(lock_file.exists())
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(Path, "read_text", spy)
+        assert main(["--vault", str(vault), "--today", "2026-06-15"]) == 0
+
+    assert held and all(held), "every Sources/ read must happen while the lock is held"
+
+
+def test_a_vault_whose_lock_cannot_be_created_is_reported_not_dumped(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The contract is JSON on stdout and a diagnostic on stderr, never a traceback.
+    # An unwritable vault root is the reachable case — the iCloud tree can deny a
+    # write — and before it was caught it aborted the run with an empty stdout.
+    write_note(vault / "Sources", "a", distill=True)
+    vault.chmod(0o555)
+    try:
+        rc = main(["--vault", str(vault), "--today", "2026-06-15"])
+    finally:
+        vault.chmod(0o755)
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "vault lock unavailable" in captured.err
+    # No `locked` record: nobody holds the vault, so this is not a run to retry.
+    assert captured.out == ""
