@@ -128,7 +128,7 @@ _DQ_ESCAPES = {
 _DQ_HEX_WIDTHS = {"x": 2, "u": 4, "U": 8}
 
 
-_HEX_RE = re.compile(r"^[0-9A-Fa-f]+$")
+_HEX_RE = re.compile(r"[0-9A-Fa-f]+")
 
 
 def _decode_numeric(digits: str, width: int) -> str | None:
@@ -138,7 +138,7 @@ def _decode_numeric(digits: str, width: int) -> str | None:
     neither does a lone surrogate: that is a code point no UTF-8 file can hold,
     so decoding one would leave a value the note cannot be written back with.
     """
-    if len(digits) != width or not _HEX_RE.match(digits):
+    if len(digits) != width or not _HEX_RE.fullmatch(digits):
         return None
     code = int(digits, 16)
     if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
@@ -226,7 +226,11 @@ def _scan_value(text: str) -> tuple[str, int]:
                 continue
             if char == quote:
                 quote = ""
-        elif char == "#" and (i == 0 or text[i - 1].isspace()):
+        # A comment opens after YAML's own whitespace — a space or a tab — and
+        # nowhere else. `str.isspace()` is wider: it counts NBSP and the ideographic
+        # space, both of which turn up in scraped page text right before a `#`, and
+        # reading one as a comment would cut a title off at a character YAML keeps.
+        elif char == "#" and (i == 0 or text[i - 1] in " \t"):
             return text[:i], depth
         elif char in "\"'" and fresh:
             quote, fresh = char, False

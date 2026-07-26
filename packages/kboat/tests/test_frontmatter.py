@@ -135,6 +135,8 @@ def test_quoted_scalar_round_trips(value: str) -> None:
         ('"a\\x1"', "a\\x1", "an escape short of its width names nothing"),
         ('"a\\ud800b"', "a\\ud800b", "nor does a surrogate, which no UTF-8 file can hold"),
         ('"a\\qb"', "a\\qb", "nor an escape YAML does not define"),
+        ('"a\\U0001f600b"', "a\U0001f600b", "the eight-digit form, which YAML also defines"),
+        ('"a\\U00110000b"', "a\\U00110000b", "though not one naming no code point at all"),
     ],
 )
 def test_an_escape_this_writer_never_emits_is_still_read_as_what_it_means(
@@ -144,6 +146,25 @@ def test_an_escape_this_writer_never_emits_is_still_read_as_what_it_means(
     # its own literal text would be a value that changes each time it passes
     # through — and one invented from an escape that names nothing would be worse.
     assert parse_frontmatter(f"---\nx: {written}\n---\n")["x"] == expected, why
+
+
+@pytest.mark.parametrize(
+    ("value", "why"),
+    [
+        ("Rust\xa0#1 の話", "a non-breaking space, which is what scraped HTML leaves"),
+        ("要約\u3000#補足 と続き", "an ideographic space, ordinary in Japanese page text"),
+    ],
+)
+def test_a_hash_after_a_space_yaml_does_not_know_is_not_a_comment(value: str, why: str) -> None:
+    # A comment opens after a space or a tab. Reading a wider set as whitespace
+    # would cut the value off at a character YAML keeps — and `title` and
+    # `summary` are written from page text, where those characters live.
+    note = f"---\nx: {yaml_scalar(value)}\n---\n"
+
+    assert parse_frontmatter(note)["x"] == value, why
+    assert yaml.safe_load(note.split("---\n")[1])["x"] == value, why
+    # A comment after a space kept being one, which is the reason for the rule.
+    assert parse_frontmatter("---\nx: kept # dropped\n---\n")["x"] == "kept"
 
 
 def test_parse_requires_frontmatter() -> None:

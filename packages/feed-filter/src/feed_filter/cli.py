@@ -85,6 +85,7 @@ from feed_filter.sites import (
 )
 from feed_filter.vault import VaultError, write_feed_note
 from kboat.cli import add_today_argument
+from kboat.write import BadInputError
 
 
 def _positive_int(value: str) -> int:
@@ -1088,6 +1089,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (slug collision);
+    - ``BadInputError`` — the shared writer refused the record itself. Nothing
+      feed-filter assembles can trip it (its slug is a URL hash and its field
+      names are literals), so this is the writer's contract being honoured here
+      rather than a case that arises: an exception it can raise is one this CLI
+      reports, or the ``error: …`` promise holds only for the failures foreseen;
     - ``ValueError`` — shape/validation (bad site config, non-scrape heal, an
       unset ``OBSIDIAN_VAULT_PATH``);
     - ``KeyError`` — unknown site id;
@@ -1114,6 +1120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         FetchError,
         BrowserFetchError,
         VaultError,
+        BadInputError,
         ValueError,
         KeyError,
         OSError,
