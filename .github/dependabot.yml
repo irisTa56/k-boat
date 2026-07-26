@@ -3,8 +3,8 @@
 # - uv, at the workspace root ("/"): Dependabot reads the root uv.lock, which
 #   resolves the whole workspace, so one entry covers every member's runtime deps
 #   plus the root dev group — no per-member entry as packages are added.
-# - github-actions, at "/": keeps the action versions pinned in the CI workflow
-#   (.github/workflows/*.yml) current.
+# - github-actions, at "/": keeps the action versions pinned across the CI
+#   workflows (.github/workflows/*.yml) current.
 #
 # The mise-managed tools (gitleaks, lychee, rumdl, uv) are out of Dependabot's
 # scope and stay on `mise upgrade`.

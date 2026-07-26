@@ -48,7 +48,7 @@ root = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --cov=feed_filter --cov-report=term-missing --cov-fail-under=80"
+addopts = "-ra --cov=feed_filter --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=80"
 # Promote ResourceWarning to error so leaked sqlite/file handles fail loudly
 # instead of surfacing as cryptic GC-time warnings during collection.
 filterwarnings = [

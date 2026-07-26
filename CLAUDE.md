@@ -25,7 +25,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Layout
 
-- **Root** — the K-Boat umbrella: shared workspace config (`pyproject.toml`), toolchain and QA (`mise.toml`, `.rumdl.toml`, `lychee.toml`, `.github/`), one `LICENSE`, this `CLAUDE.md` and `README.md`, `.claude/skills/` (all product skills), and the K-Boat product architecture (below).
+- **Root** — the K-Boat umbrella: shared workspace config (`pyproject.toml`), toolchain and QA (`mise.toml`, `.rumdl.toml`, `lychee.toml`, `.github/`, `scripts/`), one `LICENSE`, this `CLAUDE.md` and `README.md`, `.claude/skills/` (all product skills), and the K-Boat product architecture (below).
 - **`packages/kboat/`** — the `kboat` library (K-Boat's deterministic mechanical core).
 - **`packages/feed-filter/`** — the feed-filter member (its own package, skills-at-root, and docs).
 
@@ -49,8 +49,9 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 - Quality gates (`mise run pre-commit` runs them all; the git pre-commit hook calls it, so a failure blocks commits):
   - `mise run qa:md` / `fmt:md` — markdown lint / autofix (rumdl).
   - `mise run qa:secrets` — gitleaks over staged changes.
-  - `mise run qa:py` / `fmt:py` — ruff + ty + pytest across both members; per-member as `qa:py:kboat` / `qa:py:feed-filter` (and `fmt:py:*`). Each also runs `scripts/coverage_floor.py` against its `coverage json` output, failing under an 80% per-`src/`-file floor — a collapse in one file can't hide behind a healthy package average.
-- `mise run check:links` — lychee link check (network; not in pre-commit). CI runs an offline lychee pass on every PR and mirrors this full networked check, non-blocking, on a weekly schedule (`.github/workflows/link-check-weekly.yml`); `ci.yml` itself also runs weekly so toolchain drift surfaces between PRs.
+  - `mise run qa:py` / `fmt:py` — ruff + ty + pytest across both members; per-member as `qa:py:kboat` / `qa:py:feed-filter` (and `fmt:py:*`). Each member's `pytest` also writes `coverage.json` (`--cov-report=json` in its `addopts`), which `scripts/coverage_floor.py` then checks, failing under an 80% per-`src/`-file floor — a collapse in one file can't hide behind a healthy package average. `qa:py:scripts` / `fmt:py:scripts` run the same ruff/ty/pytest commands over that script itself (it is flat tooling, not a workspace member, so it carries no coverage floor of its own).
+  - `mise run qa:links:offline` — offline lychee pass over the repo (no network, `--hidden` so it reaches `.claude/skills`); mirrors CI's `link-check-offline` job so a broken relative link is caught locally, not only in CI.
+- `mise run check:links` — the same pass over the network (not in `qa:*`/pre-commit: too slow and network-bound). CI mirrors it, non-blocking, on a weekly schedule (`.github/workflows/link-check-weekly.yml`). `ci.yml` itself also runs weekly, to catch drift in whatever an exact action-tag pin doesn't reach: the runner image, `actions/checkout` and `gitleaks/gitleaks-action` on a floating major tag, and the `uv`/`rumdl` binaries themselves (pinning `setup-uv`'s/`rumdl`'s own action tag doesn't also pin the tool version each installs).
 
 ## Architecture (K-Boat)
 
