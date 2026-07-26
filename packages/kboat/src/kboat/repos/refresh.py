@@ -14,19 +14,39 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
+from kboat.cli import add_today_argument, add_vault_argument, vault_path
+from kboat.frontmatter import FrontmatterError, parse_frontmatter
+from kboat.frontmatter import set_fields as _set_rendered_fields
 from kboat.io_utils import atomic_write_text
+from kboat.schema import REPO
+from kboat.write import render_field
 
 from .gather import gh_repo_view, github_fields, resolved_identity
 from .identity import canonical_slug, canonical_url, parse_repo
-from .notes import FrontmatterError, parse_frontmatter, set_fields
 
 MAX_WORKERS = 10
+
+
+def set_fields(text: str, updates: Mapping[str, object]) -> str:
+    """Rewrite the named top-level frontmatter lines in place.
+
+    Each key in `updates` must already exist as a top-level line (refresh targets
+    always-present GitHub-derived fields); a missing key is a `FrontmatterError`,
+    not a silent insert. The field order, every other field, and the body survive.
+
+    An in-place line rewrite rather than a re-write of the whole note, which is
+    what makes the judgement layer and the body untouchable here. It works
+    because every repo list (`language`, `topics`, `domain`) is inline
+    (`topics: [a, b]`), so each top-level field occupies exactly one line.
+    """
+    rendered = {key: render_field(REPO.get(key), value) for key, value in updates.items()}
+    return _set_rendered_fields(text, rendered)
 
 
 def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dict[str, str]]]:
@@ -156,27 +176,14 @@ def main(argv: list[str] | None = None) -> int:
         prog="kboat-repos refresh",
         description="Re-fetch GitHub metadata for every Repos/*.md note and recompute status.",
     )
-    parser.add_argument(
-        "--vault",
-        default=os.environ.get("OBSIDIAN_VAULT_PATH"),
-        help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
-    )
-    parser.add_argument(
-        "--today",
-        default=date.today().isoformat(),
-        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
-    )
+    add_vault_argument(parser)
+    add_today_argument(parser)
     parser.add_argument("--dry-run", action="store_true", help="Fetch and report without writing.")
     args = parser.parse_args(argv)
 
-    if not args.vault:
-        parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
-    try:
-        today = date.fromisoformat(args.today)
-    except ValueError:
-        parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
+    vault = vault_path(parser, args)
 
-    report = refresh(Path(args.vault).expanduser(), today=today, dry_run=args.dry_run)
+    report = refresh(vault, today=date.fromisoformat(args.today), dry_run=args.dry_run)
     json.dump(report, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 1 if report.get("error") else 0

@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections import Counter
 from pathlib import Path
 
+from kboat.cli import add_vault_argument, vault_path
 from kboat.frontmatter import FrontmatterError, parse_frontmatter
 from kboat.schema import DIR_BY_TYPE
 
@@ -45,11 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="kboat-validate",
         description="Check every vault note's frontmatter against its schema (read-only).",
     )
-    parser.add_argument(
-        "--vault",
-        default=os.environ.get("OBSIDIAN_VAULT_PATH"),
-        help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
-    )
+    add_vault_argument(parser)
     parser.add_argument(
         "--strict",
         action="store_true",
@@ -57,9 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.vault:
-        parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
-    vault = Path(args.vault).expanduser()
+    vault = vault_path(parser, args)
 
     checked, violations = _validate_vault(vault)
     by_code = Counter(v.code for v in violations)

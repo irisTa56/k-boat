@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import date
 from pathlib import Path
+
+from kboat.cli import add_today_argument, add_vault_argument, vault_path
 
 from .core import Kindle, Source, compute_plan, select_ripe_kindles
 from .notes import FrontmatterError, parse_frontmatter, set_filed_date
@@ -116,16 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="kboat-lifecycle",
         description="Maintain the K-Boat cooldown clock and compute the distill work sets.",
     )
-    parser.add_argument(
-        "--vault",
-        default=os.environ.get("OBSIDIAN_VAULT_PATH"),
-        help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
-    )
-    parser.add_argument(
-        "--today",
-        default=date.today().isoformat(),
-        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
-    )
+    add_vault_argument(parser)
+    add_today_argument(parser)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -133,14 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.vault:
-        parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
-    try:
-        today = date.fromisoformat(args.today)
-    except ValueError:
-        parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
-
-    vault = Path(args.vault).expanduser()
+    vault = vault_path(parser, args)
+    today = date.fromisoformat(args.today)
     sources_dir = vault / "Sources"
     if not sources_dir.is_dir():
         parser.error(f"no Sources/ directory under vault: {sources_dir}")

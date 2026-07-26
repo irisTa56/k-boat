@@ -145,6 +145,10 @@ REPO = NoteSchema(
             "status",
             Kind.ENUM,
             enum=("recent", "active", "slow", "dormant", "archived", "unknown"),
+            # `unknown` is the enum's no-data member, so a create with no `status`
+            # (a record assembled without one) yields a valid note rather than an
+            # empty value the field does not allow.
+            default="unknown",
         ),
         Field("added_date", Kind.DATE, stamp="created"),
         Field("refreshed_date", Kind.DATE, empty_ok=True, stamp="refreshed"),

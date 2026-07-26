@@ -41,6 +41,25 @@ def test_source_create_stamps_and_fills(vault: Path) -> None:
     assert "gemini_url" not in fm and "notebooklm_id" not in fm
 
 
+def test_an_update_does_not_backfill_a_field_the_note_has_lost(vault: Path) -> None:
+    # The create-time fill is create-time only. Backfilling on update would mean
+    # re-rendering fields the write was never about, which is exactly what
+    # protects the note's unmodelled properties — so drift is left for
+    # `kboat-validate` to report and a human to repair, not silently patched.
+    upsert(SOURCE, vault, {"slug": "s9", "fields": {"type": "source"}}, today="2026-06-13")
+    path = vault / "Sources" / "s9.md"
+    path.write_text(
+        "\n".join(line for line in path.read_text().splitlines() if not line.startswith("reading:"))
+        + "\n"
+    )
+
+    upsert(SOURCE, vault, {"slug": "s9", "fields": {"title": "T"}}, today="2026-06-20")
+
+    fm = _fm(vault, "Sources/s9.md")
+    assert "reading" not in fm
+    assert fm["title"] == "T"
+
+
 def test_source_update_preserves_human_fields(vault: Path) -> None:
     upsert(
         SOURCE,

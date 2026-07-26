@@ -72,11 +72,27 @@ def test_collision_exits_nonzero(
     assert json.loads(capsys.readouterr().out)["status"] == "collision"
 
 
-def test_bad_input_and_usage(vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bad_input_and_usage(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stderr line says which refusal it was, so the agent knows what to fix.
     assert _run(["write", "--type", "source", "--vault", str(vault)], "not json", monkeypatch) == 2
+    assert "not valid JSON" in capsys.readouterr().err
     assert (
         _run(["write", "--type", "source", "--vault", str(vault)], '{"no":"slug"}', monkeypatch)
         == 2
     )
+    assert "'slug' key" in capsys.readouterr().err
+    # A content key the writer cannot read would otherwise land an empty note,
+    # reported as written — and for a Kindle book the body is the write. The
+    # same refusal `kboat-repos write` makes, since the two are one contract.
+    bad_fields = json.dumps({"slug": "s1", "fields": "oops"})
+    assert _run(["write", "--type", "source", "--vault", str(vault)], bad_fields, monkeypatch) == 2
+    assert "'fields' must be a JSON object" in capsys.readouterr().err
+    bad_body = json.dumps({"slug": "B1", "fields": {"type": "kindle"}, "body": ["a quote"]})
+    assert _run(["write", "--type", "kindle", "--vault", str(vault)], bad_body, monkeypatch) == 2
+    assert "'body' must be a string" in capsys.readouterr().err
+    assert not (vault / "Sources" / "s1.md").exists()
+    assert not (vault / "Kindles" / "B1.md").exists()
     assert main([]) == 0  # bare usage
     assert main(["bogus"]) == 2  # unknown subcommand

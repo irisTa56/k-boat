@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from kboat.frontmatter import parse_frontmatter
+import pytest
+import yaml
+
+from kboat.frontmatter import parse_flow_list, parse_frontmatter, yaml_list
 from kboat.schema import REPO, SOURCE, Field, Kind
 from kboat.write import build_note, render_field
 
@@ -22,10 +25,110 @@ def test_render_field_by_kind() -> None:
     assert render_field(None, "x") == "x"  # unknown field → plain scalar
 
 
+@pytest.mark.parametrize(
+    ("value", "why"),
+    [
+        ("agents: tooling", "a plain string is no sequence at all"),
+        ('[a, "b]', "an unclosed quote"),
+        ("[a, [b]", "a nested collection commas cannot be split on"),
+        ("[{a]", "likewise a mapping"),
+        ("[a: b, c]", "a mapping entry, which needs no braces inside a sequence"),
+        ("[a:]", "likewise a mapping key with nothing after it"),
+        ('["a":b]', "likewise a quoted key, where the `:` needs no space either"),
+        ('["a" trailing]', "a quoted scalar is its whole item, so nothing may follow it"),
+    ],
+)
+def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why: str) -> None:
+    # A value that carries its own syntax into the block costs the whole note —
+    # the frontmatter stops parsing and Obsidian drops it from every Base. Read
+    # as a scalar, a wrong-typed value costs only its own field.
+    note = build_note(REPO, {"type": "repo", "title": "r", "topics": value})
+
+    assert parse_frontmatter(note)["topics"] == value, why
+    assert yaml.safe_load(note.split("---\n")[1])["topics"] == value, why
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "why"),
+    [
+        ("[a, b]", ["a", "b"], "the plain shape the reader hands back"),
+        ("  [a, b]  ", ["a", "b"], "edge whitespace would otherwise be spliced in bare"),
+        ("[a,\nb]", ["a", "b"], "a second line, re-rendered onto one"),
+        ('["a, b", plain]', ["a, b", "plain"], "a quoted item holding the separator"),
+        (
+            "['it''s, ok', ai]",
+            ["it's, ok", "ai"],
+            "a single-quoted item escapes its quote by doubling it, so `''` is a character",
+        ),
+        (
+            "[Moore's law, ai]",
+            ["Moore's law", "ai"],
+            "an apostrophe mid-item is a character, not the start of a quoted scalar",
+        ),
+        ("[a, b,]", ["a", "b"], "a trailing comma closes the last item, it does not open one"),
+        (
+            "[https://x.com/y, z]",
+            ["https://x.com/y", "z"],
+            "a colon with nothing after it is part of the scalar, not a mapping",
+        ),
+        ("[a\tb]", ["a\tb"], "a tab is a flow special, so the item comes back quoted"),
+        ("[a #b]", ["a #b"], "likewise a comment marker"),
+        ("[- a]", ["- a"], "likewise a leading indicator"),
+        ("[]", [], "an empty sequence stays one"),
+    ],
+)
+def test_a_flow_sequence_is_read_back_and_re_rendered(
+    value: str, expected: list[str], why: str
+) -> None:
+    # Re-rendering rather than passing the source through is what puts every
+    # item through `yaml_list`'s quoting, whatever the string it arrived in.
+    note = build_note(REPO, {"type": "repo", "title": "r", "topics": value})
+
+    assert yaml.safe_load(note.split("---\n")[1])["topics"] == expected, why
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        ['say "hi"', "plain"],
+        ["back\\slash", "ends with a backslash\\"],
+        ["a, b", "c"],
+        ["col\tumn", "line\none"],
+        ["[bracketed]", "{braced}"],
+        ["true", "42", "- dash", "# hash"],
+    ],
+)
+def test_parse_flow_list_inverts_yaml_list(items: list[str]) -> None:
+    # `parse_flow_list` is only safe to re-render through `yaml_list` because it
+    # is that function's inverse — including over the escaping `_quote` applies.
+    assert parse_flow_list(yaml_list(items)) == items
+
+
 def test_block_list_is_multiline() -> None:
     note = build_note(SOURCE, {"type": "source", "title": "T", "topics": ["a", "b"]})
     assert "topics:\n  - a\n  - b" in note
     assert parse_frontmatter(note)["topics"] == ["a", "b"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "why"),
+    [
+        ("[a, b]", ["a", "b"], "an inline list re-read as its source becomes the block form"),
+        ("ai", "ai", "a plain string has no items, so it stays the value it is"),
+        (5, "5", "likewise anything else that is not a list"),
+        (None, [], "None is the absent value the empty list stands for"),
+        ("", [], "so is a blank string, which has nothing to preserve"),
+        ("   ", [], "likewise one that is only whitespace"),
+    ],
+)
+def test_a_block_list_field_never_erases_what_it_was_given(
+    value: object, expected: object, why: str
+) -> None:
+    # `[]` for a value that is not a list would report a write that threw the
+    # value away. A wrong-typed one is left for `kboat-validate` to report.
+    note = build_note(SOURCE, {"type": "source", "title": "T", "topics": value})
+
+    assert parse_frontmatter(note)["topics"] == expected, why
 
 
 def test_inline_list_is_flow_style() -> None:

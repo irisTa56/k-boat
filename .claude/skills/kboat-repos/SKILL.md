@@ -28,7 +28,8 @@ Given a GitHub repository URL (from `kboat-ingest` routing, or pasted by the use
    - `role` — one of the closed 6-value enum.
    - `domain` — 1–3 values from the controlled 14-word vocabulary; prefer existing values, fold neighbours rather than invent.
    - `summary` — one or two plain Japanese sentences (what it is, who it is for; no marketing language).
-3. **Write** via the package: take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`). The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's `## Notes` body / `reading` / `added_date` on update — none of which the agent should hand-assemble. It prints `{status: created|updated|collision, ...}`; a `collision` (the slug is held by a different `url`) is written nowhere — report it and stop.
+3. **Write** via the package: take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`). The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble. It prints `{status: created|updated|collision, ...}`; a `collision` (the slug's `url` cannot be shown to be this repo) is written nowhere — report it and stop.
+   A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
 This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
 
@@ -44,6 +45,6 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
 Detect and report; do not work around.
 
 - During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `source-file`, or `error-meta` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes). The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path; `error-meta` writes nothing, so report it and keep the queue file for retry.
-- `write` returned `status: collision` (the slug is held by a different `url`). Nothing was written; report it — deterministic, needs a human.
+- `write` returned `status: collision` — the slug is held by a different `url` (`reason: identity_differs`), or by one in a shape the reader cannot compare (`reason: unreadable_identity`, a hand-edited note to repair). Nothing was written; report the reason — deterministic, needs a human.
 - `refresh` `failed` entries (a `gh` error per repo), `rename_collisions` (a rename blocked by an existing note), and `adopted` (renames healed) — surface them; never delete.
 - `gh` not authenticated. Stop and report rather than producing empty records.

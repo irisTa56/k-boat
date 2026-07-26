@@ -9,8 +9,8 @@ renderer live here once rather than in three copies.
 The reader is a focused scanner, not a full YAML parser: it pulls top-level
 `key: value` scalars and top-level block lists (`key:` then indented `- item`
 lines), and an inline `key: []` empty list. Inline non-empty flow lists
-(`key: [a, b]`) parse as the raw string — no current consumer reads one back as a
-list (repos overwrites them, sources use block lists). Because the scanner
+(`key: [a, b]`) parse as the raw string; a writer handed one back reads its items
+with `parse_flow_list` rather than splicing the source in. Because the scanner
 decodes less than it reads, `parse_entries` hands back every entry's verbatim
 source alongside the value — a whole-note writer puts back what it is not
 changing rather than re-rendering it out of a lossy read, which is the only way
@@ -31,7 +31,7 @@ affected such pathological values.)
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 _KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(.*)$")
@@ -464,8 +464,93 @@ def yaml_scalar(value: object) -> str:
     return _quote(text) if _needs_quote(text) else text
 
 
-def yaml_list(items: list[object] | None) -> str:
+def yaml_list(items: Sequence[object] | None) -> str:
     if not items:
         return "[]"
     rendered = [_quote(s) if _needs_quote_flow(s) else s for s in (str(x) for x in items)]
     return "[" + ", ".join(rendered) + "]"
+
+
+def parse_flow_list(text: str) -> list[str] | None:
+    """The items of an inline `[a, b]` sequence, or None when `text` is not one.
+
+    The inverse of `yaml_list`, for a writer handed an inline list as the raw
+    source the reader returns for one. Reading it back into items is what lets
+    the value be re-emitted through `yaml_list`, which is the only thing that
+    knows how to quote a flow item — a string spliced in as-is carries whatever
+    syntax it holds into the frontmatter, and one such value costs the whole
+    block rather than its own field.
+
+    Splitting is quote-aware, since a quoted item may hold the separator — and
+    a quote counts as one only where an item can begin, the same rule
+    `_scan_value` follows and for the same reason: the apostrophe in
+    `[Moore's law, ai]` is a character, not the start of a quoted scalar.
+
+    None where the text is not a sequence this can read whole — an unclosed
+    quote, a nested collection, an item that is a mapping entry (`[a: b]`, which
+    needs no braces to be one) — so the caller has a value to quote rather than
+    a shape invented for it.
+    """
+    stripped = text.strip()
+    if not (stripped.startswith("[") and stripped.endswith("]")):
+        return None
+    inner = stripped[1:-1]
+    if not inner.strip():
+        return []
+    items: list[str] = []
+    current: list[str] = []
+    quote = ""
+    escaped = False
+    fresh = True  # whether an item can begin here, so a quote would open one
+    colon = False  # an unquoted `:`, whose next character decides what it is
+    closed = False  # a quoted scalar just ended, so only a separator may follow
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        i += 1
+        if quote:
+            # A single-quoted scalar escapes its own quote by doubling it, so a
+            # `''` is a character and not the end of the item — the same rule
+            # `_unquote` reverses, and the two have to agree or a comma inside
+            # the item splits it.
+            if quote == "'" and ch == "'" and inner[i : i + 1] == "'":
+                current.append("''")
+                i += 1
+                continue
+            current.append(ch)
+            if escaped:
+                escaped = False
+            elif quote == '"' and ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote, closed = "", True
+            continue
+        if colon and (ch.isspace() or ch == ","):
+            # `a: b` is a mapping entry, which YAML writes inside a sequence
+            # without braces — so the `[]{}` check below never sees it.
+            return None
+        if closed and not (ch.isspace() or ch == ","):
+            # A quoted scalar is the whole of its item, so anything but a
+            # separator after it says the item is something else: `"a":b` is
+            # that mapping again, with no space to give it away.
+            return None
+        colon = ch == ":"
+        if ch in "[]{}":
+            return None  # a nested collection; splitting on commas would mangle it
+        if ch == ",":
+            items.append("".join(current))
+            current, fresh, closed = [], True, False
+            continue
+        current.append(ch)
+        if ch in "\"'" and fresh:
+            quote, fresh = ch, False
+        elif not ch.isspace():
+            fresh = False
+    if quote or colon:  # a trailing `:` is a mapping key with nothing after it
+        return None
+    items.append("".join(current))
+    # A trailing comma closes the last item rather than opening another, so the
+    # empty tail it leaves is not an item the note holds.
+    if len(items) > 1 and not items[-1].strip():
+        items.pop()
+    return [_unquote(item) for item in items]

@@ -34,10 +34,10 @@ def test_booleans_are_never_empty_ok() -> None:
                 assert not f.empty_ok and f.present, f"{schema.type}.{f.name}"
 
 
-def test_repo_writer_emits_schema_field_order() -> None:
-    # The order now lives only in the schema; the writer reads it.
+def test_build_note_emits_schema_field_order() -> None:
+    # The order lives only in the schema; the writer reads it.
     from kboat.frontmatter import parse_frontmatter
-    from kboat.repos.notes import build_repo_note
+    from kboat.write import build_note
 
     def sample(f: Field) -> object:
         if f.kind is Kind.BOOL:
@@ -50,5 +50,5 @@ def test_repo_writer_emits_schema_field_order() -> None:
             return f.enum[0]
         return "x"
 
-    note = build_repo_note({f.name: sample(f) for f in REPO.fields})
+    note = build_note(REPO, {f.name: sample(f) for f in REPO.fields})
     assert list(parse_frontmatter(note).keys()) == list(REPO.field_names())

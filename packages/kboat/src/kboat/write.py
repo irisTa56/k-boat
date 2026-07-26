@@ -20,6 +20,7 @@ from kboat.frontmatter import (
     continues_previous,
     names_key,
     parse_entries,
+    parse_flow_list,
     yaml_list,
     yaml_scalar,
 )
@@ -31,8 +32,9 @@ def render_field(field: Field | None, value: object) -> str:
     """Render one value to its inline YAML text, by the field's kind.
 
     An unknown field (`None`) falls back to a plain scalar. This always returns a
-    single line: a block list is rendered multi-line by `build_note`, not here, so
-    `render_field` only sees inline-style lists.
+    single line: a block list's items are laid out by `build_note`, and a block
+    field reaches here only for a value with no items to lay out, which renders
+    as the scalar it is.
     """
     if field is None:
         return yaml_scalar(value)
@@ -45,11 +47,21 @@ def render_field(field: Field | None, value: object) -> str:
     if field.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return yaml_list(list(value))
-        # An inline list re-read from a note parses as its raw `[a, b]` string;
-        # pass it through unchanged rather than dropping it to `[]`.
+        # `None` and a blank string say the field holds nothing, which for a
+        # list is the empty one — there is no content here to preserve.
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return yaml_list([])
+        # An inline list re-read from a note comes back as its raw `[a, b]`
+        # source. Read it and re-render rather than pass it through, so what
+        # reaches the note has been through the one renderer that knows how to
+        # quote a flow item.
         if isinstance(value, str):
-            return value
-        return yaml_list([])
+            items = parse_flow_list(value)
+            return yaml_list(items) if items is not None else yaml_scalar(value)
+        # Anything else is a value the field cannot hold, and `[]` would report
+        # a write that erased it. Rendered as the scalar it is, it stays valid
+        # YAML and reaches `kboat-validate` as the wrong type it is.
+        return yaml_scalar(value)
     return yaml_scalar(value)
 
 
@@ -61,11 +73,24 @@ def _scalar_line(name: str, rendered: str) -> str:
     return f"{name}: {rendered}" if rendered else f"{name}:"
 
 
-def _block_list_lines(name: str, value: object) -> list[str]:
-    items = list(value) if isinstance(value, list) else []
-    if not items:
-        return [f"{name}: []"]  # an empty list stays a list (re-reads as [], not None)
-    return [f"{name}:"] + [f"  - {yaml_scalar(item)}" for item in items]
+def _block_list_lines(field: Field, value: object) -> list[str]:
+    """A block list's lines: `key:`, then one `- item` each.
+
+    A string holding an inline sequence is read into its items and laid out —
+    the reader hands an inline list back that way, and the note's own style is
+    what decides the shape it is written in. Anything else has no items to lay
+    out and goes back to the single-line rendering rather than to `[]`, the
+    same rule `render_field` keeps: a write that reports success while erasing
+    what it was given is the worse outcome either way.
+    """
+    if not isinstance(value, list):
+        items = parse_flow_list(value) if isinstance(value, str) else None
+        if items is None:
+            return [_scalar_line(field.name, render_field(field, value))]
+        value = items
+    if not value:
+        return [f"{field.name}: []"]  # an empty list stays a list (re-reads as [], not None)
+    return [f"{field.name}:"] + [f"  - {yaml_scalar(item)}" for item in value]
 
 
 def build_note(
@@ -103,7 +128,7 @@ def build_note(
     for f in schema.fields:
         if f.name in fields:
             if f.kind is Kind.STR_LIST and f.list_style == "block":
-                lines.extend(_block_list_lines(f.name, fields[f.name]))
+                lines.extend(_block_list_lines(f, fields[f.name]))
             else:
                 lines.append(_scalar_line(f.name, render_field(f, fields[f.name])))
         elif f.name in last:

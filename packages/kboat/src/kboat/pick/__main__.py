@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import date
 from pathlib import Path
+
+from kboat.cli import add_today_argument, add_vault_argument, vault_path
 
 from .candidates import candidate_from, is_active_web
 from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_daily_notes
@@ -111,22 +112,14 @@ def main(argv: list[str] | None = None) -> int:
         prog="kboat-pick",
         description="Daily-pick mechanics: gather the interest signals (recent Daily notes + open-questions backlog) and web candidates, and set the picked flag.",
     )
-    parser.add_argument(
-        "--vault",
-        default=os.environ.get("OBSIDIAN_VAULT_PATH"),
-        help="Obsidian vault root (defaults to $OBSIDIAN_VAULT_PATH).",
-    )
+    add_vault_argument(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_cand = sub.add_parser(
         "candidates",
         help="Print the interest signals (Daily-note bodies + open-questions backlog) and the active web inbox as JSON.",
     )
-    p_cand.add_argument(
-        "--today",
-        default=date.today().isoformat(),
-        help="Override today's date (YYYY-MM-DD); for testing and reproducibility.",
-    )
+    add_today_argument(p_cand)
     p_cand.add_argument(
         "--lookback-days",
         type=int,
@@ -148,17 +141,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if not args.vault:
-        parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
-    vault = Path(args.vault).expanduser()
+    vault = vault_path(parser, args)
     if not (vault / "Sources").is_dir():
         parser.error(f"no Sources/ directory under vault: {vault / 'Sources'}")
 
     if args.command == "candidates":
-        try:
-            today = date.fromisoformat(args.today)
-        except ValueError:
-            parser.error(f"--today must be YYYY-MM-DD, got {args.today!r}")
+        today = date.fromisoformat(args.today)
         if args.lookback_days < 0:
             parser.error(f"--lookback-days must be >= 0, got {args.lookback_days}")
         output = _cmd_candidates(vault, today, args.lookback_days)

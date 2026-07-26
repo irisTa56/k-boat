@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from kboat.frontmatter import Value
+from kboat.frontmatter import Value, parse_flow_list
 from kboat.schema import BY_TYPE, Field, Kind, NoteSchema
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -53,9 +53,13 @@ def _kind_violation(f: Field, value: Value) -> str | None:
     if f.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return None
-        # An inline list (`topics: [a, b]`) parses as its raw string — accept it.
+        # An inline list (`topics: [a, b]`) parses as its raw string — accept it
+        # when that string really is a sequence, which is the same question the
+        # writer asks before re-rendering one. A string that is not is the wrong
+        # type, and this is the only place it shows: the writer keeps such a
+        # value rather than erasing it, precisely so it is reported here.
         if isinstance(value, str) and f.list_style == "inline":
-            return None
+            return None if parse_flow_list(value) is not None else "not_list"
         return "not_list"
     return None if isinstance(value, str) else "not_str"  # Kind.STR
 
