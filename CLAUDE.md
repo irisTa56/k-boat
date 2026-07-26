@@ -56,7 +56,7 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 ## Architecture (K-Boat)
 
 The product skills live at the repo-root `.claude/skills/`.
-The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
+The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
 The eight K-Boat skills:
 
 - `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `kboat-vault-conventions` for the shared mechanics. Read it before touching any note format.
@@ -86,6 +86,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 - Concept-note facet tags come from a controlled vocabulary (`meta/Tag vocabulary` in the KB), reuse-first at write time. `kboat-distill` enforces reuse (prevention); `kboat-curate` is the on-demand drift sweep (detection).
 - A Kindle book (`type: kindle`, ASIN-keyed) and a GitHub repo (`type: repo`, URL-hash-named) are parallel simpler kinds — no notebook, distilled-from-note-body (Kindle) or never distilled (repo).
 - The Sources, Kindle, and Repos Bases filter only on plain booleans or `source_type ==` — never `!=` over a possibly-missing property or a date-emptiness test — which is why those booleans are written on every note.
+- Every vault write goes through `kboat.io_utils.atomic_write_text` (temp file, `fsync`, `os.replace`, directory `fsync`), and every mutating run holds `kboat.lock.vault_lock` over `<vault>/.kboat.lock` so two runs cannot interleave. A K-Boat CLI refuses a held vault at once with a `{status: "locked", holder}` record and a non-zero exit; feed-filter waits a bounded few seconds instead, because it writes one note per process. A read-only command takes no lock. A crashed run's lock is taken over as soon as the pid it names is gone; the one-hour stale window covers only a lock whose record is not yet readable. A lock that cannot be created at all is a different outcome — reported with an empty stdout and no `locked` record, and not self-healing. Spec in `kboat-vault-conventions` "Durability and the vault lock", including what sits outside both mechanics.
 
 Automation:
 
@@ -109,7 +110,7 @@ Automation:
 
 ## Keep this file current
 
-The shared vault mechanics (naming, the schema/validate/write contract, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
+The shared vault mechanics (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
 When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.

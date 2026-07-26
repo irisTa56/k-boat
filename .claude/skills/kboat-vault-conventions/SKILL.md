@@ -79,6 +79,52 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
 
 The merge rule gives a member a clean **resurrection** idiom: to re-surface a note it force-writes the fields it owns (e.g. a status boolean back to `false`) while omitting the fields a human owns, so the human's values survive the update.
 
+## Durability and the vault lock
+
+More than one writer runs against the vault, all on one Mac: the daily K-Boat routine, a feed-filter or forum run, and a human running a `kboat-*` command or editing in Obsidian.
+Two mechanics keep the writers that go through the tools from losing each other's work; both live in the `kboat` library, so both cover exactly those writes and "What is outside" below names the rest.
+Both also take the **vault root as a precondition**: a tool creates the folders inside it, never the vault itself, so a mis-typed `--vault` or a misresolved `$OBSIDIAN_VAULT_PATH` is reported rather than grown into a second, empty vault that Obsidian never reads.
+
+**Every write the tools make is durable and atomic.**
+Content goes to a sibling temp file in the same directory, is flushed and `fsync`ed, is renamed into place with `os.replace`, and the parent directory is `fsync`ed after the rename.
+The rename is one atomic syscall, so a crash mid-write never leaves a truncated note behind and the iCloud daemon never picks up a half-written one; the two `fsync`s carry that past a process crash to a power loss, which would otherwise find the rename recorded with the content still in the page cache.
+Every write the library makes goes through `kboat.io_utils.atomic_write_text` — the schema-driven note writer, the in-place frontmatter rewrites, and feed-filter's own config write alike.
+A raise from it always means nothing was written, which is what lets every caller report a failure or leave an entry for the next run; the directory `fsync` runs after the rename has landed, so its own failure is swallowed rather than allowed to contradict that.
+An existing file's permissions survive a rewrite; a file the writer *creates* gets the temp file's own mode (`0o600`), since choosing one would mean overriding the caller's umask.
+
+**Every mutating run of the tools holds the vault lock.**
+Durability alone does not stop two runs from interleaving: each write lands whole, but a run that read a note before another run rewrote it silently overwrites that rewrite when it writes its own version back.
+So a process about to mutate the vault takes `kboat.lock.vault_lock(vault)` — a vault-wide mutual exclusion held as `<vault>/.kboat.lock`, a JSON `{pid, started}` record created with `O_CREAT | O_EXCL` — and releases it on the way out, including on an exception.
+It is vault-wide rather than per-note so no writer has to know which folders another touches; a lock scoped to the folders each writer uses today would have to be re-derived every time a note type moved.
+Each tool holds it across its own read as well as its own writes, because a plan computed before another run's writes would act on notes that no longer call for it.
+
+**A crashed run's lock is taken over**, with a warning on stderr, and **the pid decides**: a lock naming a process that no longer exists is a leftover, cleared at once whatever its age.
+That is what keeps an interrupted run — a killed routine, a Ctrl-C at the keyboard — from making the vault unwritable until a timer expires.
+Age is not a second opinion, because it cannot tell a crashed holder from a *suspended* one (this vault lives on a laptop that sleeps, and an mtime keeps advancing while a process sits frozen), so a live pid always wins over any age; the one-hour window covers only the moment between a lock's creation and its record landing, where an unreadable record means "still being written".
+The cost is a pid recycled by an unrelated process, which makes a leftover look held until a human removes `<vault>/.kboat.lock` — identifiable from the refusal itself, where a `holder.age_s` of hours with a live `pid` means either a run wedged that long or a recycled pid.
+Nothing detects that automatically; what surfaces it is the same refusal appearing in run summary after run summary.
+
+**What the lock does not try to prevent.** Two writers can judge one leftover lock in the same instant and both clear it, and then both write.
+Nothing closes that, because there is no third writer here and none on another host, so its whole cost is one lost note write that the next daily run recomputes and redoes.
+Machinery to close it buys a deferred write and brings failure modes of its own; the lock defends the cases whose cost is *not* a deferred write — a killed run wedging the vault, a refusal naming the wrong process, a release deleting a lock that is no longer its own.
+
+- **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-pick candidates`, `kboat-queue list`, `kboat-validate`, and `kboat-recall`'s search all read a vault another run is writing.
+- **A refused K-Boat CLI reports and stops.** It prints `{"status": "locked", "holder": {…}}` on stdout **in place of** its usual output, names the holding process on stderr, and exits non-zero without writing anything. A caller reads that record instead of the keys it came for, so it reports the refusal and ends that step rather than parsing on — that step, not a routine around it, whose later phases make their own attempts. The move is to re-run once the holding run finishes. A refusal belongs in the run summary rather than a notification, since the next run recovers on its own.
+- **feed-filter waits instead.** The asymmetry turns on what a refusal costs each side: feed-filter's unit is one entry per process, so a refusal drops that entry until the next gather rediscovers it, while a K-Boat phase's work survives being deferred — the dispositions, the cooldown clock and the queue are all still on disk and every phase is idempotent. The other half of the reason is that a `kboat-*` CLI is also a command a human runs, and one that pauses without saying why is worse than one that stops and names who has the vault. Only an expired wait fails feed-filter's write, and its never-lost contract then carries the entry.
+- **A whole pass can be one hold.** `kboat-repos refresh` keeps the lock across its `gh` fetch as well as its rewrites, rather than being reshaped to hold only the writes. A feed-filter entry written during that pass can therefore exhaust its wait and be deferred to the next gather — a deferred write, which is what this vault trades away freely.
+- **A lock that cannot be taken at all is not a refusal.** An unwritable vault root, a denied iCloud tree, or a full disk is reported as `vault lock unavailable: …` on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for. Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop. How an unattended run raises that belongs to the scheduled-task prompt, not here.
+
+**What is outside.**
+The unit these mechanics protect is one tool invocation writing one file's contents, and five things sit outside it.
+
+- **A file an agent writes itself**, rather than through a `kboat` tool: the distillation review report in `Reviews/`, a rescued source's PDF in `PDFs/`, and the deletion of a drained `Queue/` capture. No tool holds the lock on their behalf, and in the routine each belongs to one phase of one run.
+- **A change that spans two files.** Each write is atomic on its own; a pair of them is not. `kboat-repos refresh` adopting a rename writes the new note and then unlinks the old one, so a crash in between leaves both — reported by the next run's `kboat-validate` as two notes for one repo, for a human to merge.
+- **Anything attached to a note's inode rather than its contents.** The atomic write renames a new file over the old one, so a rewrite preserves the note's permissions and nothing else: extended attributes, ACLs, a per-file `com.apple.macl` grant and the creation date all belong to the replaced inode, and a Finder tag on a note the routine rewrites daily will not last. A stray `<name>.md.<random>.tmp` is the same story from the other side — the cleanup runs on an exception, not on a `SIGKILL`, and no scanner globs it because they all read `*.md`.
+- **A note saved in Obsidian while a run is writing.** Obsidian holds no lock and writes its own way, and `kboat-lifecycle` and `kboat-pick set` rewrite a whole note, so a hand-edit saved in the same moment loses one side or the other. The remedy is not a mechanism: do not hand-edit notes during a run, and the daily routine runs while nobody is at the keyboard.
+- **The judgement an agent forms between its own read and the write it then asks for.** An agent reads a source note, decides a `summary` or a disposition from it, and calls `kboat-note write` some time later; the writer re-reads the note under the lock, so the body, the human's `reading` checkbox, and every field the record omits survive — but a field the record *does* carry overwrites whatever changed in that gap. It is the one lost update the lock does not close, narrowed to the fields one write names.
+
+Closing the agent-level ones would mean exposing acquire and release as a tool of their own, for an agent to hold around a whole phase.
+
 ## Base-authoring discipline
 
 A [Base](https://help.obsidian.md/bases) is a saved view over the vault's notes; how its filters are written decides whether it stays complete.
