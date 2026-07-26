@@ -64,21 +64,20 @@ class FrontmatterError(ValueError):
 _LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
 
 
-def split_lines(text: str) -> list[str]:
-    """`text` split into lines, dropping the empty tail a final break leaves.
+def _split_newline(line: str) -> tuple[str, str]:
+    """A line from `_lines_keepends`, split from its own terminator.
 
-    Shared with the note writer so that where a line ends is one rule across the
-    pair — the reader and the writer disagreeing about it is how a value ends up
-    read as two things.
+    All three terminators, because a rewriter puts back what it took off: drop a
+    lone `\\r` here and the rewritten line would run into the one below it.
     """
-    parts = _LINE_BREAK_RE.split(text)
-    if parts and parts[-1] == "":
-        parts.pop()
-    return parts
+    for ending in ("\r\n", "\n", "\r"):
+        if line.endswith(ending):
+            return line[: -len(ending)], ending
+    return line, ""
 
 
 def _lines_keepends(text: str) -> list[str]:
-    """`split_lines`, with each line's own terminator still on it."""
+    """`text` split into lines, each with its own terminator still on it."""
     out: list[str] = []
     start = 0
     for match in _LINE_BREAK_RE.finditer(text):
@@ -87,6 +86,17 @@ def _lines_keepends(text: str) -> list[str]:
     if start < len(text):
         out.append(text[start:])
     return out
+
+
+def split_lines(text: str) -> list[str]:
+    """`text` split into lines, without their terminators.
+
+    Derived from `_lines_keepends` rather than restated, and shared with the note
+    writer, so that where a line ends is one rule and not three that agree by
+    inspection — two readers of this vault disagreeing about it is how a value
+    ends up read as two things.
+    """
+    return [_split_newline(line)[0] for line in _lines_keepends(text)]
 
 
 # --------- reading ---------
@@ -190,18 +200,6 @@ def _fence_bounds(lines: list[str]) -> tuple[int, int]:
         if lines[i].strip() == "---":
             return 1, i
     raise FrontmatterError("frontmatter block is not closed by a '---' fence")
-
-
-def _split_newline(line: str) -> tuple[str, str]:
-    """A line from `_lines_keepends`, split from its own terminator.
-
-    All three terminators, because a rewriter puts back what it took off: drop a
-    lone `\\r` here and the rewritten line would run into the one below it.
-    """
-    for ending in ("\r\n", "\n", "\r"):
-        if line.endswith(ending):
-            return line[: -len(ending)], ending
-    return line, ""
 
 
 def _scan_value(text: str) -> tuple[str, int]:
@@ -502,13 +500,15 @@ _YAML_NUMBER_RE = re.compile(r"^[+-]?(\d[\d_]*\.?[\d_]*|\.\d[\d_]*)([eE][+-]?\d+
 # are only checked at position 0 (see `_needs_quote`).
 _LEADING_INDICATORS = "-?:,[]{}#&*!|>@%`\"'"
 # In a *flow* context (an inline `[a, b]` list item) these are special anywhere,
-# not just at the start, so a list item carrying one must be quoted.
-_FLOW_SPECIAL = ":,?#&*!|>'\"%@`[]{}\t\n\r"
+# not just at the start, so a list item carrying one must be quoted. The
+# characters that may not stand for themselves at all are `is_unprintable`'s,
+# asked separately so the two contexts cannot answer it differently.
+_FLOW_SPECIAL = ":,?#&*!|>'\"%@`[]{}"
 # The escapes `_quote` writes by name, for the characters that read best that way.
 _NAMED_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
 
-def _unprintable(char: str) -> bool:
+def is_unprintable(char: str) -> bool:
     """Whether `char` may not stand for itself inside a quoted scalar.
 
     The C0 and C1 control ranges plus the Unicode line and paragraph separators
@@ -529,7 +529,7 @@ def _quote(text: str) -> str:
     for char in text:
         if char in _NAMED_ESCAPES:
             body.append(_NAMED_ESCAPES[char])
-        elif _unprintable(char):
+        elif is_unprintable(char):
             code = ord(char)
             body.append(f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}")
         else:
@@ -553,7 +553,7 @@ def _needs_quote(text: str) -> bool:
         return True
     if ": " in text or " #" in text or text.endswith(":"):
         return True
-    return any(_unprintable(c) for c in text)
+    return any(is_unprintable(c) for c in text)
 
 
 def _needs_quote_flow(text: str) -> bool:
@@ -565,18 +565,18 @@ def _needs_quote_flow(text: str) -> bool:
         return True
     if text[0] == "-":
         return True
-    return any(c in text for c in _FLOW_SPECIAL)
+    return any(c in _FLOW_SPECIAL or is_unprintable(c) for c in text)
 
 
-# A text every YAML reader reads back as the integer it spells. ASCII-only
-# because YAML's own int resolver is (an Arabic-Indic digit passes `isdigit` and
-# reads back as a string), and no leading zero because YAML 1.1 reads `010` as
-# octal — a note is read by kboat's scanner, by Obsidian, and by whatever else
-# opens the vault, so "an integer" has to mean the same thing to all of them.
-_YAML_INT_RE = re.compile(r"^-?(0|[1-9][0-9]*)$", re.ASCII)
+# A text every YAML reader reads back as the integer it spells: ASCII digits
+# only, because YAML's own int resolver is (an Arabic-Indic digit passes
+# `isdigit` and reads back as a string), and no leading zero, because YAML 1.1
+# reads `010` as octal. A note is read by kboat's scanner, by Obsidian, and by
+# whatever else opens the vault, so "an integer" has to mean one thing to all.
+_YAML_INT_RE = re.compile(r"-?(0|[1-9][0-9]*)")
 
 
-_PLAIN_KEY_RE = re.compile(rf"^{_PLAIN_KEY}$")
+_PLAIN_KEY_RE = re.compile(_PLAIN_KEY)
 
 
 def is_plain_key(key: str) -> bool:
@@ -589,7 +589,7 @@ def is_plain_key(key: str) -> bool:
     would be written and then be unreadable — a property `kboat-validate` cannot
     see, on a note that reports itself as written.
     """
-    return bool(_PLAIN_KEY_RE.match(key))
+    return bool(_PLAIN_KEY_RE.fullmatch(key))
 
 
 def is_yaml_int(text: str) -> bool:
@@ -600,7 +600,7 @@ def is_yaml_int(text: str) -> bool:
     everywhere else). Two definitions would disagree somewhere, and the pair
     they disagree on is exactly a value written as valid and reported as not.
     """
-    return bool(_YAML_INT_RE.match(text))
+    return bool(_YAML_INT_RE.fullmatch(text))
 
 
 def yaml_scalar(value: object) -> str:

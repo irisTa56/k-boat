@@ -62,6 +62,7 @@ def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why:
         (True, "True", "a boolean is no integer, and bare it would read back as one"),
         ("007", "007", "a leading zero reads back as octal under YAML 1.1, so it is not one"),
         ("+7", "+7", "nor is a signed form the reader hands back as its own text"),
+        ("42\n", "42\n", "nor a number with a line break after it, bare a blank line in the block"),
         ("٧", "٧", "nor a digit outside ASCII, which YAML resolves as a string"),
     ],
 )

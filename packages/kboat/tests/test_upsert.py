@@ -722,6 +722,7 @@ def test_a_value_the_field_cannot_hold_still_settles(vault: Path) -> None:
         ("weird\n---\nkey", "one that would close the frontmatter fence early"),
         ("", "a name that is no name"),
         ("my-rating", "one outside the reader's grammar, so written and then unreadable"),
+        ("summary\n", "a newline at the very end, which a `$` anchor would have let through"),
     ],
 )
 def test_a_field_name_that_is_no_property_key_is_refused(vault: Path, key: str, why: str) -> None:
@@ -772,6 +773,8 @@ def test_a_line_break_inside_a_value_cannot_become_a_property(
     # line here (though not for YAML or Obsidian), so its tail arrived as a
     # property, overwriting the note's own `url` identity on an unattended run.
     hostile = f"a summary{break_char}url: https://evil/x{break_char}dismiss: true"
+    # No other flow special in the item, so quoting it is the break's own doing.
+    item = f"topic{break_char}tail"
     upsert(
         SOURCE,
         vault,
@@ -783,6 +786,8 @@ def test_a_line_break_inside_a_value_cannot_become_a_property(
                 "url": "https://real/a",
                 "source_type": "web_page",
                 "summary": hostile,
+                "topics": ["a", item],  # block style
+                "tags": ["a", item],  # inline style, quoted by the stricter rule
             },
         },
         today="2026-07-26",
@@ -791,7 +796,11 @@ def test_a_line_break_inside_a_value_cannot_become_a_property(
     text = (vault / "Sources" / "s7.md").read_text()
     fm = parse_frontmatter(text)
     assert fm["summary"] == hostile, why  # kept whole, in its own field
+    assert fm["topics"] == ["a", item], why  # and so is a list item, either style
     assert fm["url"] == "https://real/a", why  # the identity is untouched
     assert fm["dismiss"] is False, why  # and no disposition was invented
     # The note says the same to a reader that is not this one.
-    assert yaml.safe_load(text.split("---\n")[1])["url"] == "https://real/a", why
+    loaded = yaml.safe_load(text.split("---\n")[1])
+    assert loaded["url"] == "https://real/a", why
+    assert loaded["summary"] == hostile and loaded["topics"] == ["a", item], why
+    assert loaded["tags"] == ["a", item], why

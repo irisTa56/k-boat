@@ -10,6 +10,7 @@ from kboat.frontmatter import (
     body_after_frontmatter,
     parse_entries,
     parse_frontmatter,
+    set_field,
     strip_frontmatter,
     yaml_scalar,
 )
@@ -162,9 +163,18 @@ def test_strip_frontmatter_keeps_thematic_break_in_body() -> None:
     assert strip_frontmatter(text) == "intro\n\n---\n\nmore\n"
 
 
-def test_strip_frontmatter_handles_crlf() -> None:
-    text = "---\r\ntags: x\r\n---\r\nbody\r\n"
-    assert strip_frontmatter(text) == "body\r\n"
+@pytest.mark.parametrize("ending", ["\r\n", "\r"], ids=["crlf", "cr"])
+def test_a_note_written_with_another_line_ending_reads_and_rewrites_as_itself(
+    ending: str,
+) -> None:
+    # Each of YAML's three terminators, because a rewriter puts back what it took
+    # off: read one as no terminator at all and the rewritten line runs into the
+    # one below it, joining two properties into nonsense.
+    text = ending.join(["---", "tags: x", "n: 1", "---", "body", ""])
+
+    assert strip_frontmatter(text) == f"body{ending}"
+    assert parse_frontmatter(text)["tags"] == "x"
+    assert set_field(text, "n", "2") == text.replace("n: 1", "n: 2")
 
 
 def test_strip_frontmatter_tolerates_whitespace_around_fence() -> None:

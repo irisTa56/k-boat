@@ -19,6 +19,7 @@ from kboat.frontmatter import (
     body_after_frontmatter,
     continues_previous,
     is_plain_key,
+    is_unprintable,
     is_yaml_int,
     names_key,
     parse_entries,
@@ -275,10 +276,10 @@ def _empty_for(field: Field) -> object:
     return [] if field.kind is Kind.STR_LIST else None
 
 
-# One alphabet for a note's name: the characters Obsidian forbids in a filename
-# (the naming rule every note type follows), plus the separators and control
-# characters a filesystem or a terminal would read as something other than text.
-_NOT_IN_A_SLUG = re.compile(r'[/\\:*?"<>|\x00-\x1f\x7f]')
+# The characters Obsidian forbids in a filename — the naming rule every note
+# type follows. A character that may not stand for itself is refused too, by the
+# same predicate the renderer asks, so "a control character" is one rule here.
+_FORBIDDEN_IN_A_NAME = frozenset('/\\:*?"<>|')
 
 
 def _filename_slug(slug: object) -> str:
@@ -297,7 +298,8 @@ def _filename_slug(slug: object) -> str:
     # identifier for the note and comes back in the result, so a writer that
     # quietly wrote a different one would hand back a name for a file it did
     # not write.
-    if slug != slug.strip() or slug.startswith(".") or _NOT_IN_A_SLUG.search(slug):
+    unusable = any(c in _FORBIDDEN_IN_A_NAME or is_unprintable(c) for c in slug)
+    if slug != slug.strip() or slug.startswith(".") or unusable:
         raise BadInputError(f"record 'slug' is not a filename: {slug!r}")
     return slug
 
