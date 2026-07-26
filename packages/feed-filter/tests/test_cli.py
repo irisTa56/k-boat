@@ -68,8 +68,10 @@ def _out(capsys: pytest.CaptureFixture[str]) -> Any:
     return json.loads(capsys.readouterr().out)
 
 
-# The arguments `remind` requires, for a test whose subject is another flag.
-_REMIND_ARGS = ("--site-id", "f1", "--title", "T")
+def _remind_args(command: str) -> list[str]:
+    """What a note-writing subcommand requires, for a test about another flag."""
+    topic = ["--topic-id", "1234"] if command == "forum-remind" else []
+    return ["--site-id", "f1", "--title", "T", *topic]
 
 
 # --- discover -------------------------------------------------------------
@@ -1106,23 +1108,27 @@ def test_no_subcommand_errors() -> None:
     assert excinfo.value.code == 2  # argparse: required subcommand missing
 
 
+@pytest.mark.parametrize("command", ["remind", "forum-remind"])
 def test_the_today_hook_stamps_a_date_the_note_can_hold(
-    state_dir: Path, capsys: pytest.CaptureFixture[str]
+    command: str, state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `--today` is stamped into a Feeds/ note verbatim, so it goes through the
     # same validation as every other CLI reaching that writer. `20260719` is a
     # date `fromisoformat` reads and a vault date property is not, so it lands
     # canonicalised rather than as itself.
-    url = "https://e.example.com/canon"
-    assert cli.main(["remind", *_REMIND_ARGS, "--url", url, "--today", "20260719"]) == 0
+    url = f"https://e.example.com/canon-{command}"
+    assert cli.main([command, *_remind_args(command), "--url", url, "--today", "20260719"]) == 0
     capsys.readouterr()
     assert _feed_note_fm(url)["added_date"] == "2026-07-19"
 
 
-def test_the_today_hook_refuses_what_is_no_date(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("command", ["remind", "forum-remind"])
+def test_the_today_hook_refuses_what_is_no_date(
+    command: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     # And a value that is no date at all fails at parse time, before the vault.
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["remind", *_REMIND_ARGS, "--url", "https://e.example.com/x", "--today", "soon"])
+        cli.main([command, *_remind_args(command), "--url", "https://e.x/a", "--today", "soon"])
     assert excinfo.value.code == 2
     assert "YYYY-MM-DD" in capsys.readouterr().err
 

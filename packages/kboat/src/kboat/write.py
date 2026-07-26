@@ -18,6 +18,8 @@ from kboat.frontmatter import (
     Entry,
     body_after_frontmatter,
     continues_previous,
+    is_plain_key,
+    is_yaml_int,
     names_key,
     parse_entries,
     parse_flow_list,
@@ -35,13 +37,6 @@ class BadInputError(Exception):
     writable, so the caller's move is to fix the record and send it again. The
     CLI boundary (`kboat.cli`) maps it to its own exit code for exactly that.
     """
-
-
-# A value YAML reads back as the integer it was written from. `\d` is ASCII-only
-# here because YAML's own int resolver is: an Arabic-Indic digit renders bare
-# without breaking anything but reads back as a string, and the field would then
-# hold something other than what it emitted.
-_INT_RE = re.compile(r"^[+-]?\d+$", re.ASCII)
 
 
 def render_field(field: Field | None, value: object) -> str:
@@ -62,8 +57,9 @@ def render_field(field: Field | None, value: object) -> str:
         # An int is written bare, which is only safe while it is one: a value
         # carrying `: ` or a newline would take the whole frontmatter block out
         # of YAML rather than cost its own field. Quoted, it stays a scalar and
-        # reaches `kboat-validate` as the `not_int` it is.
-        return text if _INT_RE.match(text) else yaml_scalar(text)
+        # reaches `kboat-validate` as the `not_int` it is — the same predicate
+        # decides both, so the two cannot disagree about what a number is.
+        return text if is_yaml_int(text) else yaml_scalar(text)
     if field.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return yaml_list(list(value))
@@ -290,7 +286,11 @@ def _filename_slug(slug: object) -> str:
     """
     if not isinstance(slug, str) or not slug.strip():
         raise BadInputError("record 'slug' must be a non-empty string")
-    if slug.startswith(".") or any(c in slug for c in "/\\\x00"):
+    # Edge whitespace is refused rather than trimmed: the slug is the caller's
+    # identifier for the note and comes back in the result, so a writer that
+    # quietly wrote a different one would hand back a name for a file it did
+    # not write.
+    if slug != slug.strip() or slug.startswith(".") or any(c in slug for c in "/\\\x00"):
         raise BadInputError(f"record 'slug' is not a filename: {slug!r}")
     return slug
 
@@ -314,14 +314,22 @@ def upsert(
 
     A different `identity` value at an existing slug is a collision (never
     overwritten). Returns `{status, slug, path}`, or a `collision` record; a
-    record whose slug is no filename raises `BadInputError` and writes nothing.
+    record that does not say a note — a slug that is no filename, a field name
+    that is no property key — raises `BadInputError` and writes nothing.
     """
     slug = _filename_slug(record.get("slug"))
     fields_in = record.get("fields", {})
     provided: dict[str, object] = {}
     if isinstance(fields_in, Mapping):
         for k, v in fields_in.items():
-            provided[str(k)] = v
+            key = str(k)
+            # A value the writer cannot render is kept as a quoted scalar, which
+            # costs that field alone. A *name* has no such fallback: quoted, it
+            # is outside the reader's grammar and the property it writes can
+            # never be read back, so a record naming one is refused instead.
+            if not is_plain_key(key):
+                raise BadInputError(f"record field name is not a property key: {key!r}")
+            provided[key] = v
     body_in = record.get("body", "")
     rel = f"{DIR_BY_TYPE[schema.type]}/{slug}.md"
     path = vault / DIR_BY_TYPE[schema.type] / f"{slug}.md"

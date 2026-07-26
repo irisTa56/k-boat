@@ -158,6 +158,11 @@ def test_valid_kindle_and_repo() -> None:
     assert check_note("repo", repo, "p") == []
     assert "bad_enum" in _codes("repo", {**repo, "status": "ancient"})
     assert "not_int" in _codes("repo", {**repo, "stars": "lots"})
+    # What the writer had to quote is what this reports, and vice versa — one
+    # predicate decides both, so no value is written as valid and read as not.
+    for not_a_number in ("+42", "007", "٤٢", "4 2"):
+        assert "not_int" in _codes("repo", {**repo, "stars": not_a_number}), not_a_number
+    assert check_note("repo", {**repo, "stars": "-3"}, "p") == []
     assert "bad_date" in _codes("repo", {**repo, "last_commit": "2026-06-01T00:00:00Z"})
 
     # Repo cross-field: status must agree with the archived flag.

@@ -34,7 +34,8 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(.*)$")
+_PLAIN_KEY = r"[A-Za-z_][A-Za-z0-9_]*"
+_KEY_RE = re.compile(rf"^({_PLAIN_KEY}):(.*)$")
 
 Scalar = str | bool | None
 Value = Scalar | list[str]
@@ -453,6 +454,41 @@ def _needs_quote_flow(text: str) -> bool:
     if text[0] == "-":
         return True
     return any(c in text for c in _FLOW_SPECIAL)
+
+
+# A text every YAML reader reads back as the integer it spells. ASCII-only
+# because YAML's own int resolver is (an Arabic-Indic digit passes `isdigit` and
+# reads back as a string), and no leading zero because YAML 1.1 reads `010` as
+# octal — a note is read by kboat's scanner, by Obsidian, and by whatever else
+# opens the vault, so "an integer" has to mean the same thing to all of them.
+_YAML_INT_RE = re.compile(r"^-?(0|[1-9][0-9]*)$", re.ASCII)
+
+
+_PLAIN_KEY_RE = re.compile(rf"^{_PLAIN_KEY}$")
+
+
+def is_plain_key(key: str) -> bool:
+    """Whether `key` can be written in front of a `:` as the property it is.
+
+    The reader's own key grammar (`_KEY_RE`) with nothing after it, so what a
+    writer emits by this rule is exactly what the reader takes back out. That is
+    the point: a key holding a `:` or a newline would end the entry, or the
+    whole block, in the middle of itself, and one merely outside the grammar
+    would be written and then be unreadable — a property `kboat-validate` cannot
+    see, on a note that reports itself as written.
+    """
+    return bool(_PLAIN_KEY_RE.match(key))
+
+
+def is_yaml_int(text: str) -> bool:
+    """Whether `text` is an integer to every YAML reader, and so safe unquoted.
+
+    The one definition of "this field holds a number", shared by the writer
+    (which emits it bare only here) and the validator (which reports `not_int`
+    everywhere else). Two definitions would disagree somewhere, and the pair
+    they disagree on is exactly a value written as valid and reported as not.
+    """
+    return bool(_YAML_INT_RE.match(text))
 
 
 def yaml_scalar(value: object) -> str:

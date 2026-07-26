@@ -635,6 +635,7 @@ def test_source_body_survives_a_metadata_backfill(vault: Path) -> None:
         (".hidden", "a leading dot, which the vault does not show"),
         ("", "no name at all"),
         ("   ", "nor whitespace"),
+        (" a ", "a name the writer would have to change to write, and then misreport"),
         (None, "a record with no slug key reads as this one"),
         (7, "a slug that is not even text"),
     ],
@@ -647,6 +648,7 @@ def test_a_slug_that_is_no_filename_is_refused(vault: Path, slug: object, why: s
         upsert(SOURCE, vault, {"slug": slug, "fields": {"type": "source", "title": "T"}}, today="x")
 
     assert list(vault.rglob("*.md")) == [], why
+    assert list(vault.parent.glob("*.md")) == [], why  # nor outside it
 
 
 def test_a_slug_may_hold_a_dot_that_does_not_lead(vault: Path) -> None:
@@ -686,3 +688,41 @@ def test_a_value_the_field_cannot_hold_still_settles(vault: Path) -> None:
 
     assert path.read_text() == first
     assert yaml.safe_load(first.split("---\n")[1])["stars"] == "a: b"
+
+
+@pytest.mark.parametrize(
+    ("key", "why"),
+    [
+        ("a: b", "a name that would end the entry in the middle of itself"),
+        ("weird\n---\nkey", "one that would close the frontmatter fence early"),
+        ("", "a name that is no name"),
+        ("my-rating", "one outside the reader's grammar, so written and then unreadable"),
+    ],
+)
+def test_a_field_name_that_is_no_property_key_is_refused(vault: Path, key: str, why: str) -> None:
+    # A wrong value is quoted and costs its own field. A name has no such
+    # fallback — quoted, the property it writes is one the reader cannot decode
+    # and `kboat-validate` cannot see — so the record is refused whole.
+    with pytest.raises(BadInputError):
+        upsert(
+            SOURCE,
+            vault,
+            {"slug": "s9", "fields": {"type": "source", "title": "T", key: "v"}},
+            today="2026-07-25",
+        )
+
+    assert not (vault / "Sources" / "s9.md").exists(), why
+
+
+def test_a_hand_added_property_the_writer_would_refuse_still_survives_a_write(vault: Path) -> None:
+    # The refusal is about what a record may *name*, not about what the note may
+    # hold: a property the human wrote under a name of their own is carried back
+    # untouched, which is the whole point of re-rendering only what changes.
+    fields = {"type": "source", "title": "T", "url": "https://x", "source_type": "web_page"}
+    upsert(SOURCE, vault, {"slug": "s8", "fields": fields}, today="2026-07-25")
+    path = vault / "Sources" / "s8.md"
+    path.write_text(path.read_text().replace("---\ntype:", "---\nmy-rating: 4\ntype:", 1))
+
+    upsert(SOURCE, vault, {"slug": "s8", "fields": {"summary": "s"}}, today="2026-07-26")
+
+    assert "\nmy-rating: 4\n" in path.read_text()

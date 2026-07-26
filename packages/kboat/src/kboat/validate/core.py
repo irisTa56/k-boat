@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from kboat.frontmatter import Value, parse_flow_list
+from kboat.frontmatter import Value, is_yaml_int, parse_flow_list
 from kboat.schema import BY_TYPE, Field, Kind, NoteSchema
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -49,7 +49,10 @@ def _kind_violation(f: Field, value: Value) -> str | None:
     if f.kind is Kind.DATE:
         return None if (isinstance(value, str) and _DATE_RE.match(value)) else "bad_date"
     if f.kind is Kind.INT:
-        return None if (isinstance(value, str) and value.lstrip("-").isdigit()) else "not_int"
+        # The writer's own definition of a number, so the pair cannot disagree:
+        # what it writes bare is what this accepts, and what it had to quote is
+        # what this reports.
+        return None if (isinstance(value, str) and is_yaml_int(value)) else "not_int"
     if f.kind is Kind.STR_LIST:
         if isinstance(value, list):
             return None

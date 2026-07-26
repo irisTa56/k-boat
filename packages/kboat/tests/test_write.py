@@ -60,6 +60,9 @@ def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why:
         ("lots", "lots", "nor is a word"),
         ("1\n2", "1\n2", "a newline would put the rest of the value outside the note"),
         (True, "True", "a boolean is no integer, and bare it would read back as one"),
+        ("007", "007", "a leading zero reads back as octal under YAML 1.1, so it is not one"),
+        ("+7", "+7", "nor is a signed form the reader hands back as its own text"),
+        ("٧", "٧", "nor a digit outside ASCII, which YAML resolves as a string"),
     ],
 )
 def test_an_int_field_holds_what_it_was_given_without_costing_the_block(
