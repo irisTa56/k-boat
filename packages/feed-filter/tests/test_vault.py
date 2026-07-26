@@ -14,10 +14,11 @@ from pathlib import Path
 import pytest
 
 import feed_filter.vault as vault_mod
+import kboat.lock
 from feed_filter.canonical import CanonicalUrl
 from feed_filter.vault import VaultError, write_feed_note
 from kboat.frontmatter import Value, parse_frontmatter
-from kboat.lock import LOCK_NAME, VaultLockedError, vault_lock
+from kboat.lock import VaultLockedError, vault_lock
 from kboat.naming import url_slug
 
 CU = CanonicalUrl("https://example.com/post")
@@ -201,42 +202,47 @@ def test_the_write_is_held_under_the_vault_lock(tmp_path: Path) -> None:
     real_upsert = vault_mod.upsert
 
     def upsert_under_lock(*args: object, **kwargs: object) -> dict[str, object]:
-        with pytest.raises(VaultLockedError), vault_lock(tmp_path):
+        with pytest.raises(VaultLockedError), vault_lock(tmp_path, wait_s=0.0):
             pytest.fail("the write must hold the lock while it runs")
         return real_upsert(*args, **kwargs)
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(vault_mod, "upsert", upsert_under_lock)
         assert _write(tmp_path)["status"] == "created"
-    assert not (tmp_path / LOCK_NAME).exists()
+    # The lock file outlives the hold, so what must be gone is the hold: taking it
+    # again with no wait at all only succeeds if the write released it.
+    with vault_lock(tmp_path, wait_s=0.0):
+        pass
 
 
 def test_a_held_vault_is_waited_for_rather_than_refused(tmp_path: Path) -> None:
-    # One note per process, so an immediate refusal would cost this entry a whole
-    # run; the write waits for the holder instead. No monkeypatch: the shipped
-    # `VAULT_LOCK_WAIT_S` is what makes this pass, so setting it to zero — which
-    # would collapse the asymmetry the docstring promises — fails here.
+    # feed-filter takes the lock on the shared terms, and the wait is what it depends
+    # on most: its unit is one entry per process, so a refusal drops that entry until
+    # the next gather rediscovers it. No monkeypatch — the shipped
+    # `kboat.lock.DEFAULT_WAIT_S` is what makes this pass, so zeroing it fails here.
     took_the_lock = threading.Event()
-    released = threading.Event()
+    released_at: list[float] = []
 
     def hold() -> None:
         with vault_lock(tmp_path):
             took_the_lock.set()
             time.sleep(0.1)
-        released.set()
+        released_at.append(time.monotonic())
 
     holder = threading.Thread(target=hold)
     holder.start()
     try:
         assert took_the_lock.wait(timeout=5), "the holder never took the lock"
         result = _write(tmp_path)
+        wrote_at = time.monotonic()
     finally:
         holder.join()
-    # Waiting is the assertion, not a side effect of losing the start race: the
-    # holder had the lock before the write began, and the write only got it back
-    # once the holder let go.
-    assert released.is_set()
+
+    # Compared by clock, not by a flag the holder sets after syscalls that drop the
+    # GIL: the write happened after the holder's release, so it waited rather than
+    # winning a start race.
     assert result["status"] == "created"
+    assert released_at and wrote_at >= released_at[0]
 
 
 def test_an_expired_wait_raises_and_writes_no_note(
@@ -244,7 +250,7 @@ def test_an_expired_wait_raises_and_writes_no_note(
 ) -> None:
     # The never-lost half: the entry is not written, so the caller raises before
     # its seen-record and the next run retries it.
-    monkeypatch.setattr(vault_mod, "VAULT_LOCK_WAIT_S", 0.1)
+    monkeypatch.setattr(kboat.lock, "DEFAULT_WAIT_S", 0.1)
     with vault_lock(tmp_path), pytest.raises(VaultLockedError):
         _write(tmp_path)
     assert not (tmp_path / "Feeds").exists()

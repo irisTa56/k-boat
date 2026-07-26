@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-import feed_filter.vault as vault_mod
+import kboat.lock
 from feed_filter import browser, cli
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.canonical import CanonicalUrl, canonical_url
@@ -839,7 +839,7 @@ def test_remind_reports_a_vault_it_could_not_lock_and_records_nothing(
 ) -> None:
     # A K-Boat run holds the vault past the wait: the note is not written, so
     # the entry stays unseen and the next run retries it.
-    monkeypatch.setattr(vault_mod, "VAULT_LOCK_WAIT_S", 0.1)
+    monkeypatch.setattr(kboat.lock, "DEFAULT_WAIT_S", 0.1)
     with vault_lock(state_dir / "vault"):
         rc = cli.main(
             ["remind", "--site-id", "f1", "--url", "https://e.example.com/a", "--title", "T"]
