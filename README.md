@@ -29,13 +29,14 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Feeds/` — one note per item the upstream feed-filter kept from your registered feeds, forums, and saved queries.
 - `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority; the daily pick reads it to infer what you are chewing on.
 - `Daily/` — your Obsidian daily notes, if you keep them. The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.
+- `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good. It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time. Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
 - `Sources.base` — a standalone Base: to-read views (web by default, plus all-unread and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
 - `Kindles.base` — a standalone Base over the Kindle books: a Reading-list view (books not yet finished, shown by default), an All catalogue, and a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 - `Reviews.base` — a standalone Base over the review reports: an Unread view (shown by default) and an All view, each with a `read` checkbox to tick off.
 - `Feeds.base` — a standalone Base over the feed-filter items, with the triage views that member's own docs describe.
 
-Every folder above, plus `Questions.md`, must exist before a scheduled run: `kboat-doctor` checks them first and stops the run if one is absent, since a folder that has gone missing is indistinguishable from a vault that has not finished syncing. Create them once, when you set the vault up. `Daily/` and the `.base` files are outside that check — the first is optional, and a Base is Obsidian's own view, which no phase reads.
+Every folder above, plus `Questions.md`, must exist before a scheduled run: `kboat-doctor` checks them first and stops the run if one is absent, since a folder that has gone missing is indistinguishable from a vault that has not finished syncing. Create them once, when you set the vault up. `Daily/` and the `.base` files are outside that check — the first is optional, and a Base is Obsidian's own view, which no phase reads. `.kboat.lock` is outside it too: the first run that writes creates it.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
 
@@ -43,7 +44,7 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as
 
 The detailed conventions and procedures live in skills, so they are documented once and reused by every entry point.
 
-- [`kboat-vault-conventions`](.claude/skills/kboat-vault-conventions/SKILL.md) — the shared vault mechanics every writer follows: URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, and Base-authoring discipline. Both K-Boat and the feed-filter member defer to it.
+- [`kboat-vault-conventions`](.claude/skills/kboat-vault-conventions/SKILL.md) — the shared vault mechanics every writer follows: URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline. Both K-Boat and the feed-filter member defer to it.
 - [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types and their lifecycle: source-, Kindle-, and repo-note frontmatter, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `kboat-vault-conventions` for the shared mechanics.
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the vault's `Queue/` folder (one `Queue/*.md` capture per URL, filled by the capture bookmarklet that `kboat-bookmarklet` prints) into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.

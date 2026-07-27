@@ -2,7 +2,26 @@
 
 from __future__ import annotations
 
-from kboat.schema import BY_TYPE, DIR_BY_TYPE, FEED, KINDLE, REPO, SOURCE, Field, Kind
+import ast
+from pathlib import Path
+
+import kboat
+import kboat.schema
+from kboat.schema import (
+    BY_TYPE,
+    DAILY_DIR,
+    DIR_BY_TYPE,
+    FEED,
+    KINDLE,
+    PDFS_DIR,
+    QUESTIONS_FILE,
+    QUEUE_DIR,
+    REPO,
+    REVIEWS_DIR,
+    SOURCE,
+    Field,
+    Kind,
+)
 
 _ALL = (SOURCE, KINDLE, REPO, FEED)
 
@@ -52,3 +71,31 @@ def test_build_note_emits_schema_field_order() -> None:
 
     note = build_note(REPO, {f.name: sample(f) for f in REPO.fields})
     assert list(parse_frontmatter(note).keys()) == list(REPO.field_names())
+
+
+def test_no_module_spells_a_vault_path_of_its_own() -> None:
+    """The layout is declared here once, so no module may re-spell one of its values.
+
+    `DIR_BY_TYPE` and the paths beside it exist because two tools that each write
+    `"Sources"` cannot be moved together. Nothing catches a regression to a literal on
+    its own — the string is identical, so every test still passes — and a conflict
+    resolution that reverts one is exactly how it would happen. This is that gate.
+
+    Asserted over parsed constants rather than raw text, so prose that names a folder
+    (a docstring, a comment, a report key) is untouched: only a string a module would
+    actually resolve a path from counts.
+    """
+    declared = {*DIR_BY_TYPE.values(), QUEUE_DIR, REVIEWS_DIR, PDFS_DIR, QUESTIONS_FILE, DAILY_DIR}
+    src = Path(kboat.__file__).parent
+    schema_module = Path(kboat.schema.__file__)
+
+    offenders: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        if path == schema_module:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and node.value in declared:
+                offenders.append(f"{path.relative_to(src)}:{node.lineno}: {node.value!r}")
+
+    assert not offenders, "spell these through kboat.schema instead:\n" + "\n".join(offenders)
