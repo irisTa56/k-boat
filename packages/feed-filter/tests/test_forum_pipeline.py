@@ -18,6 +18,8 @@ Coverage:
 - Rule-B: due-topic candidate assembly with effective-threshold switch.
 - ``last_like_count`` short-circuit: fires only after first poll.
 - Per-site error absorption on feed failure and JSON failure.
+- Per-topic isolation of an unclassified exception: the topic that raised is kept
+  out of the finalize worklist, an interrupt still propagates.
 - No writes to the DB during ``gather_forum``.
 """
 
@@ -691,6 +693,7 @@ def test_gather_forum_json_error_absorbed(conn: sqlite3.Connection) -> None:
     assert result.error is not None
     assert result.candidates == []
     assert result.polled_topics == [], "a transient error must not advance the poll"
+    assert result.unexpected is False, "a 503 is classified; flagging it would escalate a throttle"
 
 
 def test_gather_forum_permanent_404_advances_poll_for_retirement(
@@ -717,6 +720,7 @@ def test_gather_forum_permanent_404_advances_poll_for_retirement(
     assert result.error is not None, "a retirement notice is still surfaced"
     assert [pt.topic_id for pt in result.polled_topics] == [1234]
     assert result.polled_topics[0].like_count == 0, "no stored count → 0"
+    assert result.unexpected is False, "a retirement is classified, not an unclassified failure"
 
 
 def test_gather_forum_permanent_and_transient_in_one_run_dont_interfere(
@@ -863,6 +867,158 @@ def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Conne
     # Both due topics were fetched (the failed 1111 and the succeeding 1234), so
     # both calls are counted even though one raised.
     assert result.fetch_count == 2
+
+
+# A second topic's JSON, so a fault can be injected for one topic and not the
+# other: post 9001 is unique to topic 1111, unlike the shared fixture's 5001.
+_TOPIC_1111_JSON = (
+    b'{"id": 1111, "slug": "other-topic", "title": "Other Topic", "like_count": 9, '
+    b'"post_stream": {"posts": [{"id": 9001, "post_number": 1, '
+    b'"cooked": "<p>Body.</p>", "actions_summary": [{"id": 2, "count": 8}]}]}}'
+)
+
+
+def _two_topic_handler(request: httpx.Request) -> httpx.Response:
+    """Serve topic 1111 from its own payload and topic 1234 from the fixture."""
+    path = request.url.path
+    if path == "/t/1111.json":
+        return httpx.Response(
+            200, content=_TOPIC_1111_JSON, headers={"content-type": "application/json"}
+        )
+    if path == "/t/1234.json":
+        return httpx.Response(
+            200, content=_TOPIC_JSON, headers={"content-type": "application/json"}
+        )
+    return httpx.Response(404, text="not found")
+
+
+def test_gather_forum_unexpected_exception_is_isolated_to_its_topic(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unclassified exception costs its own topic and keeps it out of the worklist.
+
+    The fault is injected in the per-post seen check, which runs *after* the
+    topic's ``PolledTopic`` was appended — the case the never-lost invariant turns
+    on. A topic whose gather did not complete must not be finalized, or its poll
+    advances past posts nobody dispositioned; it re-polls next run instead. The
+    other due topic still emits its candidate and its poll record.
+    """
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+    _admit_and_make_due(conn, 1111)
+    _admit_and_make_due(conn, 1234)
+
+    real_is_post_seen = forum_store.is_post_seen
+
+    def flaky_is_post_seen(c: sqlite3.Connection, site_id: str, post_id: int) -> bool:
+        if post_id == 9001:  # topic 1111's only post
+            raise RuntimeError("seen lookup blew up")
+        return real_is_post_seen(c, site_id, post_id)
+
+    monkeypatch.setattr(forum_store, "is_post_seen", flaky_is_post_seen)
+
+    with _client_from_handler(_two_topic_handler) as client:
+        result = gather_forum(conn, site, client=client, now=NOW)
+
+    assert [pt.topic_id for pt in result.polled_topics] == [1234], (
+        "a topic whose gather raised must not reach the finalize worklist"
+    )
+    assert [c.topic_id for c in result.candidates] == [1234]
+    polled_ids = {pt.topic_id for pt in result.polled_topics}
+    assert all(c.topic_id in polled_ids for c in result.candidates), (
+        "a candidate without its topic's poll record would be dispositioned while "
+        "the topic stayed un-finalized, re-offering the same posts next run"
+    )
+    assert result.unexpected is True
+    assert result.error is not None
+    assert "topic 1111" in result.error
+    assert "RuntimeError" in result.error, "the message names the exception type"
+    # Both topics were fetched, so both calls are counted even though one raised.
+    assert result.fetch_count == 2
+
+
+def test_gather_forum_mixes_classified_and_unclassified_failures(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One run can carry both kinds of failure, each keeping its own grain.
+
+    This is the combined ``error`` the run skill is told may hold several failures
+    joined by ``; ``. The classified 404 still retires its topic (it reaches the
+    worklist), the unclassified one is still withheld, and one unclassified failure
+    anywhere is enough to flag the whole result.
+    """
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+    _admit_and_make_due(conn, 1111)  # raises in the per-post scan
+    _admit_and_make_due(conn, 1234)  # 404 → retirement
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/t/1111.json":
+            return httpx.Response(
+                200, content=_TOPIC_1111_JSON, headers={"content-type": "application/json"}
+            )
+        return httpx.Response(404, text="not found")
+
+    def flaky_is_post_seen(c: sqlite3.Connection, site_id: str, post_id: int) -> bool:
+        raise RuntimeError("seen lookup blew up")
+
+    monkeypatch.setattr(forum_store, "is_post_seen", flaky_is_post_seen)
+
+    with _client_from_handler(handler) as client:
+        result = gather_forum(conn, site, client=client, now=NOW)
+
+    assert [pt.topic_id for pt in result.polled_topics] == [1234], (
+        "the retired topic advances; the one that raised does not"
+    )
+    assert result.candidates == []
+    assert result.unexpected is True, "one unclassified failure flags the result"
+    assert result.error is not None
+    assert "retiring dead topic 1234" in result.error
+    assert "topic 1111: RuntimeError" in result.error
+    assert "; " in result.error, "both failures are surfaced, joined"
+
+
+def test_gather_forum_does_not_absorb_a_store_error_per_topic(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store error inside a topic's gather propagates instead of costing the topic.
+
+    It is scoped to a connection, table, or lock, never to one topic, so absorbing
+    it would turn one broken store into every due topic failing in turn — and the
+    caller would report a site as merely unclassified when the run itself is broken.
+    """
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+    _admit_and_make_due(conn, 1234)
+
+    def broken_store(c: sqlite3.Connection, site_id: str, post_id: int) -> bool:
+        raise sqlite3.OperationalError("no such table: forum_post_seen")
+
+    monkeypatch.setattr(forum_store, "is_post_seen", broken_store)
+
+    with (
+        _client_from_handler(_two_topic_handler) as client,
+        pytest.raises(sqlite3.OperationalError),
+    ):
+        gather_forum(conn, site, client=client, now=NOW)
+
+
+def test_gather_forum_does_not_absorb_base_exception(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An interrupt is the run's failure, not a topic's, so it propagates.
+
+    The per-topic boundary catches ``Exception`` only: absorbing a
+    ``KeyboardInterrupt`` into a topic's error would let an aborted run report
+    itself as a routine gather.
+    """
+    site = _forum_site(poll_offsets_days=(0,), like_threshold=5)
+    _admit_and_make_due(conn, 1234)
+
+    def interrupted(c: sqlite3.Connection, site_id: str, post_id: int) -> bool:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(forum_store, "is_post_seen", interrupted)
+
+    with _client_from_handler(_two_topic_handler) as client, pytest.raises(KeyboardInterrupt):
+        gather_forum(conn, site, client=client, now=NOW)
 
 
 def test_gather_forum_no_qualifying_posts_emits_no_candidate(conn: sqlite3.Connection) -> None:
