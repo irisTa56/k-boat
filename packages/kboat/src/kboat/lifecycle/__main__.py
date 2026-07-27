@@ -37,6 +37,7 @@ from kboat.cli import (
 )
 from kboat.io_utils import atomic_write_text
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
+from kboat.schema import DIR_BY_TYPE
 
 from .core import Kindle, Source, compute_plan, select_ripe_kindles
 from .notes import FrontmatterError, parse_frontmatter, set_filed_date
@@ -130,12 +131,12 @@ def _run(vault: Path, today: date, *, dry_run: bool) -> dict[str, object]:
     the vault lock: a plan computed before another run's writes would stamp
     dates the notes no longer call for.
     """
-    sources, anomalies = _load_sources(vault / "Sources", vault)
+    sources, anomalies = _load_sources(vault / DIR_BY_TYPE["source"], vault)
     plan = compute_plan(sources, today)
 
     # Kindle notes (Kindles/ is optional). No on-disk writes — Kindle has no
     # cooldown clock — only ripe selection.
-    kindles, kindle_anomalies = _load_kindles(vault / "Kindles", vault)
+    kindles, kindle_anomalies = _load_kindles(vault / DIR_BY_TYPE["kindle"], vault)
     anomalies += kindle_anomalies
     ripe_kindles = select_ripe_kindles(kindles)
 
@@ -187,9 +188,9 @@ def main(argv: list[str] | None = None) -> int:
 
     vault = vault_path(parser, args)
     today = date.fromisoformat(args.today)
-    sources_dir = vault / "Sources"
+    sources_dir = vault / DIR_BY_TYPE["source"]
     if not sources_dir.is_dir():
-        parser.error(f"no Sources/ directory under vault: {sources_dir}")
+        parser.error(f"no {DIR_BY_TYPE['source']}/ directory under vault: {sources_dir}")
 
     # A `--dry-run` writes nothing, so it takes no lock and reads a vault
     # another run is writing; an applying run holds the lock over read and write

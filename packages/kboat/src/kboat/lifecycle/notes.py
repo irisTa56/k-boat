@@ -7,9 +7,23 @@ wrapper, and re-exports the primitives the lifecycle code imports.
 
 from __future__ import annotations
 
-from kboat.frontmatter import FrontmatterError, Scalar, Value, parse_frontmatter, set_field
+from kboat.frontmatter import (
+    FrontmatterError,
+    Scalar,
+    Value,
+    is_iso_date,
+    parse_frontmatter,
+    set_field,
+)
 
-__all__ = ["FrontmatterError", "Scalar", "Value", "parse_frontmatter", "set_filed_date"]
+__all__ = [
+    "FrontmatterError",
+    "Scalar",
+    "Value",
+    "is_iso_date",
+    "parse_frontmatter",
+    "set_filed_date",
+]
 
 
 def set_filed_date(text: str, value: str | None) -> str:

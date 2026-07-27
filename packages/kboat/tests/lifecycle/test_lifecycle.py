@@ -1,13 +1,17 @@
 """Tests for the pure lifecycle predicates and compute_plan."""
 
-from datetime import date
+from datetime import date, timedelta
+
+import pytest
 
 from kboat.lifecycle.core import (
     COOLDOWN_DAYS,
     Kindle,
     Source,
+    age_in_days,
     compute_plan,
     cooldown_elapsed,
+    older_than,
     select_ripe_kindles,
 )
 from kboat.lifecycle.notes import Value
@@ -28,6 +32,7 @@ def make(slug: str, **over: object) -> Source:
         "keep": False,
         "dismiss": False,
         "blocked": False,
+        "added_date": "2026-06-01",
         "filed_date": None,
         "distilled_date": None,
         "notebooklm_id": "nb-" + slug,
@@ -274,6 +279,49 @@ class TestEmptinessFromFrontmatter:
         )
 
 
+class TestAgeHelpers:
+    def test_older_than_is_inclusive_at_the_boundary(self):
+        assert older_than("2026-06-01", TODAY, 14) is True
+        assert older_than("2026-06-02", TODAY, 14) is False
+
+    def test_older_than_treats_a_missing_or_blank_date_as_no_clock(self):
+        assert older_than(None, TODAY, 14) is False
+        assert older_than("  ", TODAY, 14) is False
+
+    def test_cooldown_is_the_same_predicate(self):
+        # One shared answer to "has enough time passed", so the cooldown and the
+        # backlog stats cannot drift apart.
+        assert cooldown_elapsed(RIPE_FILED, TODAY) == older_than(RIPE_FILED, TODAY, COOLDOWN_DAYS)
+        assert cooldown_elapsed(FRESH_FILED, TODAY) == older_than(FRESH_FILED, TODAY, COOLDOWN_DAYS)
+
+    def test_age_in_days_counts_back_to_the_date(self):
+        assert age_in_days("2026-06-01", TODAY) == 14
+        assert age_in_days(TODAY.isoformat(), TODAY) == 0
+
+    def test_age_in_days_rejects_a_future_date(self):
+        # Not a negative age: a caller comparing against a ceiling would read one
+        # as the newest entry there is.
+        assert age_in_days("2027-01-01", TODAY) is None
+        assert age_in_days((TODAY + timedelta(days=1)).isoformat(), TODAY) is None
+
+    def test_age_in_days_rejects_what_it_cannot_parse(self):
+        assert age_in_days(None, TODAY) is None
+        assert age_in_days("", TODAY) is None
+        assert age_in_days("2026/06/01", TODAY) is None
+
+    @pytest.mark.parametrize("day", ["20260601", "2026-13-45", ""])
+    def test_the_two_age_predicates_admit_the_same_dates(self, day):
+        # A value one reads as a date and the other as no clock at all is exactly
+        # the pair that would make a count disagree with the work set it names.
+        assert older_than(day, TODAY, 14) is False
+        assert age_in_days(day, TODAY) is None
+
+    def test_added_date_is_read_from_frontmatter(self):
+        fm: dict[str, Value] = {"added_date": "2026-06-01"}
+        assert Source.from_frontmatter("x", "Sources/x.md", fm).added_date == "2026-06-01"
+        assert Source.from_frontmatter("x", "Sources/x.md", {"added_date": ""}).added_date is None
+
+
 class TestEmptyNotebookIdThroughParser:
     """The dismiss/needs_summary work sets, exercised through `from_frontmatter`
     with an empty-string `notebooklm_id` — the on-disk tombstone state (`""`) the
@@ -313,6 +361,19 @@ class TestEmptyNotebookIdThroughParser:
         assert plan.ripe == []
         assert [s.slug for s in plan.phase_a_stamp] == ["a"]
         assert plan.counts["awaiting_cooldown"] == 1
+
+    @pytest.mark.parametrize("filed", ["2026-02-30", "20260101"])
+    def test_an_unreadable_filed_date_never_reaches_a_destructive_action(self, filed):
+        # `2026-02-30` sorts before the cutoff, so a bare string compare would read
+        # the cooldown as long elapsed and discard the notebook; `20260101` is the
+        # other shape, a form `is_iso_date` rejects outright. A date nothing can
+        # read is no clock at all: the source awaits the cooldown instead.
+        distilling = self.from_fm("a", distill=True, filed_date=filed)
+        dismissing = self.from_fm("b", dismiss=True, filed_date=filed)
+        plan = compute_plan([distilling, dismissing], TODAY)
+        assert plan.ripe == []
+        assert plan.dismiss_discard == []
+        assert plan.counts["awaiting_cooldown"] == 2
 
     def test_blank_distilled_date_is_not_already_distilled(self):
         # A blank `distilled_date` means not yet distilled; a ripe distill source
