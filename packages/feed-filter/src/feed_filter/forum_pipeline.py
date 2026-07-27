@@ -19,18 +19,17 @@ Two public entry points:
     qualifying posts against the effective like threshold, and emits a
     ``RuleBCandidate`` carrying the trigger posts and threshold.  Also returns a
     **finalize worklist** (``GatherForumResult.polled_topics``) — one
-    ``PolledTopic`` per due topic whose JSON was successfully fetched and parsed,
-    including short-circuited topics and topics with no qualifying posts (and a
-    topic whose fetch raised a *permanent* ``FetchError`` — 404/410 — so a deleted
-    topic retires rather than re-polling forever; but NOT a topic whose fetch
-    raised a *transient* error, which must re-poll).  This worklist is the seam the CLI
-    needs to call ``finalize_poll`` after candidates are dispositioned, without
-    ever calling ``finalize_poll`` for a topic whose fetch failed transiently
-    (topics whose poll records are not advanced would re-poll every run, growing
-    the watch set unboundedly).  Performs **no writes** to the DB; the
+    ``PolledTopic`` per due topic whose gather *completed* (see that class for
+    exactly what completing admits and excludes).  This worklist is the seam the
+    CLI needs to call ``finalize_poll`` after candidates are dispositioned, and
+    never for a topic that must re-poll — topics whose poll records are not
+    advanced would otherwise re-poll every run, growing the watch set
+    unboundedly.  Performs **no writes** to the DB; the
     record/finalize path in the CLI writes ``forum_post_seen`` and advances ``completed_polls``
     after all posts are dispositioned.  A topic-level ``FetchError`` is absorbed
-    into ``error``; remaining topics continue.
+    into ``error``; so is an unclassified exception, which additionally sets
+    ``unexpected`` and leaves the failed topic out of the worklist.  Remaining
+    topics continue either way.
 
 Design constraints honoured here:
 - Only forum-adapter tables and code paths are touched.
@@ -41,6 +40,8 @@ Design constraints honoured here:
 - ``polled_topics`` worklist enables offset-only retirement without
   advancing polls for topics whose JSON fetch failed transiently; a permanent
   404/410 does advance, so a deleted topic retires instead of re-polling forever.
+- Failure isolation is per topic, the grain the never-lost invariant is stated
+  at: a topic that did not complete stays out of ``polled_topics`` entirely.
 - All HTTP calls through ``fetch.fetch`` / ``FetchError``.
 - ``parse_feed(sort=False)`` keeps top-feed rank order.
 - ``canonical.canonical_url`` for topic URLs.
@@ -158,7 +159,13 @@ class AdmitResult:
     It is the trigger the CLI uses to increment the ``site_health`` counter — a
     typed boolean, not a heuristic parse of ``error`` text. A partial failure
     (≥1 feed succeeded) leaves it ``False``, so a reachable-but-degraded site
-    resets rather than escalates.  Default ``False`` keeps test fakes terse.
+    resets rather than escalates.  A feed that answered with a body
+    ``parse_feed`` could recover nothing from still counts as reachable, since the
+    fetch succeeded.  That leaves a known blind spot: a forum whose host answers
+    200 with a non-feed page (a moved domain serving a landing page) reports a
+    wholly clean status forever, admitting nothing.  The article path catches the
+    analogous case with ``zero_links``; the forum path has no zero-admission
+    signal yet.  Default ``False`` keeps test fakes terse.
     """
 
     candidates: list[RuleACandidate]
@@ -169,19 +176,25 @@ class AdmitResult:
 
 @dataclass(frozen=True)
 class PolledTopic:
-    """A due topic whose JSON was successfully fetched and parsed.
+    """A due topic whose gather completed, so its poll may be advanced.
 
     Carried in ``GatherForumResult.polled_topics``; this is the **finalize
     worklist** the CLI uses to call ``forum_store.finalize_poll`` after
-    all of a topic's candidates are dispositioned.  Topics whose
-    fetch raised a *transient* ``FetchError`` are excluded — their polls must not
-    be advanced (they will re-poll next run).  Short-circuited topics and topics
-    with no qualifying posts ARE included: they still need ``finalize_poll`` so
-    ``completed_polls`` advances and they eventually retire.  A topic
-    whose fetch raised a *permanent* ``FetchError`` (404/410 — a deleted/gone
-    topic) is ALSO included, carrying its stored ``like_count`` (no fresh parse),
-    so offset-only retirement drains it instead of re-polling a dead topic every
-    run forever.
+    all of a topic's candidates are dispositioned.  Membership means the topic's
+    gather ran to completion — not merely that its JSON parsed, since a topic can
+    also fail *after* the parse (the per-post scan reads the DB) and is then
+    withheld like any other incomplete one.
+
+    Included: short-circuited topics and topics with no qualifying posts, which
+    still need ``finalize_poll`` so ``completed_polls`` advances and they
+    eventually retire; and a topic whose fetch raised a *permanent*
+    ``FetchError`` (404/410 — a deleted/gone topic), carrying its stored
+    ``like_count`` (no fresh parse), so offset-only retirement drains it instead
+    of re-polling a dead topic every run forever.
+
+    Excluded: a topic whose fetch raised a *transient* ``FetchError``, and a topic
+    whose gather raised at all — their polls must not be advanced, and they
+    re-poll next run.
     """
 
     topic_id: int
@@ -193,10 +206,15 @@ class GatherForumResult:
     """Outcome of one ``gather_forum`` call.
 
     ``candidates`` are Rule-B topics with qualifying unseen posts.
-    ``polled_topics`` is the finalize worklist — one ``PolledTopic`` per due
-    topic whose JSON was successfully fetched and parsed.
-    ``error`` is a combined message from any topic-level ``FetchError``(s),
-    or ``None`` if every due topic fetched successfully.
+    ``polled_topics`` is the finalize worklist — one ``PolledTopic`` per due topic
+    whose gather completed (see ``PolledTopic`` for what that admits and excludes).
+    ``error`` is a combined message from any topic-level ``FetchError``(s) and any
+    unclassified per-topic exception, or ``None`` if every due topic completed.
+    ``unexpected`` marks an error the gather could **not** classify — that and no
+    more: it says the failure did not arrive as a ``FetchError``, not whose fault
+    it is.  It is a typed signal rather than a prefix the reader has to parse back
+    out of ``error``, matching ``pipeline.FetchOutcome.unexpected`` on the article
+    path.  Default ``False`` keeps test fakes terse.
     ``fetch_count`` is the number of Discourse topic-JSON requests this call
     attempted (one per due topic, counted whether or not each succeeded), so the
     CLI can report a per-run Discourse-call total.  Default 0 keeps fakes terse.
@@ -206,6 +224,7 @@ class GatherForumResult:
     polled_topics: list[PolledTopic]
     error: str | None
     fetch_count: int = 0
+    unexpected: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -395,18 +414,20 @@ def gather_forum(
         AND NOT ``forum_store.is_post_seen(conn, site.id, post.id)``.
         If any qualify, emit one ``RuleBCandidate``.
 
-    After a successful ``parse_topic`` (whether or not the topic is short-
-    circuited or has qualifying posts), append a ``PolledTopic`` to the
-    ``GatherForumResult.polled_topics`` finalize worklist (the CLI needs the
-    freshly-parsed ``like_count`` to call ``finalize_poll``; topics that raised a *transient* ``FetchError`` are
-    excluded so their poll is not advanced, and they re-poll next run without loss).
+    A topic that completes contributes a ``PolledTopic`` to the
+    ``GatherForumResult.polled_topics`` finalize worklist and one that does not is
+    excluded, so its poll is not advanced and it re-polls next run without loss;
+    ``PolledTopic`` documents which failures still count as completing.
 
-    A topic-level ``FetchError`` is absorbed into ``error``.  A *permanent* error
-    (``status`` 404/410 — a deleted/gone topic) still appends a ``PolledTopic``
-    (carrying the stored ``last_like_count``, or 0 if never polled) so the topic
-    advances toward offset-only retirement instead of re-fetching a dead topic
-    every run forever.  A *transient* error records nothing (the
-    topic will be re-polled next run).  Processing continues for remaining topics.
+    A topic-level ``FetchError`` is absorbed into ``error`` and processing
+    continues for the remaining topics.
+
+    An **unclassified** exception is absorbed the same way and at the same grain:
+    it costs its own topic, is flagged ``unexpected``, and leaves the topics
+    already assembled to reach the caller.  Such a topic contributes only an
+    error — ``_TopicOutcome`` is what makes that structural — and re-polls next
+    run, having recorded nothing.  Why the grain is the topic, and what
+    withholding one costs, are in ARCHITECTURE's forum failure-isolation bullet.
 
     Writes nothing to the DB.  The CLI skill calls ``forum-remind`` /
     ``forum-mark-seen`` per post and ``forum-poll-done`` per topic
@@ -418,111 +439,173 @@ def gather_forum(
     offsets = (
         site.poll_offsets_days if site.poll_offsets_days is not None else DEFAULT_POLL_OFFSETS_DAYS
     )
-    like_thr = site.like_threshold if site.like_threshold is not None else DEFAULT_LIKE_THRESHOLD
-    interest_thr = (
-        site.interest_like_threshold
-        if site.interest_like_threshold is not None
-        else DEFAULT_INTEREST_LIKE_THRESHOLD
-    )
 
     errors: list[str] = []
     candidates: list[RuleBCandidate] = []
     polled_topics: list[PolledTopic] = []
-    # One Discourse topic-JSON request per due topic; counted before the fetch so
-    # a FetchError still counts the attempted call (politeness metric).
+    unexpected = False
+    # One Discourse topic-JSON request per due topic; counted before the call so
+    # a failed topic still counts the attempted call (politeness metric).
     fetch_count = 0
 
     for row in forum_store.due_topics(conn, site.id, offsets, now):
         topic_id = row["topic_id"]
-
+        fetch_count += 1
         try:
-            fetch_count += 1
-            json_bytes = fetch(topic_json_url(forum_url, topic_id), client=client).content
-        except FetchError as exc:
-            if exc.status in _PERMANENT_FETCH_STATUSES:
-                # A deleted/gone topic (404/410) will never fetch again. Advance
-                # its poll so offset-only retirement eventually retires
-                # it, instead of re-fetching a dead topic every run forever. There
-                # are no posts to disposition; carry the stored like_count forward
-                # (the short-circuit value is moot once retired). The
-                # message names the topic so a bounded, self-describing retirement
-                # notice is distinguishable from an actionable site outage.
-                last = row["last_like_count"]
-                polled_topics.append(
-                    PolledTopic(topic_id=topic_id, like_count=last if last is not None else 0)
-                )
-                errors.append(f"retiring dead topic {topic_id}: {exc}")
-                continue
-            # Transient failure (throttle / 5xx / transport): absorb and re-poll
-            # next run. Do NOT append to polled_topics — the poll must not advance
-            # for a topic whose fetch may yet succeed (never-lost).
-            errors.append(str(exc))
+            outcome = _gather_topic(conn, site, row, forum_url=forum_url, client=client)
+        except sqlite3.Error:
+            raise  # the run's failure, not this topic's (same carve-out as the CLI's)
+        except Exception as exc:
+            # Unclassified failure, contained to this topic. ``Exception`` only; a
+            # ``BaseException`` (an interrupt, a ``SystemExit``) is the run's
+            # failure, not this topic's, so it propagates.
+            #
+            # Cost of withholding, and the signal it leaves: ARCHITECTURE's forum
+            # failure-isolation bullet.
+            errors.append(f"topic {topic_id}: {type(exc).__name__}: {exc}")
+            unexpected = True
             continue
 
-        topic, posts = parse_topic(json_bytes)
-
-        # Append to the finalize worklist for every topic that was successfully
-        # fetched and parsed — including short-circuited topics and topics with
-        # no qualifying posts.  The CLI uses this list to call finalize_poll
-        # after candidates are dispositioned.
-        polled_topics.append(PolledTopic(topic_id=topic_id, like_count=topic.like_count))
-
-        # Short-circuit: when this is not the first poll AND the
-        # topic-level like_count is unchanged since the last poll, skip the
-        # per-post deeper scan and emit no candidate for this topic.
-        # NOTE: the network round-trip is still performed (we need the JSON to
-        # read like_count); this lever saves judge cost, not bandwidth (v1
-        # limitation — like_count is only observable via /t/<id>.json, not the
-        # RSS feeds).
-        if (
-            row["completed_polls"] > 0
-            and row["last_like_count"] is not None
-            and topic.like_count == row["last_like_count"]
-        ):
-            continue  # short-circuit: no new likes → no new qualifying posts
-
-        # Effective threshold: interest threshold when Rule A kept
-        # the OP; default (higher) threshold otherwise.
-        effective_threshold = interest_thr if row["op_interest_kept"] == 1 else like_thr
-
-        # Build the topic URL using canonical_url for normalization.
-        # Include the parsed slug so this matches the slugged ``/t/<slug>/<id>``
-        # form the Rule-A path carries verbatim from the RSS entry — the same
-        # topic must yield the same note URL whichever rule surfaces it. Fall
-        # back to the slugless ``/t/<id>`` (a valid Discourse redirect) when the
-        # payload carried no slug.
-        slug = f"{topic.slug}/" if topic.slug else ""
-        topic_url = str(canonical_url(f"{forum_url.rstrip('/')}/t/{slug}{topic_id}"))
-
-        # Collect qualifying, unseen posts.
-        trigger_posts: list[TriggerPost] = []
-        for post in posts:
-            if post.like_count >= effective_threshold and not forum_store.is_post_seen(
-                conn, site.id, post.id
-            ):
-                trigger_posts.append(
-                    TriggerPost(
-                        post_id=post.id,
-                        post_number=post.number,
-                        like_count=post.like_count,
-                        text=post.text,
-                    )
-                )
-
-        if trigger_posts:
-            candidates.append(
-                RuleBCandidate(
-                    topic_id=topic_id,
-                    topic_url=topic_url,
-                    title=topic.title,
-                    trigger_posts=trigger_posts,
-                    effective_threshold=effective_threshold,
-                )
-            )
+        if outcome.polled is not None:
+            polled_topics.append(outcome.polled)
+        if outcome.candidate is not None:
+            candidates.append(outcome.candidate)
+        if outcome.error is not None:
+            errors.append(outcome.error)
 
     return GatherForumResult(
         candidates=candidates,
         polled_topics=polled_topics,
         error="; ".join(errors) if errors else None,
         fetch_count=fetch_count,
+        unexpected=unexpected,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule-B: one topic's assembly, the unit the per-topic boundary contains
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _TopicOutcome:
+    """One due topic's whole contribution to a ``gather_forum`` result.
+
+    Assembled and returned as a unit so the per-topic boundary is structural: a
+    topic that raises returns nothing, rather than leaving a partial contribution
+    in the result lists for the handler to unwind.
+
+    On the poll/error axis three shapes are constructed and no other: ``polled``
+    alone is the ordinary quiet topic (short-circuited, or no qualifying posts);
+    ``error`` alone is the transient fetch failure that must re-poll; ``polled``
+    with ``error`` is the dead-topic retirement.  A ``candidate`` rides along with
+    its topic's ``polled`` and never without it — on its own it would be
+    dispositioned while the topic stayed un-finalized, re-offering the same posts
+    next run.
+    """
+
+    polled: PolledTopic | None = None
+    candidate: RuleBCandidate | None = None
+    error: str | None = None
+
+
+def _gather_topic(
+    conn: sqlite3.Connection,
+    site: SiteConfig,
+    row: forum_store.WatchRow,
+    *,
+    forum_url: str,
+    client: httpx.Client,
+) -> _TopicOutcome:
+    """Assemble one due topic's poll record and Rule-B candidate.  Writes nothing.
+
+    Fetches ``/t/<id>.json`` once and absorbs a ``FetchError``:
+
+    - **Permanent** (404/410 — a deleted/gone topic) returns a ``PolledTopic``
+      carrying the *stored* ``last_like_count`` (no fresh parse) alongside the
+      error, so offset-only retirement drains the topic instead of re-fetching a
+      dead one every run forever.  The message names the topic, so a bounded,
+      self-describing retirement notice is distinguishable from a site outage.
+    - **Transient** (throttle / 5xx / transport) returns the error alone.  No
+      ``PolledTopic``: the poll must not advance for a topic whose fetch may yet
+      succeed (never-lost).
+
+    Anything else propagates to the caller's per-topic boundary.
+    """
+    topic_id = row["topic_id"]
+    try:
+        json_bytes = fetch(topic_json_url(forum_url, topic_id), client=client).content
+    except FetchError as exc:
+        if exc.status in _PERMANENT_FETCH_STATUSES:
+            last = row["last_like_count"]
+            return _TopicOutcome(
+                polled=PolledTopic(topic_id=topic_id, like_count=last if last is not None else 0),
+                error=f"retiring dead topic {topic_id}: {exc}",
+            )
+        return _TopicOutcome(error=str(exc))
+
+    topic, posts = parse_topic(json_bytes)
+
+    # A poll record for every topic successfully fetched and parsed — including
+    # short-circuited topics and topics with no qualifying posts.  The CLI uses it
+    # to call finalize_poll after candidates are dispositioned.
+    polled = PolledTopic(topic_id=topic_id, like_count=topic.like_count)
+
+    # Short-circuit: when this is not the first poll AND the topic-level
+    # like_count is unchanged since the last poll, skip the per-post deeper scan
+    # and emit no candidate for this topic.
+    # NOTE: the network round-trip is still performed (we need the JSON to read
+    # like_count); this lever saves judge cost, not bandwidth (v1 limitation —
+    # like_count is only observable via /t/<id>.json, not the RSS feeds).
+    if (
+        row["completed_polls"] > 0
+        and row["last_like_count"] is not None
+        and topic.like_count == row["last_like_count"]
+    ):
+        return _TopicOutcome(polled=polled)  # no new likes → no new qualifying posts
+
+    # Effective threshold: interest threshold when Rule A kept the OP; default
+    # (higher) threshold otherwise.
+    like_thr = site.like_threshold if site.like_threshold is not None else DEFAULT_LIKE_THRESHOLD
+    interest_thr = (
+        site.interest_like_threshold
+        if site.interest_like_threshold is not None
+        else DEFAULT_INTEREST_LIKE_THRESHOLD
+    )
+    effective_threshold = interest_thr if row["op_interest_kept"] == 1 else like_thr
+
+    # Build the topic URL using canonical_url for normalization.
+    # Include the parsed slug so this matches the slugged ``/t/<slug>/<id>`` form
+    # the Rule-A path carries verbatim from the RSS entry — the same topic must
+    # yield the same note URL whichever rule surfaces it. Fall back to the
+    # slugless ``/t/<id>`` (a valid Discourse redirect) when the payload carried
+    # no slug.
+    slug = f"{topic.slug}/" if topic.slug else ""
+    topic_url = str(canonical_url(f"{forum_url.rstrip('/')}/t/{slug}{topic_id}"))
+
+    # Collect qualifying, unseen posts.
+    trigger_posts = [
+        TriggerPost(
+            post_id=post.id,
+            post_number=post.number,
+            like_count=post.like_count,
+            text=post.text,
+        )
+        for post in posts
+        if post.like_count >= effective_threshold
+        and not forum_store.is_post_seen(conn, site.id, post.id)
+    ]
+
+    if not trigger_posts:
+        return _TopicOutcome(polled=polled)
+
+    return _TopicOutcome(
+        polled=polled,
+        candidate=RuleBCandidate(
+            topic_id=topic_id,
+            topic_url=topic_url,
+            title=topic.title,
+            trigger_posts=trigger_posts,
+            effective_threshold=effective_threshold,
+        ),
     )

@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import pytest
 
 import kboat.lock
-from feed_filter import browser, cli
+from feed_filter import browser, cli, forum_pipeline
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.canonical import CanonicalUrl, canonical_url
 from feed_filter.config import (
@@ -1275,8 +1275,14 @@ def _fake_admit_result(
     candidates: list[RuleACandidate] | None = None,
     error: str | None = None,
     fetch_count: int = 0,
+    all_feeds_failed: bool = False,
 ) -> AdmitResult:
-    return AdmitResult(candidates=candidates or [], error=error, fetch_count=fetch_count)
+    return AdmitResult(
+        candidates=candidates or [],
+        error=error,
+        fetch_count=fetch_count,
+        all_feeds_failed=all_feeds_failed,
+    )
 
 
 def _fake_gather_result(
@@ -1285,12 +1291,14 @@ def _fake_gather_result(
     polled: list[PolledTopic] | None = None,
     error: str | None = None,
     fetch_count: int = 0,
+    unexpected: bool = False,
 ) -> GatherForumResult:
     return GatherForumResult(
         candidates=candidates or [],
         polled_topics=polled or [],
         error=error,
         fetch_count=fetch_count,
+        unexpected=unexpected,
     )
 
 
@@ -1376,6 +1384,7 @@ def test_forum_new_emits_topics_and_polls(
         {
             "site_id": FORUM_SITE_ID,
             "error": None,
+            "unexpected_error": False,
             "consecutive_failures": 0,
             "persistent": False,
         }
@@ -1438,6 +1447,383 @@ def test_forum_new_absorbs_per_site_errors(
     # Both errors joined.
     assert "feed fetch failed" in status["error"]
     assert "json fetch failed" in status["error"]
+    # Classified fetch failures: absorbed, but not flagged unclassified.
+    assert status["unexpected_error"] is False
+
+
+def test_forum_new_unexpected_site_exception_is_isolated_to_its_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unclassified exception escaping a site's gather costs only that site.
+
+    The per-site boundary is the outer net under ``gather_forum``'s per-topic one:
+    it catches whatever the pipeline could not, so the sites already gathered
+    still reach stdout instead of the whole run's candidates being discarded.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()  # id "ef" — the raising site
+    _add_forum_site(site_id="ef2")
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(candidates=[_rule_a(101)]),
+    )
+
+    def gather(conn: Any, site: SiteConfig, *, client: Any, now: int) -> GatherForumResult:
+        if site.id == FORUM_SITE_ID:
+            raise RuntimeError("kaboom")
+        return _fake_gather_result(candidates=[_rule_b(201)], polled=[PolledTopic(201, 15)])
+
+    monkeypatch.setattr(cli, "gather_forum", gather)
+
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    out = _out(capsys)
+
+    # The surviving site's Rule-B candidate and its poll record both emitted.
+    assert any(t["rule"] == "B" and t["site_id"] == "ef2" for t in out["topics"])
+    assert out["polls"] == [{"site_id": "ef2", "topic_id": 201, "like_count": 15}]
+    # The raising site's own Rule-A candidates survive: admission completed.
+    assert any(t["rule"] == "A" and t["site_id"] == FORUM_SITE_ID for t in out["topics"])
+
+    status = {s["site_id"]: s for s in out["sites"]}
+    assert "RuntimeError" in status[FORUM_SITE_ID]["error"]
+    assert status[FORUM_SITE_ID]["unexpected_error"] is True
+    assert status["ef2"]["error"] is None
+    assert status["ef2"]["unexpected_error"] is False
+    # The gather raised, but admission reported the site reachable, so the
+    # site-health streak is not a failure run.
+    assert status[FORUM_SITE_ID]["consecutive_failures"] == 0
+
+
+def test_forum_new_admit_exception_does_not_forfeit_the_rule_b_gather(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each path is guarded on its own: a raising admission still leaves Rule B to run.
+
+    An admission that raised also counts as a failed run for the site-health
+    streak — it returned no verdict, so this run cannot claim the site was
+    reached, and a site that raises every run should escalate like any other
+    chronic failure rather than reset its streak on each one.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+        raise ValueError("bad feed payload")
+
+    monkeypatch.setattr(cli, "admit_from_feeds", admit)
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda conn, site, *, client, now: _fake_gather_result(
+            candidates=[_rule_b(201)], polled=[PolledTopic(201, 15)]
+        ),
+    )
+
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    out = _out(capsys)
+
+    assert [t["topic_id"] for t in out["topics"]] == [201]
+    assert out["polls"] == [{"site_id": FORUM_SITE_ID, "topic_id": 201, "like_count": 15}]
+    status = out["sites"][0]
+    assert "ValueError" in status["error"]
+    assert status["unexpected_error"] is True
+    assert status["consecutive_failures"] == 1
+
+
+def test_forum_new_carries_gather_unexpected_flag(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A per-topic absorption inside ``gather_forum`` reaches ``sites[]`` as a flag.
+
+    The pipeline absorbed the exception itself, so nothing escapes to the
+    per-site boundary; the site's status must still say the failure was one the
+    run could not classify.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda conn, site, *, client, now: _fake_gather_result(
+            error="topic 7: RuntimeError: boom", unexpected=True
+        ),
+    )
+
+    rc = cli.main(["forum-new"])
+    assert rc == 0
+    status = _out(capsys)["sites"][0]
+    assert status["error"] == "topic 7: RuntimeError: boom"
+    assert status["unexpected_error"] is True
+
+
+@pytest.mark.parametrize("raising_call", ["admit_from_feeds", "gather_forum"])
+def test_forum_new_per_site_boundary_does_not_absorb_base_exception(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, raising_call: str
+) -> None:
+    """Either per-site handler lets a ``BaseException`` through.
+
+    An interrupt is the run's failure, not a site's: absorbing one would let an
+    aborted run report itself as a routine gather with one site in error. Both
+    handlers are asserted because each was added independently.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    def interrupted(conn: Any, site: SiteConfig, *, client: Any, now: int) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        cli, "admit_from_feeds", lambda conn, site, *, client, now: _fake_admit_result()
+    )
+    monkeypatch.setattr(
+        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+    )
+    monkeypatch.setattr(cli, raising_call, interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        cli.main(["forum-new"])
+
+
+@pytest.mark.parametrize("raising_call", ["admit_from_feeds", "gather_forum"])
+def test_forum_new_store_error_fails_the_run_not_the_site(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    raising_call: str,
+) -> None:
+    """A store error is the run's failure, so neither per-site guard absorbs it.
+
+    ``site_health`` is left intact here on purpose: a breakage scoped to the forum
+    tables leaves that write working, so the unguarded write cannot be relied on to
+    surface it and the guards must re-raise themselves.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+    _add_forum_site(site_id="ef2")
+
+    def broken_forum_table(*args: Any, **kwargs: Any) -> Any:
+        raise sqlite3.OperationalError("no such column: forum_watch.retired")
+
+    monkeypatch.setattr(
+        cli, "admit_from_feeds", lambda conn, site, *, client, now: _fake_admit_result()
+    )
+    monkeypatch.setattr(
+        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+    )
+    monkeypatch.setattr(cli, raising_call, broken_forum_table)
+
+    assert cli.main(["forum-new"]) == 1
+    err = capsys.readouterr().err
+    assert "no such column" in err
+    assert "ef2" not in err, "the run failed outright, it did not blame each site in turn"
+
+
+def test_forum_new_gather_guard_catches_a_real_due_topics_failure(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The per-site gather guard is reached without stubbing ``gather_forum``.
+
+    With the per-topic absorber in place, a raise from ``due_topics`` is what still
+    escapes ``gather_forum`` — the case the outer guard exists for. A *store* error
+    there is the run's failure and propagates (covered separately), so the fault
+    injected here is the other kind: a bug in the store layer itself. The Rule-A
+    candidates survive it, and the gather's ``fetch_count`` is lost with the call,
+    so ``discourse_fetches`` reports only the admission's.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(
+            candidates=[_rule_a(101)], fetch_count=3
+        ),
+    )
+
+    def buggy_due_topics(*args: Any, **kwargs: Any) -> Any:
+        raise TypeError("offsets must be a tuple, not str")
+
+    monkeypatch.setattr(forum_pipeline.forum_store, "due_topics", buggy_due_topics)
+
+    assert cli.main(["forum-new"]) == 0
+    out = _out(capsys)
+
+    assert [t["topic_id"] for t in out["topics"]] == [101], "Rule A is guarded separately"
+    assert out["polls"] == []
+    assert out["discourse_fetches"] == 3, "only the admission's calls; the gather made none"
+    status = out["sites"][0]
+    assert "TypeError" in status["error"]
+    assert status["unexpected_error"] is True
+    assert status["consecutive_failures"] == 0, "the admission reached the site"
+
+
+def test_forum_new_gather_failure_still_resets_a_running_streak(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A reachable admission resets the streak even when the Rule-B gather fails.
+
+    The counter tracks the admission alone, so a run whose admission reached the
+    site clears it however the gather went. Asserted against an already-running
+    streak, so a zero means "reached this run" rather than "never touched".
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    unreachable = True
+
+    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+        if unreachable:
+            return _fake_admit_result(error="every feed failed", all_feeds_failed=True)
+        return _fake_admit_result()
+
+    monkeypatch.setattr(cli, "admit_from_feeds", admit)
+    monkeypatch.setattr(
+        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+    )
+
+    # Two unreachable runs build the streak up to 2.
+    for expected in (1, 2):
+        assert cli.main(["forum-new"]) == 0
+        assert _out(capsys)["sites"][0]["consecutive_failures"] == expected
+
+    # Now the feeds answer but the Rule-B gather raises: the streak resets, and
+    # the flag says the failure was unclassified.
+    unreachable = False
+
+    def gather(conn: Any, site: SiteConfig, *, client: Any, now: int) -> GatherForumResult:
+        raise RuntimeError("gather blew up")
+
+    monkeypatch.setattr(cli, "gather_forum", gather)
+
+    assert cli.main(["forum-new"]) == 0
+    status = _out(capsys)["sites"][0]
+    assert status["consecutive_failures"] == 0
+    assert status["unexpected_error"] is True
+
+
+def test_forum_new_unreachable_site_and_gather_failure_report_together(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unreachable admission and an unclassified gather failure can co-occur.
+
+    ``due_topics`` reads already-admitted rows, so a site whose feeds are all down
+    still polls its topics — which is why a non-zero ``consecutive_failures``
+    alongside ``unexpected_error`` does *not* mean the admission was the one that
+    raised. The run summary must not attribute it on that basis.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    monkeypatch.setattr(
+        cli,
+        "admit_from_feeds",
+        lambda conn, site, *, client, now: _fake_admit_result(
+            error="every feed failed", all_feeds_failed=True
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "gather_forum",
+        lambda conn, site, *, client, now: _fake_gather_result(
+            error="topic 7: RuntimeError: boom", unexpected=True
+        ),
+    )
+
+    assert cli.main(["forum-new"]) == 0
+    status = _out(capsys)["sites"][0]
+    assert status["consecutive_failures"] == 1, "the admission reached nothing"
+    assert status["unexpected_error"] is True, "but the unclassified failure was the gather's"
+    assert "every feed failed" in status["error"]
+    assert "topic 7" in status["error"]
+
+
+def test_forum_new_both_paths_raising_loses_the_whole_site_but_no_other(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """When both per-site guards fire, the site emits nothing and the rest still do.
+
+    The two boundaries are independent, so this is the worst case they allow: one
+    site contributes only its error, while every other site's candidates and polls
+    reach stdout untouched.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()  # id "ef" — the site that loses both paths
+    _add_forum_site(site_id="ef2")
+
+    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+        if site.id == FORUM_SITE_ID:
+            raise RuntimeError("admit blew up")
+        return _fake_admit_result(candidates=[_rule_a(101)])
+
+    def gather(conn: Any, site: SiteConfig, *, client: Any, now: int) -> GatherForumResult:
+        if site.id == FORUM_SITE_ID:
+            raise ValueError("gather blew up")
+        return _fake_gather_result(candidates=[_rule_b(201)], polled=[PolledTopic(201, 15)])
+
+    monkeypatch.setattr(cli, "admit_from_feeds", admit)
+    monkeypatch.setattr(cli, "gather_forum", gather)
+
+    assert cli.main(["forum-new"]) == 0
+    out = _out(capsys)
+
+    assert {t["site_id"] for t in out["topics"]} == {"ef2"}
+    assert out["polls"] == [{"site_id": "ef2", "topic_id": 201, "like_count": 15}]
+
+    status = {s["site_id"]: s for s in out["sites"]}
+    assert "RuntimeError" in status[FORUM_SITE_ID]["error"]
+    assert "ValueError" in status[FORUM_SITE_ID]["error"]
+    assert status[FORUM_SITE_ID]["unexpected_error"] is True
+    # The admission returned no verdict, so this counts as a failed run.
+    assert status[FORUM_SITE_ID]["consecutive_failures"] == 1
+    assert status["ef2"]["error"] is None
+
+
+def test_forum_new_repeated_admit_exception_escalates_to_persistent(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An admission that raises every run escalates like any unreachable site.
+
+    It returns no reachability verdict, so counting it as a failed run is what
+    stops a chronically raising admission from resetting its own streak forever.
+    A reachable run then clears it.
+    """
+    _no_client(monkeypatch)
+    _add_forum_site()
+
+    raising = True
+
+    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+        if raising:
+            raise RuntimeError("kaboom")
+        return _fake_admit_result()
+
+    monkeypatch.setattr(cli, "admit_from_feeds", admit)
+    monkeypatch.setattr(
+        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+    )
+
+    for expected_count in (1, 2, 3):
+        assert cli.main(["forum-new"]) == 0
+        status = _out(capsys)["sites"][0]
+        assert status["consecutive_failures"] == expected_count
+        assert status["persistent"] is (expected_count >= 3)
+
+    raising = False
+    assert cli.main(["forum-new"]) == 0
+    status = _out(capsys)["sites"][0]
+    assert status["consecutive_failures"] == 0
+    assert status["persistent"] is False
 
 
 def test_forum_new_excludes_article_sites(

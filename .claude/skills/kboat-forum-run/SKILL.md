@@ -28,19 +28,23 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Procedure
 
 1. **Gather candidates.** Run `eval "$(mise env)" && feed-filter forum-new`.
-   The output is `{topics: [...], polls: [...], sites: [{site_id, error, consecutive_failures, persistent}], discourse_fetches: <int>}`.
+   The output is `{topics: [...], polls: [...], sites: [{site_id, error, unexpected_error, consecutive_failures, persistent}], discourse_fetches: <int>}`.
    - `topics` are Rule-A and Rule-B candidates, already round-robin-interleaved across sites (and Rule-A/B interleaved within each site) and clamped to the global cap.
      Candidates dropped by the cap are absent; they are re-derived next run without any loss.
    - Each candidate entry has shape `{site_id, topic_id, topic_url, title, rule: "A"|"B", ...}`; Rule-A adds `op_text`; Rule-B adds `effective_threshold` and `trigger_posts: [{post_id, post_number, like_count, text}]`.
    - `polls` is the finalize worklist: `[{site_id, topic_id, like_count}]`.
      Each entry represents a polled topic that is cap-safe — every candidate for that `(site_id, topic_id)` pair survived the cap.
-     A topic truncated by the cap is withheld and re-polls next run.
+     A topic is withheld for either of two reasons — the cap truncated it, or its gather did not complete — and re-polls next run in both cases.
      Zero-candidate topics (short-circuited by the like-count check, or no qualifying posts) are trivially cap-safe and also appear in `polls`.
    - `discourse_fetches` is the count of Discourse HTTP calls this gather made — one per RSS feed (three per site) plus one per due topic's JSON.
      It is a coarse politeness/rate metric for the run summary; it does not include the judging subagents' `WebFetch` calls, which are not Discourse-API requests.
-   - Each `sites` entry is `{site_id, error, consecutive_failures, persistent}`.
-     `consecutive_failures` is a durable per-site count of consecutive runs the whole site was unreachable (every discovery feed failed), reset to 0 the moment a run reaches it; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
-     `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
+     Read it as a rough figure rather than an exact count: it counts attempted calls, and a Rule-A or Rule-B pass that failed outright reports none of the ones it had already made.
+   - Each `sites` entry is `{site_id, error, unexpected_error, consecutive_failures, persistent}`.
+     A site with a non-null `error` may still have emitted topics and polls: the gather contains a failure to the smallest unit it can, so a partly-failed site is the normal case, not an anomaly (step 5).
+     `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
+     `consecutive_failures` counts consecutive runs the site's Rule-A admission returned no reachability verdict — every discovery feed failed, or the admission raised and so returned none at all.
+     The count tracks that and nothing else, so a Rule-B gather failure never moves it however many runs it repeats on.
+     `persistent` is decided by the CLI and never re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
    - Keep `polls` and `sites` aside for steps 3–4.
 
 2. **Judge each candidate**, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
@@ -101,28 +105,45 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    `eval "$(mise env)" && feed-filter forum-poll-done --site-id <site_id> --topic-id <topic_id> --like-count <like_count>`.
    The `like_count` comes from the `polls` worklist emitted by `forum-new`.
    **This must be the last call for a topic in a run** — never call it before every candidate for that topic is disposed.
-   Topics not in `polls` (truncated by the cap) are left un-finalized; they re-poll next run automatically.
+   Topics not in `polls` are left un-finalized and re-poll next run automatically, whether the cap truncated them or their gather did not complete.
    Emit output is `{site_id, topic_id, like_count}`.
    A non-zero exit means the DB write failed; report it — the topic will re-poll and re-derive the same already-seen posts without a duplicate note.
 
-5. **Surface errors.** For each site in `sites` with a non-null `error`, the gather fetch failed for that site; nothing was recorded, so it retries naturally next run.
+5. **Surface errors.** For each site in `sites` with a non-null `error`, part of that site's gather failed; nothing was recorded for what failed, so it retries naturally next run.
    Report it in the summary — a broken forum is visible here, by design there is no backoff.
-   - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next reachable run, so do not escalate on a single bad run.
-   - **`persistent == true`**: the site has been wholly unreachable for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
-     1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`. If the forum moved, fixing `forum_url` (see `kboat-manage-feed-sites`) restores it with no loss — the seen-store keys on `(site_id, topic_id)`, not the domain.
-     2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
+   Report the `error` **verbatim** with the site id, and do not diagnose it beyond what the message says.
+   The text is for reporting, not for deducing scope: it may join several failures with `; `, and how much the site still produced is already visible in its `topics` and `polls` — bearing in mind those are what survived the global cap (step 1), not everything the site gathered.
+   Do not read a `retiring dead topic <id>` message as lost work — that is a routine retirement notice for a topic that completed, and it re-polls next run in the rare case the cap withheld it.
+   Two independent axes then decide what to write — the **kind** of failure, and how hard to **escalate** — and they are read separately, never collapsed into one verdict.
+   - **Kind**, from `unexpected_error`:
+     - **`true`**: at least one of the failures joined into this site's `error` could not be classified — it did not arrive as a fetch error.
+       The flag is an OR over a site's failures, not a description of one, so report the `error` whole and say an unclassified failure is among them — do not try to attribute it to a part of the text.
+       That is all the flag asserts: it is usually a feed-filter bug — both parsers on this path degrade a malformed payload to an empty result rather than raising — but forum data also reaches code that is not a parser, so a hostile or freak payload can look the same.
+       So say it is unclassified and leave the message to speak for itself, rather than narrating it as an unreachable forum, and do not diagnose it beyond what the message says.
+     - **`false`**: a classified fetch failure. Report it as the fetch failure it is.
+   - **Escalation**, from `persistent`:
+     - **`persistent == true`**: the site's Rule-A admission has returned no verdict for `consecutive_failures` consecutive runs.
+       The CLI has already decided this crossed the threshold — do not re-judge it as "transient".
+       Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below.
+       The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
+       When it is also an `unexpected_error`, still give the investigation, but lead with the message: the flag does not say which call raised, and the count says only that the admission returned no positive verdict — so a moved URL is the first hypothesis to test, not an established diagnosis.
+       1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`. If the forum moved, fixing `forum_url` (see `kboat-manage-feed-sites`) restores it with no loss — the seen-store keys on `(site_id, topic_id)`, not the domain.
+       2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
+     - **Not `persistent`** (the common case): report the `error` in the summary and move on, without escalating on a single bad run.
+       Withholding escalation is not a claim that the failure is transient: the counter only tracks whether the admission reached the site, so a Rule-B failure can repeat run after run without moving it.
+       So report what the fields say and let the counter do its job; never write a repeating failure up as self-healing.
 
 ## Run summary
 
 Emit a run summary as the run's text output — the pass's durable record.
-Lead with what is **actionable** and name the offending sites: a gather `error` or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
+Lead with what is **actionable** and name the offending sites: a `persistent` site (step 5), or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit). A gather `error` on its own is reported, not led with.
 Routine keeps need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
-A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's URL-change recommendation (first check for a moved forum URL, else the remedy is `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill).
+A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's URL-change recommendation (first check for a moved forum URL, else the remedy is `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill), noting the `error` verbatim when it is an `unexpected_error`.
 Whether to escalate this summary to a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
 
 - Counts: sites gathered, topics with Rule-A candidates, topics with Rule-B candidates, posts kept (written), posts dropped, posts error-fallback written, and `discourse_fetches` (total Discourse HTTP calls this run made).
-- Poll advances: topics finalized (advanced poll counter), topics withheld (cap-truncated, re-poll next run).
-- Errors: each site with a gather `error` (noting its `consecutive_failures` and whether it is `persistent`), and any `forum-remind` or `forum-poll-done` non-zero exit.
+- Poll advances: topics finalized (the `polls` entries you called `forum-poll-done` for). Any due topic not among them was withheld and re-polls next run — the cap cut it, or its gather did not complete — and the output does not distinguish the two, so report the count you finalized rather than inventing a breakdown. A gather that did not complete surfaces through its site's `error` in step 5.
+- Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), and any `forum-remind` or `forum-poll-done` non-zero exit.
 
 ## Cost controls (state these hold)
 
