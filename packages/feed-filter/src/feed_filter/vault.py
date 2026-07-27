@@ -13,8 +13,8 @@ and `upsert` keeps the existing value.
 
 `write_feed_note`'s failure contract is never-lost: a write that cannot complete
 raises — `VaultError` for a refused write, `VaultLockedError` for a vault another run
-still held when the wait expired, or the `OSError`/`BadInputError` the shared writer
-raises itself — so the CLI records nothing seen and the next run retries, never-lost
+still held when the wait expired, `VaultLockUnavailableError` for a lock that could not
+be operated at all, or the `OSError`/`BadInputError` the shared writer raises itself — so the CLI records nothing seen and the next run retries, never-lost
 over never-duplicated. The CLI reports all four the same way; whichever it is, it is
 raised before the seen-record.
 

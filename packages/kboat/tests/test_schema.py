@@ -78,14 +78,31 @@ def test_no_module_spells_a_vault_path_of_its_own() -> None:
 
     `DIR_BY_TYPE` and the paths beside it exist because two tools that each write
     `"Sources"` cannot be moved together. Nothing catches a regression to a literal on
-    its own — the string is identical, so every test still passes — and a conflict
+    its own — the string is identical, so every test still passes — and a merge
     resolution that reverts one is exactly how it would happen. This is that gate.
 
-    Asserted over parsed constants rather than raw text, so prose that names a folder
-    (a docstring, a comment, a report key) is untouched: only a string a module would
-    actually resolve a path from counts.
+    **What it matches**: every string constant in the parsed AST equal to a declared
+    value, or to one with a trailing slash — the second form is what an f-string leaves
+    behind, so `f"Sources/{slug}.md"` is caught where `f"{DIR_BY_TYPE[t]}/{slug}.md"` is
+    the intended spelling. Comments are invisible (they are not in the AST), and prose
+    survives on whole-string equality rather than on being prose: a docstring or a
+    report key *is* a constant and *is* compared, it simply never equals `"Sources"`.
+
+    **What it misses**, so nobody reads it as more than it is: a literal that is only
+    part of the spelling. A mid-path f-string run leaves `"/Sources/"`, a glob pattern
+    leaves `"Sources/*.md"`, and a split literal leaves neither half — none of those
+    equal a declared value. So does a path taken from a variable. Plain concatenation
+    *is* caught, since `"Sources" + "/" + slug` still contains the constant. The
+    `feed_filter` member is walked by nothing; it spells no vault path today because it
+    writes through `upsert`.
+
+    If this ever fires on a string that is genuinely not a path — a report key, an enum
+    value that happens to collide — the value is the thing to rename, or this test is
+    the place to record why it is exempt. Do not spell a layout value here to silence it.
     """
     declared = {*DIR_BY_TYPE.values(), QUEUE_DIR, REVIEWS_DIR, PDFS_DIR, QUESTIONS_FILE, DAILY_DIR}
+    # An f-string's literal run keeps the separator, so both forms are the same mistake.
+    spellings = declared | {f"{value}/" for value in declared}
     src = Path(kboat.__file__).parent
     schema_module = Path(kboat.schema.__file__)
 
@@ -95,7 +112,7 @@ def test_no_module_spells_a_vault_path_of_its_own() -> None:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and node.value in declared:
+            if isinstance(node, ast.Constant) and node.value in spellings:
                 offenders.append(f"{path.relative_to(src)}:{node.lineno}: {node.value!r}")
 
     assert not offenders, "spell these through kboat.schema instead:\n" + "\n".join(offenders)
