@@ -40,7 +40,7 @@ import time
 from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from itertools import zip_longest
 from typing import Any
 from urllib.parse import urlsplit
@@ -71,7 +71,12 @@ from feed_filter.config import (
 from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.exa import ExaError, search, usable_cost
 from feed_filter.fetch import FetchError, build_client
-from feed_filter.forum_pipeline import admit_from_feeds, gather_forum
+from feed_filter.forum_pipeline import (
+    GatherForumResult,
+    RuleACandidate,
+    admit_from_feeds,
+    gather_forum,
+)
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
 from feed_filter.seen import is_seen, open_db, record, snapshot
@@ -642,6 +647,78 @@ def cmd_add_forum(args: argparse.Namespace) -> int:
     return 0
 
 
+@dataclass(frozen=True)
+class _AdmitOutcome:
+    """One site's whole Rule-A contribution, however the admission ended.
+
+    Every field has a default, so the absorbing path below cannot leave a
+    half-set outcome behind. ``reached`` is the site-health signal — whether this
+    run holds a *positive* reachability verdict — and is wider than
+    ``AdmitResult.all_feeds_failed``, since an admission that raised holds none
+    either. That is why the absorbing path returns this type rather than a
+    synthesized ``AdmitResult``, whose ``all_feeds_failed`` would be a claim about
+    feeds that may well have answered.
+    """
+
+    candidates: list[RuleACandidate] = field(default_factory=list)
+    error: str | None = None
+    unexpected: bool = False
+    reached: bool = False
+    fetch_count: int = 0
+
+
+def _admit_or_absorb(
+    conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client, now: int
+) -> _AdmitOutcome:
+    """Run one site's Rule-A admission, absorbing what is that site's own.
+
+    ``admit_from_feeds`` guards each feed against ``FetchError`` only, so this is
+    the net for anything else it raises, at the cost of the site's whole Rule-A
+    pass. Nothing durable is lost: ``admit_topic``'s writes are idempotent and a
+    topic admitted before the raise still has ``op_interest_kept`` NULL, so the
+    next run re-emits it. A store error and a ``BaseException`` propagate instead
+    — see ARCHITECTURE's forum failure-isolation bullet.
+    """
+    try:
+        result = admit_from_feeds(conn, site, client=client, now=now)
+    except sqlite3.Error:
+        raise  # the run's failure, not this site's
+    except Exception as exc:
+        # The type name matters: an unexpected exception's str() is often empty
+        # (``RuntimeError()``), which would surface as a blank error.
+        return _AdmitOutcome(error=f"{type(exc).__name__}: {exc}", unexpected=True)
+    return _AdmitOutcome(
+        candidates=result.candidates,
+        error=result.error,
+        reached=not result.all_feeds_failed,
+        fetch_count=result.fetch_count,
+    )
+
+
+def _gather_or_absorb(
+    conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client, now: int
+) -> GatherForumResult:
+    """Run one site's Rule-B gather, absorbing what escaped its own loop.
+
+    ``gather_forum`` contains an unclassified failure per topic, so this catches
+    only what runs outside that loop, which assembles nothing — hence the empty
+    synthesized result is honest. Called separately from ``_admit_or_absorb``
+    because they share no state: an admission that raised must not also forfeit
+    Rule B. Same carve-outs for a store error and a ``BaseException``.
+    """
+    try:
+        return gather_forum(conn, site, client=client, now=now)
+    except sqlite3.Error:
+        raise  # the run's failure, not this site's
+    except Exception as exc:
+        return GatherForumResult(
+            candidates=[],
+            polled_topics=[],
+            error=f"{type(exc).__name__}: {exc}",
+            unexpected=True,
+        )
+
+
 def cmd_forum_new(args: argparse.Namespace) -> int:
     """Gather Rule-A and Rule-B candidates for forum sites.
 
@@ -662,18 +739,36 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     by the cap is withheld from ``polls`` so it re-polls next run and no post
     is finalized before it is dispositioned (never-lost).
 
+    A failure is contained at two levels: per topic inside ``gather_forum``, so a
+    partially-gathered site emits the topics it finished; and per path here, via
+    ``_admit_or_absorb`` / ``_gather_or_absorb``, for what the pipeline cannot
+    absorb itself. The second costs the whole path that raised — an admission
+    failure forfeits the site's Rule-A candidates, a gather failure its Rule-B
+    candidates and polls. Both grains and their costs: ARCHITECTURE's forum
+    failure-isolation bullet.
+
     The emitted ``discourse_fetches`` is the total Discourse HTTP calls this run
     made (RSS feeds + topic JSON, summed across sites) — a coarse politeness
     metric the skill reports; it excludes the judging subagents' ``WebFetch``.
+    It counts only what a returned result carried home, so a call the per-site
+    boundary caught reports none of the requests it had made — as does the
+    ``error`` it had collected. Both are why the skill treats the figure as rough.
 
-    Each ``sites[]`` entry also carries ``consecutive_failures`` (the durable
-    per-site count from ``site_health``) and ``persistent`` (that count has
-    reached ``DEFAULT_PERSISTENT_FAILURE_RUNS``). The count increments only when
-    the site was wholly unreachable this run (``admit_result.all_feeds_failed``)
-    and resets on any reachable run, so a stateless run can distinguish a
-    persistent outage from a one-run blip and escalate at the threshold instead of
-    re-deriving "transient" every run. The CLI never
-    auto-disables — escalation is surfaced in the run summary, not a CLI action.
+    Each ``sites[]`` entry carries three fields beyond ``error``:
+
+    - ``unexpected_error`` — an absorbed exception the run could not classify,
+      the same typed flag the article path emits. It asserts only that the
+      failure did not arrive as a ``FetchError``, so the skill reports the
+      message verbatim rather than narrating an unreachable site.
+    - ``consecutive_failures`` — the durable per-site count from ``site_health``.
+      It increments when the admission found the site wholly unreachable
+      (``AdmitResult.all_feeds_failed``) or itself raised, and resets on any run
+      whose admission reported the site reachable, so a stateless run can
+      distinguish a persistent failure from a one-run blip. It is keyed on the
+      admission alone — that call is the site's reachability probe — with the
+      reasoning in ARCHITECTURE's site-health bullet.
+    - ``persistent`` — that count has reached ``DEFAULT_PERSISTENT_FAILURE_RUNS``.
+      The CLI never auto-disables; escalation is surfaced in the run summary.
     """
     sites = [s for s in _select_sites(args.site_id) if s.enabled and s.kind == "forum"]
     now = int(time.time())
@@ -687,9 +782,10 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
 
     with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
         for site in sites:
-            admit_result = admit_from_feeds(conn, site, client=client, now=now)
-            gather_result = gather_forum(conn, site, client=client, now=now)
-            discourse_fetches += admit_result.fetch_count + gather_result.fetch_count
+            admit = _admit_or_absorb(conn, site, client=client, now=now)
+            gather = _gather_or_absorb(conn, site, client=client, now=now)
+            unexpected = admit.unexpected or gather.unexpected
+            discourse_fetches += admit.fetch_count + gather.fetch_count
 
             # Serialize Rule-A candidates.
             rule_a = [
@@ -701,7 +797,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
                     "rule": "A",
                     "op_text": c.op_text,
                 }
-                for c in admit_result.candidates
+                for c in admit.candidates
             ]
 
             # Serialize Rule-B candidates.
@@ -723,7 +819,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
                         for p in c.trigger_posts
                     ],
                 }
-                for c in gather_result.candidates
+                for c in gather.candidates
             ]
 
             # Interleave Rule-A and Rule-B within this site so neither starves
@@ -731,27 +827,26 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
             groups.append(_round_robin([rule_a, rule_b]))
 
             # Collect the finalize worklist from gather_forum for cap-safety check.
-            for pt in gather_result.polled_topics:
+            for pt in gather.polled_topics:
                 finalize_worklists.append((site.id, pt.topic_id, pt.like_count))
 
-            # Site-health escalation: increment the durable
-            # consecutive-failure counter only when the whole site was unreachable
-            # (every discovery feed raised FetchError), else reset it. This keys on
-            # the typed admit signal, NOT the combined error string — a dead-topic
-            # retirement or a partial feed failure leaves ``all_feeds_failed`` False,
-            # so a reachable site never false-escalates.
-            if admit_result.all_feeds_failed:
+            # Site-health escalation (rule and rationale in the docstring). What
+            # matters here: this keys on the typed admit signal, never on the
+            # combined error string, so a dead-topic retirement or a partial feed
+            # failure cannot false-escalate a reachable site.
+            if not admit.reached:
                 failure_count = site_health.record_failure(conn, site.id)
             else:
                 site_health.record_success(conn, site.id)
                 failure_count = 0
 
             # Combine per-path errors into one status entry per site.
-            errors = [e for e in [admit_result.error, gather_result.error] if e is not None]
+            errors = [e for e in (admit.error, gather.error) if e is not None]
             site_status.append(
                 {
                     "site_id": site.id,
                     "error": "; ".join(errors) if errors else None,
+                    "unexpected_error": unexpected,
                     "consecutive_failures": failure_count,
                     "persistent": site_health.is_persistent(
                         failure_count, DEFAULT_PERSISTENT_FAILURE_RUNS

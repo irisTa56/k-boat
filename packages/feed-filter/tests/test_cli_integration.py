@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ import httpx
 import pytest
 from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
-from feed_filter import browser, cli
+from feed_filter import browser, cli, forum_store
 from feed_filter.canonical import canonical_url
 from feed_filter.config import db_path, sites_path, vault_path
 from feed_filter.forum_store import is_post_seen, op_interest_kept
@@ -990,6 +991,242 @@ def test_forum_new_dead_topic_retirement_does_not_increment(
     assert "retiring dead topic" in status["error"]
     assert status["consecutive_failures"] == 0, "a dead-topic retirement is not a site failure"
     assert status["persistent"] is False
+
+
+# ---------------------------------------------------------------------------
+# Per-topic failure isolation: a topic whose gather did not complete stays out
+# of the emitted polls worklist and re-polls on the next run.
+# ---------------------------------------------------------------------------
+
+
+def _multi_topic_rss(*topic_ids: int) -> bytes:
+    """A Discourse-style RSS body carrying one item per topic id."""
+    items = "".join(
+        f"<item><title>Topic {tid}</title>"
+        f"<link>{_FORUM_URL}/t/topic-{tid}/{tid}</link>"
+        f"<description>OP text summary</description>"
+        f"<pubDate>Sun, 14 Jun 2026 10:00:00 GMT</pubDate></item>"
+        for tid in topic_ids
+    )
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<rss version="2.0"><channel><title>Forum</title>{items}</channel></rss>'
+    )
+    return body.encode("utf-8")
+
+
+def _one_post_topic_json(topic_id: int, post_id: int) -> bytes:
+    """A topic payload with a single qualifying post, id given by the caller.
+
+    Distinct post ids per topic are what let a fault be injected for one topic's
+    per-post scan and not the other's.
+    """
+    return json.dumps(
+        {
+            "id": topic_id,
+            "slug": f"topic-{topic_id}",
+            "title": f"Topic {topic_id}",
+            "like_count": 15,
+            "post_stream": {
+                "posts": [
+                    {
+                        "id": post_id,
+                        "post_number": 1,
+                        "cooked": "<p>Body.</p>",
+                        "actions_summary": [{"id": 2, "count": 10}],
+                    }
+                ]
+            },
+        }
+    ).encode()
+
+
+def _two_topic_transport() -> httpx.Client:
+    """Feeds surfacing topics 1234 and 1235, each with its own topic JSON."""
+    feed = _multi_topic_rss(1234, 1235)
+    payloads = {
+        "/t/1234.json": _one_post_topic_json(1234, 5001),
+        "/t/1235.json": _one_post_topic_json(1235, 6001),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in ("/latest.rss", "/top.rss"):
+            return httpx.Response(
+                200, content=feed, headers={"content-type": "application/rss+xml"}
+            )
+        if path in payloads:
+            return httpx.Response(
+                200, content=payloads[path], headers={"content-type": "application/json"}
+            )
+        return httpx.Response(404, text="not found")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_forum_new_topic_that_never_completed_stays_out_of_polls(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A topic whose gather raised is withheld from ``polls`` and re-polls next run.
+
+    This is the load-bearing property of per-topic isolation: ``polls`` is what
+    the run skill feeds to ``forum-poll-done``, so a topic that reached it without
+    completing would have its poll advanced past posts nobody dispositioned. The
+    other due topic must still emit — a partially-gathered site emits the topics
+    it finished.
+    """
+    _register_forum(offsets=("0", "7"))
+    capsys.readouterr()  # discard add-forum output
+    monkeypatch.setattr(cli, "build_client", _two_topic_transport)
+
+    # Fault injection: topic 1235's per-post seen check raises, after that topic's
+    # poll record was already assembled.
+    failing_posts = {6001}
+    real_is_post_seen = forum_store.is_post_seen
+
+    def flaky_is_post_seen(conn: sqlite3.Connection, site_id: str, post_id: int) -> bool:
+        if post_id in failing_posts:
+            raise RuntimeError("seen lookup blew up")
+        return real_is_post_seen(conn, site_id, post_id)
+
+    monkeypatch.setattr(forum_store, "is_post_seen", flaky_is_post_seen)
+
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    out = _out(capsys)
+
+    assert [p["topic_id"] for p in out["polls"]] == [1234], (
+        "the topic that raised must not be offered for forum-poll-done"
+    )
+    # Admission is a separate path, so both topics still have Rule-A candidates;
+    # only 1235's Rule-B work was lost.
+    assert {t["topic_id"] for t in out["topics"] if t["rule"] == "A"} == {1234, 1235}
+    assert [t["topic_id"] for t in out["topics"] if t["rule"] == "B"] == [1234]
+
+    status = _forum_status(out)
+    assert status["unexpected_error"] is True
+    assert "topic 1235" in status["error"]
+    # Reachable site: the Rule-B failure is not a site-health failure run.
+    assert status["consecutive_failures"] == 0
+
+    # Nothing was recorded for 1235, so the next run re-polls it and re-derives
+    # the same post — never-lost.
+    failing_posts.clear()
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    out2 = _out(capsys)
+    assert 1235 in {p["topic_id"] for p in out2["polls"]}
+    assert 6001 in {
+        p["post_id"]
+        for t in out2["topics"]
+        if t["rule"] == "B" and t["topic_id"] == 1235
+        for p in t["trigger_posts"]
+    }
+    assert _forum_status(out2)["unexpected_error"] is False
+
+
+def test_forum_new_persisting_topic_failure_re_surfaces_next_run(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A cause that does not clear keeps re-surfacing rather than going quiet.
+
+    This is the mitigation the design rests on: nothing retires a topic whose
+    gather never completes, so the flag has to reappear on every run for a human
+    to act on. The accepted cost shows here too — the failing topics are still
+    due, so the second run pays their topic-JSON calls again instead of settling.
+    With a fixed due set that repeats at the same price per run; it *grows* only
+    as the admission enrolls further topics, which this fixture's feed does not.
+    """
+    _register_forum(offsets=("0", "7"))
+    capsys.readouterr()  # discard add-forum output
+    monkeypatch.setattr(cli, "build_client", _two_topic_transport)
+
+    def always_failing(conn: sqlite3.Connection, site_id: str, post_id: int) -> bool:
+        raise RuntimeError("seen lookup blew up")
+
+    monkeypatch.setattr(forum_store, "is_post_seen", always_failing)
+
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    first = _out(capsys)
+    assert first["polls"] == [], "neither topic completed"
+
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    second = _out(capsys)
+    assert second["polls"] == []
+    # Both topics are still due, so the run pays their topic-JSON calls again
+    # rather than dropping them: same cost repeated, never amortized away.
+    assert second["discourse_fetches"] == first["discourse_fetches"]
+    assert "topic 1234" in _forum_status(second)["error"]
+    assert "topic 1235" in _forum_status(second)["error"]
+
+
+def test_forum_new_admission_raising_mid_loop_re_emits_rule_a_next_run(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A raise partway through the admission loses no Rule-A judgment.
+
+    This is what licenses the per-site boundary absorbing an admission failure:
+    ``admit_topic`` writes, but idempotently, and a topic admitted just before the
+    raise still has ``op_interest_kept`` NULL — so the next run re-emits its
+    Rule-A candidate rather than skipping a topic that was never judged.
+    """
+    _register_forum(offsets=("0", "7"))
+    capsys.readouterr()  # discard add-forum output
+    monkeypatch.setattr(cli, "build_client", _two_topic_transport)
+
+    # Fault injection: the admission raises on the second topic it admits, after
+    # the first has already been written to forum_watch.
+    real_admit_topic = forum_store.admit_topic
+    admitted: list[int] = []
+
+    def flaky_admit_topic(
+        conn: sqlite3.Connection,
+        site_id: str,
+        topic_id: int,
+        *,
+        first_seen_at: int,
+        poll_eligible: bool,
+    ) -> None:
+        if admitted:
+            raise RuntimeError("admit blew up")
+        admitted.append(topic_id)
+        real_admit_topic(
+            conn,
+            site_id,
+            topic_id,
+            first_seen_at=first_seen_at,
+            poll_eligible=poll_eligible,
+        )
+
+    monkeypatch.setattr(forum_store, "admit_topic", flaky_admit_topic)
+
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    out = _out(capsys)
+    # The admission fetched all three feeds before raising, and the gather fetched
+    # the one due topic — but a caught call's count never rides home, so the
+    # politeness metric reports only the gather's. It is a floor, not a total.
+    assert out["discourse_fetches"] == 1
+    assert [t for t in out["topics"] if t["rule"] == "A"] == [], (
+        "the whole Rule-A pass is forfeited, not partly emitted"
+    )
+    # The separately-guarded Rule-B gather still ran, over the one topic the
+    # admission had written before it raised.
+    assert [t["topic_id"] for t in out["topics"] if t["rule"] == "B"] == [1234]
+    status = _forum_status(out)
+    assert status["unexpected_error"] is True
+    assert status["consecutive_failures"] == 1, "no reachability verdict was returned"
+
+    # Next run, with the fault cleared: both topics are judged, including the one
+    # already written to forum_watch before the raise.
+    monkeypatch.setattr(forum_store, "admit_topic", real_admit_topic)
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    out2 = _out(capsys)
+    assert {t["topic_id"] for t in out2["topics"] if t["rule"] == "A"} == {1234, 1235}
+    assert _forum_status(out2)["consecutive_failures"] == 0
 
 
 # ---------------------------------------------------------------------------
