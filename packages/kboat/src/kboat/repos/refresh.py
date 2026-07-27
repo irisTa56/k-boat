@@ -24,7 +24,7 @@ from kboat.cli import add_today_argument, add_vault_argument, vault_path
 from kboat.frontmatter import FrontmatterError, parse_frontmatter
 from kboat.frontmatter import set_fields as _set_rendered_fields
 from kboat.io_utils import atomic_write_text
-from kboat.schema import REPO
+from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
 
 from .gather import gh_repo_view, github_fields, resolved_identity
@@ -80,9 +80,9 @@ def _fetch(note: dict) -> dict:
 def refresh(
     vault: Path, *, today: date, max_workers: int = MAX_WORKERS, dry_run: bool = False
 ) -> dict:
-    repos_dir = vault / "Repos"
+    repos_dir = vault / DIR_BY_TYPE["repo"]
     if not repos_dir.is_dir():
-        return {"error": f"no Repos/ directory under vault: {repos_dir}"}
+        return {"error": f"no {DIR_BY_TYPE['repo']}/ directory under vault: {repos_dir}"}
 
     notes, anomalies = _load_repo_notes(repos_dir, vault)
     today_iso = today.isoformat()
@@ -116,6 +116,9 @@ def refresh(
         adopt = resolved_url != canonical_url(r["owner"], r["repo"])
         renaming = adopt and new_slug != path.stem
         target = repos_dir / f"{new_slug}.md"
+        # Derived from `target`, so a report path cannot name a different
+        # directory from the one the write actually went to.
+        rel_target = target.relative_to(vault).as_posix()
 
         updates = github_fields(meta, today=today)
         updates["refreshed_date"] = today_iso
@@ -124,9 +127,7 @@ def refresh(
             # The canonical slug is already taken (by an existing note, or by
             # another rename this run) — refresh metadata in place but don't adopt
             # the identity or move; a human merges the two.
-            rename_collisions.append(
-                {"path": rel, "was": was, "now": now, "conflict": f"Repos/{new_slug}.md"}
-            )
+            rename_collisions.append({"path": rel, "was": was, "now": now, "conflict": rel_target})
             adopt = renaming = False
 
         if renaming:
@@ -134,17 +135,17 @@ def refresh(
         if adopt:
             updates["url"] = resolved_url
             updates["title"] = now
-            adopted.append({"from": rel, "to": f"Repos/{new_slug}.md", "was": was, "now": now})
+            adopted.append({"from": rel, "to": rel_target, "was": was, "now": now})
 
         if dry_run:
-            updated.append(f"Repos/{new_slug}.md" if renaming else rel)
+            updated.append(rel_target if renaming else rel)
             continue
         try:
             content = set_fields(path.read_text(encoding="utf-8"), updates)
             if renaming:
                 atomic_write_text(target, content)
                 path.unlink()
-                updated.append(f"Repos/{new_slug}.md")
+                updated.append(rel_target)
             else:
                 atomic_write_text(path, content)
                 updated.append(rel)

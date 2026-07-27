@@ -18,6 +18,8 @@ import json
 import os
 from pathlib import Path
 
+from kboat.schema import QUEUE_DIR
+
 
 def build_bookmarklet(vault: str, folder: str) -> str:
     """Return the `javascript:` bookmarklet for one vault + queue folder.
@@ -67,8 +69,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--folder",
-        default="Queue",
-        help="Vault-relative queue folder the note is dropped into (default: Queue).",
+        default=QUEUE_DIR,
+        help=f"Vault-relative queue folder the note is dropped into (default: {QUEUE_DIR}).",
     )
     args = parser.parse_args(argv)
 

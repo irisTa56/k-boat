@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from kboat.frontmatter import Value
 from kboat.validate.core import check_note
 
@@ -89,6 +91,51 @@ def test_ambiguous_dispositions() -> None:
     # dismiss alone, or keep+distill, is fine.
     assert "ambiguous" not in _codes("source", _source(dismiss=True))
     assert "ambiguous" not in _codes("source", _source(keep=True, distill=True))
+
+
+# Two representatives; which strings are dates is `is_iso_date`'s own test.
+@pytest.mark.parametrize("value", ["2026-02-29", "20260601"])
+def test_a_date_field_holding_something_that_is_not_a_date_is_reported(value: str) -> None:
+    # The validator and the lifecycle's ageing predicates share one definition of
+    # a date, so anything the lifecycle cannot age is reported here as drift
+    # rather than sitting in a note nothing can read.
+    assert "bad_date" in _codes("source", _source(added_date=value))
+
+
+def test_a_canonical_date_is_accepted() -> None:
+    assert "bad_date" not in _codes("source", _source(added_date="2024-02-29"))
+
+
+def test_distilled_date_requires_the_distill_flag() -> None:
+    assert "distilled_without_distill" in _codes("source", _source(distilled_date="2026-06-01"))
+    # With the flag set it is the ordinary terminal state.
+    assert "distilled_without_distill" not in _codes(
+        "source", _source(distill=True, distilled_date="2026-06-01")
+    )
+    # An empty date — bare, blank, or absent — says nothing was distilled.
+    assert "distilled_without_distill" not in _codes("source", _source(distilled_date=None))
+    assert "distilled_without_distill" not in _codes("source", _source(distilled_date="  "))
+    fm = _source()
+    del fm["distilled_date"]
+    assert "distilled_without_distill" not in _codes("source", fm)
+
+
+def test_a_kindle_note_is_held_to_the_same_distilled_rule() -> None:
+    # Both distillable kinds, one check: the contradiction is identical, and the
+    # asymmetry would be the kind of gap nothing else reports.
+    kindle: dict[str, Value] = {"type": "kindle", "distill": False, "distilled_date": "2026-06-01"}
+    assert "distilled_without_distill" in _codes("kindle", kindle)
+    assert "distilled_without_distill" not in _codes("kindle", {**kindle, "distill": True})
+    assert "distilled_without_distill" not in _codes("kindle", {**kindle, "distilled_date": None})
+
+
+def test_a_disposition_without_a_filed_date_is_not_a_violation() -> None:
+    # It is the state that triggers the routine's own Phase A stamp, so a rule
+    # here would fire on every freshly-ticked checkbox. `kboat-validate --stats`
+    # reports it as `awaiting_filed_stamp` instead.
+    assert check_note("source", _source(distill=True, filed_date=None), "p") == []
+    assert check_note("source", _source(keep=True, filed_date=None), "p") == []
+    assert check_note("source", _source(dismiss=True, filed_date=None), "p") == []
 
 
 def test_blocked_must_have_no_notebook() -> None:

@@ -14,11 +14,14 @@ not check per-field prose (defaults, kinds, enums): those are woven into the
 from __future__ import annotations
 
 import re
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
 import pytest
 
 from kboat.schema import FEED, KINDLE, REPO, SOURCE, NoteSchema
+from kboat.validate.core import CrossFieldCode
+from kboat.validate.stats import Stats
 
 # The skills live at the workspace root; this test file sits at
 # packages/kboat/tests/, so walk up three levels (tests → kboat → packages → root).
@@ -98,4 +101,50 @@ def test_doc_table_matches_schema_fields(schema: NoteSchema) -> None:
     assert doc == list(schema.field_names()), (
         f"{schema.type} schema table in {skill} is out of sync with "
         "kboat.schema (fields differ or are reordered)"
+    )
+
+
+# The same drift risk, for the two tables `kboat-notes` keeps of things the
+# `kboat` package declares in code. Both sit under an H3 and are found by their
+# own header row rather than by section, each header being unique in the file.
+_STATS_TABLE = re.compile(r"^\|\s*Field\s*\|\s*Meaning\s*\|")
+_RULES_TABLE = re.compile(r"^\|\s*Code\s*\|\s*Field\s*\|\s*Rule\s*\|")
+
+
+def _first_column(text: str, header: re.Pattern[str]) -> list[str]:
+    """The leading backticked token of each row's first cell, for one table."""
+    lines = text.splitlines()
+    matches = [i for i, line in enumerate(lines) if header.match(line)]
+    assert len(matches) == 1, (
+        f"expected exactly one table matching {header.pattern!r}, found {len(matches)} — "
+        "did a header row change, or did a second table adopt the same columns?"
+    )
+    start = matches[0]
+    out: list[str] = []
+    for line in lines[start + 2 :]:  # skip the header row and the `| --- |` separator
+        if not line.startswith("|"):
+            break
+        cell = _FIELD_NAME.search(line.split("|")[1].strip())
+        if cell:
+            out.append(cell.group(1))
+    return out
+
+
+def _kboat_notes() -> str:
+    return (SKILLS / "kboat-notes/SKILL.md").read_text()
+
+
+def test_backlog_stats_table_matches_the_stats_fields() -> None:
+    assert _first_column(_kboat_notes(), _STATS_TABLE) == [
+        f.name for f in dataclass_fields(Stats)
+    ], (
+        "the Backlog stats table in kboat-notes is out of sync with kboat.validate.stats.Stats "
+        "(fields differ or are reordered) — the JSON keys come from the field order"
+    )
+
+
+def test_cross_field_rules_table_matches_the_emitted_codes() -> None:
+    assert _first_column(_kboat_notes(), _RULES_TABLE) == [c.value for c in CrossFieldCode], (
+        "the Cross-field rules table in kboat-notes is out of sync with "
+        "kboat.validate.core.CrossFieldCode (codes differ or are reordered)"
     )

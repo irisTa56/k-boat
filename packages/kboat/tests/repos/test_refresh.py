@@ -127,6 +127,12 @@ def test_refresh_adopts_rename_and_moves_file(tmp_path: Path, monkeypatch) -> No
     assert report["counts"]["adopted"] == 1
     assert not old.exists()  # old slug file removed
     new_path = tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    # The reported paths are the contract the skill relays to the human, so they
+    # are pinned alongside the on-disk move rather than left to inspection.
+    rel_new = new_path.relative_to(tmp_path).as_posix()
+    assert report["adopted"][0]["to"] == rel_new
+    assert report["adopted"][0]["from"] == old.relative_to(tmp_path).as_posix()
+    assert report["updated"] == [rel_new]
     fm = parse_frontmatter(new_path.read_text())
     assert fm["url"] == "https://github.com/a2aproject/A2A"
     assert fm["title"] == "a2aproject/A2A"
@@ -163,6 +169,13 @@ def test_refresh_rename_collision_keeps_both(tmp_path: Path, monkeypatch) -> Non
     assert report["counts"]["rename_collisions"] == 1
     assert report["counts"]["adopted"] == 0
     assert old.exists()  # not moved; both notes remain for a human to merge
+    # The conflict names the slug that was already taken, and the refreshed note
+    # is reported under the identity it kept.
+    taken = f"Repos/{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    collision = report["rename_collisions"][0]
+    assert collision["conflict"] == taken
+    assert collision["path"] == old.relative_to(tmp_path).as_posix()
+    assert collision["path"] in report["updated"]
     # The collided note still got its metadata refreshed, but kept its old identity.
     assert parse_frontmatter(old.read_text())["url"] == "https://github.com/google/A2A"
 

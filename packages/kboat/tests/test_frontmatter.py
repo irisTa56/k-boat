@@ -8,6 +8,7 @@ import yaml
 from kboat.frontmatter import (
     FrontmatterError,
     body_after_frontmatter,
+    is_iso_date,
     parse_entries,
     parse_frontmatter,
     set_field,
@@ -452,3 +453,36 @@ def test_a_writers_reordering_cannot_change_what_the_entries_mean(lines: tuple[s
     assert sorted(parse_entries(written), key=str) == sorted(entries, key=str)
     if (expected := _as_yaml(text)) is not None:
         assert _as_yaml(written) == expected
+
+
+class TestIsIsoDate:
+    @pytest.mark.parametrize("value", ["2026-06-01", "2024-02-29", "0001-01-01"])
+    def test_accepts_a_canonical_calendar_date(self, value: str) -> None:
+        assert is_iso_date(value) is True
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "20260601",  # basic form: parses, but does not order alongside the canonical one
+            "2026-W23-1",  # week date: same
+            "2026-6-1",  # unpadded
+            "2026-13-45",  # well-shaped, but no such day
+            "2026-02-29",  # nor this one — 2026 is not a leap year
+            "2026-06-01T00:00:00Z",  # a timestamp is not a date
+            "2026/06/01",
+            # Arabic-Indic digits, written as escapes so they stay visible in a
+            # diff. The pattern's `\\d` admits them; only the parse rejects them,
+            # so this is what stops a value reaching the lexicographic compare.
+            "\u0662\u0660\u0662\u0666-\u0660\u0666-\u0660\u0661",
+            " 2026-06-01",  # a quoted hand edit reaches here padded; it is drift
+            "2026-06-01 ",
+            "",
+            "   ",
+        ],
+    )
+    def test_rejects_everything_else(self, value: str) -> None:
+        assert is_iso_date(value) is False
+
+    @pytest.mark.parametrize("value", [None, [], 20260601, True])
+    def test_rejects_a_non_string(self, value: object) -> None:
+        assert is_iso_date(value) is False

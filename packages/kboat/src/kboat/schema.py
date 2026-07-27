@@ -1,4 +1,4 @@
-"""The vault note schema, as a single declarative source.
+"""The vault note schema and the vault's layout, as a single declarative source.
 
 This is the code-authoritative description of the *mechanical* frontmatter schema
 for each note type — field names, order, kinds, defaults, which fields are
@@ -9,9 +9,14 @@ the K-Boat types (`SOURCE`/`KINDLE`/`REPO`), `kboat-feed-notes` for the
 feed-filter type (`FEED`). The shared contract around this schema — the sync gate
 and `kboat-validate` — is the `kboat-vault-conventions` skill.
 
-Two consumers use it: `kboat validate` (checks every vault note against its
-schema) and — from Slice 2 — the note writers (assemble a note in this field
-order). The field tuple order *is* the canonical frontmatter order.
+The validator (which checks every vault note against its schema) and the note
+writers (which assemble a note in this field order) both read it; the field tuple
+order *is* the canonical frontmatter order.
+
+Alongside the schema it holds where the vault keeps things — `DIR_BY_TYPE` and the
+non-schema paths beside it — read by every tool that resolves a vault path. That
+belongs here for the same reason the field order does: one declaration, so two
+tools cannot disagree about the same folder.
 """
 
 from __future__ import annotations
@@ -184,3 +189,15 @@ DIR_BY_TYPE: dict[str, str] = {
     "repo": "Repos",
     "feed": "Feeds",
 }
+
+# The vault paths that hold no schema-backed note, named here beside
+# `DIR_BY_TYPE` so the layout has one home: a second copy of one of these is a
+# second answer to where the vault keeps something, and the two diverge silently.
+QUEUE_DIR = "Queue"  # the ingest inbox, one capture note per URL
+REVIEWS_DIR = "Reviews"  # the distillation reports
+PDFS_DIR = "PDFs"  # the downloaded file for each PDF source
+QUESTIONS_FILE = "Questions.md"  # the daily pick's open-questions backlog, at the root
+# Obsidian's Daily Notes folder. Read by the daily pick as its ambient interest
+# signal and optional by design — the pick ranks without it — so unlike the paths
+# above it is not a `kboat-doctor` precondition.
+DAILY_DIR = "Daily"
