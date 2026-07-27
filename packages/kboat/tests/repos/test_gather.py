@@ -184,3 +184,52 @@ def test_gather_injects_today_into_status(monkeypatch) -> None:
 
     later = gather("https://github.com/acme/tool", today=date(2030, 1, 1))
     assert later["fields"]["status"] == "dormant"
+
+
+def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
+    # `gh` answering non-zero (rate limit, auth, a repo that does not resolve) is a
+    # record, not an exception: the skill reads `error-meta` as "keep the queue file
+    # and retry", and the identity from the queued link names what failed.
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, "HTTP 403: rate limited"))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
+    assert out["url"] == "https://github.com/acme/tool"
+
+
+def test_gather_reports_a_subprocess_failure_as_error_meta(monkeypatch) -> None:
+    # The boundary's promise: one record whatever happens, never a raise at an
+    # unattended run. The mainline case is the fetch itself giving out.
+    def boom(_owner: str, _repo: str) -> tuple[dict | None, str | None]:
+        raise TimeoutError("gh timed out")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", boom)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "TimeoutError: gh timed out"
+    assert out["title"] == "acme/tool"
+
+
+def test_gather_reports_an_unmappable_gh_payload_as_error_meta(monkeypatch) -> None:
+    # The claim that makes the boundary blind rather than narrow: `gh` answering fine but
+    # the mapping failing on the payload is reported, not raised. Stub the mapping rather
+    # than feed it a known-bad shape, so hardening `github_fields` cannot break a test
+    # about the boundary. KeyError shares no base with the subprocess and OS errors, so a
+    # narrowed `except` fails here.
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+
+    def unmappable(_github: dict, *, today: date) -> dict[str, object]:
+        raise KeyError("name")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: ("", None))
+    monkeypatch.setattr(gather_mod, "github_fields", unmappable)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"].startswith("KeyError:")

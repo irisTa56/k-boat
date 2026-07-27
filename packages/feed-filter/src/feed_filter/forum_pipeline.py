@@ -249,7 +249,7 @@ def admit_from_feeds(
 
     Calls ``forum_store.admit_topic`` for each topic in the union; this is the
     **only** write in the ``forum-new`` path.  A topic is admitted
-    ``poll_eligible`` iff it was surfaced by a top feed (daily ∪ weekly): only
+    ``poll_eligible`` iff it was surfaced by a top feed (daily or weekly): only
     those are JSON-polled for Rule B, so a ``latest.rss``-only topic is judged
     once under Rule A but never enters the poll sweep (this bounds the
     sweep to the top-N and is what keeps the run under the forum's rate limit).
@@ -455,7 +455,7 @@ def gather_forum(
             outcome = _gather_topic(conn, site, row, forum_url=forum_url, client=client)
         except sqlite3.Error:
             raise  # the run's failure, not this topic's (same carve-out as the CLI's)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — the per-topic isolation boundary
             # Unclassified failure, contained to this topic. ``Exception`` only; a
             # ``BaseException`` (an interrupt, a ``SystemExit``) is the run's
             # failure, not this topic's, so it propagates.

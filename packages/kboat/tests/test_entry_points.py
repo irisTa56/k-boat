@@ -49,6 +49,7 @@ def test_entry_point_help_exits_zero(script_name: str) -> None:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,  # the assertion below is the check, and it reports the output
         )
     except FileNotFoundError:
         pytest.fail(

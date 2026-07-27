@@ -31,10 +31,13 @@ def test_parse_variants_collapse(url: str, owner: str, repo: str) -> None:
     assert parse_repo(url) == (owner, repo)
 
 
-def test_dotgit_suffix_only_strips_dotgit() -> None:
-    # `.git` is stripped as a whole suffix, never char-by-char.
-    assert parse_repo("https://github.com/google/cadvisor") == ("google", "cadvisor")
-    assert parse_repo("https://github.com/google/cadvisor.git") == ("google", "cadvisor")
+@pytest.mark.parametrize("name", ["buildkit", "logging", "vitest", "cadvisor"])
+def test_dotgit_suffix_only_strips_dotgit(name: str) -> None:
+    # `.git` is stripped as a whole suffix, never char-by-char. The first three names
+    # end in characters of `.git` and so are the ones that discriminate: under
+    # `rstrip(".git")` they would come back `buildk`, `loggin`, `vites`.
+    assert parse_repo(f"https://github.com/google/{name}") == ("google", name)
+    assert parse_repo(f"https://github.com/google/{name}.git") == ("google", name)
 
 
 @pytest.mark.parametrize(

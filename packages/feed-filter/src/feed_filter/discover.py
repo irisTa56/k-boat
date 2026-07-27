@@ -125,10 +125,20 @@ class _ValidatedFeed(NamedTuple):
 
 
 def _extract_alternate_links(html: str, base_url: str) -> list[str]:
-    """Resolved hrefs of each ``<link rel="alternate">`` carrying a feed type."""
+    """Resolved hrefs of each ``<link rel="alternate">`` carrying a feed type.
+
+    A body ``selectolax`` cannot parse yields no links rather than an error: a page
+    the discovery flow can't read is a page with nothing to declare.
+    """
     try:
         tree = HTMLParser(html)
-    except Exception:
+    # Blind by design. ``selectolax`` documents no exception contract, and its two
+    # backends do not share one: ``selectolax.parser`` (imported above) raises
+    # ``RuntimeError`` from its C parser, while ``selectolax.lexbor`` — the backend its
+    # docs now steer to — raises ``SelectolaxError``, straight off ``Exception``.
+    # Naming types here would leave a guard that stops guarding the day this module
+    # follows that advice, silently and with the tests still green.
+    except Exception:  # noqa: BLE001
         return []
     found: list[str] = []
     for link in tree.css('link[rel="alternate"]'):
@@ -210,7 +220,7 @@ def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str
     """
     try:
         tree = HTMLParser(html)
-    except Exception:
+    except Exception:  # noqa: BLE001 — same parser guard as _extract_alternate_links
         return []
     clusters: dict[str, list[str]] = {}
     seen_urls: set[CanonicalUrl] = set()

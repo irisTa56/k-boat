@@ -153,6 +153,16 @@ def _opt_str(table: Table, key: str) -> str | None:
     return _blank_to_none(str(val) if val is not None else None)
 
 
+# --- Strict value parsing. ----------------------------------------------------------
+# A wrong-typed TOML value is rejected with ValueError rather than the TypeError ruff's
+# TRY004 prefers, hence the suppression on each such raise below. These parsers
+# validate *file content*, not a caller's argument: `load_sites` / `add_site`
+# document one ValueError contract covering every malformed row, and `cli.main`
+# catches ValueError to render it as `error: …` + exit 1. TypeError would split
+# that contract in two and force the CLI to catch TypeError as well — which would
+# swallow the traceback of a genuine type bug anywhere beneath it.
+
+
 def _opt_bool(table: Table, key: str, *, default: bool = False) -> bool:
     """Strict bool parse: absent → ``default``, non-bool → ValueError (no soft coercion).
 
@@ -168,7 +178,7 @@ def _opt_bool(table: Table, key: str, *, default: bool = False) -> bool:
     if raw is None:
         return default
     if not isinstance(raw, bool):
-        raise ValueError(f"{key} must be a bool, got {raw!r}")
+        raise ValueError(f"{key} must be a bool, got {raw!r}")  # noqa: TRY004
     return raw
 
 
@@ -183,7 +193,7 @@ def _opt_int(table: Table, key: str) -> int | None:
     if val is None:
         return None
     if isinstance(val, bool) or not isinstance(val, int):
-        raise ValueError(f"{key} must be an integer, got {val!r}")
+        raise ValueError(f"{key} must be an integer, got {val!r}")  # noqa: TRY004
     return int(val)
 
 
@@ -193,10 +203,10 @@ def _opt_int_list(table: Table, key: str) -> tuple[int, ...] | None:
     if val is None:
         return None
     if not isinstance(val, list):
-        raise ValueError(f"{key} must be an array of integers, got {val!r}")
+        raise ValueError(f"{key} must be an array of integers, got {val!r}")  # noqa: TRY004
     for item in val:
         if isinstance(item, bool) or not isinstance(item, int):
-            raise ValueError(f"{key} items must be integers, got {item!r}")
+            raise ValueError(f"{key} items must be integers, got {item!r}")  # noqa: TRY004
     return tuple(int(i) for i in val)
 
 
