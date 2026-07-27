@@ -20,7 +20,7 @@ Each piece of content gets its own throwaway NotebookLM notebook (1:1) for readi
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Queue/` (the ingest inbox, one capture file per URL, drained by `kboat-ingest`), `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), `Feeds/` (feed-filter's triage notes, one URL-hash-named note per kept feed, forum, or query item), `Questions.md` (the daily pick's open-questions backlog, a hand-maintained bullet list), `Daily/` (Obsidian daily notes — the pick's ambient signal, optional and deliberately not a `kboat-doctor` precondition), and the standalone Bases `Sources.base`, `Kindles.base`, `Repos.base`, `Reviews.base`, `Feeds.base`.
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Queue/` (the ingest inbox, one capture file per URL, drained by `kboat-ingest`), `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), `Feeds/` (feed-filter's triage notes, one URL-hash-named note per kept feed, forum, or query item), `Questions.md` (the daily pick's open-questions backlog, a hand-maintained bullet list), `Daily/` (Obsidian daily notes — the pick's ambient signal, optional and deliberately not a `kboat-doctor` precondition), `.kboat.lock` (the vault lock — created on first use and never removed; see below), and the standalone Bases `Sources.base`, `Kindles.base`, `Repos.base`, `Reviews.base`, `Feeds.base`.
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Layout
@@ -56,7 +56,7 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 ## Architecture (K-Boat)
 
 The product skills live at the repo-root `.claude/skills/`.
-The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
+The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
 The eight K-Boat skills:
 
 - `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `kboat-vault-conventions` for the shared mechanics. Read it before touching any note format.
@@ -86,6 +86,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 - Concept-note facet tags come from a controlled vocabulary (`meta/Tag vocabulary` in the KB), reuse-first at write time. `kboat-distill` enforces reuse (prevention); `kboat-curate` is the on-demand drift sweep (detection).
 - A Kindle book (`type: kindle`, ASIN-keyed) and a GitHub repo (`type: repo`, URL-hash-named) are parallel simpler kinds — no notebook, distilled-from-note-body (Kindle) or never distilled (repo).
 - The Sources, Kindle, and Repos Bases filter only on plain booleans or `source_type ==` — never `!=` over a possibly-missing property or a date-emptiness test — which is why those booleans are written on every note.
+- Every vault write goes through `kboat.io_utils.atomic_write_text` (temp file, `fsync`, `os.replace`, directory `fsync`), and every mutating run holds `kboat.lock.vault_lock` — an advisory `flock` on `<vault>/.kboat.lock` — so two runs cannot interleave. One policy for every writer: wait a few seconds, then refuse with a `{status: "locked", holder}` record and a non-zero exit. A read-only command takes no lock. There is no stale lock to recover, because the kernel drops an `flock` when the holder's fd closes however the process ended; the design rests on all contention being same-host on a local volume, which the iCloud vault is. A lock that cannot be taken at all is a different outcome — reported with an empty stdout and no `locked` record, and not self-healing. Spec in `kboat-vault-conventions` "Durability and the vault lock", including what sits outside both mechanics.
 
 Automation:
 
@@ -109,7 +110,7 @@ Automation:
 
 ## Keep this file current
 
-The shared vault mechanics (naming, the schema/validate/write contract, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
+The shared vault mechanics (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
 When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.

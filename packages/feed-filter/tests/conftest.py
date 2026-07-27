@@ -58,8 +58,16 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Redirect the DB, sites registry, and output vault into a tmp dir."""
+    """Redirect the DB, sites registry, and output vault into a tmp dir.
+
+    The vault root is created, because in production it always exists — Obsidian
+    made it, and a write that has to provision it is writing somewhere Obsidian
+    does not read. `kboat.lock` therefore takes the vault's existence as a
+    precondition, and a fixture that left it absent would test a path no run has.
+    """
     monkeypatch.setenv("FEED_FILTER_DB", str(tmp_path / "feed-filter.db"))
     monkeypatch.setenv("FEED_FILTER_SITES", str(tmp_path / "sites.toml"))
-    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
     yield tmp_path

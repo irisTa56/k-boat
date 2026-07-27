@@ -12,10 +12,17 @@ preserved — it relocates the card rather than hiding it, so feed-filter omits 
 and `upsert` keeps the existing value.
 
 `write_feed_note`'s failure contract is never-lost: a write that cannot complete
-raises — `VaultError` for a refused write, or the `OSError`/`BadInputError` the
-shared writer raises itself — so the CLI records nothing seen and the next run
-retries, never-lost over never-duplicated. The CLI reports all three the same
-way; whichever it is, it is raised before the seen-record.
+raises — `VaultError` for a refused write, `VaultLockedError` for a vault another run
+still held when the wait expired, `VaultLockUnavailableError` for a lock that could not
+be operated at all, or the `OSError`/`BadInputError` the shared writer raises itself — so the CLI records nothing seen and the next run retries, never-lost
+over never-duplicated. The CLI reports all four the same way; whichever it is, it is
+raised before the seen-record.
+
+The write is held under the shared vault lock (`kboat.lock`), so feed-filter and a
+K-Boat run cannot interleave over the same vault. It takes the lock on the shared
+terms — wait a few seconds, then refuse — with no wait of its own to keep in step:
+one policy for every writer, and its own never-lost contract carries the entry when
+the wait does expire.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from feed_filter.canonical import CanonicalUrl
+from kboat.lock import vault_lock
 from kboat.naming import url_slug
 from kboat.schema import FEED
 from kboat.write import upsert
@@ -62,7 +70,9 @@ def write_feed_note(
     `shelved`, the reader's "read later" flag, which `upsert` defaults to `false`
     on create and preserves on a re-write. A blank `title` falls back to the URL,
     so the note's required `title` is never empty. Returns `upsert`'s
-    `{status, slug, path}`; raises `VaultError` on a slug collision.
+    `{status, slug, path}`; raises `VaultError` on a slug collision, or
+    `VaultLockedError` when the shared wait passes with another run still holding the
+    vault.
     """
     slug = url_slug(str(cu))
     record: dict[str, object] = {
@@ -79,7 +89,8 @@ def write_feed_note(
             "summary": summary,
         },
     }
-    result = upsert(FEED, vault, record, today=today)
+    with vault_lock(vault):
+        result = upsert(FEED, vault, record, today=today)
     if result.get("status") == "collision":
         if result.get("reason") == "unreadable_identity":
             raise VaultError(

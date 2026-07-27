@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from kboat.frontmatter import parse_frontmatter
+from kboat.lock import vault_lock
 from kboat.repos.__main__ import main
 from kboat.repos.write import main as write_main
 
@@ -142,3 +144,32 @@ def test_write_stamps_today_in_canonical_form(
     assert write_main(["--vault", str(tmp_path), "--today", "20260606"]) == 0
     fm = parse_frontmatter((tmp_path / "Repos" / "abc123def456.md").read_text())
     assert fm["added_date"] == "2026-06-06"
+
+
+def test_write_refuses_a_locked_vault(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    brief_lock_wait: None,
+) -> None:
+    _stdin(monkeypatch, json.dumps(RECORD))
+    with vault_lock(tmp_path):
+        rc = write_main(["--vault", str(tmp_path), "--today", "2026-06-06"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+    assert out["status"] == "locked"
+    assert out["holder"]["pid"] == os.getpid()
+    assert "vault is locked" in captured.err
+    assert not (tmp_path / "Repos" / "abc123def456.md").exists()
+
+
+def test_refresh_dry_run_reads_a_locked_vault(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Read-only, so it neither takes the lock nor waits on one.
+    (tmp_path / "Repos").mkdir()
+    with vault_lock(tmp_path):
+        rc = main(["refresh", "--vault", str(tmp_path), "--dry-run", "--today", "2026-06-06"])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["counts"]["total"] == 0

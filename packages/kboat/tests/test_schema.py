@@ -2,7 +2,26 @@
 
 from __future__ import annotations
 
-from kboat.schema import BY_TYPE, DIR_BY_TYPE, FEED, KINDLE, REPO, SOURCE, Field, Kind
+import ast
+from pathlib import Path
+
+import kboat
+import kboat.schema
+from kboat.schema import (
+    BY_TYPE,
+    DAILY_DIR,
+    DIR_BY_TYPE,
+    FEED,
+    KINDLE,
+    PDFS_DIR,
+    QUESTIONS_FILE,
+    QUEUE_DIR,
+    REPO,
+    REVIEWS_DIR,
+    SOURCE,
+    Field,
+    Kind,
+)
 
 _ALL = (SOURCE, KINDLE, REPO, FEED)
 
@@ -52,3 +71,48 @@ def test_build_note_emits_schema_field_order() -> None:
 
     note = build_note(REPO, {f.name: sample(f) for f in REPO.fields})
     assert list(parse_frontmatter(note).keys()) == list(REPO.field_names())
+
+
+def test_no_module_spells_a_vault_path_of_its_own() -> None:
+    """The layout is declared here once, so no module may re-spell one of its values.
+
+    `DIR_BY_TYPE` and the paths beside it exist because two tools that each write
+    `"Sources"` cannot be moved together. Nothing catches a regression to a literal on
+    its own — the string is identical, so every test still passes — and a merge
+    resolution that reverts one is exactly how it would happen. This is that gate.
+
+    **What it matches**: every string constant in the parsed AST equal to a declared
+    value, or to one with a trailing slash — the second form is what an f-string leaves
+    behind, so `f"Sources/{slug}.md"` is caught where `f"{DIR_BY_TYPE[t]}/{slug}.md"` is
+    the intended spelling. Comments are invisible (they are not in the AST), and prose
+    survives on whole-string equality rather than on being prose: a docstring or a
+    report key *is* a constant and *is* compared, it simply never equals `"Sources"`.
+
+    **What it misses**, so nobody reads it as more than it is: a literal that is only
+    part of the spelling. A mid-path f-string run leaves `"/Sources/"`, a glob pattern
+    leaves `"Sources/*.md"`, and a split literal leaves neither half — none of those
+    equal a declared value. So does a path taken from a variable. Plain concatenation
+    *is* caught, since `"Sources" + "/" + slug` still contains the constant. The
+    `feed_filter` member is walked by nothing; it spells no vault path today because it
+    writes through `upsert`.
+
+    If this ever fires on a string that is genuinely not a path — a report key, an enum
+    value that happens to collide — the value is the thing to rename, or this test is
+    the place to record why it is exempt. Do not spell a layout value here to silence it.
+    """
+    declared = {*DIR_BY_TYPE.values(), QUEUE_DIR, REVIEWS_DIR, PDFS_DIR, QUESTIONS_FILE, DAILY_DIR}
+    # An f-string's literal run keeps the separator, so both forms are the same mistake.
+    spellings = declared | {f"{value}/" for value in declared}
+    src = Path(kboat.__file__).parent
+    schema_module = Path(kboat.schema.__file__)
+
+    offenders: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        if path == schema_module:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and node.value in spellings:
+                offenders.append(f"{path.relative_to(src)}:{node.lineno}: {node.value!r}")
+
+    assert not offenders, "spell these through kboat.schema instead:\n" + "\n".join(offenders)

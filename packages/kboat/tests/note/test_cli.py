@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from kboat.lock import LOCK_NAME, vault_lock
 from kboat.note.__main__ import main
 
 
@@ -101,3 +103,64 @@ def test_bad_input_and_usage(
     assert not (vault / "Kindles" / "B1.md").exists()
     assert main([]) == 0  # bare usage
     assert main(["bogus"]) == 2  # unknown subcommand
+
+
+def test_refuses_a_locked_vault(
+    vault: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    brief_lock_wait: None,
+) -> None:
+    rec = json.dumps(
+        {
+            "slug": "s1",
+            "fields": {
+                "type": "source",
+                "title": "T",
+                "url": "https://x",
+                "source_type": "web_page",
+            },
+        }
+    )
+    with vault_lock(vault):
+        rc = _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch)
+    assert rc == 1
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+    assert out["status"] == "locked"
+    assert out["holder"]["pid"] == os.getpid()
+    assert "vault is locked" in captured.err
+    assert not (vault / "Sources" / "s1.md").exists()
+
+
+def test_an_unreadable_record_is_refused_before_the_lock_is_taken(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nothing about the vault would make this record writable, so it must not
+    # cost the lock — and the exit code stays the record's own, not a refusal.
+    bad = json.dumps({"slug": "s1", "fields": "oops"})
+    assert _run(["write", "--type", "source", "--vault", str(vault)], bad, monkeypatch) == 2
+    assert "'fields' must be a JSON object" in capsys.readouterr().err
+    assert not (vault / LOCK_NAME).exists()
+
+
+def test_a_vault_root_that_does_not_exist_is_reported_not_created(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A mis-typed `--vault` used to grow an empty vault beside the real one. The
+    # lock is taken before anything is written, so it fails there instead.
+    missing = tmp_path / "typo-vault"
+    rec = json.dumps(
+        {
+            "slug": "s1",
+            "fields": {
+                "type": "source",
+                "title": "T",
+                "url": "https://x",
+                "source_type": "web_page",
+            },
+        }
+    )
+    assert _run(["write", "--type", "source", "--vault", str(missing)], rec, monkeypatch) == 1
+    assert "write failed:" in capsys.readouterr().err
+    assert not missing.exists()

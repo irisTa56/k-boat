@@ -7,13 +7,18 @@ checked against real files written through ``kboat.write.upsert``.
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
+import feed_filter.vault as vault_mod
+import kboat.lock
 from feed_filter.canonical import CanonicalUrl
 from feed_filter.vault import VaultError, write_feed_note
 from kboat.frontmatter import Value, parse_frontmatter
+from kboat.lock import VaultLockedError, vault_lock
 from kboat.naming import url_slug
 
 CU = CanonicalUrl("https://example.com/post")
@@ -176,3 +181,76 @@ def test_collision_raises_vault_error(tmp_path: Path) -> None:
             wall=False,
             today="2026-07-19",
         )
+
+
+def _write(vault: Path) -> dict[str, object]:
+    return write_feed_note(
+        vault,
+        CU,
+        title="A post",
+        feed_kind="article",
+        site_id="ex",
+        summary="",
+        wall=False,
+        today="2026-07-19",
+    )
+
+
+def test_the_write_is_held_under_the_vault_lock(tmp_path: Path) -> None:
+    # Serialized against a K-Boat run writing the same vault: while the note is
+    # being written, nobody else can take the lock.
+    real_upsert = vault_mod.upsert
+
+    def upsert_under_lock(*args: object, **kwargs: object) -> dict[str, object]:
+        with pytest.raises(VaultLockedError), vault_lock(tmp_path, wait_s=0.0):
+            pytest.fail("the write must hold the lock while it runs")
+        return real_upsert(*args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(vault_mod, "upsert", upsert_under_lock)
+        assert _write(tmp_path)["status"] == "created"
+    # The lock file outlives the hold, so what must be gone is the hold: taking it
+    # again with no wait at all only succeeds if the write released it.
+    with vault_lock(tmp_path, wait_s=0.0):
+        pass
+
+
+def test_a_held_vault_is_waited_for_rather_than_refused(tmp_path: Path) -> None:
+    # feed-filter takes the lock on the shared terms, and the wait is what it depends
+    # on most: its unit is one entry per process, so a refusal drops that entry until
+    # the next gather rediscovers it. No monkeypatch — the shipped
+    # `kboat.lock.DEFAULT_WAIT_S` is what makes this pass, so zeroing it fails here.
+    took_the_lock = threading.Event()
+    released_at: list[float] = []
+
+    def hold() -> None:
+        with vault_lock(tmp_path):
+            took_the_lock.set()
+            time.sleep(0.1)
+        released_at.append(time.monotonic())
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    try:
+        assert took_the_lock.wait(timeout=5), "the holder never took the lock"
+        result = _write(tmp_path)
+        wrote_at = time.monotonic()
+    finally:
+        holder.join()
+
+    # Compared by clock, not by a flag the holder sets after syscalls that drop the
+    # GIL: the write happened after the holder's release, so it waited rather than
+    # winning a start race.
+    assert result["status"] == "created"
+    assert released_at and wrote_at >= released_at[0]
+
+
+def test_an_expired_wait_raises_and_writes_no_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The never-lost half: the entry is not written, so the caller raises before
+    # its seen-record and the next run retries it.
+    monkeypatch.setattr(kboat.lock, "DEFAULT_WAIT_S", 0.1)
+    with vault_lock(tmp_path), pytest.raises(VaultLockedError):
+        _write(tmp_path)
+    assert not (tmp_path / "Feeds").exists()

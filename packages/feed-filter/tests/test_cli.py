@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
+import kboat.lock
 from feed_filter import browser, cli, forum_pipeline
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.canonical import CanonicalUrl, canonical_url
@@ -46,6 +47,7 @@ from feed_filter.seen import count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
 from feed_filter.vault import VaultError
 from kboat.frontmatter import Value, parse_frontmatter
+from kboat.lock import vault_lock
 from kboat.naming import url_slug
 
 
@@ -830,6 +832,46 @@ def test_remind_does_not_record_when_write_fails(
     with contextlib.closing(open_db(db_path())) as conn:
         assert not is_seen(conn, canonical_url("https://e.example.com/a"))
         assert count(conn) == 0
+
+
+def test_remind_reports_a_vault_it_could_not_lock_and_records_nothing(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A K-Boat run holds the vault past the wait: the note is not written, so
+    # the entry stays unseen and the next run retries it.
+    monkeypatch.setattr(kboat.lock, "DEFAULT_WAIT_S", 0.1)
+    with vault_lock(state_dir / "vault"):
+        rc = cli.main(
+            ["remind", "--site-id", "f1", "--url", "https://e.example.com/a", "--title", "T"]
+        )
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "error: vault is locked" in captured.err
+    # A `locked` marker on stdout, because this is the one write failure that does
+    # not recur: the run skill has to tell it from a collision or a disk error so it
+    # leaves this entry for the next run instead of stopping the whole pass.
+    assert json.loads(captured.out)["status"] == "locked"
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert not is_seen(conn, canonical_url("https://e.example.com/a"))
+
+
+def test_remind_reports_a_vault_that_does_not_exist_and_records_nothing(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A misconfigured `OBSIDIAN_VAULT_PATH` is reported, not provisioned: a note
+    # written into a directory Obsidian does not read is a lost note that looks
+    # filed. never-lost then carries the entry — nothing is recorded seen.
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(state_dir / "typo-vault"))
+    rc = cli.main(["remind", "--site-id", "f1", "--url", "https://e.example.com/a", "--title", "T"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert not (state_dir / "typo-vault").exists()
+    # And no `locked` marker: this failure recurs, so a run skill must stop rather
+    # than carry on the way it does past a refusal.
+    assert captured.out == ""
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert not is_seen(conn, canonical_url("https://e.example.com/a"))
 
 
 def test_mark_seen_records_drop(state_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:

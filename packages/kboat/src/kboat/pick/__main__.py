@@ -9,6 +9,8 @@ LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
   ranker, which infers the human's current interests from the notes and questions.
 - `set --slugs a,b` — reset `picked` to false on every source, then set it true on
   the chosen slugs (at most two). An empty `--slugs` just clears the spotlight.
+  It is the writing half, so it holds the vault lock and reports a `locked`
+  record rather than racing another run; `candidates` reads only and takes none.
 
 Both default the vault to `$OBSIDIAN_VAULT_PATH` and accept `--today` for
 reproducibility, mirroring `kboat-lifecycle`.
@@ -22,7 +24,15 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from kboat.cli import add_today_argument, add_vault_argument, vault_path
+from kboat.cli import (
+    add_today_argument,
+    add_vault_argument,
+    emit_lock_unavailable,
+    emit_locked,
+    vault_path,
+)
+from kboat.io_utils import atomic_write_text
+from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DAILY_DIR, DIR_BY_TYPE, QUESTIONS_FILE
 
 from .candidates import candidate_from, is_active_web
@@ -91,7 +101,7 @@ def _cmd_set(vault: Path, slugs: list[str]) -> dict[str, object]:
             text = path.read_text(encoding="utf-8")
             new_text = set_picked(text, want)
             if new_text != text:
-                path.write_text(new_text, encoding="utf-8")
+                atomic_write_text(path, new_text)
             if want:
                 picked.append(slug)
             else:
@@ -154,7 +164,13 @@ def main(argv: list[str] | None = None) -> int:
         output = _cmd_candidates(vault, today, args.lookback_days)
     else:
         slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
-        output = _cmd_set(vault, slugs)
+        try:
+            with vault_lock(vault):
+                output = _cmd_set(vault, slugs)
+        except VaultLockedError as exc:
+            return emit_locked(exc)
+        except VaultLockUnavailableError as exc:
+            return emit_lock_unavailable(exc)
 
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")

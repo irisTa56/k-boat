@@ -4,6 +4,10 @@ Reads every `Sources/*.md` note in the vault, maintains the cooldown clock
 (Phase A — stamps/clears `filed_date` on disk unless `--dry-run`), and prints
 the resulting plan as JSON on stdout for the `kboat-distill` routine to act on.
 
+An applying run holds the vault lock across its read and its writes, and reports
+a `locked` record rather than racing a run that already has it; a `--dry-run`
+writes nothing, so it takes no lock and reads a vault another run is writing.
+
 Alongside the cooldown work sets it emits `needs_summary`: sources with a live
 notebook but an empty `summary`/`topics`, the recovery set the ingest pass
 retries (re-fetch the source guide while the notebook still exists). It is a
@@ -24,7 +28,15 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from kboat.cli import add_today_argument, add_vault_argument, vault_path
+from kboat.cli import (
+    add_today_argument,
+    add_vault_argument,
+    emit_lock_unavailable,
+    emit_locked,
+    vault_path,
+)
+from kboat.io_utils import atomic_write_text
+from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE
 
 from .core import Kindle, Source, compute_plan, select_ripe_kindles
@@ -105,12 +117,59 @@ def _apply_phase_a(
     for s, value in [(s, today_iso) for s in plan_stamp] + [(s, None) for s in plan_clear]:
         path = vault / s.path
         try:
-            path.write_text(
-                set_filed_date(path.read_text(encoding="utf-8"), value), encoding="utf-8"
-            )
+            atomic_write_text(path, set_filed_date(path.read_text(encoding="utf-8"), value))
         except (FrontmatterError, OSError) as exc:
             anomalies.append({"path": s.path, "error": f"filed_date write failed: {exc}"})
     return anomalies
+
+
+def _run(vault: Path, today: date, *, dry_run: bool) -> dict[str, object]:
+    """Read the vault, compute the plan, apply Phase A unless `dry_run`, and
+    return the JSON output.
+
+    The read and the write are one step so that they happen under one hold of
+    the vault lock: a plan computed before another run's writes would stamp
+    dates the notes no longer call for.
+    """
+    sources, anomalies = _load_sources(vault / DIR_BY_TYPE["source"], vault)
+    plan = compute_plan(sources, today)
+
+    # Kindle notes (Kindles/ is optional). No on-disk writes — Kindle has no
+    # cooldown clock — only ripe selection.
+    kindles, kindle_anomalies = _load_kindles(vault / DIR_BY_TYPE["kindle"], vault)
+    anomalies += kindle_anomalies
+    ripe_kindles = select_ripe_kindles(kindles)
+
+    if not dry_run:
+        anomalies += _apply_phase_a(
+            plan.phase_a_stamp, plan.phase_a_clear, today.isoformat(), vault
+        )
+
+    counts = dict(plan.counts)
+    counts["kindles_total"] = len(kindles)
+    counts["kindles_ripe"] = len(ripe_kindles)
+    counts["kindles_already_distilled"] = sum(1 for k in kindles if k.distilled_date is not None)
+
+    return {
+        "today": plan.today,
+        "vault": str(vault),
+        "dry_run": dry_run,
+        "phase_a": {
+            "stamped": [_source_json(s) for s in plan.phase_a_stamp],
+            "cleared": [_source_json(s) for s in plan.phase_a_clear],
+        },
+        "ambiguous": [_source_json(s) for s in plan.ambiguous],
+        "phase_b": {
+            "ripe": [_source_json(s) for s in plan.ripe],
+            "dismiss_discard": [_source_json(s) for s in plan.dismiss_discard],
+        },
+        "needs_summary": [_source_json(s) for s in plan.needs_summary],
+        "kindles": {
+            "ripe": [_kindle_json(k) for k in ripe_kindles],
+        },
+        "counts": counts,
+        "anomalies": anomalies,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -133,45 +192,20 @@ def main(argv: list[str] | None = None) -> int:
     if not sources_dir.is_dir():
         parser.error(f"no {DIR_BY_TYPE['source']}/ directory under vault: {sources_dir}")
 
-    sources, anomalies = _load_sources(sources_dir, vault)
-    plan = compute_plan(sources, today)
+    # A `--dry-run` writes nothing, so it takes no lock and reads a vault
+    # another run is writing; an applying run holds the lock over read and write
+    # alike, and reports rather than waits when another run already has it.
+    if args.dry_run:
+        output = _run(vault, today, dry_run=True)
+    else:
+        try:
+            with vault_lock(vault):
+                output = _run(vault, today, dry_run=False)
+        except VaultLockedError as exc:
+            return emit_locked(exc)
+        except VaultLockUnavailableError as exc:
+            return emit_lock_unavailable(exc)
 
-    # Kindle notes (Kindles/ is optional). No on-disk writes — Kindle has no
-    # cooldown clock — only ripe selection.
-    kindles, kindle_anomalies = _load_kindles(vault / DIR_BY_TYPE["kindle"], vault)
-    anomalies += kindle_anomalies
-    ripe_kindles = select_ripe_kindles(kindles)
-
-    if not args.dry_run:
-        anomalies += _apply_phase_a(
-            plan.phase_a_stamp, plan.phase_a_clear, today.isoformat(), vault
-        )
-
-    counts = dict(plan.counts)
-    counts["kindles_total"] = len(kindles)
-    counts["kindles_ripe"] = len(ripe_kindles)
-    counts["kindles_already_distilled"] = sum(1 for k in kindles if k.distilled_date is not None)
-
-    output = {
-        "today": plan.today,
-        "vault": str(vault),
-        "dry_run": args.dry_run,
-        "phase_a": {
-            "stamped": [_source_json(s) for s in plan.phase_a_stamp],
-            "cleared": [_source_json(s) for s in plan.phase_a_clear],
-        },
-        "ambiguous": [_source_json(s) for s in plan.ambiguous],
-        "phase_b": {
-            "ripe": [_source_json(s) for s in plan.ripe],
-            "dismiss_discard": [_source_json(s) for s in plan.dismiss_discard],
-        },
-        "needs_summary": [_source_json(s) for s in plan.needs_summary],
-        "kindles": {
-            "ripe": [_kindle_json(k) for k in ripe_kindles],
-        },
-        "counts": counts,
-        "anomalies": anomalies,
-    }
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 0

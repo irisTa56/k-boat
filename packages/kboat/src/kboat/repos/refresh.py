@@ -8,6 +8,22 @@ judgement layer (role/domain/summary) and the human-edited `## Notes` body.
 It never deletes a note: a renamed or deleted repo (a `gh` error, or a resolved
 `owner/repo` that differs from the note) is reported for the human to act on,
 not patched. The report is JSON on stdout for the `kboat-repos` skill to relay.
+
+An applying run holds the vault lock for its whole pass and reports a `locked`
+record rather than racing a run that already has it; a `--dry-run` writes nothing,
+so it takes no lock.
+
+The hold spans the `gh` fetch as well as the rewrites, and has to: the identity each
+note is fetched under is read before the fetch and rewritten after it, so this pass
+is one read-modify-write and narrowing the hold to the writes would open the
+lost-update window the lock is here to close.
+
+It is also the longest hold in the system, and the one `kboat.lock`'s wait is *not*
+sized for: that wait covers overlapping a single note write, so another writer meeting
+this pass waits its few seconds and is then refused. What that costs is the *other*
+run's work — a feed entry deferred to the next gather, a phase left for tomorrow —
+which is the trade the wide hold is worth, since narrowing it would lose an update
+rather than defer one.
 """
 
 from __future__ import annotations
@@ -17,13 +33,21 @@ import json
 import sys
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import date
 from pathlib import Path
 
-from kboat.cli import add_today_argument, add_vault_argument, vault_path
+from kboat.cli import (
+    add_today_argument,
+    add_vault_argument,
+    emit_lock_unavailable,
+    emit_locked,
+    vault_path,
+)
 from kboat.frontmatter import FrontmatterError, parse_frontmatter
 from kboat.frontmatter import set_fields as _set_rendered_fields
 from kboat.io_utils import atomic_write_text
+from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
 
@@ -184,7 +208,17 @@ def main(argv: list[str] | None = None) -> int:
 
     vault = vault_path(parser, args)
 
-    report = refresh(vault, today=date.fromisoformat(args.today), dry_run=args.dry_run)
+    today = date.fromisoformat(args.today)
+    try:
+        with ExitStack() as stack:
+            if not args.dry_run:
+                stack.enter_context(vault_lock(vault))
+            report = refresh(vault, today=today, dry_run=args.dry_run)
+    except VaultLockedError as exc:
+        return emit_locked(exc)
+    except VaultLockUnavailableError as exc:
+        return emit_lock_unavailable(exc)
+
     json.dump(report, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 1 if report.get("error") else 0
