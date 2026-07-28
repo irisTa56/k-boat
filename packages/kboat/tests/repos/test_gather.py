@@ -206,7 +206,9 @@ def test_gather_never_reports_a_failure_with_an_empty_error(monkeypatch) -> None
     # `gh` can exit non-zero with nothing on stderr. This verdict does not escalate,
     # so the report is all the human gets — and an empty fenced block gives them a
     # repeating failure with nothing to compare between runs.
-    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, ""))
+    monkeypatch.setattr(
+        gather_mod.subprocess, "run", lambda *a, **kw: _Completed("", returncode=1, stderr="  \n")
+    )
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
@@ -292,6 +294,26 @@ def test_gather_still_catalogues_a_repo_whose_readme_fetch_raises(monkeypatch) -
     assert out["readme_error"] == "TimeoutError: gh timed out"
 
 
+def test_gather_never_reports_a_readme_error_that_reads_as_unset(monkeypatch) -> None:
+    # `gh api` can fail with nothing on stderr, and an empty `readme_error` is
+    # indistinguishable from an unset one — which is the reading that makes the
+    # classifier treat a withheld README as a repo that has none.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        lambda *a, **kw: (
+            _Completed(_REPO_VIEW_STDOUT)
+            if a[0][1] == "repo"
+            else _Completed("", returncode=1, stderr="  \n")
+        ),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_error"]
+
+
 def test_gather_records_why_the_readme_excerpt_is_empty(monkeypatch) -> None:
     # A non-zero README fetch is not a verdict — a repo may simply have none — but it
     # is not nothing either: a rate limit looks identical and leaves the classification
@@ -326,13 +348,26 @@ class _Completed:
         self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
 
 
+# A minimal payload `gh repo view --json name,owner,…` can actually return.
+_REPO_VIEW_STDOUT = '{"name": "tool", "owner": {"login": "acme"}}'
+
+
 @pytest.mark.parametrize(
     ("stdout", "detail"),
     [
         ("Notice: gh 3.0 is available\n{}", "unparseable JSON"),  # a banner before the JSON
-        ("{}", "no usable object"),
-        ("[]", "no usable object"),
-        ("null", "no usable object"),
+        ("{}", "no repo view"),
+        ("[]", "no repo view"),
+        ("null", "no repo view"),
+        # A payload with content, in a shape the mapping does not know. The realistic
+        # form of a breaking `gh` change, and the dangerous one: every field maps
+        # through a default, so letting it past produces a full set of empty values
+        # that reads as fact. `name` and `owner.login` are fields this query asks
+        # for, so their absence is what says this is not a repo view.
+        ('{"data": {"name": "tool", "stargazerCount": 42}}', "no repo view"),
+        ('{"name": "tool", "owner": "acme", "stargazerCount": 42}', "no repo view"),
+        ('{"name": "tool", "owner": {}, "stargazerCount": 42}', "no repo identity"),
+        ('{"owner": {"login": "acme"}, "stargazerCount": 42}', "no repo identity"),
     ],
 )
 def test_gather_reports_a_gh_that_answered_with_nothing_usable_as_a_defect(

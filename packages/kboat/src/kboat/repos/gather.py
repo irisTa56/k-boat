@@ -53,23 +53,28 @@ def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | 
 
     A non-zero `gh` (no such repo, not authenticated, rate limit) is the return
     value rather than an exception — the caller wants the stderr text to put in
-    its `error`. A zero exit whose stdout is not a usable object is the other
-    kind, and raises `PayloadError`.
+    its `error`, and always gets one, since `gh` can exit non-zero saying nothing.
+    A zero exit whose stdout is not a usable repo view is the other kind, and
+    raises `PayloadError`.
     """
     cmd = [_gh(), "repo", "view", f"{owner}/{repo}", "--json", _VIEW_FIELDS]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if r.returncode != 0:
-        return None, r.stderr.strip()
+        return None, r.stderr.strip() or "gh failed with no message"
     try:
         meta = json.loads(r.stdout)
     except json.JSONDecodeError as exc:
         raise PayloadError(f"gh returned unparseable JSON: {exc}") from exc
-    if not isinstance(meta, dict) or not meta:
-        # An empty or non-object payload is as unusable as one that will not
-        # parse, and has to be refused here: every field mapping below reads it
-        # with `.get(…) or <default>`, so it would otherwise map to a full set of
-        # empty values — which `refresh` would write over a good note as fact.
-        raise PayloadError(f"gh returned no usable object: {r.stdout[:200]!r}")
+    # Everything below reads the payload with `.get(…) or <default>`, so a shape
+    # this function lets through and the mapping does not recognise becomes a full
+    # set of empty values — which `refresh` writes over a good note as fact and
+    # reports as refreshed. The check that catches that is the identity: `name` and
+    # `owner.login` are fields this command asks for, so a payload without them in
+    # the shape `gh` returns is not a repo view, whatever else it holds.
+    if not isinstance(meta, dict) or not isinstance(meta.get("owner"), dict):
+        raise PayloadError(f"gh returned no repo view: {r.stdout[:200]!r}")
+    if not meta["owner"].get("login") or not meta.get("name"):
+        raise PayloadError(f"gh returned a payload with no repo identity: {sorted(meta)[:8]}")
     return meta, None
 
 
@@ -78,12 +83,13 @@ def gh_readme(owner: str, repo: str, *, timeout: float = 30) -> tuple[str | None
 
     A repo with no README is a 404 — a non-zero exit like any other, so this
     cannot tell "there is none" from "the fetch did not succeed", and neither can
-    its caller. `gather` reports the stderr as `readme_error` rather than guessing.
+    its caller. `gather` reports the stderr as `readme_error` rather than guessing,
+    and it is never the empty string, which a reader would take for "unset".
     """
     cmd = [_gh(), "api", f"repos/{owner}/{repo}/readme", "-H", "Accept: application/vnd.github.raw"]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if r.returncode != 0:
-        return None, r.stderr.strip()
+        return None, r.stderr.strip() or "gh api failed with no message"
     return r.stdout, None
 
 
@@ -207,13 +213,15 @@ def _payload_defect(record: dict, exc: BaseException) -> dict:
 
 
 def _mapped(
-    meta: dict, readme: str, readme_error: str | None, *, owner: str, repo: str, today: date
+    meta: dict, excerpt: str, readme_error: str | None, *, owner: str, repo: str, today: date
 ) -> dict[str, object]:
     """The half of an `ok` record derived from what `gh` returned.
 
     `owner`/`repo` are the identity `gh` resolved, so the record is re-keyed off
     the live repo. Every raise in here is the `defect-payload` class, which is why
-    the mapping is gathered into one function instead of inlined.
+    the mapping is gathered into one function instead of inlined — and why the
+    README excerpt is computed by the caller and passed in finished. That text is
+    the repo's, not `gh`'s, and the escalating class is not for a README to reach.
     """
     canon = canonical_url(owner, repo)
     return {
@@ -227,7 +235,7 @@ def _mapped(
         # language rule, `status`, etc.) so the skill never re-derives it —
         # it only adds the judged role/domain/summary on top.
         "fields": github_fields(meta, today=today),
-        "readme_excerpt": first_paragraphs(readme),
+        "readme_excerpt": excerpt,
         # Why the excerpt is empty, when it is. A repo with no README and a repo
         # whose README the rate limiter withheld both come back as a non-zero
         # `gh`, and the classification that follows is thinner for the second —
@@ -271,11 +279,7 @@ def gather(url: str, *, today: date) -> dict:
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
     if not meta:
-        # A stand-in when `gh` failed with nothing on stderr (killed by a signal, or
-        # its diagnostic went to stdout). This verdict does not escalate, so what the
-        # human gets is the report — an empty fenced block would leave them a repeating
-        # failure with nothing to compare between runs.
-        record.update(status="error-meta", error=err or "gh failed with no message")
+        record.update(status="error-meta", error=err)
         return record
     # Re-key off the canonical owner/repo `gh` resolved to (handles renames,
     # transfers, and case), so the note's url/slug/title are authoritative.
@@ -286,19 +290,20 @@ def gather(url: str, *, today: date) -> dict:
     res_owner, res_repo = res_owner or owner, res_repo or repo
     try:
         readme, readme_error = gh_readme(res_owner, res_repo)
+        excerpt = first_paragraphs(readme or "")
     except Exception as exc:  # noqa: BLE001
         # A README that did not arrive is reported, never a verdict. The metadata
         # fetch has already succeeded, and a repo whose README 404s is catalogued
         # regardless — so failing the record on a raise would leave a repo whose
         # README endpoint hangs uncatalogued for as long as it hangs, while the
-        # same absence delivered as a non-zero exit is catalogued.
-        readme, readme_error = None, f"{type(exc).__name__}: {exc}"
+        # same absence delivered as a non-zero exit is catalogued. Excerpting is
+        # inside the same boundary: it reads the repo's own text, and a problem in
+        # that text must not reach the verdict the routine escalates on.
+        excerpt, readme_error = "", f"{type(exc).__name__}: {exc}"
     try:
         # Evaluated before it is merged, so a defect leaves the record on the
         # queued-link identity rather than half-updated.
-        mapped = _mapped(
-            meta, readme or "", readme_error, owner=res_owner, repo=res_repo, today=today
-        )
+        mapped = _mapped(meta, excerpt, readme_error, owner=res_owner, repo=res_repo, today=today)
     except Exception as exc:  # noqa: BLE001
         return _payload_defect(record, exc)
     record.update(mapped)

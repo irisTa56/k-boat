@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import kboat.repos.gather as gather_mod
 import kboat.repos.refresh as refresh_mod
 from kboat.frontmatter import FrontmatterError, body_after_frontmatter, parse_frontmatter
 from kboat.lock import vault_lock
@@ -294,12 +295,37 @@ def test_refresh_isolates_a_note_that_is_not_utf8(tmp_path: Path, monkeypatch) -
     assert parse_frontmatter(good.read_text())["stars"] == "42"
 
 
+def test_refresh_never_writes_an_unrecognised_payload_over_a_good_note(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The realizable form: `gh` answers, with content, in a shape the mapping does not
+    # know. Every field reads through a default, so letting it past wipes description,
+    # stars, topics and license off every note in the catalogue and reports them all
+    # refreshed. This one goes through the real `gh_repo_view`, since that is where the
+    # shape is refused — a stub would prove nothing about the path a run takes.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    before = note.read_text(encoding="utf-8")
+
+    class _Completed:
+        stdout = '{"data": {"name": "tool", "stargazerCount": 42}}'
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed())
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["updated"] == 0
+    assert report["failed"][0]["reason"] == "payload"
+    assert note.read_text(encoding="utf-8") == before
+
+
 def test_refresh_never_writes_an_empty_payload_over_a_good_note(
     tmp_path: Path, monkeypatch
 ) -> None:
-    # Every field mapping reads the payload with a default, so an empty answer maps to a
-    # full set of empty values — description, stars, topics, license all wiped, and the
-    # note reported as refreshed. It is a payload the mapping cannot use, so it fails.
+    # The same protection at `refresh`'s own gate, which `gh_repo_view` keeps
+    # unreachable — stubbed here precisely because no production path reaches it, and
+    # a guard nothing exercises is a guard nobody notices breaking.
     note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
     before = note.read_text(encoding="utf-8")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: ({}, None))
@@ -321,7 +347,13 @@ def test_refresh_does_not_escalate_a_gh_that_failed_without_a_message(
     # absence of text as "answered unusably" would escalate a transient failure, and
     # go on escalating it every day the condition lasts.
     _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
-    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, ""))
+
+    class _Completed:
+        stdout = ""
+        returncode = 1
+        stderr = "  \n"
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed())
 
     report = refresh(tmp_path, today=TODAY)
 

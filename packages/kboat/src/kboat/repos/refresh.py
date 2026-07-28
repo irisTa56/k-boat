@@ -145,8 +145,8 @@ def _fetch(note: dict) -> dict:
         return _fetched(note, meta=None, error=err, reason="fetch")
     if not meta:
         # `gh` answered with nothing in it: the permanent class, not a fetch that
-        # failed. `gh_repo_view` refuses that answer ahead of here; this keeps the
-        # two in step if it ever stops.
+        # failed. `gh_repo_view` refuses that answer — and every other shape that is
+        # not a repo view — ahead of here; this keeps the two in step if it stops.
         return _fetched(note, meta=None, error="gh returned no usable object", reason="payload")
     return _fetched(note, meta=meta, error=err, reason="fetch")
 
@@ -286,7 +286,7 @@ def refresh(
         # it that way — a payload the mapping would read as a full set of empty
         # values must not be written over a good note.
         if not r["meta"]:
-            failed.append(_failure(rel, was, reason=r["reason"], error=r["error"] or "no metadata"))
+            failed.append(_failure(rel, was, reason=r["reason"], error=r["error"]))
             continue
         # The per-note boundary over the payload mapping, blind for the reason
         # `gather`'s is: `gh repo view --json` is a typed schema, so what can raise
