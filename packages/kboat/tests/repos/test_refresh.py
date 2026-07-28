@@ -531,6 +531,53 @@ def test_refresh_escalates_a_note_with_no_line_to_rewrite(tmp_path: Path, monkey
     assert "homepage" in report["failed"][0]["error"]
 
 
+def test_a_dry_run_surfaces_a_note_with_no_line_to_rewrite(tmp_path: Path, monkeypatch) -> None:
+    # The preview an operator checks a `github_fields` addition against. If it skipped
+    # building the content, it would report a clean full-catalogue update and the next
+    # unattended run would fail every note — the one failure a preview exists to catch.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    kept = note.read_text(encoding="utf-8")
+    note.write_text(
+        "\n".join(line for line in kept.splitlines() if "homepage:" not in line) + "\n",
+        encoding="utf-8",
+    )
+    before = note.read_text(encoding="utf-8")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY, dry_run=True)
+
+    assert report["counts"]["updated"] == 0
+    assert report["failed"][0]["reason"] == "note"
+    assert note.read_text(encoding="utf-8") == before  # a preview still writes nothing
+
+
+def test_refresh_counts_a_rename_whose_old_file_vanished_as_healed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The lock is advisory, so the old note can be removed under the run — by iCloud,
+    # or by a human in Obsidian. The rename completed; reporting it as a duplicate
+    # would send someone to merge a note that is not there.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    real_write = refresh_mod.atomic_write_text
+
+    def write_then_vanish(path: Path, content: str) -> None:
+        real_write(path, content)
+        old.unlink(missing_ok=True)
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", write_then_vanish)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["adopted"] == 1
+    assert report["counts"]["failed"] == 0
+    assert (
+        tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    ).exists()
+
+
 def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
     tmp_path: Path, monkeypatch
 ) -> None:

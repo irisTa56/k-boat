@@ -236,15 +236,22 @@ def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set
 def _apply(plan: _NotePlan, *, dry_run: bool) -> str:
     """Write the planned update, returning the path the report names it under.
 
-    A dry run reports what it would have written and touches nothing.
+    A dry run writes nothing, but it still builds the content, so that a note with
+    no line for a field this pass rewrites fails the preview as it would fail the
+    run. A preview is what an operator checks a `github_fields` addition against,
+    and one that cannot show the failure that addition causes is worse than none.
     """
+    content = set_fields(plan.path.read_text(encoding="utf-8"), plan.updates)
     if dry_run:
         return plan.rel_target if plan.renaming else plan.rel
-    content = set_fields(plan.path.read_text(encoding="utf-8"), plan.updates)
     if plan.renaming:
         atomic_write_text(plan.target, content)
         try:
-            plan.path.unlink()
+            # `missing_ok`: the old note going away under the run is the rename
+            # completing, not failing. The vault lock is advisory, so Obsidian or
+            # iCloud can be what removed it, and reporting that as a duplicate would
+            # send a human to merge a note that is not there.
+            plan.path.unlink(missing_ok=True)
         except OSError as exc:
             # The one failure that does not leave the note as it was: the new slug
             # is written and the old file is still there, so the vault now holds
