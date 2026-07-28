@@ -60,11 +60,13 @@ MAX_WORKERS = 10
 
 
 # The closed set of ways one note drops out of a pass. Typed, not free strings,
-# because `reason` is what the run branches on to escalate: a fifth value or a
-# misspelling would otherwise type-check clean and quietly stop the escalation
-# firing. Every site that sets one goes through `_fetched` or `_failure`, so the
-# annotation is what the value is checked against rather than decoration.
-Reason = Literal["fetch", "payload", "vault", "write"]
+# because `reason` is what the run branches on to escalate: a misspelling or an
+# unannounced value would otherwise type-check clean and quietly stop the
+# escalation firing. Every site that sets one goes through `_fetched` or
+# `_failure`, so the annotation is what the value is checked against rather than
+# decoration. Two of the five need a human and no later run clears them —
+# `payload` (the mapping) and `note` (the note's own shape).
+Reason = Literal["fetch", "payload", "vault", "note", "write"]
 
 
 def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason | None) -> dict:
@@ -316,9 +318,17 @@ def refresh(
 
         try:
             written = _apply(plan, dry_run=dry_run)
+        except FrontmatterError as exc:
+            # The note has no line to rewrite for a field this pass rewrites. That is
+            # the note's own shape, not the weather: it fails identically every run,
+            # and if it followed an addition to `github_fields` it fails for the whole
+            # catalogue at once. Sorted apart from `write` so the run escalates it
+            # rather than promising a next run that cannot help.
+            failed.append(_failure(rel, was, reason="note", error=str(exc)))
+            continue
         # `UnicodeDecodeError` for the same reason as the load above: `_apply` reads
         # the note again, and the file can have changed under the run.
-        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             failed.append(_failure(rel, was, reason="write", error=str(exc)))
             continue
         updated.append(written)

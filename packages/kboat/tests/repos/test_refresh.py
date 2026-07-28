@@ -507,6 +507,30 @@ def test_refresh_reports_a_collision_even_when_the_rewrite_then_fails(
     assert _counts_match_the_lists(report)
 
 
+def test_refresh_escalates_a_note_with_no_line_to_rewrite(tmp_path: Path, monkeypatch) -> None:
+    # A note missing a field the refresh rewrites fails identically every run — it is
+    # the note's shape, not the weather — so it cannot be reported as one the next run
+    # settles. The catalogue-wide form is a field added to the refresh without the
+    # notes being migrated, and then this is every note at once.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    note.write_text(
+        "\n".join(
+            line
+            for line in note.read_text(encoding="utf-8").splitlines()
+            if "homepage:" not in line
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["failed"][0]["reason"] == "note"  # not `write`, which promises a retry
+    assert "homepage" in report["failed"][0]["error"]
+
+
 def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
     tmp_path: Path, monkeypatch
 ) -> None:

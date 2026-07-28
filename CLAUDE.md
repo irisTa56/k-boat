@@ -96,7 +96,7 @@ Automation:
   - auth unusable;
   - the `k-boat-knowledge` project missing;
   - Basic Memory down;
-  - a `kboat-repos` payload defect no retry can clear (`gather`'s `defect-payload` verdict, or a `refresh` failure with `reason: payload`);
+  - a `kboat-repos` defect no retry can clear (`gather`'s `defect-payload` verdict, or a `refresh` failure with `reason: payload` or `reason: note`);
   - a backlog-health count past its threshold.
 
 ## Tooling config
