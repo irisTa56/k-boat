@@ -31,6 +31,20 @@ def test_by_type_covers_all_types() -> None:
     assert set(DIR_BY_TYPE) == set(BY_TYPE)
 
 
+def test_url_named_follows_the_identity_field() -> None:
+    # It is the switch that turns write-time slug verification on and puts a type
+    # in `migrate-slugs`' scan, so a type that had to opt in by hand could lose
+    # both by omission. Derived, a new URL-keyed type gets them by naming its
+    # identity field the way every other one does.
+    assert [s.type for s in _ALL if s.url_named] == ["source", "repo", "feed"]
+    assert KINDLE.identity is None and not KINDLE.url_named
+    # Over `BY_TYPE`, which a new type has to join to be usable at all: every
+    # identity in the vault is a URL. The writer's collision check leans on that
+    # — it compares two identities by their canonical forms, which would quietly
+    # apply URL normalization to an id that is not one.
+    assert all(s.url_named for s in BY_TYPE.values() if s.identity is not None)
+
+
 def test_each_schema_has_a_matching_type_enum() -> None:
     for schema in _ALL:
         type_field = schema.get("type")

@@ -27,7 +27,7 @@ from kboat.cli import (
 )
 from kboat.lock import vault_lock
 from kboat.schema import REPO
-from kboat.write import BadInputError, upsert
+from kboat.write import WROTE_A_NOTE, BadInputError, upsert
 
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")
 
@@ -47,8 +47,10 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
     `upsert` would otherwise append it rather than drop it.
 
     Everything the block did not own comes back as `dropped_fields` — but only
-    on a write that happened, since a refused collision leaves every field
-    unset and the collision is the thing to report. The block reaches here by
+    on a write that happened, since a refusal leaves every field unset and the
+    refusal is the thing to report. Keyed on the statuses that mean a note
+    landed, so a refusal added to the writer later cannot start reporting a
+    partial write of a note that was never created. The block reaches here by
     way of the skill re-serialising the gather record, so a key that arrives
     misspelled is a field left quietly unset; having decided to discard, saying
     what was discarded is what keeps that visible.
@@ -72,7 +74,7 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
             dropped.append(key)
     fields.update(top_level)
     result = upsert(REPO, vault, {"slug": record["slug"], "fields": fields}, today=today_iso)
-    if dropped and result["status"] != "collision":
+    if dropped and result["status"] in WROTE_A_NOTE:
         return {**result, "dropped_fields": dropped}
     return result
 

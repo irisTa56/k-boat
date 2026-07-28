@@ -29,21 +29,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from feed_filter.canonical import CanonicalUrl
+from kboat.canonical import CanonicalUrl
 from kboat.lock import vault_lock
-from kboat.naming import url_slug
+from kboat.naming import note_slug
 from kboat.schema import FEED
-from kboat.write import upsert
+from kboat.write import WROTE_A_NOTE, upsert
 
 
 class VaultError(Exception):
     """A feed note could not be written durably.
 
-    Raised when `upsert` refuses the write: a different `url` already occupies
-    this slug (an astronomically unlikely 48-bit SHA-256 clash between two
-    canonical URLs), or the note holds a `url` the reader cannot decode, so the
-    note cannot be shown to be this page at all. Both are reported as a
-    collision, distinguished by the record's `reason`, and both need a human. An
+    Raised whenever `upsert` refuses the write. The expected refusal is a
+    collision: a different `url` already occupies this slug (an astronomically
+    unlikely 48-bit SHA-256 clash between two canonical URLs), or the note holds
+    a `url` the reader cannot decode, so it cannot be shown to be this page at
+    all — distinguished by the record's `reason`, and both needing a human. Any
+    other refusal is raised too rather than read as a write: what makes never-lost
+    hold is that nothing is recorded seen unless a note landed, so a status this
+    module does not recognise must not be the one that slips through. An
     `OSError` from the atomic write (disk full, permission, an iCloud-evicted
     placeholder) is left to propagate; the CLI maps both to a non-zero exit and
     skips the seen-record, so the entry is retried rather than silently lost.
@@ -74,7 +77,7 @@ def write_feed_note(
     `VaultLockedError` when the shared wait passes with another run still holding the
     vault.
     """
-    slug = url_slug(str(cu))
+    slug = note_slug(str(cu))
     record: dict[str, object] = {
         "slug": slug,
         "fields": {
@@ -91,7 +94,10 @@ def write_feed_note(
     }
     with vault_lock(vault):
         result = upsert(FEED, vault, record, today=today)
-    if result.get("status") == "collision":
+    status = result.get("status")
+    if status in WROTE_A_NOTE:
+        return result
+    if status == "collision":
         if result.get("reason") == "unreadable_identity":
             raise VaultError(
                 f"slug {slug} holds a note whose url cannot be read, so it cannot be "
@@ -101,4 +107,4 @@ def write_feed_note(
             f"slug {slug} already holds a different url "
             f"({result.get('existing')!r} vs {result.get('incoming')!r})"
         )
-    return result
+    raise VaultError(f"the writer refused the note for {cu}: {result}")

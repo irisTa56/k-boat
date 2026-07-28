@@ -15,13 +15,19 @@ from typing import Any
 import pytest
 
 from kboat.frontmatter import parse_frontmatter
+from kboat.naming import note_slug
 from kboat.repos.gather import github_fields
 from kboat.repos.write import write_note
 from kboat.validate.core import check_note
 
+# The writer verifies a record's slug against its `url`, so the fixture names the
+# note the way `gather` does — through the one oracle.
+URL = "https://github.com/google/A2A"
+SLUG = note_slug(URL)
+
 RECORD: dict[str, Any] = {
-    "slug": "abc123def456",
-    "url": "https://github.com/google/A2A",
+    "slug": SLUG,
+    "url": URL,
     "title": "google/A2A",
     "fields": {
         "homepage": "https://a2a-protocol.org/",
@@ -42,7 +48,7 @@ RECORD: dict[str, Any] = {
 
 
 def _note(vault: Path) -> Path:
-    return vault / "Repos" / "abc123def456.md"
+    return vault / "Repos" / f"{SLUG}.md"
 
 
 def test_write_creates_note(tmp_path: Path) -> None:
@@ -98,7 +104,7 @@ def test_write_creates_a_valid_note_from_a_sparse_record(tmp_path: Path) -> None
 
     fm = parse_frontmatter(_note(tmp_path).read_text())
     assert fm["status"] == "unknown"
-    assert check_note("repo", dict(fm), "Repos/abc123def456.md") == []
+    assert check_note("repo", dict(fm), f"Repos/{SLUG}.md") == []
 
 
 def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> None:
@@ -210,11 +216,16 @@ def test_write_update_keeps_prose_above_the_notes_section(tmp_path: Path) -> Non
 
 
 def test_write_collision_refuses_overwrite(tmp_path: Path) -> None:
+    # Same slug, different repo url → 48-bit collision; must not overwrite. No
+    # pair of URLs hashes alike, so the clash is staged: this repo's note is
+    # moved onto the slug the other one names.
+    clone = "https://github.com/evil/clone"
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
-    # Same slug, different repo url → 48-bit collision; must not overwrite.
+    _note(tmp_path).rename(tmp_path / "Repos" / f"{note_slug(clone)}.md")
     other = {
         **RECORD,
-        "url": "https://github.com/evil/clone",
+        "slug": note_slug(clone),
+        "url": clone,
         "title": "evil/clone",
         "fields": {**RECORD["fields"], "descrption": "typo"},
     }
@@ -225,22 +236,22 @@ def test_write_collision_refuses_overwrite(tmp_path: Path) -> None:
     # and the collision is the thing to act on.
     assert "dropped_fields" not in result
     # Original note untouched.
-    assert parse_frontmatter(_note(tmp_path).read_text())["title"] == "google/A2A"
+    note = tmp_path / "Repos" / f"{note_slug('https://github.com/evil/clone')}.md"
+    assert parse_frontmatter(note.read_text())["title"] == "google/A2A"
 
 
 def test_write_refuses_a_url_it_cannot_compare(tmp_path: Path) -> None:
     # A `url` hand-edited into a list (two clicks in Obsidian) decodes fine and
     # still cannot be matched against a string, so nothing shows the note to be
-    # this repo. The check exists to refuse, so it fails closed rather than
-    # writing over whatever is there.
+    # this repo — not even the record naming the very URL it was written from.
+    # The check exists to refuse, so it fails closed rather than writing over
+    # whatever is there.
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
     path = _note(tmp_path)
     path.write_text(path.read_text().replace(f"url: {RECORD['url']}", f"url:\n  - {RECORD['url']}"))
     before = path.read_text()
 
-    result = write_note(
-        {**RECORD, "url": "https://github.com/evil/clone"}, tmp_path, today_iso="2027-01-01"
-    )
+    result = write_note(RECORD, tmp_path, today_iso="2027-01-01")
 
     assert result["status"] == "collision"
     assert result["reason"] == "unreadable_identity"

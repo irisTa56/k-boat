@@ -14,6 +14,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
+from kboat.canonical import canonical_url
 from kboat.frontmatter import (
     Entry,
     body_after_frontmatter,
@@ -29,6 +30,7 @@ from kboat.frontmatter import (
     yaml_scalar,
 )
 from kboat.io_utils import atomic_write_text
+from kboat.naming import note_slug
 from kboat.schema import DIR_BY_TYPE, Field, Kind, NoteSchema
 
 
@@ -182,6 +184,12 @@ def build_note(
 
 NOTES_HEADING = "## Notes"
 
+# The `upsert` statuses that mean a note is on disk. Every other status is a
+# write that did not happen, so each caller's success test is written against
+# this set rather than against a list of refusals — a refusal added later must
+# not read as success anywhere.
+WROTE_A_NOTE = frozenset({"created", "updated"})
+
 
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
@@ -304,6 +312,66 @@ def _filename_slug(slug: object) -> str:
     return slug
 
 
+def _names_one_page(old: str, new: str) -> bool:
+    """Whether two identity URLs name one page.
+
+    Judged the way the slug is: two links whose canonical forms agree land on one
+    note by construction, so comparing the stored strings verbatim would read the
+    second link as a 48-bit clash and refuse a write that is simply the same page
+    reached another way. A stored URL no parser can take falls back to an exact
+    match — nothing shows it to name this page, and the check fails closed.
+
+    Every identity in `kboat.schema` is a URL, which is what lets this ask a URL
+    question of whatever it is handed — asserted over `BY_TYPE` by
+    `test_url_named_follows_the_identity_field` rather than re-checked here,
+    since a guard for a schema that does not exist is a branch no run reaches.
+    """
+    if old == new:
+        return True
+    try:
+        return canonical_url(old) == canonical_url(new)
+    except ValueError:
+        return False
+
+
+def _slug_mismatch(schema: NoteSchema, slug: str, provided: Mapping[str, object]) -> dict | None:
+    """The refusal for a record whose slug is not the one its `url` names.
+
+    Only a URL-named schema has an answer to check against; a Kindle note's ASIN
+    is an id, derived from nothing. And only a record that *carries* the URL is
+    checked: an update omitting it (a later write filling in `summary`) asks
+    nothing about identity, and an upload source legitimately has none.
+
+    Checked before the file is even located, because a wrong slug names the wrong
+    file — reading it first would run the collision check against a note this
+    record was never about.
+
+    A `url` no parser can take is a record to fix rather than a mismatch to
+    report: there is no slug it could have named, so nothing about the vault
+    would make it writable. That is `BadInputError`'s case, and the CLI's exit 2.
+    """
+    if not schema.url_named or schema.identity is None:
+        return None
+    url = provided.get(schema.identity)
+    if not isinstance(url, str) or not url.strip():
+        return None
+    try:
+        expected = note_slug(url)
+    except ValueError as exc:
+        raise BadInputError(
+            f"record {schema.identity!r} is not a usable URL: {url!r} ({exc})"
+        ) from exc
+    if expected == slug:
+        return None
+    return {
+        "status": "slug_mismatch",
+        "identity": schema.identity,
+        "url": url,
+        "expected": expected,
+        "got": slug,
+    }
+
+
 def upsert(
     schema: NoteSchema, vault: Path, record: Mapping[str, object], *, today: str
 ) -> dict[str, object]:
@@ -321,10 +389,12 @@ def upsert(
     these notes are rewritten unattended: a lossy round-trip would compound
     silently, once per run.
 
-    A different `identity` value at an existing slug is a collision (never
-    overwritten). Returns `{status, slug, path}`, or a `collision` record; a
-    record that does not say a note — a slug that is no filename, a field name
-    that is no property key — raises `BadInputError` and writes nothing.
+    A record whose slug is not the one its `url` names is refused as a
+    `slug_mismatch`, and a different `identity` value at an existing slug as a
+    `collision` (never overwritten). Returns `{status, slug, path}` or one of
+    those two records; a record that does not say a note — a slug that is no
+    filename, a field name that is no property key — raises `BadInputError` and
+    writes nothing.
     """
     slug = _filename_slug(record.get("slug"))
     fields_in = record.get("fields", {})
@@ -339,6 +409,9 @@ def upsert(
             if not is_plain_key(key):
                 raise BadInputError(f"record field name is not a property key: {key!r}")
             provided[key] = v
+    mismatch = _slug_mismatch(schema, slug, provided)
+    if mismatch is not None:
+        return mismatch
     body_in = record.get("body", "")
     rel = f"{DIR_BY_TYPE[schema.type]}/{slug}.md"
     path = vault / DIR_BY_TYPE[schema.type] / f"{slug}.md"
@@ -374,7 +447,10 @@ def upsert(
                 and not isinstance(old, str)
                 and not (held.modelled and old is None)
             )
-            if unreadable or (isinstance(old, str) and isinstance(new, str) and old != new):
+            differs = (
+                isinstance(old, str) and isinstance(new, str) and not _names_one_page(old, new)
+            )
+            if unreadable or differs:
                 return {
                     "status": "collision",
                     "reason": "unreadable_identity" if unreadable else "identity_differs",
@@ -383,6 +459,12 @@ def upsert(
                     "existing": old,
                     "incoming": new,
                 }
+            # The identity a note was created with is the one it keeps. The two
+            # forms name one page or the write was refused above, so overwriting
+            # buys nothing and costs the provenance — and, for a source, the
+            # string the NotebookLM source id is resolved by matching.
+            if isinstance(old, str) and isinstance(new, str) and old != new:
+                provided[schema.identity] = old
         existing_body = body_after_frontmatter(text)
 
     # `written` is the whole worklist: what the record supplies, plus the stamps
