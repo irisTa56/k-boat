@@ -314,6 +314,28 @@ def test_gather_never_reports_a_readme_error_that_reads_as_unset(monkeypatch) ->
     assert out["readme_error"]
 
 
+def test_gather_excerpts_a_readme_the_real_fetch_returned(monkeypatch) -> None:
+    # Both `gh` calls go through the real functions here. A `gh_readme` success path
+    # that stopped returning its stdout would leave every repo classified as if it had
+    # no README — and every one of those classifications is permanent — so the case is
+    # driven end to end rather than around the function under it.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        lambda *a, **kw: (
+            _Completed(_REPO_VIEW_STDOUT)
+            if a[0][1] == "repo"
+            else _Completed("# Title\n\nReal prose about the project.\n")
+        ),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_error"] is None
+    assert "Real prose about the project." in out["readme_excerpt"]
+
+
 def test_gather_records_why_the_readme_excerpt_is_empty(monkeypatch) -> None:
     # A non-zero README fetch is not a verdict — a repo may simply have none — but it
     # is not nothing either: a rate limit looks identical and leaves the classification
