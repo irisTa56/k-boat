@@ -498,6 +498,69 @@ def test_refresh_reports_a_rename_that_left_both_files(tmp_path: Path, monkeypat
     assert "both now exist" in error
 
 
+def test_refresh_reports_a_collision_even_when_the_rewrite_then_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The one list that is deliberately not exclusive with `failed`: a canonical slug
+    # being taken is a finding about identity, and it holds whether or not the metadata
+    # rewrite that follows lands. Moving the collision past the write — the natural
+    # follow-on to `adopted` moving there — would leave the human never told that two
+    # notes need merging.
+    _write_note(tmp_path, "https://github.com/a2aproject/A2A", "a2aproject/A2A")
+    collided = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+
+    def unwritable(path: Path, content: str) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", unwritable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    rel = collided.relative_to(tmp_path).as_posix()
+    assert [c["path"] for c in report["rename_collisions"]] == [rel]
+    assert rel in [f["path"] for f in report["failed"]]
+    assert report["counts"]["updated"] == 0
+    assert _counts_match_the_lists(report)
+
+
+def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The note is read twice — once to learn its identity, once to rewrite it — and the
+    # vault lock is advisory, so Obsidian or iCloud can change the file in between. The
+    # second read is inside the per-note boundary, so this is one `failed` entry rather
+    # than the end of the pass.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    real_read_text = Path.read_text
+    reads: list[Path] = []
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.parent.name == "Repos":
+            reads.append(self)
+            if len(reads) > 1:  # the rewrite's read, after the load's
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"] == {
+        "total": 1,
+        "updated": 0,
+        "adopted": 0,
+        "rename_collisions": 0,
+        "failed": 1,
+        "anomalies": 0,
+    }
+    assert report["failed"][0]["reason"] == "write"
+    assert note.exists()
+
+
 def test_refresh_does_not_report_a_rename_it_failed_to_write(tmp_path: Path, monkeypatch) -> None:
     # `adopted` is the set of renames healed, so a note whose rewrite failed belongs in
     # `failed` and nowhere else — otherwise the report claims a move that never happened.

@@ -67,8 +67,13 @@ MAX_WORKERS = 10
 Reason = Literal["fetch", "payload", "vault", "write"]
 
 
-def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason) -> dict:
-    """One note's fetch result, with its failure class named where it is decided."""
+def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason | None) -> dict:
+    """One note's fetch result, with its failure class named where it is decided.
+
+    `reason` is `None` for the fetch that worked: the set enumerates the ways a note
+    drops out, so tagging a healthy note with one would leave anything that later
+    read it without checking `meta` calling every good note a failure.
+    """
     return {**note, "meta": meta, "error": error, "reason": reason}
 
 
@@ -148,7 +153,7 @@ def _fetch(note: dict) -> dict:
         # failed. `gh_repo_view` refuses that answer — and every other shape that is
         # not a repo view — ahead of here; this keeps the two in step if it stops.
         return _fetched(note, meta=None, error="gh returned no usable object", reason="payload")
-    return _fetched(note, meta=meta, error=err, reason="fetch")
+    return _fetched(note, meta=meta, error=err, reason=None)
 
 
 @dataclass(frozen=True)

@@ -278,8 +278,15 @@ def gather(url: str, *, today: date) -> dict:
         return _payload_defect(record, exc)
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
-    if not meta:
+    if meta is None:
         record.update(status="error-meta", error=err)
+        return record
+    if not meta:
+        # `gh_repo_view` refuses an empty answer ahead of here, and `refresh` keeps
+        # the same second line. Both have to class it the same way: reporting it as
+        # the verdict that never escalates is what a loosened guard would otherwise
+        # cost on the ingest side alone.
+        record.update(status="defect-payload", error="gh returned no usable object")
         return record
     # Re-key off the canonical owner/repo `gh` resolved to (handles renames,
     # transfers, and case), so the note's url/slug/title are authoritative.
