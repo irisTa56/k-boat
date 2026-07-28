@@ -271,7 +271,11 @@ def gather(url: str, *, today: date) -> dict:
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
     if not meta:
-        record.update(status="error-meta", error=err)
+        # A stand-in when `gh` failed with nothing on stderr (killed by a signal, or
+        # its diagnostic went to stdout). This verdict does not escalate, so what the
+        # human gets is the report — an empty fenced block would leave them a repeating
+        # failure with nothing to compare between runs.
+        record.update(status="error-meta", error=err or "gh failed with no message")
         return record
     # Re-key off the canonical owner/repo `gh` resolved to (handles renames,
     # transfers, and case), so the note's url/slug/title are authoritative.

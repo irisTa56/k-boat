@@ -313,6 +313,22 @@ def test_refresh_never_writes_an_empty_payload_over_a_good_note(
     assert parse_frontmatter(note.read_text())["stars"] == "1"  # not zeroed
 
 
+def test_refresh_does_not_escalate_a_gh_that_failed_without_a_message(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A `gh` the OOM killer took, or one that wrote its diagnostic to stdout, exits
+    # non-zero with an empty stderr. It is still a fetch that failed — reading the
+    # absence of text as "answered unusably" would escalate a transient failure, and
+    # go on escalating it every day the condition lasts.
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, ""))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["failed"][0]["reason"] == "fetch"
+    assert report["failed"][0]["error"]  # never an empty string for a human to read
+
+
 def test_refresh_treats_an_unusable_gh_answer_as_the_payload_class(
     tmp_path: Path, monkeypatch
 ) -> None:

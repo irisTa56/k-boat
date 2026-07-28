@@ -61,8 +61,15 @@ MAX_WORKERS = 10
 
 # The closed set of ways one note drops out of a pass. Typed, not free strings,
 # because `reason` is what the run branches on to escalate: a fifth value or a
-# misspelling would type-check clean and quietly stop the escalation firing.
+# misspelling would otherwise type-check clean and quietly stop the escalation
+# firing. Every site that sets one goes through `_fetched` or `_failure`, so the
+# annotation is what the value is checked against rather than decoration.
 Reason = Literal["fetch", "payload", "vault", "write"]
+
+
+def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason) -> dict:
+    """One note's fetch result, with its failure class named where it is decided."""
+    return {**note, "meta": meta, "error": error, "reason": reason}
 
 
 def _failure(note_rel: str, owner_repo: str, *, reason: Reason, error: str) -> dict[str, str]:
@@ -128,14 +135,20 @@ def _fetch(note: dict) -> dict:
     try:
         meta, err = gh_repo_view(note["owner"], note["repo"])
     except PayloadError as exc:
-        return {**note, "meta": None, "error": str(exc), "reason": "payload"}
+        return _fetched(note, meta=None, error=str(exc), reason="payload")
     except Exception as exc:  # noqa: BLE001
-        return {**note, "meta": None, "error": f"{type(exc).__name__}: {exc}", "reason": "fetch"}
-    # A payload with nothing in it and no error is `gh` having answered unusably —
-    # the permanent class, not a fetch that failed. `gh_repo_view` refuses that
-    # ahead of here; this keeps the two in step if it ever stops.
-    reason: Reason = "fetch" if (meta or err) else "payload"
-    return {**note, "meta": meta, "error": err, "reason": reason}
+        return _fetched(note, meta=None, error=f"{type(exc).__name__}: {exc}", reason="fetch")
+    if meta is None:
+        # `gh` did not answer. Its stderr can be empty — a `gh` the OOM killer took,
+        # one that wrote its diagnostic to stdout — so the class comes from whether
+        # there is a payload, never from whether there is text to show for it.
+        return _fetched(note, meta=None, error=err, reason="fetch")
+    if not meta:
+        # `gh` answered with nothing in it: the permanent class, not a fetch that
+        # failed. `gh_repo_view` refuses that answer ahead of here; this keeps the
+        # two in step if it ever stops.
+        return _fetched(note, meta=None, error="gh returned no usable object", reason="payload")
+    return _fetched(note, meta=meta, error=err, reason="fetch")
 
 
 @dataclass(frozen=True)

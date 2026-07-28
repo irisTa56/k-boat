@@ -202,6 +202,18 @@ def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
     assert out["url"] == "https://github.com/acme/tool"
 
 
+def test_gather_never_reports_a_failure_with_an_empty_error(monkeypatch) -> None:
+    # `gh` can exit non-zero with nothing on stderr. This verdict does not escalate,
+    # so the report is all the human gets — and an empty fenced block gives them a
+    # repeating failure with nothing to compare between runs.
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, ""))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"]
+
+
 def test_gather_reports_a_subprocess_failure_as_error_meta(monkeypatch) -> None:
     # The boundary's promise: one record whatever happens, never a raise at an
     # unattended run. The mainline case is the fetch itself giving out.
