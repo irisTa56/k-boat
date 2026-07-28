@@ -15,7 +15,8 @@ The shared vault mechanics it relies on — URL-hash naming, the code-authoritat
 ## Feed note (`Feeds/*.md`)
 
 Frontmatter only, no body.
-The note is named by the URL hash of its `url` (the `kboat-vault-conventions` recipe); feed-filter hashes its **canonical** URL, so URL variants of one page collapse to a single note (its own de-dup key), and the readable title lives in the `title` property, surfaced by the Base.
+The note is named by the URL hash of its `url` (the `kboat-vault-conventions` recipe, which hashes the canonical form, so URL variants of one page collapse to a single note), and the readable title lives in the `title` property, surfaced by the Base.
+The `url` a feed note stores is that same canonical URL, since it is also feed-filter's own de-dup key in the seen-store — one normalization serving both, which is why the module lives in `kboat`.
 The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter calls directly in Python — field order, YAML quoting, the always-present boolean defaults, de-dup by `url`, and the `added_date` stamp are guaranteed rather than hand-assembled.
 
 | Property | Meaning |

@@ -42,20 +42,36 @@ import stat
 import tempfile
 from pathlib import Path
 
+# iCloud replaces an evicted file with a placeholder of this shape beside where
+# the file was: `Sources/abc.md` becomes `Sources/.abc.md.icloud`. The vault is
+# iCloud-synced, so any tool that decides something from a file's absence has to
+# be able to tell "not there" from "not here yet".
+ICLOUD_GLOB = ".*.icloud"
 
-def _fsync_dir(directory: Path) -> None:
-    """Flush the directory entry itself, so the rename survives a power loss.
 
-    Best-effort by contract (see the module docstring): the rename it makes
-    durable has already happened, and a filesystem that will not flush a
-    directory must not turn a landed write into a reported failure.
+def icloud_placeholder(path: Path) -> Path:
+    """Where iCloud leaves its marker when `path` is evicted."""
+    return path.parent / f".{path.name}.icloud"
+
+
+def fsync_dir(directory: Path) -> None:
+    """Flush the directory entry itself, so a rename survives a power loss.
+
+    **Raises**, because its other caller uses it as a barrier rather than as a
+    last step: `kboat.note.migrate` moves a note and its PDF as a pair, and the
+    flush between the two renames is what stops a power loss from keeping the
+    second and losing the first. A barrier that quietly did nothing would leave
+    that pair split with nothing to report and no later scan looking for it.
+
+    `atomic_write_text` wants the opposite and says so where it calls this: there
+    the flush is the last step, cannot un-write the rename it is flushing, and so
+    must not turn a landed write into a reported failure.
     """
-    with contextlib.suppress(OSError):
-        dir_fd = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+    dir_fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def _preserved_mode(path: Path) -> int | None:
@@ -94,7 +110,11 @@ def atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> N
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
-        _fsync_dir(path.parent)
+        # Suppressed here and nowhere else: the rename has landed, so a
+        # filesystem that will not flush a directory must not make this raise
+        # and have every caller report a write that did happen as lost.
+        with contextlib.suppress(OSError):
+            fsync_dir(path.parent)
     except BaseException:
         # After a successful rename the temp path is already gone, so this only
         # cleans up a write that never became the target file.
