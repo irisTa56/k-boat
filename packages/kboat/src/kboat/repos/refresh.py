@@ -37,6 +37,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from kboat.cli import (
     add_today_argument,
@@ -58,13 +59,18 @@ from .identity import canonical_slug, canonical_url, parse_repo
 MAX_WORKERS = 10
 
 
-def _failure(note_rel: str, owner_repo: str, *, reason: str, error: str) -> dict[str, str]:
+# The closed set of ways one note drops out of a pass. Typed, not free strings,
+# because `reason` is what the run branches on to escalate: a fifth value or a
+# misspelling would type-check clean and quietly stop the escalation firing.
+Reason = Literal["fetch", "payload", "vault", "write"]
+
+
+def _failure(note_rel: str, owner_repo: str, *, reason: Reason, error: str) -> dict[str, str]:
     """One `failed` entry: the note, why it dropped out, and the detail.
 
-    `reason` is the closed part — `fetch`, `payload`, `vault`, `write` — and it is
-    what the run branches on, because `error` carries `gh`'s stderr and an
-    exception's text, neither of which this side writes. `payload` is the one no
-    later run clears; the others are settled by trying again.
+    The run branches on `reason`, never on `error`, which carries `gh`'s stderr and
+    an exception's text — neither of which this side writes. `payload` is the one
+    no later run clears; the others are settled by trying again.
     """
     return {"path": note_rel, "owner_repo": owner_repo, "reason": reason, "error": error}
 
@@ -93,7 +99,10 @@ def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dic
         try:
             text = path.read_text(encoding="utf-8")
             fm = parse_frontmatter(text)
-        except (FrontmatterError, OSError) as exc:
+        # `UnicodeDecodeError` alongside the other two: it is a `ValueError`, so a
+        # note that is not UTF-8 would otherwise escape every boundary in this pass
+        # and take the whole catalogue's refresh with it.
+        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "repo":
@@ -122,7 +131,11 @@ def _fetch(note: dict) -> dict:
         return {**note, "meta": None, "error": str(exc), "reason": "payload"}
     except Exception as exc:  # noqa: BLE001
         return {**note, "meta": None, "error": f"{type(exc).__name__}: {exc}", "reason": "fetch"}
-    return {**note, "meta": meta, "error": err, "reason": "fetch"}
+    # A payload with nothing in it and no error is `gh` having answered unusably —
+    # the permanent class, not a fetch that failed. `gh_repo_view` refuses that
+    # ahead of here; this keeps the two in step if it ever stops.
+    reason: Reason = "fetch" if (meta or err) else "payload"
+    return {**note, "meta": meta, "error": err, "reason": reason}
 
 
 @dataclass(frozen=True)
@@ -290,7 +303,9 @@ def refresh(
 
         try:
             written = _apply(plan, dry_run=dry_run)
-        except (FrontmatterError, OSError) as exc:
+        # `UnicodeDecodeError` for the same reason as the load above: `_apply` reads
+        # the note again, and the file can have changed under the run.
+        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
             failed.append(_failure(rel, was, reason="write", error=str(exc)))
             continue
         updated.append(written)

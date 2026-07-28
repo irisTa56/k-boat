@@ -276,6 +276,24 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
     ).exists()
 
 
+def test_refresh_isolates_a_note_that_is_not_utf8(tmp_path: Path, monkeypatch) -> None:
+    # The load reads every note before the pass begins, so a note that is not UTF-8
+    # would end the run there — ahead of every per-note boundary, and with no report.
+    # It is an anomaly for a human to repair, and the rest of the catalogue refreshes.
+    good = _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    broken = tmp_path / "Repos" / "0123456789ab.md"
+    broken.write_bytes(b"---\ntype: repo\nurl: https://github.com/a/b\n---\n\n\xff\xfe\n")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["anomalies"] == 1
+    assert report["anomalies"][0]["path"] == broken.relative_to(tmp_path).as_posix()
+    assert report["counts"]["total"] == 1  # the unreadable note never became one
+    assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
+    assert parse_frontmatter(good.read_text())["stars"] == "42"
+
+
 def test_refresh_never_writes_an_empty_payload_over_a_good_note(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -290,6 +308,7 @@ def test_refresh_never_writes_an_empty_payload_over_a_good_note(
 
     assert report["counts"]["updated"] == 0
     assert report["counts"]["failed"] == 1
+    assert report["failed"][0]["reason"] == "payload"  # `gh` answered, unusably
     assert note.read_text(encoding="utf-8") == before
     assert parse_frontmatter(note.read_text())["stars"] == "1"  # not zeroed
 
