@@ -34,6 +34,7 @@ import sys
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -101,6 +102,90 @@ def _fetch(note: dict) -> dict:
     return {**note, "meta": meta, "error": err}
 
 
+@dataclass(frozen=True)
+class _NotePlan:
+    """Everything one note's refresh will do, decided before any of it is applied.
+
+    Deciding it in one piece is what keeps the run's accounting honest. The payload
+    mapping can raise (`gather`'s `defect-payload` class), and a note that fails
+    there must land in `failed` alone — never also in `updated`, `adopted`, or
+    `rename_collisions`, all of which are appended only once a plan exists.
+    """
+
+    path: Path
+    rel: str
+    target: Path
+    rel_target: str
+    slug: str
+    now: str
+    updates: dict[str, object]
+    adopt: bool
+    renaming: bool
+    collides: bool
+
+
+def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set[str]) -> _NotePlan:
+    """Read a fetched note's payload into the update it implies.
+
+    Pure computation over `gh`'s answer and the slugs already claimed this run:
+    it reads the filesystem only to test whether a rename's target is taken, and
+    writes nothing.
+    """
+    meta, path = note["meta"], note["path"]
+    res_owner, res_repo = resolved_identity(meta)
+    res_owner, res_repo = res_owner or note["owner"], res_repo or note["repo"]
+    # A repo's identity can move (rename/transfer/case); the note must follow it
+    # so de-dup and refresh stay keyed off the live repo. Adopt the resolved
+    # name, renaming the file when its slug changes.
+    resolved_url = canonical_url(res_owner, res_repo)
+    new_slug = canonical_slug(resolved_url) or path.stem
+    adopt = resolved_url != canonical_url(note["owner"], note["repo"])
+    renaming = adopt and new_slug != path.stem
+    target = repos_dir / f"{new_slug}.md"
+    # The canonical slug is already taken (by an existing note, or by another
+    # rename this run) — refresh metadata in place but don't adopt the identity
+    # or move; a human merges the two.
+    collides = renaming and (target.exists() or new_slug in claimed)
+    if collides:
+        adopt = renaming = False
+
+    updates = github_fields(meta, today=today)
+    updates["refreshed_date"] = today.isoformat()
+    if adopt:
+        updates["url"] = resolved_url
+        updates["title"] = f"{res_owner}/{res_repo}"
+    return _NotePlan(
+        path=path,
+        rel=note["rel"],
+        target=target,
+        # Derived from `target`, so a report path cannot name a different
+        # directory from the one the write actually went to.
+        rel_target=target.relative_to(vault).as_posix(),
+        slug=new_slug,
+        now=f"{res_owner}/{res_repo}",
+        updates=updates,
+        adopt=adopt,
+        renaming=renaming,
+        collides=collides,
+    )
+
+
+def _apply(plan: _NotePlan, *, dry_run: bool) -> str:
+    """Write the planned update, returning the path the report names it under.
+
+    A dry run reports what it would have written and touches nothing.
+    """
+    if dry_run:
+        return plan.rel_target if plan.renaming else plan.rel
+    content = set_fields(plan.path.read_text(encoding="utf-8"), plan.updates)
+    if plan.renaming:
+        atomic_write_text(plan.target, content)
+        plan.path.unlink()
+        return plan.rel_target
+    atomic_write_text(plan.path, content)
+    return plan.rel
+
+
 def refresh(
     vault: Path, *, today: date, max_workers: int = MAX_WORKERS, dry_run: bool = False
 ) -> dict:
@@ -127,54 +212,49 @@ def refresh(
         if r["meta"] is None:
             failed.append({"path": rel, "owner_repo": was, "error": r["error"] or "no metadata"})
             continue
-        meta = r["meta"]
-        path: Path = r["path"]
-        res_owner, res_repo = resolved_identity(meta)
-        res_owner, res_repo = res_owner or r["owner"], res_repo or r["repo"]
-        now = f"{res_owner}/{res_repo}"
-        # A repo's identity can move (rename/transfer/case); the note must follow
-        # it so de-dup and refresh stay keyed off the live repo. Adopt the
-        # resolved name, renaming the file when its slug changes.
-        resolved_url = canonical_url(res_owner, res_repo)
-        new_slug = canonical_slug(resolved_url) or path.stem
-        adopt = resolved_url != canonical_url(r["owner"], r["repo"])
-        renaming = adopt and new_slug != path.stem
-        target = repos_dir / f"{new_slug}.md"
-        # Derived from `target`, so a report path cannot name a different
-        # directory from the one the write actually went to.
-        rel_target = target.relative_to(vault).as_posix()
-
-        updates = github_fields(meta, today=today)
-        updates["refreshed_date"] = today_iso
-
-        if renaming and (target.exists() or new_slug in claimed):
-            # The canonical slug is already taken (by an existing note, or by
-            # another rename this run) — refresh metadata in place but don't adopt
-            # the identity or move; a human merges the two.
-            rename_collisions.append({"path": rel, "was": was, "now": now, "conflict": rel_target})
-            adopt = renaming = False
-
-        if renaming:
-            claimed.add(new_slug)
-        if adopt:
-            updates["url"] = resolved_url
-            updates["title"] = now
-            adopted.append({"from": rel, "to": rel_target, "was": was, "now": now})
-
-        if dry_run:
-            updated.append(rel_target if renaming else rel)
-            continue
+        # The per-note boundary over the payload mapping, blind for the reason
+        # `gather`'s is: `gh repo view --json` is a typed schema, so what can raise
+        # in here is a breaking `gh` change or an anomalous response, and neither
+        # is worth the rest of the catalogue. The note keeps its existing content
+        # and is re-fetched by the next run.
+        #
+        # Unlike `gather` this is not split by retryability, and deliberately: no
+        # caller decides whether to come back — every note is re-fetched daily
+        # regardless — so the class belongs in the `error` string a human reads,
+        # not in a second machine-readable outcome nothing would branch on.
         try:
-            content = set_fields(path.read_text(encoding="utf-8"), updates)
-            if renaming:
-                atomic_write_text(target, content)
-                path.unlink()
-                updated.append(rel_target)
-            else:
-                atomic_write_text(path, content)
-                updated.append(rel)
+            plan = _plan(r, repos_dir=repos_dir, vault=vault, today=today, claimed=claimed)
+        except Exception as exc:  # noqa: BLE001
+            failed.append(
+                {
+                    "path": rel,
+                    "owner_repo": was,
+                    "error": f"unreadable gh payload: {type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+
+        if plan.collides:
+            rename_collisions.append(
+                {"path": rel, "was": was, "now": plan.now, "conflict": plan.rel_target}
+            )
+        if plan.renaming:
+            # Reserved before the write, not after: a slug this run has aimed at
+            # is spoken for even if writing it fails, so a second rename cannot
+            # aim at it too.
+            claimed.add(plan.slug)
+
+        try:
+            written = _apply(plan, dry_run=dry_run)
         except (FrontmatterError, OSError) as exc:
             failed.append({"path": rel, "owner_repo": was, "error": f"write failed: {exc}"})
+            continue
+        updated.append(written)
+        if plan.adopt:
+            # Reported only once the note is actually written (or, in a dry run,
+            # once it would have been): `adopted` is the set of renames healed,
+            # and a rewrite that failed healed nothing.
+            adopted.append({"from": rel, "to": plan.rel_target, "was": was, "now": plan.now})
 
     return {
         "today": today_iso,

@@ -4,6 +4,7 @@ monkeypatched."""
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import kboat.repos.gather as gather_mod
@@ -214,12 +215,16 @@ def test_gather_reports_a_subprocess_failure_as_error_meta(monkeypatch) -> None:
     assert out["title"] == "acme/tool"
 
 
-def test_gather_reports_an_unmappable_gh_payload_as_error_meta(monkeypatch) -> None:
+def test_gather_reports_an_unmappable_gh_payload_as_a_non_retryable_defect(monkeypatch) -> None:
     # The claim that makes the boundary blind rather than narrow: `gh` answering fine but
     # the mapping failing on the payload is reported, not raised. Stub the mapping rather
     # than feed it a known-bad shape, so hardening `github_fields` cannot break a test
     # about the boundary. KeyError shares no base with the subprocess and OS errors, so a
     # narrowed `except` fails here.
+    #
+    # It is a *different* verdict from the transport failures above, and that is the
+    # point: the same payload fails the same way tomorrow, so the skill must not read
+    # this as "keep the queue file and retry" the way it reads `error-meta`.
     meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
 
     def unmappable(_github: dict, *, today: date) -> dict[str, object]:
@@ -231,5 +236,59 @@ def test_gather_reports_an_unmappable_gh_payload_as_error_meta(monkeypatch) -> N
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
-    assert out["status"] == "error-meta"
+    assert out["status"] == "defect-payload"
     assert out["error"].startswith("KeyError:")
+    # No note is written from either verdict, so the record still names what was queued.
+    assert out["title"] == "acme/tool"
+
+
+def test_gather_reports_an_unreadable_identity_as_a_non_retryable_defect(monkeypatch) -> None:
+    # Identity resolution reads the payload too, and it runs before the README fetch —
+    # so it is the earlier of the two places a payload defect can surface, and lands on
+    # the same verdict rather than on the transport one it sits between.
+    def unreadable(_meta: dict) -> tuple[str | None, str | None]:
+        raise AttributeError("'str' object has no attribute 'get'")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: ({"owner": "acme"}, None))
+    monkeypatch.setattr(gather_mod, "resolved_identity", unreadable)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "defect-payload"
+    assert out["error"].startswith("AttributeError:")
+
+
+def test_gather_reports_a_readme_fetch_failure_as_retryable(monkeypatch) -> None:
+    # The README fetch is transport again, on the far side of the identity mapping.
+    # A network failure there is tomorrow's business, not a defect.
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+
+    def boom(_owner: str, _repo: str) -> tuple[str | None, str | None]:
+        raise TimeoutError("gh timed out")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", boom)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "TimeoutError: gh timed out"
+
+
+def test_the_cli_exits_non_zero_on_a_payload_defect(monkeypatch, capsys) -> None:
+    # The escalating verdict still comes out as one JSON record on stdout, and the
+    # non-zero exit distinguishes it from `ok` — not from the retryable verdict, which
+    # exits the same way. Only the record tells the two apart.
+    def unmappable(_github: dict, *, today: date) -> dict[str, object]:
+        raise KeyError("name")
+
+    monkeypatch.setattr(
+        gather_mod, "gh_repo_view", lambda o, r: ({"owner": {"login": o}, "name": r}, None)
+    )
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: ("", None))
+    monkeypatch.setattr(gather_mod, "github_fields", unmappable)
+
+    rc = gather_mod.main(["https://github.com/acme/tool", "--today", "2026-06-06"])
+
+    assert rc == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "defect-payload"

@@ -157,6 +157,60 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
     return (owner or None, name or None)
 
 
+# `gather`'s two failure verdicts, and why there are two.
+#
+# The CLI edge promises the skill one JSON record whatever happens, so both are
+# caught blind: a traceback would leave an unattended run with no record at all.
+# What the record must also carry is whether coming back tomorrow can help.
+#
+# - `error-meta` — the `gh` call produced no metadata (a non-zero exit, stdout
+#   that will not parse, or a timeout / OS error raised out of the subprocess).
+#   Environmental, so the skill keeps the queue file and the next run retries.
+# - `defect-payload` — `gh` answered and the mapping could not read what it
+#   answered. A payload shape is not weather: the same input fails the same way
+#   tomorrow, so the skill keeps the queue file (nothing is lost, and a repaired
+#   mapping drains it) but escalates rather than letting the retry repeat
+#   silently. Deliberately not spelled `error-*`, so the "keep it and retry"
+#   reflex the other verdict earns cannot extend to this one by pattern.
+#
+# The two classes interleave — the README fetch is transport again, and it needs
+# the identity the payload mapping resolves — which is why the boundaries below
+# are several narrow ones rather than a single wrapper around the body.
+
+
+def _fetch_failed(record: dict, exc: BaseException) -> dict:
+    record.update(status="error-meta", error=f"{type(exc).__name__}: {exc}")
+    return record
+
+
+def _payload_defect(record: dict, exc: BaseException) -> dict:
+    record.update(status="defect-payload", error=f"{type(exc).__name__}: {exc}")
+    return record
+
+
+def _mapped(meta: dict, readme: str, *, owner: str, repo: str, today: date) -> dict[str, object]:
+    """The half of an `ok` record derived from what `gh` returned.
+
+    `owner`/`repo` are the identity `gh` resolved, so the record is re-keyed off
+    the live repo. Every raise in here is the `defect-payload` class, which is why
+    the mapping is gathered into one function instead of inlined.
+    """
+    canon = canonical_url(owner, repo)
+    return {
+        "owner": owner,
+        "repo": repo,
+        "url": canon,
+        "slug": canonical_slug(canon),
+        "title": f"{owner}/{repo}",
+        "status": "ok",
+        # The mechanical, ready-to-write GitHub-derived frontmatter (the 10%
+        # language rule, `status`, etc.) so the skill never re-derives it —
+        # it only adds the judged role/domain/summary on top.
+        "fields": github_fields(meta, today=today),
+        "readme_excerpt": first_paragraphs(readme),
+    }
+
+
 def gather(url: str, *, today: date) -> dict:
     """Resolve a GitHub URL to its canonical slug + metadata + README excerpt (one record).
 
@@ -186,38 +240,30 @@ def gather(url: str, *, today: date) -> dict:
     }
     try:
         meta, err = gh_repo_view(owner, repo)
-        if not meta:
-            record.update(status="error-meta", error=err)
-            return record
-        # Re-key off the canonical owner/repo `gh` resolved to (handles renames,
-        # transfers, and case), so the note's url/slug/title are authoritative.
+    except Exception as exc:  # noqa: BLE001
+        return _fetch_failed(record, exc)
+    if not meta:
+        record.update(status="error-meta", error=err)
+        return record
+    # Re-key off the canonical owner/repo `gh` resolved to (handles renames,
+    # transfers, and case), so the note's url/slug/title are authoritative.
+    try:
         res_owner, res_repo = resolved_identity(meta)
-        res_owner, res_repo = res_owner or owner, res_repo or repo
-        canon = canonical_url(res_owner, res_repo)
+    except Exception as exc:  # noqa: BLE001
+        return _payload_defect(record, exc)
+    res_owner, res_repo = res_owner or owner, res_repo or repo
+    try:
         readme, _ = gh_readme(res_owner, res_repo)  # a missing README just yields an empty excerpt
-        record.update(
-            owner=res_owner,
-            repo=res_repo,
-            url=canon,
-            slug=canonical_slug(canon),
-            title=f"{res_owner}/{res_repo}",
-            status="ok",
-            # The mechanical, ready-to-write GitHub-derived frontmatter (the 10%
-            # language rule, `status`, etc.) so the skill never re-derives it —
-            # it only adds the judged role/domain/summary on top.
-            fields=github_fields(meta, today=today),
-            readme_excerpt=first_paragraphs(readme or ""),
-        )
-        return record
-    # The CLI edge's error boundary, hence the blind catch. `gather` promises the skill
-    # one JSON record whatever happens, and `error-meta` is what tells it to keep the
-    # queue file for retry; a traceback would leave an unattended run with no record at
-    # all. So the catch is deliberately wider than the subprocess timeouts and network
-    # errors it mainly sees — a surprising `gh` payload that trips `github_fields` is
-    # reported the same way rather than raised.
-    except Exception as e:  # noqa: BLE001
-        record.update(status="error-meta", error=f"{type(e).__name__}: {e}")
-        return record
+    except Exception as exc:  # noqa: BLE001
+        return _fetch_failed(record, exc)
+    try:
+        # Evaluated before it is merged, so a defect leaves the record on the
+        # queued-link identity rather than half-updated.
+        mapped = _mapped(meta, readme or "", owner=res_owner, repo=res_repo, today=today)
+    except Exception as exc:  # noqa: BLE001
+        return _payload_defect(record, exc)
+    record.update(mapped)
+    return record
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -232,4 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     record = gather(args.url, today=date.fromisoformat(args.today))
     json.dump(record, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
+    # Every non-`ok` verdict exits non-zero, `defect-payload` included: the exit
+    # code says only that no note came of this, and the record says which verdict
+    # it was and what the skill owes it.
     return 0 if record.get("status") == "ok" else 1
