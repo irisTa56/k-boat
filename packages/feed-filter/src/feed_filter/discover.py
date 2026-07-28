@@ -40,9 +40,9 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from selectolax.parser import HTMLParser
 
-from feed_filter.canonical import CanonicalUrl, canonical_url, resolve_link
 from feed_filter.feeds import Entry, parse_feed
 from feed_filter.fetch import FetchError, fetch
+from kboat.canonical import CanonicalUrl, canonical_url, resolve_link
 
 # rel=alternate ``type`` values (and self-feed content types) that mark a feed.
 # The mapped rss/atom value is discarded — only membership matters now that the

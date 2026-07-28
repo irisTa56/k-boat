@@ -18,8 +18,8 @@ from urllib.parse import urlsplit
 
 from selectolax.parser import HTMLParser
 
-from feed_filter.canonical import CanonicalUrl, canonical_url, resolve_link
 from feed_filter.feeds import Entry
+from kboat.canonical import CanonicalUrl, canonical_url, resolve_link
 
 
 def scrape_index(

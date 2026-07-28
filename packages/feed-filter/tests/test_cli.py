@@ -22,7 +22,6 @@ import pytest
 import kboat.lock
 from feed_filter import browser, cli, forum_pipeline
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
-from feed_filter.canonical import CanonicalUrl, canonical_url
 from feed_filter.config import (
     DEFAULT_QUERY_RESULTS,
     SUMMARY_PREVIEW_CHARS,
@@ -46,6 +45,7 @@ from feed_filter.pipeline import FetchOutcome
 from feed_filter.seen import count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
 from feed_filter.vault import VaultError
+from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.frontmatter import Value, parse_frontmatter
 from kboat.lock import vault_lock
 from kboat.naming import url_slug

@@ -57,7 +57,6 @@ from dataclasses import dataclass, field
 import httpx
 
 from feed_filter import forum_store
-from feed_filter.canonical import canonical_url
 from feed_filter.config import (
     DEFAULT_DAILY_WATCH_COUNT,
     DEFAULT_INTEREST_LIKE_THRESHOLD,
@@ -75,6 +74,7 @@ from feed_filter.discourse import (
 from feed_filter.feeds import parse_feed
 from feed_filter.fetch import FetchError, fetch
 from feed_filter.sites import SiteConfig
+from kboat.canonical import canonical_url
 
 # HTTP statuses that mark a topic permanently unfetchable. A deleted Discourse
 # topic returns 404 for its ``/t/<id>.json`` indefinitely (observed in the wild:

@@ -55,7 +55,6 @@ from feed_filter.browser import (
     require_playwright_for,
     require_playwright_if_needed,
 )
-from feed_filter.canonical import canonical_url
 from feed_filter.config import (
     DEFAULT_GATHER_CONCURRENCY,
     DEFAULT_GLOBAL_CAP,
@@ -89,6 +88,7 @@ from feed_filter.sites import (
     validate_article_url_pattern,
 )
 from feed_filter.vault import VaultError, write_feed_note
+from kboat.canonical import canonical_url
 from kboat.cli import add_today_argument
 from kboat.lock import VaultLockedError
 from kboat.write import BadInputError
