@@ -202,19 +202,6 @@ def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
     assert out["url"] == "https://github.com/acme/tool"
 
 
-def test_gather_classes_an_empty_answer_as_a_defect_like_refresh_does(monkeypatch) -> None:
-    # `gh_repo_view` refuses this ahead of the caller, so the gate here is the second
-    # line — stubbed for the same reason `refresh`'s twin test stubs its own. Both have
-    # to class it the same way, or a loosened guard would leave the ingest side quietly
-    # retrying what the catalogue side escalates.
-    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: ({}, None))
-
-    out = gather("https://github.com/acme/tool", today=TODAY)
-
-    assert out["status"] == "defect-payload"
-    assert out["error"]
-
-
 def test_gather_never_reports_a_failure_with_an_empty_error(monkeypatch) -> None:
     # `gh` can exit non-zero with nothing on stderr. This verdict does not escalate,
     # so the report is all the human gets — and an empty fenced block gives them a

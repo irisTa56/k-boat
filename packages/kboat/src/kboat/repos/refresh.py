@@ -148,11 +148,6 @@ def _fetch(note: dict) -> dict:
         # one that wrote its diagnostic to stdout — so the class comes from whether
         # there is a payload, never from whether there is text to show for it.
         return _fetched(note, meta=None, error=err, reason="fetch")
-    if not meta:
-        # `gh` answered with nothing in it: the permanent class, not a fetch that
-        # failed. `gh_repo_view` refuses that answer — and every other shape that is
-        # not a repo view — ahead of here; this keeps the two in step if it stops.
-        return _fetched(note, meta=None, error="gh returned no usable object", reason="payload")
     return _fetched(note, meta=meta, error=err, reason=None)
 
 
@@ -286,11 +281,11 @@ def refresh(
     for r in results:
         rel = r["rel"]
         was = f"{r['owner']}/{r['repo']}"
-        # Falsy, not `is None`: an empty or non-object payload never reaches here
-        # (`gh_repo_view` refuses it), and the same test as `gather`'s is what keeps
-        # it that way — a payload the mapping would read as a full set of empty
-        # values must not be written over a good note.
-        if not r["meta"]:
+        # `None` is the whole of the no-payload case: what makes a payload usable is
+        # `gh_repo_view`'s to decide, and it decides once, for both callers, by
+        # raising rather than returning. A second opinion here would be a second
+        # place to keep in step — which is how this pair drifted apart before.
+        if r["meta"] is None:
             failed.append(_failure(rel, was, reason=r["reason"], error=r["error"]))
             continue
         # The per-note boundary over the payload mapping, blind for the reason

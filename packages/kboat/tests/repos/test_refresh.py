@@ -320,25 +320,6 @@ def test_refresh_never_writes_an_unrecognised_payload_over_a_good_note(
     assert note.read_text(encoding="utf-8") == before
 
 
-def test_refresh_never_writes_an_empty_payload_over_a_good_note(
-    tmp_path: Path, monkeypatch
-) -> None:
-    # The same protection at `refresh`'s own gate, which `gh_repo_view` keeps
-    # unreachable — stubbed here precisely because no production path reaches it, and
-    # a guard nothing exercises is a guard nobody notices breaking.
-    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
-    before = note.read_text(encoding="utf-8")
-    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: ({}, None))
-
-    report = refresh(tmp_path, today=TODAY)
-
-    assert report["counts"]["updated"] == 0
-    assert report["counts"]["failed"] == 1
-    assert report["failed"][0]["reason"] == "payload"  # `gh` answered, unusably
-    assert note.read_text(encoding="utf-8") == before
-    assert parse_frontmatter(note.read_text())["stars"] == "1"  # not zeroed
-
-
 def test_refresh_does_not_escalate_a_gh_that_failed_without_a_message(
     tmp_path: Path, monkeypatch
 ) -> None:
