@@ -64,8 +64,9 @@ MAX_WORKERS = 10
 # unannounced value would otherwise type-check clean and quietly stop the
 # escalation firing. Every site that sets one goes through `_fetched` or
 # `_failure`, so the annotation is what the value is checked against rather than
-# decoration. Two of the five need a human and no later run clears them —
-# `payload` (the mapping) and `note` (the note's own shape).
+# decoration. Two of the five are beyond a later run — `payload` (the mapping)
+# and `note` (the note's own shape) — and the skill says which of those the run
+# raises its hand about.
 Reason = Literal["fetch", "payload", "vault", "note", "write"]
 
 
@@ -329,8 +330,8 @@ def refresh(
             # The note has no line to rewrite for a field this pass rewrites. That is
             # the note's own shape, not the weather: it fails identically every run,
             # and if it followed an addition to `github_fields` it fails for the whole
-            # catalogue at once. Sorted apart from `write` so the run escalates it
-            # rather than promising a next run that cannot help.
+            # catalogue at once. Sorted apart from `write`, which promises a next run
+            # that here cannot help.
             failed.append(_failure(rel, was, reason="note", error=str(exc)))
             continue
         # `UnicodeDecodeError` for the same reason as the load above: `_apply` reads
