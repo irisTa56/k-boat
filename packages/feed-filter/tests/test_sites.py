@@ -337,19 +337,8 @@ def test_load_rejects_duplicate_ids(tmp_path: Path) -> None:
     # load_sites must surface it loudly rather than routing to the first match.
     path = tmp_path / "sites.toml"
     path.write_text(
-        "\n".join(
-            (
-                "[[site]]",
-                'id = "dup"',
-                'name = "First"',
-                'feed_url = "https://e.example.com/a.xml"',
-                "",
-                "[[site]]",
-                'id = "dup"',
-                'name = "Second"',
-                'feed_url = "https://e.example.com/b.xml"',
-            )
-        ),
+        '[[site]]\nid = "dup"\nname = "First"\nfeed_url = "https://e.example.com/a.xml"\n'
+        '\n[[site]]\nid = "dup"\nname = "Second"\nfeed_url = "https://e.example.com/b.xml"\n',
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="duplicate site id"):
@@ -374,16 +363,9 @@ def test_update_pattern_heals_scrape_site_with_blank_feed_url(tmp_path: Path) ->
     # agree with load_sites that a blank feed_url is unset.
     path = tmp_path / "sites.toml"
     path.write_text(
-        "\n".join(
-            (
-                "[[site]]",
-                'id = "s1"',
-                'name = "Scrape"',
-                'feed_url = ""',
-                'index_url = "https://e.example.com/blog"',
-                'article_url_pattern = "^/blog/[^/]+/?$"',
-            )
-        ),
+        '[[site]]\nid = "s1"\nname = "Scrape"\nfeed_url = ""\n'
+        'index_url = "https://e.example.com/blog"\n'
+        'article_url_pattern = "^/blog/[^/]+/?$"\n',
         encoding="utf-8",
     )
     assert load_sites(path)[0].kind == "scrape"
@@ -410,7 +392,7 @@ def test_failed_write_leaves_no_temp_file(tmp_path: Path, monkeypatch: pytest.Mo
     # error propagated — no half-written .tmp litter, no silent swallow. The
     # registry write goes through the shared atomic writer, so that is where the
     # rename is broken.
-    import kboat.io_utils as io_utils
+    from kboat import io_utils
 
     def boom(*_args: object) -> None:
         raise OSError("disk full")

@@ -6,6 +6,13 @@ name: Dependabot auto-merge
 # semver level, majors included. No approval step is needed: the ruleset requires
 # no review.
 #
+# One thing that gate does not cover is itself. A tool that IS the gate can narrow
+# what CI checks while leaving it green — a linter whose default rule set shrinks
+# passes a clean tree either way — so such a tool needs its own version guard rather
+# than relying on this one. Ruff has `required-version` in the root pyproject.toml;
+# the other gate tools arriving this way carry no equivalent, so for them a green run
+# here is the only signal there is.
+#
 # PRECONDITION: this is only safe once the main ruleset requires every blocking
 # CI check (python-qa / markdown-lint / secret-scan / link-check-offline) — that
 # requirement is what makes `--auto` wait for CI. Keep the repo's "Allow

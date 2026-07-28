@@ -197,11 +197,13 @@ def test_a_holder_that_dies_without_releasing_leaves_no_lock_behind(tmp_path: Pa
         [
             sys.executable,
             "-c",
-            "import fcntl, os, sys\n"
-            "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600)\n"
-            "fcntl.flock(fd, fcntl.LOCK_EX)\n"
-            'os.write(fd, b\'{"pid": 1, "started": "never released"}\\n\')\n'
-            "os._exit(0)\n",  # no unwinding, no LOCK_UN, no close
+            (
+                "import fcntl, os, sys\n"
+                "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600)\n"
+                "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+                'os.write(fd, b\'{"pid": 1, "started": "never released"}\\n\')\n'
+                "os._exit(0)\n"  # no unwinding, no LOCK_UN, no close
+            ),
             str(_lock_file(tmp_path)),
         ],
         capture_output=True,

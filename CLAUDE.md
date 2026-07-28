@@ -96,6 +96,8 @@ Automation:
 ## Tooling config
 
 - One `[tool.ruff]` at the root `pyproject.toml`; members carry none and inherit it by directory walk-up, so the coding style is identical everywhere. `.rumdl.toml` and `lychee.toml` are workspace-wide.
+- Ruff's own default rule set is taken as given, and `extend-select` adds to it. So a ruff upgrade can *drop* enforcement silently, each release's default being a curated selection rather than a superset of the last. Dependabot groups every Python dependency into one monthly PR, where green CI would be the only signal.
+  - `required-version` in the root `pyproject.toml` is what stops that: a minor bump fails the gate rather than merging quietly. To clear it, diff `ruff check --isolated --show-settings` between the old and new binaries, decide about whatever the new default no longer covers, then widen the range.
 - The pytest quality bar is identical per member (branch coverage ≥80, ResourceWarning-as-error, the same coverage excludes); only the `--cov` target module differs, which pytest cannot inherit. ty type-checks `src` + `tests` for both.
 
 ## Git workflow

@@ -300,7 +300,7 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
             return fetch_site(site, client=client)
         except MissingPlaywrightError:
             raise  # the run's failure, not this site's
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — the per-site absorb boundary
             # The type name matters: an unexpected exception's str() is often empty
             # (``RuntimeError()``), which would surface as a blank error.
             return FetchOutcome(entries=[], error=f"{type(exc).__name__}: {exc}", unexpected=True)
@@ -684,7 +684,7 @@ def _admit_or_absorb(
         result = admit_from_feeds(conn, site, client=client, now=now)
     except sqlite3.Error:
         raise  # the run's failure, not this site's
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — the per-site Rule-A absorb boundary
         # The type name matters: an unexpected exception's str() is often empty
         # (``RuntimeError()``), which would surface as a blank error.
         return _AdmitOutcome(error=f"{type(exc).__name__}: {exc}", unexpected=True)
@@ -711,7 +711,7 @@ def _gather_or_absorb(
         return gather_forum(conn, site, client=client, now=now)
     except sqlite3.Error:
         raise  # the run's failure, not this site's
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — the per-site Rule-B absorb boundary
         return GatherForumResult(
             candidates=[],
             polled_topics=[],

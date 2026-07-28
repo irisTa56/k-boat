@@ -8,8 +8,8 @@ members = ["packages/*"]
 dev = [
     "pytest>=9",
     "pytest-cov",
-    "ruff>=0.15.22",
-    "ty>=0.0.61",
+    "ruff>=0.16.0",
+    "ty>=0.0.63",
     "playwright",
     # Tests only, never imported by the package: an independent oracle for the
     # frontmatter round-trip. `kboat.frontmatter` is a scanner, not a parser, so
@@ -23,12 +23,19 @@ dev = [
 # quality bar (branch coverage ≥80, ResourceWarning-as-error) is identical per
 # member too; only the coverage target module differs, which pytest can't inherit.
 [tool.ruff]
+# A minor bump is the one that rewrites ruff's default rule set, and it can drop rules
+# without saying so. Ruff refuses to run outside this range, so such a bump fails the
+# gate instead of arriving as a green dependabot PR — widen it only together with the
+# check in the root CLAUDE.md.
+required-version = ">=0.16,<0.17"
 line-length = 100
 target-version = "py313"
 
+# Every violation is answered at the site: fixed, or suppressed by a `# noqa: CODE`
+# whose reason is stated there. Nothing is silenced repo-wide, so `ignore` is empty and
+# absent — an accidental confusable or a stray blind catch has nowhere to hide.
 [tool.ruff.lint]
-extend-select = ["I", "UP", "B", "SIM", "N", "RUF"]
-ignore = ["RUF001", "RUF002", "RUF003"]
+extend-select = ["I", "UP", "B", "SIM", "N", "RUF", "E4", "E7", "F"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kboat", "feed_filter"]

@@ -40,7 +40,10 @@ def _gh() -> str:
 
 def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | None, str | None]:
     cmd = [_gh(), "repo", "view", f"{owner}/{repo}", "--json", _VIEW_FIELDS]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    # `check=False`: a non-zero `gh` (no such repo, not authenticated, rate limit)
+    # is this function's return value, not an exception — the caller wants the
+    # stderr text to put in the record's `error`.
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if r.returncode != 0:
         return None, r.stderr.strip()
     try:
@@ -51,7 +54,9 @@ def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | 
 
 def gh_readme(owner: str, repo: str, *, timeout: float = 30) -> tuple[str | None, str | None]:
     cmd = [_gh(), "api", f"repos/{owner}/{repo}/readme", "-H", "Accept: application/vnd.github.raw"]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    # `check=False` for the same reason as `gh_repo_view`, and it matters more here:
+    # a repo with no README is a 404, which the caller reads as an empty excerpt.
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if r.returncode != 0:
         return None, r.stderr.strip()
     return r.stdout, None
@@ -204,7 +209,13 @@ def gather(url: str, *, today: date) -> dict:
             readme_excerpt=first_paragraphs(readme or ""),
         )
         return record
-    except Exception as e:  # subprocess timeout, network error — never crash the caller
+    # The CLI edge's error boundary, hence the blind catch. `gather` promises the skill
+    # one JSON record whatever happens, and `error-meta` is what tells it to keep the
+    # queue file for retry; a traceback would leave an unattended run with no record at
+    # all. So the catch is deliberately wider than the subprocess timeouts and network
+    # errors it mainly sees — a surprising `gh` payload that trips `github_fields` is
+    # reported the same way rather than raised.
+    except Exception as e:  # noqa: BLE001
         record.update(status="error-meta", error=f"{type(e).__name__}: {e}")
         return record
 

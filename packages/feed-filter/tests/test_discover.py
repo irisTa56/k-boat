@@ -373,3 +373,38 @@ def test_layer_c_caps_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     # 1 initial + at most the typical-path cap of distinct probes.
     assert len(fetched) <= 1 + 12
     assert "/feed.xml" in fetched
+
+
+class _StandInSelectolaxError(Exception):
+    """Shaped like ``selectolax.lexbor.SelectolaxError`` — straight off ``Exception``.
+
+    Defined here rather than imported so the case survives a backend swap: what is
+    being pinned is that the guard holds for an exception sharing no base with
+    ``RuntimeError``, not that this one class in particular is caught.
+    """
+
+
+@pytest.mark.parametrize("raised", [RuntimeError, _StandInSelectolaxError])
+def test_unparseable_body_rejects_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch, raised: type[Exception]
+) -> None:
+    # The parser guard both HTML layers share: a body selectolax refuses contributes no
+    # alternate links and no clusters, so `discover` returns a rejection instead of
+    # letting the parser's error reach the operator. Both backends' exception shapes are
+    # exercised because the guard's whole claim is that it does not enumerate types — a
+    # `RuntimeError`-only case would pass against a narrowed `except` and pin nothing.
+    #
+    # Which `reason` such a page lands on is deliberately not asserted. Today it is
+    # `needs_js`, which names the wrong cause for a body that was never read; that is
+    # pre-existing and a question for whoever gives the case its own reason. Pinning it
+    # here would make the misattribution a contract.
+    def boom(_html: str) -> object:
+        raise raised("could not parse")
+
+    monkeypatch.setattr("feed_filter.discover.HTMLParser", boom)
+    client = _client({"/blog": (200, _links_html([f"/blog/{s}" for s in "abcdef"]), "text/html")})
+    with client:
+        result = discover("https://example.com/blog", client=client)
+
+    assert result.candidates == ()
+    assert result.rejection is not None

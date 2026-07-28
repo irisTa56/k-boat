@@ -63,7 +63,8 @@ def test_a_string_that_is_no_flow_sequence_stays_a_valid_scalar(value: str, why:
         ("007", "007", "a leading zero reads back as octal under YAML 1.1, so it is not one"),
         ("+7", "+7", "nor is a signed form the reader hands back as its own text"),
         ("42\n", "42\n", "nor a number with a line break after it, bare a blank line in the block"),
-        ("٧", "٧", "nor a digit outside ASCII, which YAML resolves as a string"),
+        # The non-ASCII digit below is the case under test, not a confusable typo.
+        ("٧", "٧", "nor a digit outside ASCII, which YAML resolves as a string"),  # noqa: RUF001
     ],
 )
 def test_an_int_field_holds_what_it_was_given_without_costing_the_block(

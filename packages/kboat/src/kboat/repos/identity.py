@@ -67,19 +67,17 @@ _RESERVED_OWNERS = frozenset(
 def parse_repo(url: str) -> tuple[str | None, str | None]:
     """Extract `(owner, repo)` from a GitHub URL, or `(None, None)`.
 
-    Strips a `.git` suffix and a trailing slash from the repo name. Returns
-    `(None, None)` for non-repo GitHub URLs (a bare profile, a reserved route).
+    Strips a `.git` suffix from the repo name. Returns `(None, None)` for non-repo
+    GitHub URLs (a bare profile, a reserved route).
     """
     match = _REPO_RE.match(url or "")
     if not match:
         return None, None
     owner = match.group(1)
     repo = match.group(2)
-    # `[:-4]`, never `rstrip(".git")` — the latter would also strip trailing
-    # g/i/t/. characters and corrupt names like `cadvisor` -> `cadv`.
-    if repo.endswith(".git"):
-        repo = repo[:-4]
-    repo = repo.rstrip("/")
+    # `removesuffix`, never `rstrip(".git")` — the latter would also strip trailing
+    # g/i/t/. characters and corrupt names like `buildkit` -> `buildk`.
+    repo = repo.removesuffix(".git")
     if not owner or not repo or owner.lower() in _RESERVED_OWNERS:
         return None, None
     return owner, repo

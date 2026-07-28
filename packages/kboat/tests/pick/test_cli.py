@@ -11,7 +11,7 @@ import pytest
 
 from kboat.lock import vault_lock
 from kboat.pick.__main__ import main
-from kboat.pick.notes import parse_frontmatter
+from kboat.pick.notes import Value, parse_frontmatter
 
 
 def _source(
@@ -123,7 +123,10 @@ def test_set_marks_chosen_and_resets_rest(vault: Path, capsys: pytest.CaptureFix
     assert out["picked"] == ["web1"]
     assert out["reset"] == 4  # web2, kept, doc, reading1
     assert out["missing"] == []
-    fm = lambda s: parse_frontmatter((vault / "Sources" / s).read_text(encoding="utf-8"))  # noqa: E731
+
+    def fm(name: str) -> dict[str, Value]:
+        return parse_frontmatter((vault / "Sources" / name).read_text(encoding="utf-8"))
+
     assert fm("web1.md")["picked"] is True
     assert fm("web2.md")["picked"] is False
     assert fm("kept.md")["picked"] is False

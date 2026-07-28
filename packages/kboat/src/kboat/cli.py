@@ -26,7 +26,7 @@ import json
 import os
 import sys
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from kboat.frontmatter import FrontmatterError
@@ -69,7 +69,10 @@ def add_today_argument(parser: argparse.ArgumentParser, *, hidden: bool = False)
     parser.add_argument(
         "--today",
         type=_iso_date,
-        default=date.today().isoformat(),
+        # The reader's *local* calendar day: a note stamped just before midnight JST
+        # belongs to the day the reader had, so `datetime.now(UTC).date()` is wrong
+        # here however well it satisfies DTZ011.
+        default=datetime.now().astimezone().date().isoformat(),
         help=argparse.SUPPRESS
         if hidden
         else "Override today's date (YYYY-MM-DD); for testing and reproducibility.",
