@@ -859,6 +859,7 @@ Drain ingestion snapshots a repo once; this keeps the GitHub-derived fields fres
 
 1. Run `kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`). For every `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched. When `gh` resolves a new canonical `owner/repo`, it adopts the rename (updates `url`/`title`, renames the file to the new slug).
 2. It prints a JSON report. The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked by an existing note — a human merges), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `payload`, `vault`, or `write`) — the routine never deletes a note.
+   A `failed` note is not quite an untouched one, and which `reason` needs a human rather than the next run is the `kboat-repos` skill's to say ("Procedure: refresh the catalogue" step 2); read it before relaying the report.
 
 ## Concept notes (`KBOAT_KNOWLEDGE_PATH`)
 

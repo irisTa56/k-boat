@@ -91,7 +91,13 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 Automation:
 
 - A Claude Code Desktop local scheduled task (`kboat-routine`, run daily) runs `kboat-doctor` as a precondition, then `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then `kboat-validate --stats`, under a single auth refresh. A `kboat-doctor` failure stops the run before any phase — an absent, unwritable, or half-synced vault makes every later report a report about a vault that was not there. It must be local — the queue lives in the iCloud vault, and the NotebookLM auth cookies, the vault itself, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
-- A failure that needs the user's action but would otherwise go unseen (a `kboat-doctor` precondition failure, auth unusable, the `k-boat-knowledge` project missing, Basic Memory down, a `kboat-repos` payload defect no retry can clear — `gather`'s `defect-payload` verdict, or a `refresh` failure with `reason: payload` — a backlog-health count past its threshold) posts one `osascript` desktop notification; routine and self-healing outcomes stay in the run summary. The notification strings are a closed set the prompt owns; a new trigger reuses one rather than adding one.
+- A failure that needs the user's action but would otherwise go unseen posts one `osascript` desktop notification; routine and self-healing outcomes stay in the run summary. The notification strings are a closed set the prompt owns; a new trigger reuses one rather than adding one. The triggers:
+  - a `kboat-doctor` precondition failure;
+  - auth unusable;
+  - the `k-boat-knowledge` project missing;
+  - Basic Memory down;
+  - a `kboat-repos` payload defect no retry can clear (`gather`'s `defect-payload` verdict, or a `refresh` failure with `reason: payload`);
+  - a backlog-health count past its threshold.
 
 ## Tooling config
 

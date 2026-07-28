@@ -208,6 +208,10 @@ def test_refresh_reports_failed_repo(tmp_path: Path, monkeypatch) -> None:
     report = refresh(tmp_path, today=TODAY)
     assert report["counts"]["failed"] == 1
     assert report["failed"][0]["owner_repo"] == "acme/gone"
+    # `fetch` is the escalation switch's off position, and this is its commonest
+    # member: a repo that is gone answers non-zero every day, and a run that read
+    # it as the permanent class would notify about it every day.
+    assert report["failed"][0]["reason"] == "fetch"
 
 
 def _counts_match_the_lists(report: dict) -> bool:
@@ -358,6 +362,7 @@ def test_refresh_isolates_a_gh_call_that_raises(tmp_path: Path, monkeypatch) -> 
     assert report["counts"]["failed"] == 1
     assert _counts_match_the_lists(report)
     assert report["failed"][0]["owner_repo"] == "acme/stalls"
+    assert report["failed"][0]["reason"] == "fetch"  # a stall is tomorrow's business
     assert "gh timed out" in report["failed"][0]["error"]
     assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
     assert parse_frontmatter(good.read_text())["stars"] == "42"

@@ -182,30 +182,18 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
     return (owner or None, name or None)
 
 
-# `gather`'s two failure verdicts, and why there are two.
+# What each of `gather`'s verdicts means, and what its reader owes it, is the
+# `kboat-repos` skill's to say. What belongs here is why the code has this shape.
 #
-# The CLI edge promises the skill one JSON record whatever happens, so both are
-# caught blind: a traceback would leave an unattended run with no record at all.
-# What the record must also carry is whether coming back tomorrow can help.
+# `defect-payload` is deliberately not spelled `error-*`. The other verdict earns
+# a "keep the queue file and retry" reflex, and a name in the same family would
+# extend that reflex to the one failure no retry ever clears.
 #
-# - `error-meta` — the `gh` call did not answer: a non-zero exit, or a timeout /
-#   OS error raised out of the subprocess. The skill keeps the queue file and the
-#   next run tries again. Not every member of this class will ever succeed — a
-#   repo that no longer exists exits non-zero every day — because `gh`'s exit code
-#   does not separate "gone" from "rate limited" and its stderr wording is not a
-#   contract. What the verdict claims is only that the next run is where it is
-#   settled, which is why the skill tells the reader to compare successive runs.
-# - `defect-payload` — `gh` answered, and what it answered cannot be used: stdout
-#   that will not parse, no usable object (both refused in `gh_repo_view`), or a
-#   shape the mapping cannot read. Here the two *are* separable, and the same
-#   answer comes back tomorrow, so the skill keeps the queue file (nothing is
-#   lost, and a repaired mapping drains it) and escalates rather than letting the
-#   retry repeat silently. Deliberately not spelled `error-*`, so the "keep it and
-#   retry" reflex the other verdict earns cannot extend to this one by pattern.
-#
-# The two classes interleave — the README fetch is transport again, and it needs
-# the identity the payload mapping resolves — which is why the boundaries below
-# are several narrow ones rather than a single wrapper around the body.
+# The boundaries below are several narrow ones rather than one wrapper around the
+# body, because the two classes interleave: `gh_repo_view` can fail either way,
+# and the identity mapping sits between it and the README fetch. All of them are
+# blind — the CLI edge promises one JSON record whatever happens, and a traceback
+# would leave an unattended run with nothing to report at all.
 
 
 def _fetch_failed(record: dict, exc: BaseException) -> dict:
@@ -295,7 +283,12 @@ def gather(url: str, *, today: date) -> dict:
     try:
         readme, readme_error = gh_readme(res_owner, res_repo)
     except Exception as exc:  # noqa: BLE001
-        return _fetch_failed(record, exc)
+        # A README that did not arrive is reported, never a verdict. The metadata
+        # fetch has already succeeded, and a repo whose README 404s is catalogued
+        # regardless — so failing the record on a raise would leave a repo whose
+        # README endpoint hangs uncatalogued for as long as it hangs, while the
+        # same absence delivered as a non-zero exit is catalogued.
+        readme, readme_error = None, f"{type(exc).__name__}: {exc}"
     try:
         # Evaluated before it is merged, so a defect leaves the record on the
         # queued-link identity rather than half-updated.

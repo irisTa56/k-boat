@@ -260,9 +260,11 @@ def test_gather_reports_an_unreadable_identity_as_a_non_retryable_defect(monkeyp
     assert out["error"].startswith("AttributeError:")
 
 
-def test_gather_reports_a_raising_readme_fetch_as_retryable(monkeypatch) -> None:
-    # The README fetch is transport again, on the far side of the identity mapping.
-    # A network failure that raises there is tomorrow's business, not a defect.
+def test_gather_still_catalogues_a_repo_whose_readme_fetch_raises(monkeypatch) -> None:
+    # A README that did not arrive is reported, not a verdict — however it failed.
+    # The metadata is already in hand, and a repo whose README endpoint hangs would
+    # otherwise stay uncatalogued for as long as it hangs, while the same absence
+    # arriving as a 404 is catalogued.
     meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
 
     def boom(_owner: str, _repo: str) -> tuple[str | None, str | None]:
@@ -273,8 +275,9 @@ def test_gather_reports_a_raising_readme_fetch_as_retryable(monkeypatch) -> None
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
-    assert out["status"] == "error-meta"
-    assert out["error"] == "TimeoutError: gh timed out"
+    assert out["status"] == "ok"
+    assert out["readme_excerpt"] == ""
+    assert out["readme_error"] == "TimeoutError: gh timed out"
 
 
 def test_gather_records_why_the_readme_excerpt_is_empty(monkeypatch) -> None:

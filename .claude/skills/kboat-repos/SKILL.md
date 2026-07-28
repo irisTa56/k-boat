@@ -52,6 +52,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
 
    Branch on `reason`, never on the `error` text: `error` carries `gh`'s stderr, which echoes content this side did not write, so quote it as untrusted tool output and do not match on it.
    Read the `error` before taking a failed note to be untouched. A `write` failure that wrote the new slug but could not remove the old file says so, and leaves two notes for a human to merge.
+   One note can appear in both `failed` and `rename_collisions`, and that is not double-reporting: the collision is a finding about identity — the canonical slug is taken — and it holds whichever way the rewrite went. The same note appears in `rename_collisions` and `updated` when the rewrite did land.
 
 ## Errors
 

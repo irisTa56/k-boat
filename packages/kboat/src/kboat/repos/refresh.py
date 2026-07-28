@@ -131,8 +131,13 @@ class _NotePlan:
 
     Deciding it in one piece is what keeps the run's accounting honest. The payload
     mapping can raise (`gather`'s `defect-payload` class), and a note that fails
-    there must land in `failed` alone — never also in `updated`, `adopted`, or
-    `rename_collisions`, all of which are appended only once a plan exists.
+    there is in `failed` and neither `updated` nor `adopted`, both of which are
+    appended only once the write has landed.
+
+    `rename_collisions` is not exclusive with `failed`, and deliberately: it is a
+    finding about identity — the canonical slug is taken — which holds whichever
+    way the rewrite that follows it goes. It already co-occurs with `updated` for
+    the note it refreshes in place.
     """
 
     path: Path
