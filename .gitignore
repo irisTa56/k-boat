@@ -20,6 +20,10 @@ htmlcov/
 # to the member dirs, not `coverage.json` anywhere, so a same-named test
 # fixture nested deeper (e.g. under `tests/fixtures/`) stays trackable.
 /packages/*/coverage.json
+# The same report at the root, which a `pytest` started from the repo root
+# writes instead. Nothing reads it — the floor check is per member — and it has
+# been committed by accident more than once.
+/coverage.json
 # mise resolves external QA tools at `latest`; the lockfile is not pinned, so a
 # locally-generated one is never committed.
 mise.lock

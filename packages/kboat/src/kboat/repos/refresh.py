@@ -34,8 +34,10 @@ import sys
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from kboat.cli import (
     add_today_argument,
@@ -51,10 +53,41 @@ from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
 
-from .gather import gh_repo_view, github_fields, resolved_identity
+from .gather import PayloadError, gh_repo_view, github_fields, resolved_identity
 from .identity import canonical_slug, canonical_url, parse_repo
 
 MAX_WORKERS = 10
+
+
+# The closed set of ways one note drops out of a pass. Typed, not free strings,
+# because `reason` is what the run branches on to escalate: a misspelling or an
+# unannounced value would otherwise type-check clean and quietly stop the
+# escalation firing. Every site that sets one goes through `_fetched` or
+# `_failure`, so the annotation is what the value is checked against rather than
+# decoration. Two of the five are beyond a later run — `payload` (the mapping)
+# and `note` (the note's own shape) — and the skill says which of those the run
+# raises its hand about.
+Reason = Literal["fetch", "payload", "vault", "note", "write"]
+
+
+def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason | None) -> dict:
+    """One note's fetch result, with its failure class named where it is decided.
+
+    `reason` is `None` for the fetch that worked: the set enumerates the ways a note
+    drops out, so tagging a healthy note with one would leave anything that later
+    read it without checking `meta` calling every good note a failure.
+    """
+    return {**note, "meta": meta, "error": error, "reason": reason}
+
+
+def _failure(note_rel: str, owner_repo: str, *, reason: Reason, error: str) -> dict[str, str]:
+    """One `failed` entry: the note, why it dropped out, and the detail.
+
+    The run branches on `reason`, never on `error`, which carries `gh`'s stderr and
+    an exception's text — neither of which this side writes. `payload` is the one
+    no later run clears; the others are settled by trying again.
+    """
+    return {"path": note_rel, "owner_repo": owner_repo, "reason": reason, "error": error}
 
 
 def set_fields(text: str, updates: Mapping[str, object]) -> str:
@@ -81,7 +114,10 @@ def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dic
         try:
             text = path.read_text(encoding="utf-8")
             fm = parse_frontmatter(text)
-        except (FrontmatterError, OSError) as exc:
+        # `UnicodeDecodeError` alongside the other two: it is a `ValueError`, so a
+        # note that is not UTF-8 would otherwise escape every boundary in this pass
+        # and take the whole catalogue's refresh with it.
+        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "repo":
@@ -97,8 +133,139 @@ def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dic
 
 
 def _fetch(note: dict) -> dict:
-    meta, err = gh_repo_view(note["owner"], note["repo"])
-    return {**note, "meta": meta, "error": err}
+    """One note's `gh` fetch, as this note's result rather than as an exception.
+
+    Runs in a worker thread, and `Executor.map` re-raises in the parent — so a
+    `gh` that times out or is missing from `PATH` would take the whole pass down
+    with it, report included. Caught, it lands in the same shape a non-zero `gh`
+    does, tagged with the `reason` that says which of the two it was.
+    """
+    try:
+        meta, err = gh_repo_view(note["owner"], note["repo"])
+    except PayloadError as exc:
+        return _fetched(note, meta=None, error=str(exc), reason="payload")
+    except Exception as exc:  # noqa: BLE001
+        return _fetched(note, meta=None, error=f"{type(exc).__name__}: {exc}", reason="fetch")
+    if meta is None:
+        # `gh` did not answer. Its stderr can be empty — a `gh` the OOM killer took,
+        # one that wrote its diagnostic to stdout — so the class comes from whether
+        # there is a payload, never from whether there is text to show for it.
+        return _fetched(note, meta=None, error=err, reason="fetch")
+    return _fetched(note, meta=meta, error=err, reason=None)
+
+
+@dataclass(frozen=True)
+class _NotePlan:
+    """Everything one note's refresh will do, decided before any of it is applied.
+
+    Deciding it in one piece is what keeps the run's accounting honest. The payload
+    mapping can raise (`gather`'s `defect-payload` class), and a note that fails
+    there is in `failed` and neither `updated` nor `adopted`, both of which are
+    appended only once the write has landed.
+
+    `rename_collisions` is not exclusive with `failed`, and deliberately: it is a
+    finding about identity — the canonical slug is taken — which holds whichever
+    way the rewrite that follows it goes. It already co-occurs with `updated` for
+    the note it refreshes in place.
+    """
+
+    path: Path
+    rel: str
+    target: Path
+    rel_target: str
+    now: str
+    updates: dict[str, object]
+    adopt: bool
+    renaming: bool
+    collides: bool
+
+    @property
+    def slug(self) -> str:
+        """The slug this plan writes under — read off `target`, never stored beside it.
+
+        The reservation set and the written path have to be the same string, and
+        two fields holding it would let a later change move one and not the other.
+        """
+        return self.target.stem
+
+
+def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set[str]) -> _NotePlan:
+    """Read a fetched note's payload into the update it implies.
+
+    Pure computation over `gh`'s answer and the slugs already claimed this run:
+    it reads the filesystem only to test whether a rename's target is taken, and
+    writes nothing.
+    """
+    meta, path = note["meta"], note["path"]
+    res_owner, res_repo = resolved_identity(meta)
+    res_owner, res_repo = res_owner or note["owner"], res_repo or note["repo"]
+    # A repo's identity can move (rename/transfer/case); the note must follow it
+    # so de-dup and refresh stay keyed off the live repo. Adopt the resolved
+    # name, renaming the file when its slug changes.
+    resolved_url = canonical_url(res_owner, res_repo)
+    new_slug = canonical_slug(resolved_url) or path.stem
+    adopt = resolved_url != canonical_url(note["owner"], note["repo"])
+    renaming = adopt and new_slug != path.stem
+    target = repos_dir / f"{new_slug}.md"
+    # The canonical slug is already taken (by an existing note, or by another
+    # rename this run) — refresh metadata in place but don't adopt the identity
+    # or move; a human merges the two.
+    collides = renaming and (target.exists() or new_slug in claimed)
+    if collides:
+        adopt = renaming = False
+
+    updates = github_fields(meta, today=today)
+    updates["refreshed_date"] = today.isoformat()
+    if adopt:
+        updates["url"] = resolved_url
+        updates["title"] = f"{res_owner}/{res_repo}"
+    return _NotePlan(
+        path=path,
+        rel=note["rel"],
+        target=target,
+        # Derived from `target`, so a report path cannot name a different
+        # directory from the one the write actually went to.
+        rel_target=target.relative_to(vault).as_posix(),
+        now=f"{res_owner}/{res_repo}",
+        updates=updates,
+        adopt=adopt,
+        renaming=renaming,
+        collides=collides,
+    )
+
+
+def _apply(plan: _NotePlan, *, dry_run: bool) -> str:
+    """Write the planned update, returning the path the report names it under.
+
+    A dry run writes nothing, but it still builds the content, so that a note with
+    no line for a field this pass rewrites fails the preview as it would fail the
+    run. A preview is what an operator checks a `github_fields` addition against,
+    and one that cannot show the failure that addition causes is worse than none.
+    """
+    content = set_fields(plan.path.read_text(encoding="utf-8"), plan.updates)
+    if dry_run:
+        return plan.rel_target if plan.renaming else plan.rel
+    if plan.renaming:
+        atomic_write_text(plan.target, content)
+        try:
+            # `missing_ok`: the old note going away under the run is the rename
+            # completing, not failing. The vault lock is advisory, so Obsidian or
+            # iCloud can be what removed it, and reporting that as a duplicate would
+            # send a human to merge a note that is not there.
+            plan.path.unlink(missing_ok=True)
+        except OSError as exc:
+            # The one failure that does not leave the note as it was: the new slug
+            # is written and the old file is still there, so the vault now holds
+            # both. The `failed` entry has to say so, or it reads as "nothing
+            # happened here" and the duplicate surfaces only when a later run
+            # collides on it and asks a human to merge two notes it cannot explain.
+            raise OSError(
+                f"rewritten as {plan.rel_target}, but the old file could not be "
+                f"removed, so both now exist: {exc}"
+            ) from exc
+        return plan.rel_target
+    atomic_write_text(plan.path, content)
+    return plan.rel
 
 
 def refresh(
@@ -124,57 +291,66 @@ def refresh(
     for r in results:
         rel = r["rel"]
         was = f"{r['owner']}/{r['repo']}"
+        # `None` is the whole of the no-payload case: what makes a payload usable is
+        # `gh_repo_view`'s to decide, and it decides once, for both callers, by
+        # raising rather than returning. A second opinion here would be a second
+        # place to keep in step — which is how this pair drifted apart before.
         if r["meta"] is None:
-            failed.append({"path": rel, "owner_repo": was, "error": r["error"] or "no metadata"})
+            failed.append(_failure(rel, was, reason=r["reason"], error=r["error"]))
             continue
-        meta = r["meta"]
-        path: Path = r["path"]
-        res_owner, res_repo = resolved_identity(meta)
-        res_owner, res_repo = res_owner or r["owner"], res_repo or r["repo"]
-        now = f"{res_owner}/{res_repo}"
-        # A repo's identity can move (rename/transfer/case); the note must follow
-        # it so de-dup and refresh stay keyed off the live repo. Adopt the
-        # resolved name, renaming the file when its slug changes.
-        resolved_url = canonical_url(res_owner, res_repo)
-        new_slug = canonical_slug(resolved_url) or path.stem
-        adopt = resolved_url != canonical_url(r["owner"], r["repo"])
-        renaming = adopt and new_slug != path.stem
-        target = repos_dir / f"{new_slug}.md"
-        # Derived from `target`, so a report path cannot name a different
-        # directory from the one the write actually went to.
-        rel_target = target.relative_to(vault).as_posix()
-
-        updates = github_fields(meta, today=today)
-        updates["refreshed_date"] = today_iso
-
-        if renaming and (target.exists() or new_slug in claimed):
-            # The canonical slug is already taken (by an existing note, or by
-            # another rename this run) — refresh metadata in place but don't adopt
-            # the identity or move; a human merges the two.
-            rename_collisions.append({"path": rel, "was": was, "now": now, "conflict": rel_target})
-            adopt = renaming = False
-
-        if renaming:
-            claimed.add(new_slug)
-        if adopt:
-            updates["url"] = resolved_url
-            updates["title"] = now
-            adopted.append({"from": rel, "to": rel_target, "was": was, "now": now})
-
-        if dry_run:
-            updated.append(rel_target if renaming else rel)
-            continue
+        # The per-note boundary over the payload mapping, blind for the reason
+        # `gather`'s is: `gh repo view --json` is a typed schema, so what can raise
+        # in here is a breaking `gh` change or an anomalous response, and neither
+        # is worth the rest of the catalogue. The note keeps its existing content
+        # and is re-fetched by the next run.
         try:
-            content = set_fields(path.read_text(encoding="utf-8"), updates)
-            if renaming:
-                atomic_write_text(target, content)
-                path.unlink()
-                updated.append(rel_target)
-            else:
-                atomic_write_text(path, content)
-                updated.append(rel)
-        except (FrontmatterError, OSError) as exc:
-            failed.append({"path": rel, "owner_repo": was, "error": f"write failed: {exc}"})
+            plan = _plan(r, repos_dir=repos_dir, vault=vault, today=today, claimed=claimed)
+        except OSError as exc:
+            # `_plan` touches the filesystem once, to see whether a rename's target
+            # is taken, and an iCloud vault can refuse that read. Calling it a
+            # payload defect would send the reader to `gh`'s release notes for a
+            # problem that is in the vault — and would escalate a run that only
+            # needs the vault back.
+            failed.append(_failure(rel, was, reason="vault", error=str(exc)))
+            continue
+        except Exception as exc:  # noqa: BLE001
+            failed.append(
+                _failure(rel, was, reason="payload", error=f"{type(exc).__name__}: {exc}")
+            )
+            continue
+
+        if plan.collides:
+            rename_collisions.append(
+                {"path": rel, "was": was, "now": plan.now, "conflict": plan.rel_target}
+            )
+
+        try:
+            written = _apply(plan, dry_run=dry_run)
+        except FrontmatterError as exc:
+            # The note has no line to rewrite for a field this pass rewrites. That is
+            # the note's own shape, not the weather: it fails identically every run,
+            # and if it followed an addition to `github_fields` it fails for the whole
+            # catalogue at once. Sorted apart from `write`, which promises a next run
+            # that here cannot help.
+            failed.append(_failure(rel, was, reason="note", error=str(exc)))
+            continue
+        # `UnicodeDecodeError` for the same reason as the load above: `_apply` reads
+        # the note again, and the file can have changed under the run.
+        except (OSError, UnicodeDecodeError) as exc:
+            failed.append(_failure(rel, was, reason="write", error=str(exc)))
+            continue
+        updated.append(written)
+        if plan.renaming:
+            # Claimed once the slug is actually taken (in a dry run, once it would
+            # have been), for the same reason `adopted` is: a rename whose write
+            # failed left the slug free, and reserving it anyway would report the
+            # next note as colliding with a file that was never written.
+            claimed.add(plan.slug)
+        if plan.adopt:
+            # Reported only once the note is actually written (or, in a dry run,
+            # once it would have been): `adopted` is the set of renames healed,
+            # and a rewrite that failed healed nothing.
+            adopted.append({"from": rel, "to": plan.rel_target, "was": was, "now": plan.now})
 
     return {
         "today": today_iso,

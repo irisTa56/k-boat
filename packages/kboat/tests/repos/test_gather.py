@@ -4,7 +4,10 @@ monkeypatched."""
 
 from __future__ import annotations
 
+import json
 from datetime import date
+
+import pytest
 
 import kboat.repos.gather as gather_mod
 from kboat.repos.gather import (
@@ -199,6 +202,20 @@ def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
     assert out["url"] == "https://github.com/acme/tool"
 
 
+def test_gather_never_reports_a_failure_with_an_empty_error(monkeypatch) -> None:
+    # `gh` can exit non-zero with nothing on stderr. This verdict does not escalate,
+    # so the report is all the human gets — and an empty fenced block gives them a
+    # repeating failure with nothing to compare between runs.
+    monkeypatch.setattr(
+        gather_mod.subprocess, "run", lambda *a, **kw: _Completed("", returncode=1, stderr="  \n")
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"]
+
+
 def test_gather_reports_a_subprocess_failure_as_error_meta(monkeypatch) -> None:
     # The boundary's promise: one record whatever happens, never a raise at an
     # unattended run. The mainline case is the fetch itself giving out.
@@ -214,12 +231,16 @@ def test_gather_reports_a_subprocess_failure_as_error_meta(monkeypatch) -> None:
     assert out["title"] == "acme/tool"
 
 
-def test_gather_reports_an_unmappable_gh_payload_as_error_meta(monkeypatch) -> None:
+def test_gather_reports_an_unmappable_gh_payload_as_a_non_retryable_defect(monkeypatch) -> None:
     # The claim that makes the boundary blind rather than narrow: `gh` answering fine but
     # the mapping failing on the payload is reported, not raised. Stub the mapping rather
     # than feed it a known-bad shape, so hardening `github_fields` cannot break a test
     # about the boundary. KeyError shares no base with the subprocess and OS errors, so a
     # narrowed `except` fails here.
+    #
+    # It is a *different* verdict from the transport failures above, and that is the
+    # point: the same payload fails the same way tomorrow, so the skill must not read
+    # this as "keep the queue file and retry" the way it reads `error-meta`.
     meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
 
     def unmappable(_github: dict, *, today: date) -> dict[str, object]:
@@ -231,5 +252,189 @@ def test_gather_reports_an_unmappable_gh_payload_as_error_meta(monkeypatch) -> N
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
-    assert out["status"] == "error-meta"
+    assert out["status"] == "defect-payload"
     assert out["error"].startswith("KeyError:")
+    # No note is written from either verdict, so the record still names what was queued.
+    assert out["title"] == "acme/tool"
+
+
+def test_gather_reports_an_unreadable_identity_as_a_non_retryable_defect(monkeypatch) -> None:
+    # Identity resolution reads the payload too, and it runs before the README fetch —
+    # so it is the earlier of the two places a payload defect can surface, and lands on
+    # the same verdict rather than on the transport one it sits between.
+    def unreadable(_meta: dict) -> tuple[str | None, str | None]:
+        raise AttributeError("'str' object has no attribute 'get'")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: ({"owner": "acme"}, None))
+    monkeypatch.setattr(gather_mod, "resolved_identity", unreadable)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "defect-payload"
+    assert out["error"].startswith("AttributeError:")
+
+
+def test_gather_still_catalogues_a_repo_whose_readme_fetch_raises(monkeypatch) -> None:
+    # A README that did not arrive is reported, not a verdict — however it failed.
+    # The metadata is already in hand, and a repo whose README endpoint hangs would
+    # otherwise stay uncatalogued for as long as it hangs, while the same absence
+    # arriving as a 404 is catalogued.
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+
+    def boom(_owner: str, _repo: str) -> tuple[str | None, str | None]:
+        raise TimeoutError("gh timed out")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", boom)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_excerpt"] == ""
+    assert out["readme_error"] == "TimeoutError: gh timed out"
+
+
+def test_gather_never_reports_a_readme_error_that_reads_as_unset(monkeypatch) -> None:
+    # `gh api` can fail with nothing on stderr, and an empty `readme_error` is
+    # indistinguishable from an unset one — which is the reading that makes the
+    # classifier treat a withheld README as a repo that has none.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        lambda *a, **kw: (
+            _Completed(_REPO_VIEW_STDOUT)
+            if a[0][1] == "repo"
+            else _Completed("", returncode=1, stderr="  \n")
+        ),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_error"]
+
+
+def test_gather_excerpts_a_readme_the_real_fetch_returned(monkeypatch) -> None:
+    # Both `gh` calls go through the real functions here. A `gh_readme` success path
+    # that stopped returning its stdout would leave every repo classified as if it had
+    # no README — and every one of those classifications is permanent — so the case is
+    # driven end to end rather than around the function under it.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        lambda *a, **kw: (
+            _Completed(_REPO_VIEW_STDOUT)
+            if a[0][1] == "repo"
+            else _Completed("# Title\n\nReal prose about the project.\n")
+        ),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_error"] is None
+    assert "Real prose about the project." in out["readme_excerpt"]
+
+
+def test_gather_records_why_the_readme_excerpt_is_empty(monkeypatch) -> None:
+    # A non-zero README fetch is not a verdict — a repo may simply have none — but it
+    # is not nothing either: a rate limit looks identical and leaves the classification
+    # thinner for good, since the note is written and the queue file deleted. The record
+    # carries the stderr so an empty excerpt is not read as "this repo has no README".
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: (None, "HTTP 403: rate limited"))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_excerpt"] == ""
+    assert out["readme_error"] == "HTTP 403: rate limited"
+
+
+def test_gather_leaves_readme_error_unset_when_the_fetch_succeeds(monkeypatch) -> None:
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: ("Real prose.", None))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["readme_error"] is None
+    assert "Real prose." in out["readme_excerpt"]
+
+
+class _Completed:
+    """Enough of a `subprocess.CompletedProcess` for `gh_repo_view` to read."""
+
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = "") -> None:
+        self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+# A minimal payload `gh repo view --json name,owner,…` can actually return.
+_REPO_VIEW_STDOUT = '{"name": "tool", "owner": {"login": "acme"}}'
+
+
+@pytest.mark.parametrize(
+    ("stdout", "detail"),
+    [
+        ("Notice: gh 3.0 is available\n{}", "unparseable JSON"),  # a banner before the JSON
+        ("{}", "no repo view"),
+        ("[]", "no repo view"),
+        ("null", "no repo view"),
+        # A payload with content, in a shape the mapping does not know. The realistic
+        # form of a breaking `gh` change, and the dangerous one: every field maps
+        # through a default, so letting it past produces a full set of empty values
+        # that reads as fact. `name` and `owner.login` are fields this query asks
+        # for, so their absence is what says this is not a repo view.
+        ('{"data": {"name": "tool", "stargazerCount": 42}}', "no repo view"),
+        ('{"name": "tool", "owner": "acme", "stargazerCount": 42}', "no repo view"),
+        ('{"name": "tool", "owner": {}, "stargazerCount": 42}', "no repo identity"),
+        ('{"owner": {"login": "acme"}, "stargazerCount": 42}', "no repo identity"),
+    ],
+)
+def test_gather_reports_a_gh_that_answered_with_nothing_usable_as_a_defect(
+    monkeypatch, stdout: str, detail: str
+) -> None:
+    # `gh` exits zero and hands back something the mapping cannot use. The fetch worked,
+    # so the next run gets the same answer — the verdict has to say so, or the queue file
+    # is retried daily against a `gh` that will not change its mind until it is fixed.
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed(stdout))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "defect-payload"
+    assert detail in out["error"]
+
+
+def test_gather_reports_a_non_zero_gh_as_retryable_not_a_defect(monkeypatch) -> None:
+    # The other side of the same call: `gh` did not answer at all, which the next run
+    # may well settle, so it keeps the retryable verdict and its stderr.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        lambda *a, **kw: _Completed("", returncode=1, stderr="HTTP 403: rate limited\n"),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
+
+
+def test_the_cli_exits_non_zero_on_a_payload_defect(monkeypatch, capsys) -> None:
+    # The escalating verdict still comes out as one JSON record on stdout, and the
+    # non-zero exit distinguishes it from `ok` — not from the retryable verdict, which
+    # exits the same way. Only the record tells the two apart.
+    def unmappable(_github: dict, *, today: date) -> dict[str, object]:
+        raise KeyError("name")
+
+    monkeypatch.setattr(
+        gather_mod, "gh_repo_view", lambda o, r: ({"owner": {"login": o}, "name": r}, None)
+    )
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: ("", None))
+    monkeypatch.setattr(gather_mod, "github_fields", unmappable)
+
+    rc = gather_mod.main(["https://github.com/acme/tool", "--today", "2026-06-06"])
+
+    assert rc == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "defect-payload"

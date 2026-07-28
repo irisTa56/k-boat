@@ -11,9 +11,11 @@ from pathlib import Path
 
 import pytest
 
+import kboat.repos.gather as gather_mod
 import kboat.repos.refresh as refresh_mod
 from kboat.frontmatter import FrontmatterError, body_after_frontmatter, parse_frontmatter
 from kboat.lock import vault_lock
+from kboat.repos.gather import PayloadError
 from kboat.repos.identity import canonical_slug
 from kboat.repos.refresh import main as refresh_main
 from kboat.repos.refresh import refresh, set_fields
@@ -207,6 +209,432 @@ def test_refresh_reports_failed_repo(tmp_path: Path, monkeypatch) -> None:
     report = refresh(tmp_path, today=TODAY)
     assert report["counts"]["failed"] == 1
     assert report["failed"][0]["owner_repo"] == "acme/gone"
+    # `fetch` is the escalation switch's off position, and this is its commonest
+    # member: a repo that is gone answers non-zero every day, and a run that read
+    # it as the permanent class would notify about it every day.
+    assert report["failed"][0]["reason"] == "fetch"
+
+
+def _counts_match_the_lists(report: dict) -> bool:
+    """Every count is the length of the list it summarises (`total` aside)."""
+    return all(
+        report["counts"][key] == len(report[key]) for key in report["counts"] if key != "total"
+    )
+
+
+def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A payload the mapping cannot read fails that note alone: the rest of the catalogue
+    # is still refreshed, and the run reports exactly that one failure. The failing note
+    # would also have adopted a rename, so this pins the accounting too — it must not
+    # appear in `updated` or `adopted` on the strength of work that never completed.
+    # The mapping is stubbed rather than fed a known-bad shape, for the reason
+    # `test_gather_reports_an_unmappable_gh_payload_as_a_non_retryable_defect` gives.
+    good = _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    bad = _write_note(tmp_path, "https://github.com/acme/old", "acme/old")
+    before = bad.read_text(encoding="utf-8")
+    real_github_fields = refresh_mod.github_fields
+
+    def flaky(meta: dict, *, today: date) -> dict[str, object]:
+        if meta["name"] == "renamed":
+            raise KeyError("licenseInfo")
+        return real_github_fields(meta, today=today)
+
+    # `acme/old` resolves to a new name (a rename to adopt); everything else is itself.
+    monkeypatch.setattr(
+        refresh_mod,
+        "gh_repo_view",
+        lambda o, r: (_meta(o, "renamed" if r == "old" else r), None),
+    )
+    monkeypatch.setattr(refresh_mod, "github_fields", flaky)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"] == {
+        "total": 2,
+        "updated": 1,
+        "adopted": 0,
+        "rename_collisions": 0,
+        "failed": 1,
+        "anomalies": 0,
+    }
+    assert _counts_match_the_lists(report)
+    failure = report["failed"][0]
+    assert failure["owner_repo"] == "acme/old"
+    assert failure["path"] == bad.relative_to(tmp_path).as_posix()
+    # `reason` is what the run branches on to escalate; `error` only carries detail.
+    assert failure["reason"] == "payload"
+    assert "licenseInfo" in failure["error"]
+    # The other note went through, and the failing one is in no other list.
+    assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
+    assert report["adopted"] == []
+    assert parse_frontmatter(good.read_text())["stars"] == "42"
+    # Untouched and still at its old slug, so the next run retries it as it stands.
+    assert bad.read_text(encoding="utf-8") == before
+    assert not (
+        tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/renamed')}.md"
+    ).exists()
+
+
+def test_refresh_isolates_a_note_that_is_not_utf8(tmp_path: Path, monkeypatch) -> None:
+    # The load reads every note before the pass begins, so a note that is not UTF-8
+    # would end the run there — ahead of every per-note boundary, and with no report.
+    # It is an anomaly for a human to repair, and the rest of the catalogue refreshes.
+    good = _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    broken = tmp_path / "Repos" / "0123456789ab.md"
+    broken.write_bytes(b"---\ntype: repo\nurl: https://github.com/a/b\n---\n\n\xff\xfe\n")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["anomalies"] == 1
+    assert report["anomalies"][0]["path"] == broken.relative_to(tmp_path).as_posix()
+    assert report["counts"]["total"] == 1  # the unreadable note never became one
+    assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
+    assert parse_frontmatter(good.read_text())["stars"] == "42"
+
+
+def test_refresh_never_writes_an_unrecognised_payload_over_a_good_note(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The realizable form: `gh` answers, with content, in a shape the mapping does not
+    # know. Every field reads through a default, so letting it past wipes description,
+    # stars, topics and license off every note in the catalogue and reports them all
+    # refreshed. This one goes through the real `gh_repo_view`, since that is where the
+    # shape is refused — a stub would prove nothing about the path a run takes.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    before = note.read_text(encoding="utf-8")
+
+    class _Completed:
+        stdout = '{"data": {"name": "tool", "stargazerCount": 42}}'
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed())
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["updated"] == 0
+    assert report["failed"][0]["reason"] == "payload"
+    assert note.read_text(encoding="utf-8") == before
+
+
+def test_refresh_does_not_escalate_a_gh_that_failed_without_a_message(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A `gh` the OOM killer took, or one that wrote its diagnostic to stdout, exits
+    # non-zero with an empty stderr. It is still a fetch that failed — reading the
+    # absence of text as "answered unusably" would escalate a transient failure, and
+    # go on escalating it every day the condition lasts.
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+
+    class _Completed:
+        stdout = ""
+        returncode = 1
+        stderr = "  \n"
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed())
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["failed"][0]["reason"] == "fetch"
+    assert report["failed"][0]["error"]  # never an empty string for a human to read
+
+
+def test_refresh_treats_an_unusable_gh_answer_as_the_payload_class(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # `gh` exiting zero with something unusable is settled where it is detected, and it
+    # reaches the report as the class no later run clears — not as a fetch that failed.
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+
+    def unusable(owner: str, name: str) -> tuple[dict, str | None]:
+        raise PayloadError("gh returned unparseable JSON: line 1")
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", unusable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["failed"][0]["reason"] == "payload"
+    assert "unparseable JSON" in report["failed"][0]["error"]
+
+
+def test_refresh_leaves_a_slug_free_when_the_rename_that_wanted_it_failed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Two notes resolving to one canonical repo, the first of which cannot be written.
+    # Its slug was never taken, so the second adopts it — rather than being reported as
+    # colliding with a file that does not exist, which would send a human to merge one
+    # note with nothing.
+    _write_note(tmp_path, "https://github.com/acme/old-a", "acme/old-a")
+    _write_note(tmp_path, "https://github.com/acme/old-b", "acme/old-b")
+    real_write = refresh_mod.atomic_write_text
+    writes: list[Path] = []
+
+    def failing_first_write(path: Path, content: str) -> None:
+        writes.append(path)
+        if len(writes) == 1:
+            raise OSError("read-only file system")
+        real_write(path, content)
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta("acme", "merged"), None))
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", failing_first_write)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["counts"]["adopted"] == 1
+    assert report["counts"]["rename_collisions"] == 0
+    merged = tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/merged')}.md"
+    assert merged.exists()
+
+
+def test_refresh_isolates_a_gh_call_that_raises(tmp_path: Path, monkeypatch) -> None:
+    # The fetch runs in a worker thread, and a raise there would surface in the parent
+    # as the pass ending — no report at all, the healthy notes unprocessed. A `gh` that
+    # stalls past its timeout, or is missing from PATH, is one note's failure.
+    good = _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    stalled = _write_note(tmp_path, "https://github.com/acme/stalls", "acme/stalls")
+
+    def fake_gh(owner: str, name: str) -> tuple[dict, str | None]:
+        if name == "stalls":
+            raise TimeoutError("gh timed out")
+        return _meta(owner, name), None
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", fake_gh)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["total"] == 2
+    assert report["counts"]["failed"] == 1
+    assert _counts_match_the_lists(report)
+    assert report["failed"][0]["owner_repo"] == "acme/stalls"
+    assert report["failed"][0]["reason"] == "fetch"  # a stall is tomorrow's business
+    assert "gh timed out" in report["failed"][0]["error"]
+    assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
+    assert parse_frontmatter(good.read_text())["stars"] == "42"
+    assert parse_frontmatter(stalled.read_text())["stars"] == "1"  # untouched
+
+
+def test_refresh_names_the_vault_when_the_rename_probe_cannot_be_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Planning a rename asks whether the target slug is taken, and an iCloud vault can
+    # refuse that read. Reported as the vault's failure, not as a `gh` payload defect —
+    # the wording is what sends the reader to the right place, and the payload wording
+    # is the one the run summary escalates on.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    taken = f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    real_exists = Path.exists
+
+    def refusing_exists(self: Path, **kwargs: object) -> bool:
+        if self.name == taken:
+            raise PermissionError("Operation not permitted")
+        return real_exists(self, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(Path, "exists", refusing_exists)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["failed"][0]["reason"] == "vault"  # not "payload", so no escalation
+    assert "Operation not permitted" in report["failed"][0]["error"]
+    assert old.exists()
+
+
+def test_refresh_reports_a_rename_that_left_both_files(tmp_path: Path, monkeypatch) -> None:
+    # The one failure that does not leave the note as it was: the new slug is written
+    # and the old file survives. The `failed` entry has to say so, or it reads as
+    # "nothing happened here" and a human never goes looking for the duplicate.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+
+    def undeletable(self: Path, **kwargs: object) -> None:
+        # `atomic_write_text` unlinks its temp file too, on the write paths that fail;
+        # this run's write succeeds, so the only unlink reached is the old note's.
+        raise PermissionError("Operation not permitted")
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(Path, "unlink", undeletable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    new_path = tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    assert old.exists() and new_path.exists()  # the state the report has to describe
+    assert report["counts"] == {
+        "total": 1,
+        "updated": 0,
+        "adopted": 0,
+        "rename_collisions": 0,
+        "failed": 1,
+        "anomalies": 0,
+    }
+    error = report["failed"][0]["error"]
+    assert new_path.relative_to(tmp_path).as_posix() in error
+    assert "both now exist" in error
+
+
+def test_refresh_reports_a_collision_even_when_the_rewrite_then_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The one list that is deliberately not exclusive with `failed`: a canonical slug
+    # being taken is a finding about identity, and it holds whether or not the metadata
+    # rewrite that follows lands. Moving the collision past the write — the natural
+    # follow-on to `adopted` moving there — would leave the human never told that two
+    # notes need merging.
+    _write_note(tmp_path, "https://github.com/a2aproject/A2A", "a2aproject/A2A")
+    collided = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+
+    def unwritable(path: Path, content: str) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", unwritable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    rel = collided.relative_to(tmp_path).as_posix()
+    assert [c["path"] for c in report["rename_collisions"]] == [rel]
+    assert rel in [f["path"] for f in report["failed"]]
+    assert report["counts"]["updated"] == 0
+    assert _counts_match_the_lists(report)
+
+
+def test_refresh_escalates_a_note_with_no_line_to_rewrite(tmp_path: Path, monkeypatch) -> None:
+    # A note missing a field the refresh rewrites fails identically every run — it is
+    # the note's shape, not the weather — so it cannot be reported as one the next run
+    # settles. The catalogue-wide form is a field added to the refresh without the
+    # notes being migrated, and then this is every note at once.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    note.write_text(
+        "\n".join(
+            line
+            for line in note.read_text(encoding="utf-8").splitlines()
+            if "homepage:" not in line
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["failed"][0]["reason"] == "note"  # not `write`, which promises a retry
+    assert "homepage" in report["failed"][0]["error"]
+
+
+def test_a_dry_run_surfaces_a_note_with_no_line_to_rewrite(tmp_path: Path, monkeypatch) -> None:
+    # The preview an operator checks a `github_fields` addition against. If it skipped
+    # building the content, it would report a clean full-catalogue update and the next
+    # unattended run would fail every note — the one failure a preview exists to catch.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    kept = note.read_text(encoding="utf-8")
+    note.write_text(
+        "\n".join(line for line in kept.splitlines() if "homepage:" not in line) + "\n",
+        encoding="utf-8",
+    )
+    before = note.read_text(encoding="utf-8")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY, dry_run=True)
+
+    assert report["counts"]["updated"] == 0
+    assert report["failed"][0]["reason"] == "note"
+    assert note.read_text(encoding="utf-8") == before  # a preview still writes nothing
+
+
+def test_refresh_counts_a_rename_whose_old_file_vanished_as_healed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The lock is advisory, so the old note can be removed under the run — by iCloud,
+    # or by a human in Obsidian. The rename completed; reporting it as a duplicate
+    # would send someone to merge a note that is not there.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    real_write = refresh_mod.atomic_write_text
+
+    def write_then_vanish(path: Path, content: str) -> None:
+        real_write(path, content)
+        old.unlink(missing_ok=True)
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", write_then_vanish)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["adopted"] == 1
+    assert report["counts"]["failed"] == 0
+    assert (
+        tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    ).exists()
+
+
+def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The note is read twice — once to learn its identity, once to rewrite it — and the
+    # vault lock is advisory, so Obsidian or iCloud can change the file in between. The
+    # second read is inside the per-note boundary, so this is one `failed` entry rather
+    # than the end of the pass.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    real_read_text = Path.read_text
+    reads: list[Path] = []
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.parent.name == "Repos":
+            reads.append(self)
+            if len(reads) > 1:  # the rewrite's read, after the load's
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"] == {
+        "total": 1,
+        "updated": 0,
+        "adopted": 0,
+        "rename_collisions": 0,
+        "failed": 1,
+        "anomalies": 0,
+    }
+    assert report["failed"][0]["reason"] == "write"
+    assert note.exists()
+
+
+def test_refresh_does_not_report_a_rename_it_failed_to_write(tmp_path: Path, monkeypatch) -> None:
+    # `adopted` is the set of renames healed, so a note whose rewrite failed belongs in
+    # `failed` and nowhere else — otherwise the report claims a move that never happened.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    before = old.read_text(encoding="utf-8")
+
+    def unwritable(path: Path, content: str) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", unwritable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["counts"]["adopted"] == 0
+    assert report["counts"]["updated"] == 0
+    assert _counts_match_the_lists(report)
+    assert report["failed"][0]["reason"] == "write"
+    assert old.read_text(encoding="utf-8") == before  # still there, still itself
 
 
 def test_an_applying_run_holds_the_lock_over_its_whole_pass(
