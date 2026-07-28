@@ -38,24 +38,49 @@ def _gh() -> str:
     return shutil.which("gh") or "/opt/homebrew/bin/gh"
 
 
+class PayloadError(Exception):
+    """`gh` answered, and what it answered cannot be used.
+
+    Raised where the two are already distinguishable — `gh` exited zero, so the
+    fetch worked — because coming back tomorrow meets the same answer. Every
+    caller reports it as the permanent class (`gather`'s `defect-payload`,
+    `refresh`'s `payload` reason), never as a failure the next run may clear.
+    """
+
+
 def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | None, str | None]:
+    """The repo's `gh repo view --json` payload, or `(None, stderr)` if `gh` failed.
+
+    A non-zero `gh` (no such repo, not authenticated, rate limit) is the return
+    value rather than an exception — the caller wants the stderr text to put in
+    its `error`. A zero exit whose stdout is not a usable object is the other
+    kind, and raises `PayloadError`.
+    """
     cmd = [_gh(), "repo", "view", f"{owner}/{repo}", "--json", _VIEW_FIELDS]
-    # `check=False`: a non-zero `gh` (no such repo, not authenticated, rate limit)
-    # is this function's return value, not an exception — the caller wants the
-    # stderr text to put in the record's `error`.
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if r.returncode != 0:
         return None, r.stderr.strip()
     try:
-        return json.loads(r.stdout), None
-    except json.JSONDecodeError as e:
-        return None, f"json decode: {e}"
+        meta = json.loads(r.stdout)
+    except json.JSONDecodeError as exc:
+        raise PayloadError(f"gh returned unparseable JSON: {exc}") from exc
+    if not isinstance(meta, dict) or not meta:
+        # An empty or non-object payload is as unusable as one that will not
+        # parse, and has to be refused here: every field mapping below reads it
+        # with `.get(…) or <default>`, so it would otherwise map to a full set of
+        # empty values — which `refresh` would write over a good note as fact.
+        raise PayloadError(f"gh returned no usable object: {r.stdout[:200]!r}")
+    return meta, None
 
 
 def gh_readme(owner: str, repo: str, *, timeout: float = 30) -> tuple[str | None, str | None]:
+    """The repo's raw README, or `(None, stderr)` if `gh` failed.
+
+    A repo with no README is a 404 — a non-zero exit like any other, so this
+    cannot tell "there is none" from "the fetch did not succeed", and neither can
+    its caller. `gather` reports the stderr as `readme_error` rather than guessing.
+    """
     cmd = [_gh(), "api", f"repos/{owner}/{repo}/readme", "-H", "Accept: application/vnd.github.raw"]
-    # `check=False` for the same reason as `gh_repo_view`, and it matters more here:
-    # a repo with no README is a 404, which the caller reads as an empty excerpt.
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if r.returncode != 0:
         return None, r.stderr.strip()
@@ -163,15 +188,20 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # caught blind: a traceback would leave an unattended run with no record at all.
 # What the record must also carry is whether coming back tomorrow can help.
 #
-# - `error-meta` — the `gh` call produced no metadata (a non-zero exit, stdout
-#   that will not parse, or a timeout / OS error raised out of the subprocess).
-#   Environmental, so the skill keeps the queue file and the next run retries.
-# - `defect-payload` — `gh` answered and the mapping could not read what it
-#   answered. A payload shape is not weather: the same input fails the same way
-#   tomorrow, so the skill keeps the queue file (nothing is lost, and a repaired
-#   mapping drains it) but escalates rather than letting the retry repeat
-#   silently. Deliberately not spelled `error-*`, so the "keep it and retry"
-#   reflex the other verdict earns cannot extend to this one by pattern.
+# - `error-meta` — the `gh` call did not answer: a non-zero exit, or a timeout /
+#   OS error raised out of the subprocess. The skill keeps the queue file and the
+#   next run tries again. Not every member of this class will ever succeed — a
+#   repo that no longer exists exits non-zero every day — because `gh`'s exit code
+#   does not separate "gone" from "rate limited" and its stderr wording is not a
+#   contract. What the verdict claims is only that the next run is where it is
+#   settled, which is why the skill tells the reader to compare successive runs.
+# - `defect-payload` — `gh` answered, and what it answered cannot be used: stdout
+#   that will not parse, no usable object (both refused in `gh_repo_view`), or a
+#   shape the mapping cannot read. Here the two *are* separable, and the same
+#   answer comes back tomorrow, so the skill keeps the queue file (nothing is
+#   lost, and a repaired mapping drains it) and escalates rather than letting the
+#   retry repeat silently. Deliberately not spelled `error-*`, so the "keep it and
+#   retry" reflex the other verdict earns cannot extend to this one by pattern.
 #
 # The two classes interleave — the README fetch is transport again, and it needs
 # the identity the payload mapping resolves — which is why the boundaries below
@@ -188,7 +218,9 @@ def _payload_defect(record: dict, exc: BaseException) -> dict:
     return record
 
 
-def _mapped(meta: dict, readme: str, *, owner: str, repo: str, today: date) -> dict[str, object]:
+def _mapped(
+    meta: dict, readme: str, readme_error: str | None, *, owner: str, repo: str, today: date
+) -> dict[str, object]:
     """The half of an `ok` record derived from what `gh` returned.
 
     `owner`/`repo` are the identity `gh` resolved, so the record is re-keyed off
@@ -208,6 +240,12 @@ def _mapped(meta: dict, readme: str, *, owner: str, repo: str, today: date) -> d
         # it only adds the judged role/domain/summary on top.
         "fields": github_fields(meta, today=today),
         "readme_excerpt": first_paragraphs(readme),
+        # Why the excerpt is empty, when it is. A repo with no README and a repo
+        # whose README the rate limiter withheld both come back as a non-zero
+        # `gh`, and the classification that follows is thinner for the second —
+        # permanently, since the note is written and the queue file deleted. The
+        # record says which it was rather than presenting both as "no README".
+        "readme_error": readme_error,
     }
 
 
@@ -240,6 +278,8 @@ def gather(url: str, *, today: date) -> dict:
     }
     try:
         meta, err = gh_repo_view(owner, repo)
+    except PayloadError as exc:
+        return _payload_defect(record, exc)
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
     if not meta:
@@ -253,13 +293,15 @@ def gather(url: str, *, today: date) -> dict:
         return _payload_defect(record, exc)
     res_owner, res_repo = res_owner or owner, res_repo or repo
     try:
-        readme, _ = gh_readme(res_owner, res_repo)  # a missing README just yields an empty excerpt
+        readme, readme_error = gh_readme(res_owner, res_repo)
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
     try:
         # Evaluated before it is merged, so a defect leaves the record on the
         # queued-link identity rather than half-updated.
-        mapped = _mapped(meta, readme or "", owner=res_owner, repo=res_repo, today=today)
+        mapped = _mapped(
+            meta, readme or "", readme_error, owner=res_owner, repo=res_repo, today=today
+        )
     except Exception as exc:  # noqa: BLE001
         return _payload_defect(record, exc)
     record.update(mapped)

@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import pytest
+
 import kboat.repos.gather as gather_mod
 from kboat.repos.gather import (
     first_paragraphs,
@@ -258,9 +260,9 @@ def test_gather_reports_an_unreadable_identity_as_a_non_retryable_defect(monkeyp
     assert out["error"].startswith("AttributeError:")
 
 
-def test_gather_reports_a_readme_fetch_failure_as_retryable(monkeypatch) -> None:
+def test_gather_reports_a_raising_readme_fetch_as_retryable(monkeypatch) -> None:
     # The README fetch is transport again, on the far side of the identity mapping.
-    # A network failure there is tomorrow's business, not a defect.
+    # A network failure that raises there is tomorrow's business, not a defect.
     meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
 
     def boom(_owner: str, _repo: str) -> tuple[str | None, str | None]:
@@ -273,6 +275,78 @@ def test_gather_reports_a_readme_fetch_failure_as_retryable(monkeypatch) -> None
 
     assert out["status"] == "error-meta"
     assert out["error"] == "TimeoutError: gh timed out"
+
+
+def test_gather_records_why_the_readme_excerpt_is_empty(monkeypatch) -> None:
+    # A non-zero README fetch is not a verdict — a repo may simply have none — but it
+    # is not nothing either: a rate limit looks identical and leaves the classification
+    # thinner for good, since the note is written and the queue file deleted. The record
+    # carries the stderr so an empty excerpt is not read as "this repo has no README".
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: (None, "HTTP 403: rate limited"))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["readme_excerpt"] == ""
+    assert out["readme_error"] == "HTTP 403: rate limited"
+
+
+def test_gather_leaves_readme_error_unset_when_the_fetch_succeeds(monkeypatch) -> None:
+    meta = {"owner": {"login": "acme"}, "name": "tool", "pushedAt": "2026-06-01T00:00:00Z"}
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (meta, None))
+    monkeypatch.setattr(gather_mod, "gh_readme", lambda o, r: ("Real prose.", None))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["readme_error"] is None
+    assert "Real prose." in out["readme_excerpt"]
+
+
+class _Completed:
+    """Enough of a `subprocess.CompletedProcess` for `gh_repo_view` to read."""
+
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = "") -> None:
+        self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+@pytest.mark.parametrize(
+    ("stdout", "detail"),
+    [
+        ("Notice: gh 3.0 is available\n{}", "unparseable JSON"),  # a banner before the JSON
+        ("{}", "no usable object"),
+        ("[]", "no usable object"),
+        ("null", "no usable object"),
+    ],
+)
+def test_gather_reports_a_gh_that_answered_with_nothing_usable_as_a_defect(
+    monkeypatch, stdout: str, detail: str
+) -> None:
+    # `gh` exits zero and hands back something the mapping cannot use. The fetch worked,
+    # so the next run gets the same answer — the verdict has to say so, or the queue file
+    # is retried daily against a `gh` that will not change its mind until it is fixed.
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed(stdout))
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "defect-payload"
+    assert detail in out["error"]
+
+
+def test_gather_reports_a_non_zero_gh_as_retryable_not_a_defect(monkeypatch) -> None:
+    # The other side of the same call: `gh` did not answer at all, which the next run
+    # may well settle, so it keeps the retryable verdict and its stderr.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        lambda *a, **kw: _Completed("", returncode=1, stderr="HTTP 403: rate limited\n"),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
 
 
 def test_the_cli_exits_non_zero_on_a_payload_defect(monkeypatch, capsys) -> None:

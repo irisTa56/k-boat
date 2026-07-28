@@ -52,10 +52,21 @@ from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
 
-from .gather import gh_repo_view, github_fields, resolved_identity
+from .gather import PayloadError, gh_repo_view, github_fields, resolved_identity
 from .identity import canonical_slug, canonical_url, parse_repo
 
 MAX_WORKERS = 10
+
+
+def _failure(note_rel: str, owner_repo: str, *, reason: str, error: str) -> dict[str, str]:
+    """One `failed` entry: the note, why it dropped out, and the detail.
+
+    `reason` is the closed part — `fetch`, `payload`, `vault`, `write` — and it is
+    what the run branches on, because `error` carries `gh`'s stderr and an
+    exception's text, neither of which this side writes. `payload` is the one no
+    later run clears; the others are settled by trying again.
+    """
+    return {"path": note_rel, "owner_repo": owner_repo, "reason": reason, "error": error}
 
 
 def set_fields(text: str, updates: Mapping[str, object]) -> str:
@@ -102,14 +113,16 @@ def _fetch(note: dict) -> dict:
 
     Runs in a worker thread, and `Executor.map` re-raises in the parent — so a
     `gh` that times out or is missing from `PATH` would take the whole pass down
-    with it, report included. It is the same transport class `gather` reports as
-    `error-meta`, and it lands here in the same shape a non-zero `gh` does.
+    with it, report included. Caught, it lands in the same shape a non-zero `gh`
+    does, tagged with the `reason` that says which of the two it was.
     """
     try:
         meta, err = gh_repo_view(note["owner"], note["repo"])
+    except PayloadError as exc:
+        return {**note, "meta": None, "error": str(exc), "reason": "payload"}
     except Exception as exc:  # noqa: BLE001
-        return {**note, "meta": None, "error": f"{type(exc).__name__}: {exc}"}
-    return {**note, "meta": meta, "error": err}
+        return {**note, "meta": None, "error": f"{type(exc).__name__}: {exc}", "reason": "fetch"}
+    return {**note, "meta": meta, "error": err, "reason": "fetch"}
 
 
 @dataclass(frozen=True)
@@ -126,12 +139,20 @@ class _NotePlan:
     rel: str
     target: Path
     rel_target: str
-    slug: str
     now: str
     updates: dict[str, object]
     adopt: bool
     renaming: bool
     collides: bool
+
+    @property
+    def slug(self) -> str:
+        """The slug this plan writes under — read off `target`, never stored beside it.
+
+        The reservation set and the written path have to be the same string, and
+        two fields holding it would let a later change move one and not the other.
+        """
+        return self.target.stem
 
 
 def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set[str]) -> _NotePlan:
@@ -171,7 +192,6 @@ def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set
         # Derived from `target`, so a report path cannot name a different
         # directory from the one the write actually went to.
         rel_target=target.relative_to(vault).as_posix(),
-        slug=new_slug,
         now=f"{res_owner}/{res_repo}",
         updates=updates,
         adopt=adopt,
@@ -230,36 +250,31 @@ def refresh(
     for r in results:
         rel = r["rel"]
         was = f"{r['owner']}/{r['repo']}"
-        if r["meta"] is None:
-            failed.append({"path": rel, "owner_repo": was, "error": r["error"] or "no metadata"})
+        # Falsy, not `is None`: an empty or non-object payload never reaches here
+        # (`gh_repo_view` refuses it), and the same test as `gather`'s is what keeps
+        # it that way — a payload the mapping would read as a full set of empty
+        # values must not be written over a good note.
+        if not r["meta"]:
+            failed.append(_failure(rel, was, reason=r["reason"], error=r["error"] or "no metadata"))
             continue
         # The per-note boundary over the payload mapping, blind for the reason
         # `gather`'s is: `gh repo view --json` is a typed schema, so what can raise
         # in here is a breaking `gh` change or an anomalous response, and neither
         # is worth the rest of the catalogue. The note keeps its existing content
         # and is re-fetched by the next run.
-        #
-        # Unlike `gather` this does not become a second machine-readable outcome:
-        # no caller decides whether to come back, since every note is re-fetched
-        # daily regardless. The `error` string is what carries the class, so the
-        # two ways `_plan` can give out are worded apart — the run summary is where
-        # an unreadable payload is recognised as the failure no retry will clear.
         try:
             plan = _plan(r, repos_dir=repos_dir, vault=vault, today=today, claimed=claimed)
         except OSError as exc:
             # `_plan` touches the filesystem once, to see whether a rename's target
             # is taken, and an iCloud vault can refuse that read. Calling it a
             # payload defect would send the reader to `gh`'s release notes for a
-            # problem that is in the vault.
-            failed.append({"path": rel, "owner_repo": was, "error": f"vault unreadable: {exc}"})
+            # problem that is in the vault — and would escalate a run that only
+            # needs the vault back.
+            failed.append(_failure(rel, was, reason="vault", error=str(exc)))
             continue
         except Exception as exc:  # noqa: BLE001
             failed.append(
-                {
-                    "path": rel,
-                    "owner_repo": was,
-                    "error": f"unreadable gh payload: {type(exc).__name__}: {exc}",
-                }
+                _failure(rel, was, reason="payload", error=f"{type(exc).__name__}: {exc}")
             )
             continue
 
@@ -267,18 +282,19 @@ def refresh(
             rename_collisions.append(
                 {"path": rel, "was": was, "now": plan.now, "conflict": plan.rel_target}
             )
-        if plan.renaming:
-            # Reserved before the write, not after: a slug this run has aimed at
-            # is spoken for even if writing it fails, so a second rename cannot
-            # aim at it too.
-            claimed.add(plan.slug)
 
         try:
             written = _apply(plan, dry_run=dry_run)
         except (FrontmatterError, OSError) as exc:
-            failed.append({"path": rel, "owner_repo": was, "error": f"write failed: {exc}"})
+            failed.append(_failure(rel, was, reason="write", error=str(exc)))
             continue
         updated.append(written)
+        if plan.renaming:
+            # Claimed once the slug is actually taken (in a dry run, once it would
+            # have been), for the same reason `adopted` is: a rename whose write
+            # failed left the slug free, and reserving it anyway would report the
+            # next note as colliding with a file that was never written.
+            claimed.add(plan.slug)
         if plan.adopt:
             # Reported only once the note is actually written (or, in a dry run,
             # once it would have been): `adopted` is the set of renames healed,

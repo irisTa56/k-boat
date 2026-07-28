@@ -14,6 +14,7 @@ import pytest
 import kboat.repos.refresh as refresh_mod
 from kboat.frontmatter import FrontmatterError, body_after_frontmatter, parse_frontmatter
 from kboat.lock import vault_lock
+from kboat.repos.gather import PayloadError
 from kboat.repos.identity import canonical_slug
 from kboat.repos.refresh import main as refresh_main
 from kboat.repos.refresh import refresh, set_fields
@@ -257,7 +258,9 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
     failure = report["failed"][0]
     assert failure["owner_repo"] == "acme/old"
     assert failure["path"] == bad.relative_to(tmp_path).as_posix()
-    assert "unreadable gh payload" in failure["error"]
+    # `reason` is what the run branches on to escalate; `error` only carries detail.
+    assert failure["reason"] == "payload"
+    assert "licenseInfo" in failure["error"]
     # The other note went through, and the failing one is in no other list.
     assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
     assert report["adopted"] == []
@@ -267,6 +270,72 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
     assert not (
         tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/renamed')}.md"
     ).exists()
+
+
+def test_refresh_never_writes_an_empty_payload_over_a_good_note(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Every field mapping reads the payload with a default, so an empty answer maps to a
+    # full set of empty values — description, stars, topics, license all wiped, and the
+    # note reported as refreshed. It is a payload the mapping cannot use, so it fails.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    before = note.read_text(encoding="utf-8")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: ({}, None))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["updated"] == 0
+    assert report["counts"]["failed"] == 1
+    assert note.read_text(encoding="utf-8") == before
+    assert parse_frontmatter(note.read_text())["stars"] == "1"  # not zeroed
+
+
+def test_refresh_treats_an_unusable_gh_answer_as_the_payload_class(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # `gh` exiting zero with something unusable is settled where it is detected, and it
+    # reaches the report as the class no later run clears — not as a fetch that failed.
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+
+    def unusable(owner: str, name: str) -> tuple[dict, str | None]:
+        raise PayloadError("gh returned unparseable JSON: line 1")
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", unusable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["failed"][0]["reason"] == "payload"
+    assert "unparseable JSON" in report["failed"][0]["error"]
+
+
+def test_refresh_leaves_a_slug_free_when_the_rename_that_wanted_it_failed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Two notes resolving to one canonical repo, the first of which cannot be written.
+    # Its slug was never taken, so the second adopts it — rather than being reported as
+    # colliding with a file that does not exist, which would send a human to merge one
+    # note with nothing.
+    _write_note(tmp_path, "https://github.com/acme/old-a", "acme/old-a")
+    _write_note(tmp_path, "https://github.com/acme/old-b", "acme/old-b")
+    real_write = refresh_mod.atomic_write_text
+    writes: list[Path] = []
+
+    def failing_first_write(path: Path, content: str) -> None:
+        writes.append(path)
+        if len(writes) == 1:
+            raise OSError("read-only file system")
+        real_write(path, content)
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta("acme", "merged"), None))
+    monkeypatch.setattr(refresh_mod, "atomic_write_text", failing_first_write)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["counts"]["adopted"] == 1
+    assert report["counts"]["rename_collisions"] == 0
+    merged = tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/merged')}.md"
+    assert merged.exists()
 
 
 def test_refresh_isolates_a_gh_call_that_raises(tmp_path: Path, monkeypatch) -> None:
@@ -319,8 +388,8 @@ def test_refresh_names_the_vault_when_the_rename_probe_cannot_be_read(
     report = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["failed"] == 1
-    assert report["failed"][0]["error"].startswith("vault unreadable:")
-    assert "payload" not in report["failed"][0]["error"]
+    assert report["failed"][0]["reason"] == "vault"  # not "payload", so no escalation
+    assert "Operation not permitted" in report["failed"][0]["error"]
     assert old.exists()
 
 
@@ -377,7 +446,7 @@ def test_refresh_does_not_report_a_rename_it_failed_to_write(tmp_path: Path, mon
     assert report["counts"]["adopted"] == 0
     assert report["counts"]["updated"] == 0
     assert _counts_match_the_lists(report)
-    assert "write failed:" in report["failed"][0]["error"]
+    assert report["failed"][0]["reason"] == "write"
     assert old.read_text(encoding="utf-8") == before  # still there, still itself
 
 
