@@ -16,7 +16,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from feed_filter.canonical import CanonicalUrl
+from kboat.canonical import CanonicalUrl
 
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
 # applies every entry past the DB's current ``PRAGMA user_version`` and stamps the

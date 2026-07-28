@@ -108,7 +108,7 @@ Automation:
 
 - In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
 - Property keys and enum values are `snake_case`; dates are `YYYY-MM-DD`.
-- Source and repo notes are named by a URL hash (first 12 hex of the `url`'s SHA-256; recipe in `kboat-vault-conventions`); Kindle notes by their ASIN. All keep the readable title in the `title` property. Other note names replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
+- Source, repo, and feed notes are named by a URL hash (first 12 hex of the SHA-256 of the `url`'s canonical form, from `kboat-note slug`; recipe in `kboat-vault-conventions`); Kindle notes by their ASIN. All keep the readable title in the `title` property. Other note names replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
 
 ## Keep this file current
 

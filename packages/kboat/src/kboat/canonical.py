@@ -6,6 +6,12 @@ upper-cased, duplicate path slashes collapsed, and a normalized trailing slash.
 The same article reached by two different links must canonicalize identically;
 two genuinely distinct articles must not collide.
 
+Two callers share it, which is why it lives in `kboat` rather than beside either.
+`kboat.naming.note_slug` hashes this form to name a vault note, so one page
+cannot occupy two slugs; feed-filter keys its seen-store on it, so one page is
+not re-judged under a second link. A second implementation would let a note and
+the store that gates it disagree about what one page is.
+
 ``canonical_url`` returns a ``CanonicalUrl`` — a ``NewType`` over ``str`` so the
 seen-store (the dedupe authority) can require, and ``ty`` can enforce,
 that every key it stores has actually been canonicalized.

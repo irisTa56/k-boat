@@ -10,12 +10,12 @@ from typing import Any
 import pytest
 
 from feed_filter import seen
-from feed_filter.canonical import CanonicalUrl
+from kboat.canonical import CanonicalUrl
 
 
 def _url(s: str) -> CanonicalUrl:
     # Keys are canonical by construction in these store-mechanics tests; the
-    # canonicalization itself is covered in test_canonical.py.
+    # canonicalization itself is covered by the `kboat` package's own tests.
     return CanonicalUrl(s)
 
 

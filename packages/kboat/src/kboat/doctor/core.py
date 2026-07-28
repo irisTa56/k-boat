@@ -17,6 +17,7 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
+from kboat.io_utils import ICLOUD_GLOB, icloud_placeholder
 from kboat.schema import DIR_BY_TYPE, PDFS_DIR, QUESTIONS_FILE, QUEUE_DIR, REVIEWS_DIR
 
 # The directories a run cannot be walked past: every schema-backed type's own
@@ -33,14 +34,6 @@ NOTE_DIRS: tuple[str, ...] = (*sorted(set(DIR_BY_TYPE.values())), QUEUE_DIR, REV
 ASSET_DIRS: tuple[str, ...] = (PDFS_DIR,)
 
 REQUIRED_DIRS: tuple[str, ...] = (*NOTE_DIRS, *ASSET_DIRS)
-
-# iCloud replaces an evicted file with a placeholder of this shape beside where
-# the file was: `Sources/abc.md` becomes `Sources/.abc.md.icloud`.
-_ICLOUD_GLOB = ".*.icloud"
-
-
-def _placeholder_for(path: Path) -> Path:
-    return path.parent / f".{path.name}.icloud"
 
 
 class Status(StrEnum):
@@ -180,7 +173,7 @@ def _check_questions(vault: Path) -> Check:
     # Absent and evicted look identical from here but call for opposite remedies:
     # recreating a file iCloud still holds makes a sync conflict, where the fix is
     # to download it. The placeholder is what tells the two apart.
-    placeholder = _placeholder_for(questions)
+    placeholder = icloud_placeholder(questions)
     if placeholder.exists():
         return Check(
             "questions_file",
@@ -210,7 +203,7 @@ def _placeholders(vault: Path, dirs: tuple[str, ...]) -> tuple[str, ...]:
         directory = vault / name
         if not directory.is_dir():
             continue  # an unusable folder is `_check_folders`' finding, not this one
-        found += [p.relative_to(vault).as_posix() for p in directory.rglob(_ICLOUD_GLOB)]
+        found += [p.relative_to(vault).as_posix() for p in directory.rglob(ICLOUD_GLOB)]
     return tuple(sorted(found))
 
 

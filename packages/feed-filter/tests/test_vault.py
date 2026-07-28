@@ -7,6 +7,7 @@ checked against real files written through ``kboat.write.upsert``.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -15,11 +16,12 @@ import pytest
 
 import feed_filter.vault as vault_mod
 import kboat.lock
-from feed_filter.canonical import CanonicalUrl
 from feed_filter.vault import VaultError, write_feed_note
+from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.frontmatter import Value, parse_frontmatter
 from kboat.lock import VaultLockedError, vault_lock
 from kboat.naming import url_slug
+from kboat.note.__main__ import main as note_cli
 
 CU = CanonicalUrl("https://example.com/post")
 
@@ -136,6 +138,46 @@ def test_rewrite_resurfaces_hidden_cards_preserves_shelved(tmp_path: Path) -> No
     assert fm["added_date"] == "2026-07-19"  # created stamp stable across the re-write
 
 
+@pytest.mark.parametrize(
+    ("link", "why"),
+    [
+        ("https://example.com/post", "the canonical form itself"),
+        ("https://example.com/post/", "a trailing slash"),
+        ("HTTPS://Example.COM/post", "another casing"),
+        ("https://example.com/post?utm_source=news", "a tracking parameter"),
+        ("https://example.com/post#intro", "a fragment"),
+    ],
+)
+def test_the_note_lands_where_the_slug_oracle_says(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], link: str, why: str
+) -> None:
+    """Parity between the two members that name notes in one vault.
+
+    feed-filter canonicalizes at gather time and hashes the result; a K-Boat
+    skill asks `kboat-note slug` for the same page. The two agreeing is what
+    stops one page from occupying a `Feeds/` note and a `Sources/` note under
+    different names — so the check is against the CLI a skill actually calls,
+    not against a second copy of the recipe.
+    """
+    assert note_cli(["slug", link]) == 0
+    oracle = json.loads(capsys.readouterr().out)
+
+    result = write_feed_note(
+        tmp_path,
+        canonical_url(link),
+        title="A post",
+        feed_kind="article",
+        site_id="ex",
+        summary="",
+        wall=False,
+        today="2026-07-19",
+    )
+
+    assert result["status"] == "created", "the writer verifies the slug, so parity is enforced"
+    assert result["slug"] == oracle["slug"], why
+    assert (tmp_path / "Feeds" / f"{oracle['slug']}.md").exists(), why
+
+
 def test_an_unreadable_url_says_so_rather_than_blaming_a_hash_clash(tmp_path: Path) -> None:
     # The two refusals need different words: this one is a note to repair by
     # hand, not the astronomically-unlikely 48-bit clash the other message names.
@@ -171,6 +213,30 @@ def test_collision_raises_vault_error(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(VaultError, match="already holds a different url"):
+        write_feed_note(
+            tmp_path,
+            CU,
+            title="Mine",
+            feed_kind="article",
+            site_id="ex",
+            summary="",
+            wall=False,
+            today="2026-07-19",
+        )
+
+
+def test_a_refusal_this_module_does_not_know_still_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Never-lost rests on nothing being recorded seen unless a note landed, so
+    # the test is for a *written* note, not for the refusals listed here — a
+    # status added to the writer later must not slip through as success.
+    monkeypatch.setattr(
+        vault_mod, "upsert", lambda *_args, **_kwargs: {"status": "a refusal from the future"}
+    )
+    (tmp_path / "Feeds").mkdir()
+
+    with pytest.raises(VaultError, match="refused the note"):
         write_feed_note(
             tmp_path,
             CU,

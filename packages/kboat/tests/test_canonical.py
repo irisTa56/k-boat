@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from feed_filter.canonical import canonical_url, resolve_link
+from kboat.canonical import canonical_url, resolve_link
 
 # (url, base, expected)
 CASES: list[tuple[str, str | None, str]] = [

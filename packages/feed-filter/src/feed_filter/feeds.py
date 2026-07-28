@@ -18,7 +18,7 @@ from typing import Literal
 
 import feedparser
 
-from feed_filter.canonical import CanonicalUrl, canonical_url, resolve_link
+from kboat.canonical import CanonicalUrl, canonical_url, resolve_link
 
 EntryKind = Literal["feed", "scrape"]
 
@@ -142,7 +142,7 @@ def _published_at(entry: object) -> int | None:
 # vs a publication's custom domain (e.g. ``netflixtechblog.com``) — so the link
 # forks the dedupe key and the article re-reminds every time the host
 # flips. (The other historical fork, a volatile ``?source=`` param, is already
-# neutralized in ``canonical.py``; the host shift is the residual cause.) Every
+# neutralized in ``kboat.canonical``; the host shift is the residual cause.) Every
 # Medium item also carries ``<guid isPermaLink="false">https://medium.com/p/
 # <hash></guid>``, invariant across host, slug, and query, which 302-redirects
 # to the live article — so it is the durable dedupe identity (and a usable

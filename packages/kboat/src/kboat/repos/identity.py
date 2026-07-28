@@ -7,17 +7,19 @@ to `https://github.com/<owner>/<repo>` and hash that with the same recipe
 sources use, so a repo maps to one note however it was linked, and the repo and
 source kinds share one de-dup story.
 
-The slug is the first 12 hex chars of the SHA-256 of the canonical URL, hashed
-verbatim (no trailing newline). 48 bits is collision-resistant but not
-collision-free, so callers de-dup by reading the existing note's `url`, never by
-filename alone — exactly as `kboat-notes` prescribes for sources.
+The slug itself is `kboat.naming.note_slug` of that constructed URL — the one
+oracle every URL-named note is named by, asked here rather than re-derived, so
+the name this module hands out is the one the writer recomputes to verify it.
+48 bits is collision-resistant but not collision-free, so callers de-dup by
+reading the existing note's `url`, never by filename alone — exactly as
+`kboat-notes` prescribes for sources.
 """
 
 from __future__ import annotations
 
 import re
 
-from kboat.naming import url_slug
+from kboat.naming import note_slug
 
 # Matches the owner and repo from any github.com URL (optionally `www.`); the
 # repo group stops at the next `/`, `?`, or `#`, so deep links (`/tree/main`,
@@ -148,10 +150,13 @@ def canonical_url(owner: str, repo: str) -> str:
 def canonical_slug(url: str) -> str | None:
     """The `Repos/<slug>.md` slug for a GitHub URL, or None if it is not a repo.
 
-    Canonicalizes via `parse_repo` before hashing, so URL variants of one repo
-    collapse to the same slug.
+    Two steps, and they answer different questions. `parse_repo` is **routing**:
+    which repository is this URL about, collapsing every deep link onto it. Only
+    then does the vault's own oracle name the note, over the URL the repo note
+    stores — so the name this returns is the one `kboat.write.upsert` recomputes
+    to verify the write, with no second recipe to drift from it.
     """
     owner, repo = parse_repo(url)
     if not owner or not repo:
         return None
-    return url_slug(canonical_url(owner, repo))
+    return note_slug(canonical_url(owner, repo))

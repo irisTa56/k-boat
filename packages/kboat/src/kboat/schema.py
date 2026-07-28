@@ -69,6 +69,21 @@ class NoteSchema:
     # section, e.g. a repo's human notes).
     body: str = "none"
 
+    @property
+    def url_named(self) -> bool:
+        """Whether the filename is `kboat.naming.note_slug` of `identity`.
+
+        Derived rather than declared per schema: it licenses the writer to
+        recompute a slug and refuse a note that does not match, and it is what
+        `kboat-note migrate-slugs` scans, so a new type that forgot to opt in
+        would lose both silently. The identity field of a URL-named type is
+        called `url` — the vault's own convention, which `kboat-validate` and
+        every writer already read by that name — so declaring one under another
+        name is the case to revisit this with. A Kindle note's ASIN slug is an
+        id, not a hash of anything, so nothing there can be recomputed.
+        """
+        return self.identity == "url"
+
     def field_names(self) -> tuple[str, ...]:
         return tuple(f.name for f in self.fields)
 

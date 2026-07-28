@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from feed_filter.canonical import canonical_url
 from feed_filter.feeds import html_to_text, parse_feed
+from kboat.canonical import canonical_url
 
 # ---------------------------------------------------------------------------
 # URL builders

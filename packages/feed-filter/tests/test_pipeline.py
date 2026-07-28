@@ -16,11 +16,11 @@ import pytest
 from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
 from feed_filter import browser
-from feed_filter.canonical import canonical_url
 from feed_filter.config import DEFAULT_PER_SITE_CAP
 from feed_filter.pipeline import FetchOutcome, fetch_site, filter_gathered, gather_new
 from feed_filter.seen import count, open_db, snapshot
 from feed_filter.sites import SiteConfig
+from kboat.canonical import canonical_url
 
 Handler = Callable[[httpx.Request], httpx.Response]
 

@@ -31,7 +31,7 @@ from pathlib import Path
 
 from kboat.frontmatter import FrontmatterError
 from kboat.lock import VaultLockedError, VaultLockUnavailableError
-from kboat.write import BadInputError
+from kboat.write import WROTE_A_NOTE, BadInputError
 
 
 def _iso_date(value: str) -> str:
@@ -127,9 +127,11 @@ def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
     human. Stdout stays empty rather than carrying a report the run never produced.
 
     For the CLIs whose output *is* a report — `kboat-lifecycle`, `kboat-pick set`,
-    `kboat-repos refresh`. Their contract is JSON on stdout and a diagnostic on
-    stderr, and an uncaught `OSError` from acquisition would break it with a
-    traceback and no output at all. The two note writers do not come through here:
+    `kboat-repos refresh`, `kboat-note migrate-slugs --apply`. Their contract is
+    JSON on stdout and a diagnostic on stderr, and an uncaught `OSError` from
+    acquisition would break it with a traceback and no output at all. `kboat-note`
+    is on both sides of this: `migrate-slugs` reports on a whole vault and comes
+    here, while `write` is a note writer and does not. For the two note writers,
     `run_write` already folds an unusable lock into its `write failed: …`, which is
     the right shape for a CLI whose whole output is the fate of one write.
     """
@@ -156,7 +158,9 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
     `status`, a key an unwritten note still carries.
 
     Exit 2 is a record to fix, 1 a write that did not happen (a failure, a
-    refused collision, or a vault another run holds), 0 a note on disk.
+    refusal, or a vault another run holds), 0 a note on disk. Success is named
+    rather than the refusals: a status this mapping has not heard of is one it
+    cannot claim wrote a note.
     """
     try:
         result = write(_read_json_record())
@@ -170,4 +174,4 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
         return 1
     json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
-    return 1 if result["status"] == "collision" else 0
+    return 0 if result["status"] in WROTE_A_NOTE else 1

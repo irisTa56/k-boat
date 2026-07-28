@@ -12,12 +12,18 @@ import pytest
 
 from kboat.frontmatter import parse_frontmatter
 from kboat.lock import vault_lock
+from kboat.naming import note_slug
 from kboat.repos.__main__ import main
 from kboat.repos.write import main as write_main
 
+# The writer verifies a record's slug against its `url`, so the fixture names the
+# note the way `gather` does — through the one oracle.
+URL = "https://github.com/google/A2A"
+SLUG = note_slug(URL)
+
 RECORD: dict[str, Any] = {
-    "slug": "abc123def456",
-    "url": "https://github.com/google/A2A",
+    "slug": SLUG,
+    "url": URL,
     "title": "google/A2A",
     "fields": {"description": "An open protocol: agents talk.", "status": "recent"},
     "role": "framework",
@@ -55,8 +61,8 @@ def test_write_dispatches_and_creates(
     _stdin(monkeypatch, json.dumps(RECORD))
     assert main(["write", "--vault", str(tmp_path), "--today", "2026-06-06"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out == {"status": "created", "slug": "abc123def456", "path": "Repos/abc123def456.md"}
-    assert (tmp_path / "Repos" / "abc123def456.md").exists()
+    assert out == {"status": "created", "slug": SLUG, "path": f"Repos/{SLUG}.md"}
+    assert (tmp_path / "Repos" / f"{SLUG}.md").exists()
 
 
 def test_write_reports_dropped_keys_on_stdout(
@@ -74,11 +80,15 @@ def test_write_reports_dropped_keys_on_stdout(
 def test_write_collision_exits_nonzero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # A 48-bit clash cannot be produced by hashing, so it is staged: this repo's
+    # note is moved onto the slug the other one names.
+    clone = "https://github.com/evil/clone"
     _stdin(monkeypatch, json.dumps(RECORD))
     write_main(["--vault", str(tmp_path), "--today", "2026-06-06"])
     capsys.readouterr()
+    (tmp_path / "Repos" / f"{SLUG}.md").rename(tmp_path / "Repos" / f"{note_slug(clone)}.md")
 
-    _stdin(monkeypatch, json.dumps({**RECORD, "url": "https://github.com/evil/clone"}))
+    _stdin(monkeypatch, json.dumps({**RECORD, "slug": note_slug(clone), "url": clone}))
     assert write_main(["--vault", str(tmp_path), "--today", "2026-06-06"]) == 1
     assert json.loads(capsys.readouterr().out)["status"] == "collision"
 
@@ -112,7 +122,7 @@ def test_write_reports_an_unreadable_existing_note(
 ) -> None:
     # The slug is taken by a file with no frontmatter at all. That is a note to
     # repair, so it exits 1 with a diagnostic rather than a traceback.
-    path = tmp_path / "Repos" / "abc123def456.md"
+    path = tmp_path / "Repos" / f"{SLUG}.md"
     path.parent.mkdir(parents=True)
     path.write_text("no frontmatter here\n")
 
@@ -142,7 +152,7 @@ def test_write_stamps_today_in_canonical_form(
     # note as given — so what a date parser accepts is not what a note may hold.
     _stdin(monkeypatch, json.dumps(RECORD))
     assert write_main(["--vault", str(tmp_path), "--today", "20260606"]) == 0
-    fm = parse_frontmatter((tmp_path / "Repos" / "abc123def456.md").read_text())
+    fm = parse_frontmatter((tmp_path / "Repos" / f"{SLUG}.md").read_text())
     assert fm["added_date"] == "2026-06-06"
 
 
@@ -161,7 +171,7 @@ def test_write_refuses_a_locked_vault(
     assert out["status"] == "locked"
     assert out["holder"]["pid"] == os.getpid()
     assert "vault is locked" in captured.err
-    assert not (tmp_path / "Repos" / "abc123def456.md").exists()
+    assert not (tmp_path / "Repos" / f"{SLUG}.md").exists()
 
 
 def test_refresh_dry_run_reads_a_locked_vault(

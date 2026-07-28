@@ -8,8 +8,19 @@ import pytest
 import yaml
 
 from kboat.frontmatter import body_after_frontmatter, parse_frontmatter
+from kboat.naming import note_slug
 from kboat.schema import FEED, KINDLE, REPO, SOURCE
 from kboat.write import BadInputError, upsert
+
+# The writer verifies a record's slug against its `url`, so a fixture names its
+# note the way a real writer does. One URL per note type is enough — each test
+# gets its own vault, so nothing here has to hold two notes of one type apart.
+SOURCE_URL = "https://x"
+FEED_URL = "https://example.com/post"
+REPO_URL = "https://github.com/o/r"
+S = note_slug(SOURCE_URL)
+F = note_slug(FEED_URL)
+R = note_slug(REPO_URL)
 
 
 @pytest.fixture
@@ -25,12 +36,12 @@ def _fm(vault: Path, rel: str) -> dict[str, object]:
 
 def test_source_create_stamps_and_fills(vault: Path) -> None:
     rec = {
-        "slug": "s1",
-        "fields": {"type": "source", "title": "T", "url": "https://x", "source_type": "web_page"},
+        "slug": S,
+        "fields": {"type": "source", "title": "T", "url": SOURCE_URL, "source_type": "web_page"},
     }
     result = upsert(SOURCE, vault, rec, today="2026-06-13")
-    assert result == {"status": "created", "slug": "s1", "path": "Sources/s1.md"}
-    fm = _fm(vault, "Sources/s1.md")
+    assert result == {"status": "created", "slug": S, "path": f"Sources/{S}.md"}
+    fm = _fm(vault, f"Sources/{S}.md")
     assert fm["added_date"] == "2026-06-13"  # created-stamp
     # present-required fields filled on create
     for b in ("reading", "distill", "keep", "dismiss", "blocked", "picked"):
@@ -65,10 +76,10 @@ def test_source_update_preserves_human_fields(vault: Path) -> None:
         SOURCE,
         vault,
         {
-            "slug": "s1",
+            "slug": S,
             "fields": {
                 "type": "source",
-                "url": "https://x",
+                "url": SOURCE_URL,
                 "source_type": "web_page",
                 "title": "old",
             },
@@ -76,7 +87,7 @@ def test_source_update_preserves_human_fields(vault: Path) -> None:
         today="2026-06-10",
     )
     # Human marks it read and to-keep on disk.
-    path = vault / "Sources" / "s1.md"
+    path = vault / "Sources" / f"{S}.md"
     path.write_text(
         path.read_text()
         .replace("reading: false", "reading: true")
@@ -88,23 +99,27 @@ def test_source_update_preserves_human_fields(vault: Path) -> None:
         SOURCE,
         vault,
         {
-            "slug": "s1",
-            "fields": {"type": "source", "url": "https://x", "title": "new", "summary": "s"},
+            "slug": S,
+            "fields": {"type": "source", "url": SOURCE_URL, "title": "new", "summary": "s"},
         },
         today="2026-06-20",
     )
-    fm = _fm(vault, "Sources/s1.md")
+    fm = _fm(vault, f"Sources/{S}.md")
     assert fm["reading"] is True and fm["keep"] is True  # preserved
     assert fm["title"] == "new" and fm["summary"] == "s"  # updated
     assert fm["added_date"] == "2026-06-10"  # created-stamp not bumped
 
 
 def test_collision_never_overwrites(vault: Path) -> None:
+    # Two URLs hashing to one slug is what this refuses, and no pair of URLs can
+    # be found that does — so the clash is staged: the note for A is moved to the
+    # slug B names, which is exactly the state a real 48-bit clash would leave.
+    other = "https://DIFFERENT"
     upsert(
         SOURCE,
         vault,
         {
-            "slug": "s1",
+            "slug": note_slug("https://a"),
             "fields": {
                 "type": "source",
                 "url": "https://a",
@@ -114,15 +129,152 @@ def test_collision_never_overwrites(vault: Path) -> None:
         },
         today="2026-06-13",
     )
+    clashing = note_slug(other)
+    (vault / "Sources" / f"{note_slug('https://a')}.md").rename(
+        vault / "Sources" / f"{clashing}.md"
+    )
+
     result = upsert(
         SOURCE,
         vault,
-        {"slug": "s1", "fields": {"type": "source", "url": "https://DIFFERENT", "title": "B"}},
+        {"slug": clashing, "fields": {"type": "source", "url": other, "title": "B"}},
         today="2026-06-13",
     )
     assert result["status"] == "collision"
     assert result["reason"] == "identity_differs"  # the other reason is unreadable_identity
-    assert _fm(vault, "Sources/s1.md")["title"] == "A"  # untouched
+    assert _fm(vault, f"Sources/{clashing}.md")["title"] == "A"  # untouched
+
+
+@pytest.mark.parametrize(
+    ("again", "why"),
+    [
+        ("https://x/", "a trailing slash"),
+        ("https://x?utm_source=rss", "a feed link's tracking parameter"),
+        ("https://x#intro", "a fragment"),
+    ],
+)
+def test_the_same_page_reached_by_another_link_updates_rather_than_collides(
+    vault: Path, again: str, why: str
+) -> None:
+    # The slug is the canonical URL's hash, so a second link to one page lands on
+    # the note that page already has. Comparing the stored strings verbatim would
+    # read that as a 48-bit clash and refuse — leaving a re-captured article stuck
+    # in the queue, re-reported every run as a hash collision that never happened.
+    upsert(
+        SOURCE,
+        vault,
+        {
+            "slug": S,
+            "fields": {"type": "source", "url": SOURCE_URL, "title": "A", "notebooklm_id": "nb1"},
+        },
+        today="2026-06-13",
+    )
+
+    result = upsert(
+        SOURCE,
+        vault,
+        {"slug": S, "fields": {"type": "source", "url": again, "title": "B"}},
+        today="2026-06-20",
+    )
+
+    assert result["status"] == "updated", why
+    fm = _fm(vault, f"Sources/{S}.md")
+    assert fm["title"] == "B", why
+    # The identity the note was created with is what it keeps: it is the
+    # provenance, and the string a notebook's source is resolved by matching.
+    assert fm["url"] == SOURCE_URL, why
+
+
+def test_a_slug_the_url_does_not_name_is_refused(vault: Path) -> None:
+    # The name and the identity are one fact, so the writer recomputes it rather
+    # than trusting the record: a note filed anywhere else is a second identity
+    # for the same page, and nothing later can tell that from a distinct page.
+    result = upsert(
+        SOURCE,
+        vault,
+        {
+            "slug": "hand-picked",
+            "fields": {"type": "source", "title": "T", "url": SOURCE_URL},
+        },
+        today="2026-07-25",
+    )
+
+    assert result == {
+        "status": "slug_mismatch",
+        "identity": "url",
+        "url": SOURCE_URL,
+        "expected": S,
+        "got": "hand-picked",
+    }
+    assert list(vault.rglob("*.md")) == []
+
+
+def test_a_stale_slug_is_refused_before_the_note_at_it_is_read(vault: Path) -> None:
+    # The wrong slug names the wrong file, so checking it after reading would run
+    # the collision check against a note the record was never about.
+    (vault / "Sources" / "hand-picked.md").write_text(
+        "---\ntype: source\nurl: https://somewhere/else\n---\nprose\n", encoding="utf-8"
+    )
+
+    result = upsert(
+        SOURCE,
+        vault,
+        {"slug": "hand-picked", "fields": {"type": "source", "url": SOURCE_URL}},
+        today="2026-07-25",
+    )
+
+    assert result["status"] == "slug_mismatch"  # not "collision"
+    assert "prose" in (vault / "Sources" / "hand-picked.md").read_text()
+
+
+def test_a_record_that_names_no_url_asks_nothing_about_identity(vault: Path) -> None:
+    # A later write filling in `summary` carries no `url`, and an uploaded PDF
+    # has none at all — neither makes a claim the writer could check.
+    upsert(SOURCE, vault, {"slug": "handmade", "fields": {"type": "source"}}, today="2026-07-25")
+
+    result = upsert(
+        SOURCE, vault, {"slug": "handmade", "fields": {"summary": "s"}}, today="2026-07-26"
+    )
+
+    assert result["status"] == "updated"
+    assert _fm(vault, "Sources/handmade.md")["summary"] == "s"
+
+
+def test_an_identity_that_will_not_parse_still_refuses_the_write(vault: Path) -> None:
+    # The comparison falls back to an exact match when the note's own url cannot
+    # be canonicalized, so a hand-broken identity refuses rather than raising —
+    # the check exists to refuse, so it fails closed.
+    (vault / "Sources" / f"{S}.md").write_text(
+        "---\ntype: source\nurl: https://x:99999/a\n---\n", encoding="utf-8"
+    )
+
+    result = upsert(
+        SOURCE, vault, {"slug": S, "fields": {"type": "source", "url": SOURCE_URL}}, today="x"
+    )
+
+    assert result["status"] == "collision"
+    assert result["reason"] == "identity_differs"
+
+
+def test_a_kindle_slug_is_never_recomputed(vault: Path) -> None:
+    # An ASIN is an id, derived from nothing, so there is no oracle to check it
+    # against — and `url` is not even a field of the schema.
+    result = upsert(
+        KINDLE,
+        vault,
+        {
+            "slug": "B00TEST",
+            "fields": {
+                "type": "kindle",
+                "title": "Book",
+                "reading_link": "https://r",
+                "store_link": "https://s",
+            },
+        },
+        today="2026-07-25",
+    )
+
+    assert result["status"] == "created"
 
 
 def test_kindle_body_is_preserved(vault: Path) -> None:
@@ -157,14 +309,14 @@ def test_kindle_body_is_preserved(vault: Path) -> None:
 def test_repo_stamps_refreshed_every_write_added_once(vault: Path) -> None:
     base = {
         "type": "repo",
-        "url": "https://github.com/o/r",
+        "url": REPO_URL,
         "title": "o/r",
         "role": "lib",
         "status": "recent",
     }
-    upsert(REPO, vault, {"slug": "r1", "fields": base}, today="2026-06-10")
-    upsert(REPO, vault, {"slug": "r1", "fields": {**base, "status": "active"}}, today="2026-06-20")
-    fm = _fm(vault, "Repos/r1.md")
+    upsert(REPO, vault, {"slug": R, "fields": base}, today="2026-06-10")
+    upsert(REPO, vault, {"slug": R, "fields": {**base, "status": "active"}}, today="2026-06-20")
+    fm = _fm(vault, f"Repos/{R}.md")
     assert fm["added_date"] == "2026-06-10"  # created-stamp preserved
     assert fm["refreshed_date"] == "2026-06-20"  # refreshed every write
     assert fm["status"] == "active"
@@ -173,38 +325,36 @@ def test_repo_stamps_refreshed_every_write_added_once(vault: Path) -> None:
 def test_repo_notes_body_preserved_on_update(vault: Path) -> None:
     base = {
         "type": "repo",
-        "url": "https://github.com/o/r",
+        "url": REPO_URL,
         "title": "o/r",
         "role": "lib",
         "status": "recent",
     }
-    upsert(REPO, vault, {"slug": "r1", "fields": base, "body": "my hand notes"}, today="2026-06-10")
-    upsert(REPO, vault, {"slug": "r1", "fields": {**base, "status": "slow"}}, today="2026-06-20")
-    assert "my hand notes" in (vault / "Repos" / "r1.md").read_text()
+    upsert(REPO, vault, {"slug": R, "fields": base, "body": "my hand notes"}, today="2026-06-10")
+    upsert(REPO, vault, {"slug": R, "fields": {**base, "status": "slow"}}, today="2026-06-20")
+    assert "my hand notes" in (vault / "Repos" / f"{R}.md").read_text()
 
 
 def test_inline_list_survives_an_update_that_omits_it(vault: Path) -> None:
     base = {
         "type": "repo",
-        "url": "https://github.com/o/r",
+        "url": REPO_URL,
         "title": "o/r",
         "role": "lib",
         "status": "recent",
     }
-    upsert(
-        REPO, vault, {"slug": "r1", "fields": {**base, "topics": ["a", "b"]}}, today="2026-06-10"
-    )
+    upsert(REPO, vault, {"slug": R, "fields": {**base, "topics": ["a", "b"]}}, today="2026-06-10")
     # An update that does not re-provide `topics` must preserve the inline list;
     # it is carried back verbatim rather than re-rendered from the raw `[a, b]`
     # string the reader hands back for one.
-    upsert(REPO, vault, {"slug": "r1", "fields": {**base, "status": "slow"}}, today="2026-06-20")
-    assert "topics: [a, b]" in (vault / "Repos" / "r1.md").read_text()
+    upsert(REPO, vault, {"slug": R, "fields": {**base, "status": "slow"}}, today="2026-06-20")
+    assert "topics: [a, b]" in (vault / "Repos" / f"{R}.md").read_text()
 
 
 _FEED_FIELDS = {
     "type": "feed",
     "title": "A post",
-    "url": "https://example.com/post",
+    "url": FEED_URL,
     "feed_kind": "article",
     "site_id": "ex",
     "summary": "old",
@@ -216,8 +366,8 @@ def test_feed_update_keeps_a_hand_added_body_and_unmodellable_frontmatter(vault:
     goes below the fence, and a `Feeds/` note is re-written unattended on every
     forum re-remind. Neither the reader's prose nor a plugin's own properties may
     be collateral of that write."""
-    upsert(FEED, vault, {"slug": "f1", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f1.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     # The human adds properties Obsidian understands but the reader does not,
     # plus a note to self under the fence.
     path.write_text(
@@ -233,7 +383,7 @@ def test_feed_update_keeps_a_hand_added_body_and_unmodellable_frontmatter(vault:
     upsert(
         FEED,
         vault,
-        {"slug": "f1", "fields": {**_FEED_FIELDS, "summary": "new"}},
+        {"slug": F, "fields": {**_FEED_FIELDS, "summary": "new"}},
         today="2026-07-20",
     )
 
@@ -258,20 +408,20 @@ def test_a_block_list_field_written_inline_by_hand_is_not_emptied(vault: Path) -
         SOURCE,
         vault,
         {
-            "slug": "s3",
+            "slug": S,
             "fields": {
                 "type": "source",
                 "title": "T",
-                "url": "https://x",
+                "url": SOURCE_URL,
                 "source_type": "web_page",
             },
         },
         today="2026-06-10",
     )
-    path = vault / "Sources" / "s3.md"
+    path = vault / "Sources" / f"{S}.md"
     path.write_text(path.read_text().replace("topics: []", "topics: [mapping, walking]"))
 
-    upsert(SOURCE, vault, {"slug": "s3", "fields": {"type": "source", "summary": "s"}}, today="x")
+    upsert(SOURCE, vault, {"slug": S, "fields": {"type": "source", "summary": "s"}}, today="x")
 
     assert "topics: [mapping, walking]" in path.read_text()
 
@@ -290,8 +440,8 @@ def test_repeated_updates_settle_and_stop_changing_the_note(vault: Path) -> None
         "plugin:",
         "  colour: red",
     )
-    upsert(FEED, vault, {"slug": "f4", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f4.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace(
             "---\ntype: feed", "---\ntype: feed\n" + "\n".join(hand_written), 1
@@ -300,9 +450,9 @@ def test_repeated_updates_settle_and_stop_changing_the_note(vault: Path) -> None
         encoding="utf-8",
     )
 
-    upsert(FEED, vault, {"slug": "f4", "fields": _FEED_FIELDS}, today="2026-07-20")
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-20")
     settled = path.read_text()
-    upsert(FEED, vault, {"slug": "f4", "fields": _FEED_FIELDS}, today="2026-07-21")
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-21")
 
     assert path.read_text() == settled
     # Settling is not an excuse for losing anything on the way there.
@@ -314,8 +464,8 @@ def test_repeated_updates_settle_and_stop_changing_the_note(vault: Path) -> None
 def test_a_comment_survives_a_write_to_the_key_it_trails(vault: Path) -> None:
     # The reader's own annotation is exactly the kind of thing an unattended
     # rewrite must not quietly take with it.
-    upsert(FEED, vault, {"slug": "f9", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f9.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace("summary: old", "summary: old\n# why I kept this"),
         encoding="utf-8",
@@ -324,7 +474,7 @@ def test_a_comment_survives_a_write_to_the_key_it_trails(vault: Path) -> None:
     upsert(
         FEED,
         vault,
-        {"slug": "f9", "fields": {**_FEED_FIELDS, "summary": "new"}},
+        {"slug": F, "fields": {**_FEED_FIELDS, "summary": "new"}},
         today="2026-07-20",
     )
 
@@ -337,8 +487,8 @@ def test_a_shadow_of_a_written_key_cannot_outlive_the_value_written(vault: Path)
     # `summary : Shadow` is outside the reader's key grammar, so it decodes to no
     # key at all. Carried, it would be re-emitted *after* the rendered value and
     # win on YAML's last-key-wins — the write would silently not take.
-    upsert(FEED, vault, {"slug": "fa", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "fa.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace("summary: old", "summary : Shadow\nsummary: old"),
         encoding="utf-8",
@@ -347,7 +497,7 @@ def test_a_shadow_of_a_written_key_cannot_outlive_the_value_written(vault: Path)
     upsert(
         FEED,
         vault,
-        {"slug": "fa", "fields": {**_FEED_FIELDS, "summary": "new"}},
+        {"slug": F, "fields": {**_FEED_FIELDS, "summary": "new"}},
         today="2026-07-20",
     )
 
@@ -371,20 +521,18 @@ def test_an_identity_the_reader_cannot_decode_refuses_the_write(
     """The collision check exists to refuse a write, so it has to fail closed. An
     unreadable `url` is as much reason to stop as one that plainly differs —
     writing anyway would both bypass de-dup-by-identity and leave the note
-    carrying the key twice."""
-    upsert(FEED, vault, {"slug": "f6", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f6.md"
+    carrying the key twice.
+
+    The record names the very URL the note was written from, so nothing but the
+    unreadable shape is left to refuse it."""
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace("url: https://example.com/post", held), encoding="utf-8"
     )
     before = path.read_text()
 
-    result = upsert(
-        FEED,
-        vault,
-        {"slug": "f6", "fields": {**_FEED_FIELDS, "url": "https://example.com/OTHER"}},
-        today="2026-07-20",
-    )
+    result = upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-20")
 
     assert result["status"] == "collision", why
     assert result["reason"] == "unreadable_identity", why
@@ -392,11 +540,11 @@ def test_an_identity_the_reader_cannot_decode_refuses_the_write(
 
 
 def test_an_empty_identity_is_a_blank_to_fill_not_a_claim_to_contradict(vault: Path) -> None:
-    upsert(FEED, vault, {"slug": "f8", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f8.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(path.read_text().replace("url: https://example.com/post", "url:"))
 
-    result = upsert(FEED, vault, {"slug": "f8", "fields": _FEED_FIELDS}, today="2026-07-20")
+    result = upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-20")
 
     assert result["status"] == "updated"
     assert parse_frontmatter(path.read_text())["url"] == "https://example.com/post"
@@ -406,8 +554,8 @@ def test_an_unreadable_identity_with_nothing_to_compare_is_not_a_refusal(vault: 
     # Refusing needs something to refuse. A record that names no identity has no
     # claim to check, and the entry is carried back as it stands — so a note is
     # not made permanently unwritable by a hand-edit that touched nothing else.
-    upsert(FEED, vault, {"slug": "f7", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f7.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace(
             "url: https://example.com/post", "url: >-\n  https://example.com/post"
@@ -418,7 +566,7 @@ def test_an_unreadable_identity_with_nothing_to_compare_is_not_a_refusal(vault: 
     result = upsert(
         FEED,
         vault,
-        {"slug": "f7", "fields": {"type": "feed", "summary": "new"}},
+        {"slug": F, "fields": {"type": "feed", "summary": "new"}},
         today="2026-07-20",
     )
 
@@ -432,8 +580,8 @@ def test_a_repeated_key_keeps_the_value_the_reader_sees(vault: Path) -> None:
     # A duplicated key is a hand-edit slip, but both Obsidian and this reader take
     # the last one — so a write that kept the first would silently change the
     # note's meaning while claiming to have changed nothing.
-    upsert(FEED, vault, {"slug": "f5", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f5.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace(
             "---\ntype: feed", "---\ntype: feed\nmy_rating: 1\nmy_rating: 9", 1
@@ -442,7 +590,7 @@ def test_a_repeated_key_keeps_the_value_the_reader_sees(vault: Path) -> None:
     )
     before = parse_frontmatter(path.read_text())["my_rating"]
 
-    upsert(FEED, vault, {"slug": "f5", "fields": _FEED_FIELDS}, today="2026-07-20")
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-20")
 
     text = path.read_text()
     assert parse_frontmatter(text)["my_rating"] == before == "9"
@@ -495,7 +643,7 @@ def test_notes_mode_keeps_prose_above_its_own_section(vault: Path) -> None:
     # collateral of it.
     base = {
         "type": "repo",
-        "url": "https://github.com/o/r",
+        "url": REPO_URL,
         "title": "o/r",
         "role": "lib",
         "status": "recent",
@@ -507,14 +655,14 @@ def test_notes_mode_keeps_prose_above_its_own_section(vault: Path) -> None:
         "### Notes on chapter 3\n\ndetail\n\nSee the ## Notes section below.\n\n"
         "```markdown\n## Notes\n\n- one point per line\n```"
     )
-    upsert(REPO, vault, {"slug": "r2", "fields": base}, today="2026-06-10")
-    path = vault / "Repos" / "r2.md"
+    upsert(REPO, vault, {"slug": R, "fields": base}, today="2026-06-10")
+    path = vault / "Repos" / f"{R}.md"
     path.write_text(
         path.read_text().replace("## Notes", f"{preamble}\n\n## Notes\n\nmy notes"),
         encoding="utf-8",
     )
 
-    upsert(REPO, vault, {"slug": "r2", "fields": base, "body": "revised notes"}, today="2026-06-20")
+    upsert(REPO, vault, {"slug": R, "fields": base, "body": "revised notes"}, today="2026-06-20")
 
     body = body_after_frontmatter(path.read_text())
     assert body.strip() == f"{preamble}\n\n## Notes\n\nrevised notes"
@@ -538,20 +686,20 @@ def test_notes_mode_settles_whatever_the_preamble_quotes(
     a second heading, and then a third — one per unattended run."""
     base = {
         "type": "repo",
-        "url": "https://github.com/o/r",
+        "url": REPO_URL,
         "title": "o/r",
         "role": "lib",
         "status": "recent",
     }
-    upsert(REPO, vault, {"slug": "r3", "fields": base}, today="2026-06-10")
-    path = vault / "Repos" / "r3.md"
+    upsert(REPO, vault, {"slug": R, "fields": base}, today="2026-06-10")
+    path = vault / "Repos" / f"{R}.md"
     path.write_text(
         path.read_text().replace("## Notes", f"{preamble}\n\n## Notes\n\nmy notes"),
         encoding="utf-8",
     )
 
     for day in ("2026-06-11", "2026-06-12", "2026-06-13"):
-        upsert(REPO, vault, {"slug": "r3", "fields": base}, today=day)
+        upsert(REPO, vault, {"slug": R, "fields": base}, today=day)
 
     # Exact equality after three passes covers both halves: a wrong split would
     # move the prose, and a heading it failed to find would be appended again.
@@ -566,18 +714,18 @@ def test_a_none_schema_still_refuses_to_author_a_body(vault: Path) -> None:
     upsert(
         FEED,
         vault,
-        {"slug": "f2", "fields": _FEED_FIELDS, "body": "text K-Boat should not write"},
+        {"slug": F, "fields": _FEED_FIELDS, "body": "text K-Boat should not write"},
         today="2026-07-19",
     )
-    assert body_after_frontmatter((vault / "Feeds" / "f2.md").read_text()).strip() == ""
+    assert body_after_frontmatter((vault / "Feeds" / f"{F}.md").read_text()).strip() == ""
 
 
 def test_a_field_the_record_provides_wins_over_its_unmodellable_block(vault: Path) -> None:
     # `summary` held as a block scalar cannot survive alongside the value being
     # written, or the note would carry the key twice and Obsidian would read one
     # of them arbitrarily.
-    upsert(FEED, vault, {"slug": "f3", "fields": _FEED_FIELDS}, today="2026-07-19")
-    path = vault / "Feeds" / "f3.md"
+    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
+    path = vault / "Feeds" / f"{F}.md"
     path.write_text(
         path.read_text().replace("summary: old", "summary: |\n  a hand-written\n  block scalar"),
         encoding="utf-8",
@@ -586,7 +734,7 @@ def test_a_field_the_record_provides_wins_over_its_unmodellable_block(vault: Pat
     upsert(
         FEED,
         vault,
-        {"slug": "f3", "fields": {**_FEED_FIELDS, "summary": "new"}},
+        {"slug": F, "fields": {**_FEED_FIELDS, "summary": "new"}},
         today="2026-07-20",
     )
 
@@ -600,23 +748,23 @@ def test_source_body_survives_a_metadata_backfill(vault: Path) -> None:
         SOURCE,
         vault,
         {
-            "slug": "s2",
+            "slug": S,
             "fields": {
                 "type": "source",
                 "title": "T",
-                "url": "https://x",
+                "url": SOURCE_URL,
                 "source_type": "web_page",
             },
         },
         today="2026-06-10",
     )
-    path = vault / "Sources" / "s2.md"
+    path = vault / "Sources" / f"{S}.md"
     path.write_text(path.read_text() + "\n## My reading notes\n\n- a thought\n", encoding="utf-8")
 
     upsert(
         SOURCE,
         vault,
-        {"slug": "s2", "fields": {"type": "source", "summary": "s", "topics": ["mapping"]}},
+        {"slug": S, "fields": {"type": "source", "summary": "s", "topics": ["mapping"]}},
         today="2026-06-20",
     )
 
@@ -673,17 +821,15 @@ def test_a_block_list_the_field_cannot_hold_still_settles(vault: Path) -> None:
     fields = {
         "type": "source",
         "title": "T",
-        "url": "https://x",
+        "url": SOURCE_URL,
         "source_type": "web_page",
         "topics": ["a", None],
     }
-    upsert(SOURCE, vault, {"slug": "s6", "fields": fields}, today="2026-07-25")
-    path = vault / "Sources" / "s6.md"
+    upsert(SOURCE, vault, {"slug": S, "fields": fields}, today="2026-07-25")
+    path = vault / "Sources" / f"{S}.md"
     first = path.read_text()
 
-    upsert(
-        SOURCE, vault, {"slug": "s6", "fields": dict(parse_frontmatter(first))}, today="2026-07-25"
-    )
+    upsert(SOURCE, vault, {"slug": S, "fields": dict(parse_frontmatter(first))}, today="2026-07-25")
 
     assert path.read_text() == first
     assert parse_frontmatter(first)["topics"] == ["a", ""]
@@ -696,20 +842,18 @@ def test_a_value_the_field_cannot_hold_still_settles(vault: Path) -> None:
     # note holding one drifts every day, with no edit behind it.
     hostile = {
         "type": "repo",
-        "url": "https://github.com/o/r",
+        "url": REPO_URL,
         "title": "o/r",
         "stars": "a: b",
         "topics": "not a list",
         "domain": ["ok", None],
     }
-    upsert(REPO, vault, {"slug": "r9", "fields": hostile}, today="2026-07-25")
-    path = vault / "Repos" / "r9.md"
+    upsert(REPO, vault, {"slug": R, "fields": hostile}, today="2026-07-25")
+    path = vault / "Repos" / f"{R}.md"
     first = path.read_text()
 
     # Re-written from what the note now holds, as a refresh reads it back.
-    upsert(
-        REPO, vault, {"slug": "r9", "fields": dict(parse_frontmatter(first))}, today="2026-07-25"
-    )
+    upsert(REPO, vault, {"slug": R, "fields": dict(parse_frontmatter(first))}, today="2026-07-25")
 
     assert path.read_text() == first
     assert yaml.safe_load(first.split("---\n")[1])["stars"] == "a: b"
@@ -744,12 +888,12 @@ def test_a_hand_added_property_the_writer_would_refuse_still_survives_a_write(va
     # The refusal is about what a record may *name*, not about what the note may
     # hold: a property the human wrote under a name of their own is carried back
     # untouched, which is the whole point of re-rendering only what changes.
-    fields = {"type": "source", "title": "T", "url": "https://x", "source_type": "web_page"}
-    upsert(SOURCE, vault, {"slug": "s8", "fields": fields}, today="2026-07-25")
-    path = vault / "Sources" / "s8.md"
+    fields = {"type": "source", "title": "T", "url": SOURCE_URL, "source_type": "web_page"}
+    upsert(SOURCE, vault, {"slug": S, "fields": fields}, today="2026-07-25")
+    path = vault / "Sources" / f"{S}.md"
     path.write_text(path.read_text().replace("---\ntype:", "---\nmy-rating: 4\ntype:", 1))
 
-    upsert(SOURCE, vault, {"slug": "s8", "fields": {"summary": "s"}}, today="2026-07-26")
+    upsert(SOURCE, vault, {"slug": S, "fields": {"summary": "s"}}, today="2026-07-26")
 
     assert "\nmy-rating: 4\n" in path.read_text()
 
@@ -772,6 +916,7 @@ def test_a_line_break_inside_a_value_cannot_become_a_property(
     # captured page — untrusted both. A break character in one used to end the
     # line here (though not for YAML or Obsidian), so its tail arrived as a
     # property, overwriting the note's own `url` identity on an unattended run.
+    real = "https://real/a"
     hostile = f"a summary{break_char}url: https://evil/x{break_char}dismiss: true"
     # No other flow special in the item, so quoting it is the break's own doing.
     item = f"topic{break_char}tail"
@@ -779,11 +924,11 @@ def test_a_line_break_inside_a_value_cannot_become_a_property(
         SOURCE,
         vault,
         {
-            "slug": "s7",
+            "slug": note_slug(real),
             "fields": {
                 "type": "source",
                 "title": "T",
-                "url": "https://real/a",
+                "url": real,
                 "source_type": "web_page",
                 "summary": hostile,
                 "topics": ["a", item],  # block style
@@ -793,14 +938,14 @@ def test_a_line_break_inside_a_value_cannot_become_a_property(
         today="2026-07-26",
     )
 
-    text = (vault / "Sources" / "s7.md").read_text()
+    text = (vault / "Sources" / f"{note_slug(real)}.md").read_text()
     fm = parse_frontmatter(text)
     assert fm["summary"] == hostile, why  # kept whole, in its own field
     assert fm["topics"] == ["a", item], why  # and so is a list item, either style
-    assert fm["url"] == "https://real/a", why  # the identity is untouched
+    assert fm["url"] == real, why  # the identity is untouched
     assert fm["dismiss"] is False, why  # and no disposition was invented
     # The note says the same to a reader that is not this one.
     loaded = yaml.safe_load(text.split("---\n")[1])
-    assert loaded["url"] == "https://real/a", why
+    assert loaded["url"] == real, why
     assert loaded["summary"] == hostile and loaded["topics"] == ["a", item], why
     assert loaded["tags"] == ["a", item], why

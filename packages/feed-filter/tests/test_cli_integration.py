@@ -29,11 +29,11 @@ import pytest
 from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
 from feed_filter import browser, cli, forum_store
-from feed_filter.canonical import canonical_url
 from feed_filter.config import db_path, sites_path, vault_path
 from feed_filter.forum_store import is_post_seen, op_interest_kept
 from feed_filter.seen import is_seen, open_db
 from feed_filter.sites import load_sites
+from kboat.canonical import canonical_url
 from kboat.naming import url_slug
 
 
