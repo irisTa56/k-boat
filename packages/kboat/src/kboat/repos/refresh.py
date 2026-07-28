@@ -98,7 +98,17 @@ def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dic
 
 
 def _fetch(note: dict) -> dict:
-    meta, err = gh_repo_view(note["owner"], note["repo"])
+    """One note's `gh` fetch, as this note's result rather than as an exception.
+
+    Runs in a worker thread, and `Executor.map` re-raises in the parent — so a
+    `gh` that times out or is missing from `PATH` would take the whole pass down
+    with it, report included. It is the same transport class `gather` reports as
+    `error-meta`, and it lands here in the same shape a non-zero `gh` does.
+    """
+    try:
+        meta, err = gh_repo_view(note["owner"], note["repo"])
+    except Exception as exc:  # noqa: BLE001
+        return {**note, "meta": None, "error": f"{type(exc).__name__}: {exc}"}
     return {**note, "meta": meta, "error": err}
 
 
@@ -180,7 +190,18 @@ def _apply(plan: _NotePlan, *, dry_run: bool) -> str:
     content = set_fields(plan.path.read_text(encoding="utf-8"), plan.updates)
     if plan.renaming:
         atomic_write_text(plan.target, content)
-        plan.path.unlink()
+        try:
+            plan.path.unlink()
+        except OSError as exc:
+            # The one failure that does not leave the note as it was: the new slug
+            # is written and the old file is still there, so the vault now holds
+            # both. The `failed` entry has to say so, or it reads as "nothing
+            # happened here" and the duplicate surfaces only when a later run
+            # collides on it and asks a human to merge two notes it cannot explain.
+            raise OSError(
+                f"rewritten as {plan.rel_target}, but the old file could not be "
+                f"removed, so both now exist: {exc}"
+            ) from exc
         return plan.rel_target
     atomic_write_text(plan.path, content)
     return plan.rel
@@ -218,12 +239,20 @@ def refresh(
         # is worth the rest of the catalogue. The note keeps its existing content
         # and is re-fetched by the next run.
         #
-        # Unlike `gather` this is not split by retryability, and deliberately: no
-        # caller decides whether to come back — every note is re-fetched daily
-        # regardless — so the class belongs in the `error` string a human reads,
-        # not in a second machine-readable outcome nothing would branch on.
+        # Unlike `gather` this does not become a second machine-readable outcome:
+        # no caller decides whether to come back, since every note is re-fetched
+        # daily regardless. The `error` string is what carries the class, so the
+        # two ways `_plan` can give out are worded apart — the run summary is where
+        # an unreadable payload is recognised as the failure no retry will clear.
         try:
             plan = _plan(r, repos_dir=repos_dir, vault=vault, today=today, claimed=claimed)
+        except OSError as exc:
+            # `_plan` touches the filesystem once, to see whether a rename's target
+            # is taken, and an iCloud vault can refuse that read. Calling it a
+            # payload defect would send the reader to `gh`'s release notes for a
+            # problem that is in the vault.
+            failed.append({"path": rel, "owner_repo": was, "error": f"vault unreadable: {exc}"})
+            continue
         except Exception as exc:  # noqa: BLE001
             failed.append(
                 {

@@ -269,6 +269,94 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
     ).exists()
 
 
+def test_refresh_isolates_a_gh_call_that_raises(tmp_path: Path, monkeypatch) -> None:
+    # The fetch runs in a worker thread, and a raise there would surface in the parent
+    # as the pass ending — no report at all, the healthy notes unprocessed. A `gh` that
+    # stalls past its timeout, or is missing from PATH, is one note's failure.
+    good = _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    stalled = _write_note(tmp_path, "https://github.com/acme/stalls", "acme/stalls")
+
+    def fake_gh(owner: str, name: str) -> tuple[dict, str | None]:
+        if name == "stalls":
+            raise TimeoutError("gh timed out")
+        return _meta(owner, name), None
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", fake_gh)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["total"] == 2
+    assert report["counts"]["failed"] == 1
+    assert _counts_match_the_lists(report)
+    assert report["failed"][0]["owner_repo"] == "acme/stalls"
+    assert "gh timed out" in report["failed"][0]["error"]
+    assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
+    assert parse_frontmatter(good.read_text())["stars"] == "42"
+    assert parse_frontmatter(stalled.read_text())["stars"] == "1"  # untouched
+
+
+def test_refresh_names_the_vault_when_the_rename_probe_cannot_be_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Planning a rename asks whether the target slug is taken, and an iCloud vault can
+    # refuse that read. Reported as the vault's failure, not as a `gh` payload defect —
+    # the wording is what sends the reader to the right place, and the payload wording
+    # is the one the run summary escalates on.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    taken = f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    real_exists = Path.exists
+
+    def refusing_exists(self: Path, **kwargs: object) -> bool:
+        if self.name == taken:
+            raise PermissionError("Operation not permitted")
+        return real_exists(self, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(Path, "exists", refusing_exists)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["failed"] == 1
+    assert report["failed"][0]["error"].startswith("vault unreadable:")
+    assert "payload" not in report["failed"][0]["error"]
+    assert old.exists()
+
+
+def test_refresh_reports_a_rename_that_left_both_files(tmp_path: Path, monkeypatch) -> None:
+    # The one failure that does not leave the note as it was: the new slug is written
+    # and the old file survives. The `failed` entry has to say so, or it reads as
+    # "nothing happened here" and a human never goes looking for the duplicate.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+
+    def undeletable(self: Path, **kwargs: object) -> None:
+        # `atomic_write_text` unlinks its temp file too, on the write paths that fail;
+        # this run's write succeeds, so the only unlink reached is the old note's.
+        raise PermissionError("Operation not permitted")
+
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+    monkeypatch.setattr(Path, "unlink", undeletable)
+
+    report = refresh(tmp_path, today=TODAY)
+
+    new_path = tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
+    assert old.exists() and new_path.exists()  # the state the report has to describe
+    assert report["counts"] == {
+        "total": 1,
+        "updated": 0,
+        "adopted": 0,
+        "rename_collisions": 0,
+        "failed": 1,
+        "anomalies": 0,
+    }
+    error = report["failed"][0]["error"]
+    assert new_path.relative_to(tmp_path).as_posix() in error
+    assert "both now exist" in error
+
+
 def test_refresh_does_not_report_a_rename_it_failed_to_write(tmp_path: Path, monkeypatch) -> None:
     # `adopted` is the set of renames healed, so a note whose rewrite failed belongs in
     # `failed` and nowhere else — otherwise the report claims a move that never happened.
