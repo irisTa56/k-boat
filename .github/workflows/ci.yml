@@ -97,7 +97,7 @@ jobs:
       # visible, reviewable diff instead of a silent `@v0` re-resolve. This
       # pins the action's own code, not the `rumdl` binary version it installs
       # (see the header comment). It auto-detects .rumdl.toml at the root.
-      - uses: rvben/rumdl@v0.2.43
+      - uses: rvben/rumdl@v0.2.45
 
   secret-scan:
     runs-on: ubuntu-latest
