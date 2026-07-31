@@ -6,8 +6,11 @@
 # - github-actions, at "/": keeps the action versions pinned across the CI
 #   workflows (.github/workflows/*.yml) current.
 #
-# The mise-managed tools (gitleaks, lychee, rumdl, uv) are out of Dependabot's
-# scope and stay on `mise upgrade`.
+# The mise-managed tools are out of Dependabot's scope.
+# gitleaks, lychee, rumdl and uv track `latest`, so `mise upgrade` covers them.
+# notebooklm-py does not: `mise upgrade` will not cross an exact pin.
+# Bump it by hand, and verify against the live service before merging.
+# No CI job exercises the browser-driven CLI, so a green pipeline is no signal.
 version: 2
 updates:
   - package-ecosystem: "uv"
