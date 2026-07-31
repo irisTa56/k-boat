@@ -11,7 +11,7 @@ dependencies = [
     "httpx>=0.28",
     # OS trust store TLS verification; see fetch.build_client for the why.
     "truststore>=0.10",
-    "feedparser>=6.0",
+    "feedparser>=6.0.13",
     "selectolax>=0.4.10",
     "tomlkit>=0.15",
     # The shared note core: feed-filter writes Feeds/ notes through kboat.write /
