@@ -7,7 +7,7 @@ uv = "latest"
 # Keeps the `kboat` package zero-dependency; auth lives in ~/.notebooklm, Chromium
 # in Playwright's cache, both outside this env. `notebooklm login` installs Chromium
 # on first run, so no explicit playwright step is needed.
-"pipx:notebooklm-py" = { version = "0.7.2", extras = "browser" }
+"pipx:notebooklm-py" = { version = "0.7.3", extras = "browser" }
 
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
