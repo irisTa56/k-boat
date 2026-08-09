@@ -44,9 +44,10 @@ class Stats:
     awaiting_filed_stamp: int
 
     def to_json(self) -> dict[str, object]:
-        # The fields are the report, in declaration order — so adding a count
-        # means editing the field list and the `kboat-notes` table, and not a
-        # third copy of the same names here.
+        # `asdict` in declaration order, so this method spells no field names of
+        # its own and the JSON keys stay the report. What a new count owes
+        # elsewhere is the root CLAUDE.md's "Keep this file current" duty, which
+        # reaches restatements no test does.
         return dataclasses.asdict(self)
 
 
