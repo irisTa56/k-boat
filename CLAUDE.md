@@ -122,6 +122,12 @@ Automation:
 The shared vault mechanics (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
 When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
+When a change alters a closed set a tool this project drives emits and its readers restate or branch on, update every place that restates that set or keys a response on it, in the same change — a place outside this repository drafted and confirmed back rather than applied.
+Altering it means adding, dropping, or renaming a value, changing the response owed to one, or writing or editing a list that enumerates it.
+The authority is every value the command can emit, wherever along its path the record is composed.
+Reconcile what each one tells its reader to do, and not only the value's name: a value a list omits is read as the neighbours it does name, and inherits their response.
+
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
 But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `osascript` notification trigger set.
-When a change alters any of those, reconcile that prompt in the same change and confirm it back.
+It also reads the library's reports by key name.
+When a change alters what it hardcodes, or the report keys it reads, reconcile that prompt in the same change and confirm it back.
