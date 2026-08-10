@@ -2,7 +2,11 @@
 name = "feed-filter"
 version = "0.1.0"
 description = "Filter new feed/scrape pages by prompt and file survivors into the Obsidian vault"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
+# 3.14 by the same rule as the dependency floors below — it is the version under
+# test. The workspace builds one environment from both members, so `kboat`'s
+# behavioural 3.14 floor decides the interpreter here too, and leaving 3.13 in the
+# spec would advertise a version nothing ever runs.
 # Floors = the versions under test (locked in uv.lock); a floor-less spec lets a
 # source/lock-less install resolve an untested-old release. No upper caps: uv.lock
 # pins exact versions, so an unreviewed major can land only via a deliberate
