@@ -2,11 +2,9 @@
 name = "kboat"
 version = "0.1.0"
 description = "Deterministic K-Boat tools over a shared frontmatter core: lifecycle, repos, the daily pick, validation, and the note writer."
-# 3.14 is a behavioural floor, not a style preference: from it `Path.exists()` is
-# `os.path.exists`, which swallows every `OSError`. `kboat.note.migrate` leans on
-# that to answer "is there a placeholder here" uniformly, so on 3.13 — where
-# `exists()` raises instead — an unreadable `PDFs/` or a name whose `.icloud`
-# sibling exceeds 255 bytes aborts the whole scan rather than reporting a row.
+# A behavioural floor: from 3.14 `Path.exists()` is `os.path.exists` and swallows
+# every `OSError`. `kboat.note.migrate` rests on that to report a probe it cannot
+# make as a row rather than aborting the scan.
 requires-python = ">=3.14"
 # Intentionally zero runtime dependencies: the mechanical core stays a pure,
 # independently-testable package. The browser-driven NotebookLM CLI lives outside
