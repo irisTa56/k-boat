@@ -5,6 +5,7 @@ case-changed repos. `gh` is monkeypatched."""
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -145,6 +146,42 @@ def test_refresh_adopts_rename_and_moves_file(tmp_path: Path, monkeypatch) -> No
     assert fm["role"] == "library"  # judgement carried over to the renamed note
 
 
+def test_an_adopted_rename_names_the_stub_it_strands(tmp_path: Path, monkeypatch) -> None:
+    # This pass runs unattended in the daily routine, so nobody approves the move.
+    # The stub it vacates becomes a lone placeholder, which fails `icloud_notes`
+    # and stops every later run — the least this owes is to name what it left.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    (tmp_path / "Repos" / f".{old.stem}.md.icloud").write_bytes(b"")
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["adopted"] == 1
+    assert report["adopted"][0]["stranded"] == f"Repos/.{old.stem}.md.icloud"
+
+
+def test_an_adopt_that_vacates_nothing_reports_no_stranded_stub(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A reserved owner gives no canonical slug, so the note adopts the new identity
+    # under the name it already has. Nothing is vacated, the stub is not lone, and
+    # the skill routes `stranded` to "the next doctor stops the routine" — an alarm
+    # about a stoppage that cannot happen.
+    old = _write_note(tmp_path, "https://github.com/oldowner/thing", "oldowner/thing")
+    (tmp_path / "Repos" / f".{old.stem}.md.icloud").write_bytes(b"")
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("security", "thing"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    entry = report["adopted"][0]
+    assert entry["from"] == entry["to"], "nothing moved"
+    assert "stranded" not in entry
+
+
 def test_refresh_adopts_case_only_rename(tmp_path: Path, monkeypatch) -> None:
     old = _write_note(
         tmp_path, "https://github.com/dylanblakemore/depscheck", "dylanblakemore/depscheck"
@@ -180,10 +217,182 @@ def test_refresh_rename_collision_keeps_both(tmp_path: Path, monkeypatch) -> Non
     taken = f"Repos/{canonical_slug('https://github.com/a2aproject/A2A')}.md"
     collision = report["rename_collisions"][0]
     assert collision["conflict"] == taken
+    assert collision["reason"] == "taken"  # a note on disk; a human merges the two
     assert collision["path"] == old.relative_to(tmp_path).as_posix()
     assert collision["path"] in report["updated"]
     # The collided note still got its metadata refreshed, but kept its old identity.
     assert parse_frontmatter(old.read_text())["url"] == "https://github.com/google/A2A"
+
+
+def test_refresh_rename_collision_when_the_target_is_an_icloud_placeholder(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The vault is iCloud-synced, so a note evicted from the target name is not
+    # gone: `exists()` says `False` for it exactly as it would for a free name.
+    # Renaming onto it would claim an identity another note still holds, and
+    # iCloud would settle the two later by suffixing or dropping one.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    taken_slug = canonical_slug("https://github.com/a2aproject/A2A")
+    assert taken_slug
+    (tmp_path / "Repos" / f".{taken_slug}.md.icloud").write_bytes(b"")
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["rename_collisions"] == 1
+    assert report["counts"]["adopted"] == 0
+    assert report["rename_collisions"][0]["conflict"] == f"Repos/{taken_slug}.md"
+    # Named, not inferred: the remedy is the download, not a merge.
+    assert report["rename_collisions"][0]["reason"] == "evicted"
+    assert not (tmp_path / "Repos" / f"{taken_slug}.md").exists()
+    # Refreshed in place under the identity it kept, like any other collision.
+    assert old.exists()
+    assert parse_frontmatter(old.read_text())["url"] == "https://github.com/google/A2A"
+
+
+def test_refresh_reports_an_evicted_note_as_an_anomaly(tmp_path: Path, monkeypatch) -> None:
+    # An evicted note matches no `*.md` glob, so without this the pass would
+    # report a full refresh of the half of the catalogue that happened to be local.
+    good = _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    (tmp_path / "Repos" / ".0123456789ab.md.icloud").write_bytes(b"")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["anomalies"] == 1
+    assert report["anomalies"][0]["path"] == "Repos/.0123456789ab.md.icloud"
+    assert report["counts"]["total"] == 1  # the evicted note never became one
+    assert report["updated"] == [good.relative_to(tmp_path).as_posix()]
+
+
+def test_a_broken_symlink_at_the_target_collides_and_files_an_anomaly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The pair the skill's triage routes on: a `conflict` path with no file and no
+    # placeholder is a name held by something that is not a note, and the anomaly
+    # is what separates it from the two self-clearing readings. Both halves are
+    # asserted here, because the skill tells the agent to look for the second.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    taken_slug = canonical_slug("https://github.com/a2aproject/A2A")
+    assert taken_slug
+    (tmp_path / "Repos" / f"{taken_slug}.md").symlink_to(tmp_path / "Repos" / "nowhere.md")
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    conflict = report["rename_collisions"][0]["conflict"]
+    assert conflict == f"Repos/{taken_slug}.md"
+    assert not (tmp_path / conflict).exists()
+    assert not (tmp_path / "Repos" / f".{taken_slug}.md.icloud").exists()
+    assert report["rename_collisions"][0]["reason"] == "held_by_non_note"
+    assert [a["path"] for a in report["anomalies"]] == [conflict]
+    assert report["adopted"] == []  # nothing this run vacates it later
+    assert old.exists()
+
+
+def test_a_broken_symlink_with_a_stale_stub_beside_it_is_not_reported_as_evicted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The name itself is asked before the placeholder beside it. Answering
+    # `evicted` here would say the merge waits on a download, and no download
+    # frees a symlink — `evicted` is the one reason the skill routes to nobody,
+    # so the collision would be re-reported every run with no one ever asked.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    taken_slug = canonical_slug("https://github.com/a2aproject/A2A")
+    assert taken_slug
+    target = tmp_path / "Repos" / f"{taken_slug}.md"
+    target.symlink_to(tmp_path / "Repos" / "nowhere.md")
+    (tmp_path / "Repos" / f".{taken_slug}.md.icloud").write_text("")
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["rename_collisions"][0]["reason"] == "held_by_non_note"
+    assert old.exists()
+
+
+def test_a_file_beside_its_own_placeholder_reports_taken_not_evicted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The two causes are not exclusive, so the order is a precedence: `evicted`
+    # would say the merge waits on a download that already happened, and the
+    # duplicate would sit there being re-reported that way every run.
+    _write_note(tmp_path, "https://github.com/a2aproject/A2A", "a2aproject/A2A")
+    _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    taken_slug = canonical_slug("https://github.com/a2aproject/A2A")
+    assert taken_slug
+    (tmp_path / "Repos" / f".{taken_slug}.md.icloud").write_bytes(b"")
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    collision = next(
+        c for c in report["rename_collisions"] if c["conflict"] == f"Repos/{taken_slug}.md"
+    )
+    assert collision["reason"] == "taken"
+
+
+def test_a_repos_directory_whose_own_stat_is_refused_is_an_anomaly_not_an_absence(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    # The gate was `is_dir()`, which swallows the refusal on 3.14 and raises on
+    # 3.13 — so this reported "no Repos/ directory under vault" for one that is
+    # there, in a report with no counts and no anomalies for either whole-report
+    # escalation rule to fire on.
+    walled = tmp_path_factory.mktemp("walled")
+    (walled / "Repos").mkdir()
+    (tmp_path / "Repos").symlink_to(walled / "Repos")
+    walled.chmod(0o000)
+    try:
+        report = refresh(tmp_path, today=TODAY)
+    finally:
+        walled.chmod(0o755)
+
+    assert "error" not in report
+    assert report["counts"]["anomalies"] == 1
+    assert report["anomalies"][0]["path"] == "Repos"
+
+
+def test_a_repos_name_taken_by_a_file_is_an_error_not_an_empty_catalogue(
+    tmp_path: Path,
+) -> None:
+    # `list_note_dir` reads a non-directory as empty, so dropping the gate outright
+    # would turn this into a green report over a catalogue that cannot exist.
+    (tmp_path / "Repos").write_text("not a directory\n", encoding="utf-8")
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert "is not a directory" in report["error"]
+
+
+def test_refresh_says_so_when_the_catalogue_cannot_be_listed(tmp_path: Path) -> None:
+    # The wrong answer is a green empty report: neither whole-report escalation
+    # rule fires on one, since both need failures or anomalies to fire on.
+    _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
+    (tmp_path / "Repos").chmod(0o111)
+    try:
+        report = refresh(tmp_path, today=TODAY)
+    finally:
+        (tmp_path / "Repos").chmod(0o755)
+
+    assert report["counts"] == {
+        "total": 0,
+        "updated": 0,
+        "adopted": 0,
+        "rename_collisions": 0,
+        "failed": 0,
+        "anomalies": 1,
+    }
+    assert report["anomalies"][0]["path"] == "Repos"
+    assert "could not be listed" in report["anomalies"][0]["error"]
 
 
 def test_refresh_dryrun_reports_same_target_collapse_consistently(
@@ -198,6 +407,9 @@ def test_refresh_dryrun_reports_same_target_collapse_consistently(
     report = refresh(tmp_path, today=TODAY, dry_run=True)
     assert report["counts"]["adopted"] == 1
     assert report["counts"]["rename_collisions"] == 1
+    # This run claimed the slug, so no file is at the conflict path in a dry run —
+    # the reason says so rather than leaving the reader to find nothing there.
+    assert report["rename_collisions"][0]["reason"] == "claimed_this_run"
     # Both notes still on disk (dry-run wrote nothing).
     assert (tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/old-a')}.md").exists()
     assert (tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/old-b')}.md").exists()
@@ -424,19 +636,22 @@ def test_refresh_names_the_vault_when_the_rename_probe_cannot_be_read(
     # refuse that read. Reported as the vault's failure, not as a `gh` payload defect —
     # the wording is what sends the reader to the right place, and the payload wording
     # is the one the run summary escalates on.
+    # Patched at `lstat`, which is where `name_taken` asks: `Path.exists` swallows
+    # every `OSError` from CPython 3.14 on, so patching it would pin a raise the
+    # runtime cannot produce and this arm would be green and unreachable.
     old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
     taken = f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
-    real_exists = Path.exists
+    real_lstat = Path.lstat
 
-    def refusing_exists(self: Path, **kwargs: object) -> bool:
+    def refusing_lstat(self: Path, **kwargs: object) -> os.stat_result:
         if self.name == taken:
             raise PermissionError("Operation not permitted")
-        return real_exists(self, **kwargs)  # ty: ignore[invalid-argument-type]
+        return real_lstat(self, **kwargs)
 
     monkeypatch.setattr(
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
-    monkeypatch.setattr(Path, "exists", refusing_exists)
+    monkeypatch.setattr(Path, "lstat", refusing_lstat)
 
     report = refresh(tmp_path, today=TODAY)
 

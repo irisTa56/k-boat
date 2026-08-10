@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat
 import sys
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -48,7 +49,15 @@ from kboat.cli import (
 )
 from kboat.frontmatter import FrontmatterError, parse_frontmatter
 from kboat.frontmatter import set_fields as _set_rendered_fields
-from kboat.io_utils import atomic_write_text
+from kboat.io_utils import (
+    atomic_write_text,
+    file_present,
+    icloud_placeholder,
+    list_note_dir,
+    name_occupied,
+    name_taken,
+    stranded_stub,
+)
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
@@ -68,6 +77,55 @@ MAX_WORKERS = 10
 # and `note` (the note's own shape) — and the skill says which of those the run
 # raises its hand about.
 Reason = Literal["fetch", "payload", "vault", "note", "write"]
+
+
+# Why a canonical slug could not be adopted. Typed for the reason `Reason` above
+# is, and for one this pass learned the hard way: without it the report hands the
+# agent a bare `conflict` path and leaves it to reconstruct the cause from the
+# rest of the report and the vault — an inference that was wrong for a different
+# case in four separate reviews. The four are exhaustive by construction: the
+# name is claimed by this run, or it is not and something holds it, which is a
+# placeholder, a file, or a name that lstat answers for and `exists` does not.
+# Not `unreadable`, though that is what the last one is: this workspace already
+# spends that word on a directory the OS refused, which is a retry and a vault to
+# fix, where this is a human and no run clears it. One word, two remedies, three
+# reports the same routine relays.
+CollisionReason = Literal["claimed_this_run", "evicted", "taken", "held_by_non_note"]
+
+
+def _collision(target: Path, new_slug: str, claimed: set[str]) -> CollisionReason | None:
+    """Why `target` cannot be renamed onto, or `None` when it can.
+
+    The causes are not mutually exclusive — a file and its own placeholder can sit
+    side by side — so the order is a precedence, chosen so that the answer is the
+    one whose remedy is not already satisfied.
+
+    - `claimed_this_run` first: in an applying run that name is also a file on
+      disk, and `taken` would send a human to merge with a note this same pass
+      wrote, when the pass already knows it put it there.
+    - A **file** outranks a placeholder beside it. Reporting `evicted` there would
+      say the merge waits on a download that has already happened, and the
+      duplicate would sit in the vault being re-reported that way every run.
+    """
+    if new_slug in claimed:
+        return "claimed_this_run"
+    if not name_taken(target):
+        return None
+    if file_present(target):
+        return "taken"
+    # No file, yet the name is spoken for — by something at the name itself, or by
+    # a placeholder beside it. The name itself is asked first: a directory or a
+    # dangling symlink there is a name no download will ever free, and a stale stub
+    # beside it must not answer for it.
+    if name_occupied(target):
+        return "held_by_non_note"
+    # Only the placeholder is left, and `evicted` is claimed for a real one: it is
+    # the one class both skills route to nobody, so it may not be reached by
+    # elimination. Every probe refuses rather than guessing, so a placeholder the
+    # vault will not let us read raises out of here into `_plan`'s boundary and is
+    # reported as `reason: vault` — a re-run's problem — instead of falling through
+    # to `held_by_non_note`, which sends a human after a link that is not there.
+    return "evicted" if file_present(icloud_placeholder(target)) else "held_by_non_note"
 
 
 def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason | None) -> dict:
@@ -109,7 +167,23 @@ def set_fields(text: str, updates: Mapping[str, object]) -> str:
 def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dict[str, str]]]:
     notes: list[dict] = []
     anomalies: list[dict[str, str]] = []
-    for path in sorted(repos_dir.glob("*.md")):
+    # One listing, and it can refuse: a directory the OS will not list would
+    # otherwise come back empty and the pass would report a catalogue it never
+    # read as one with nothing to say. An evicted note is the other half of the
+    # same silence — it matches no `*.md` glob, so a half-synced catalogue scans
+    # clean and the pass reports a full refresh of the part that was local.
+    try:
+        found, placeholders = list_note_dir(repos_dir)
+    except OSError as exc:
+        return [], [{"path": DIR_BY_TYPE["repo"], "error": f"could not be listed: {exc}"}]
+    for placeholder in placeholders:
+        anomalies.append(
+            {
+                "path": placeholder.relative_to(vault).as_posix(),
+                "error": "iCloud placeholder: the note is evicted, so this pass cannot read it",
+            }
+        )
+    for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
             text = path.read_text(encoding="utf-8")
@@ -177,7 +251,7 @@ class _NotePlan:
     updates: dict[str, object]
     adopt: bool
     renaming: bool
-    collides: bool
+    collision: CollisionReason | None
 
     @property
     def slug(self) -> str:
@@ -207,11 +281,10 @@ def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set
     adopt = resolved_url != canonical_url(note["owner"], note["repo"])
     renaming = adopt and new_slug != path.stem
     target = repos_dir / f"{new_slug}.md"
-    # The canonical slug is already taken (by an existing note, or by another
-    # rename this run) — refresh metadata in place but don't adopt the identity
-    # or move; a human merges the two.
-    collides = renaming and (target.exists() or new_slug in claimed)
-    if collides:
+    collision = _collision(target, new_slug, claimed) if renaming else None
+    if collision is not None:
+        # The canonical slug is already spoken for: refresh the metadata in place
+        # but do not adopt the identity or move.
         adopt = renaming = False
 
     updates = github_fields(meta, today=today)
@@ -230,7 +303,7 @@ def _plan(note: dict, *, repos_dir: Path, vault: Path, today: date, claimed: set
         updates=updates,
         adopt=adopt,
         renaming=renaming,
-        collides=collides,
+        collision=collision,
     )
 
 
@@ -272,8 +345,26 @@ def refresh(
     vault: Path, *, today: date, max_workers: int = MAX_WORKERS, dry_run: bool = False
 ) -> dict:
     repos_dir = vault / DIR_BY_TYPE["repo"]
-    if not repos_dir.is_dir():
+    # Not `is_dir()`: it swallows a refusal on 3.14 and raises on 3.13, so this gate
+    # answered "no such directory" for a `Repos/` that is there and unreadable —
+    # a report with no counts and no anomalies, which neither whole-report
+    # escalation rule can fire on — or aborted with no JSON at all. A refused stat
+    # is left to `_load_repo_notes`, whose `list_note_dir` reports it as the
+    # directory's own anomaly; only absent and not-a-directory belong here, and
+    # both of those are the vault's shape rather than its readability.
+    try:
+        listable = repos_dir.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        # `NotADirectoryError` belongs here, not with the refusals: it is what a
+        # vault root that is a regular file raises, and `list_note_dir` reads a
+        # non-directory as empty — so letting it fall through turned a mis-typed
+        # `--vault` into a clean, exit-0 refresh of an empty catalogue that neither
+        # escalation rule can see.
         return {"error": f"no {DIR_BY_TYPE['repo']}/ directory under vault: {repos_dir}"}
+    except OSError:
+        listable = None
+    if listable is not None and not stat.S_ISDIR(listable.st_mode):
+        return {"error": f"{DIR_BY_TYPE['repo']}/ is not a directory: {repos_dir}"}
 
     notes, anomalies = _load_repo_notes(repos_dir, vault)
     today_iso = today.isoformat()
@@ -306,7 +397,7 @@ def refresh(
         try:
             plan = _plan(r, repos_dir=repos_dir, vault=vault, today=today, claimed=claimed)
         except OSError as exc:
-            # `_plan` touches the filesystem once, to see whether a rename's target
+            # `_plan` touches the filesystem only to see whether a rename's target
             # is taken, and an iCloud vault can refuse that read. Calling it a
             # payload defect would send the reader to `gh`'s release notes for a
             # problem that is in the vault — and would escalate a run that only
@@ -319,9 +410,17 @@ def refresh(
             )
             continue
 
-        if plan.collides:
+        if plan.collision is not None:
             rename_collisions.append(
-                {"path": rel, "was": was, "now": plan.now, "conflict": plan.rel_target}
+                {
+                    "path": rel,
+                    "was": was,
+                    "now": plan.now,
+                    "conflict": plan.rel_target,
+                    # The cause, so the relaying agent branches on a value this
+                    # pass decided rather than reconstructing one from the vault.
+                    "reason": plan.collision,
+                }
             )
 
         try:
@@ -350,7 +449,25 @@ def refresh(
             # Reported only once the note is actually written (or, in a dry run,
             # once it would have been): `adopted` is the set of renames healed,
             # and a rewrite that failed healed nothing.
-            adopted.append({"from": rel, "to": plan.rel_target, "was": was, "now": plan.now})
+            entry = {"from": rel, "to": plan.rel_target, "was": was, "now": plan.now}
+            # A stub beside the note this rename vacates becomes a lone placeholder
+            # the moment the old file goes, and a lone placeholder under `Repos/`
+            # fails `kboat-doctor`'s `icloud_notes` — so from the next day the whole
+            # routine stops, out of a report that never mentioned it. This pass runs
+            # unattended, so nobody approved the move; the least it owes is to name
+            # what it left. Removing the stub is not its call: deleting a
+            # placeholder is how a file leaves iCloud.
+            if plan.renaming:
+                # Gated on `renaming`, not `adopt`: a note can adopt a new identity
+                # under the name it already has (a reserved owner gives no slug), and
+                # nothing is vacated there — reporting `stranded` would raise an
+                # alarm about a routine stoppage that cannot happen.
+                probe = stranded_stub(plan.path)
+                if probe.stub is not None:
+                    entry["stranded"] = probe.stub.relative_to(vault).as_posix()
+                elif probe.unknown is not None:
+                    entry["stranded"] = f"unknown: {probe.unknown}"
+            adopted.append(entry)
 
     return {
         "today": today_iso,

@@ -79,6 +79,44 @@ def test_parse_error_is_a_violation(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert any(v["code"] == "parse_error" for v in out["violations"])
 
 
+def test_an_evicted_note_is_a_violation_rather_than_a_shorter_backlog(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # It matches no `*.md` glob, so without the placeholder sweep the vault reports
+    # a clean, shorter backlog — the counts feed a notification threshold, so the
+    # wrong answer here is silence rather than a wrong number.
+    vault = _vault(tmp_path, **{"clean.md": VALID_SOURCE})
+    (vault / "Sources" / ".evicted.md.icloud").write_bytes(b"")
+
+    exit_code = main(["--vault", str(vault), "--strict", "--stats", "--today", "2026-06-15"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    evicted = [v for v in out["violations"] if v["code"] == "icloud_placeholder"]
+    assert [v["path"] for v in evicted] == ["Sources/.evicted.md.icloud"]
+    assert out["checked"]["source"] == 1, "the placeholder is not counted as a note"
+
+
+def test_a_note_directory_that_cannot_be_listed_is_a_violation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `Path.glob` hands back an empty directory here, so without this the report
+    # would be a clean vault with an empty backlog — the same silence an eviction
+    # produces, and the one a threshold on the counts cannot see.
+    vault = _vault(tmp_path, **{"clean.md": VALID_SOURCE})
+    (vault / "Sources").chmod(0o111)
+    try:
+        exit_code = main(["--vault", str(vault), "--strict", "--stats", "--today", "2026-06-15"])
+    finally:
+        (vault / "Sources").chmod(0o755)
+    out = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    unreadable = [v for v in out["violations"] if v["code"] == "unreadable_dir"]
+    assert [v["path"] for v in unreadable] == ["Sources"]
+    assert out["checked"]["source"] == 0
+
+
 def test_an_unparseable_note_is_a_violation_but_not_a_stat(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

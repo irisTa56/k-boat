@@ -18,7 +18,7 @@ The mechanical schema of every type is code-authoritative in `kboat.schema` (the
 The vault is one shared directory on an iCloud-synced volume, so before an unattended run reads or writes anything it has to establish that the vault is there and that its contents are actually local.
 `kboat-doctor` (in the `kboat` library) is that check: it prints every check as JSON on stdout with diagnostics on stderr, and exits 0 when nothing failed, 1 when anything did.
 It is read-only apart from one probe file it creates and removes again.
-The root, folder, and placeholder checks are vault-wide: they assert the shared vault is present and fully local, `Feeds/` included, because a member's folder missing or half-synced means the vault is, whoever reads it.
+The root, folder, readability, and placeholder checks are vault-wide: they assert the shared vault is present, readable, and fully local, `Feeds/` included, because a member's folder missing, unreadable, or half-synced means the vault is, whoever reads it.
 Only `Questions.md` and the K-Boat-owned `Queue/`, `Reviews/`, and `PDFs/` narrow the set to the K-Boat routine, which is why the set as it stands is that routine's precondition and a second member wanting one needs its own.
 
 The check is stricter than any single phase, on purpose.
@@ -28,11 +28,35 @@ So a folder in the set is required even where a phase would have shrugged, and c
 The set is what a run cannot proceed without, not everything the vault holds.
 An input a phase degrades over by design is deliberately out — the daily pick's `Daily/` notes are its ambient signal and it ranks without them, so their absence is not a precondition failure, whereas `Questions.md` below is the deliberate signal the pick is steered by.
 
-- **The root exists** and is a directory. A missing root short-circuits the rest: every other check would only restate the same fact.
+- **The root exists** and is a directory. Absent, or a name held by something that is not one, short-circuits the rest: every other check would only restate the same fact.
+  - A root the vault **refuses to read** does not short-circuit, and this is the third answer rather than a shade of the first. Writability and readability each have their own finding about such a root, and a run that stopped would report none of them — telling a human that a vault which is there and merely unreadable is a vault that is gone.
 - **The root is writable** — the root itself, not each folder the run writes into. Proven by creating a uniquely-named probe file with `O_EXCL` and unlinking it: permission bits are not the whole story on a synced volume, so the check writes rather than inspects. A probe that cannot be removed again fails too, since a file left in the vault is itself drift. A single folder made read-only under a writable root therefore passes here and fails mid-run; the check is aimed at a vault that is absent or not mounted, which is the failure that takes the root with it.
 - **The required folders exist**, and separately that **no required name is taken by a non-directory** (a file, or a dangling symlink). Two checks, because the first wants `mkdir` and the second wants the name freed first — `mkdir` on a taken name fails. The set is every note type's directory (from `kboat.schema`'s `DIR_BY_TYPE`, so declaring a new type requires its folder) plus `Queue/`, `Reviews/`, and `PDFs/` (named beside `DIR_BY_TYPE` in `kboat.schema`, so the layout has one home). The writer would create a missing one on first write, but the check does not defer to that: an absent folder is indistinguishable from a vault that has not synced, and auto-creating it is how a run comes to write into a half-synced vault.
 - **The questions file exists** — `Questions.md` at the vault root, the daily pick's backlog.
-- **No iCloud placeholder shadows a file** in the scanned set: the note directories and `PDFs/` (each recursively, since a placeholder in a subfolder hides a file just as completely — though not into a symlinked subdirectory, since one symlink loop would hang the check every run waits on), plus `Questions.md` by name — that one is reported by the `questions_file` check rather than `icloud_notes`, since from there an evicted backlog and an absent one are the same finding with different remedies. An evicted file leaves a `.<name>.icloud` placeholder where the file was, which means the vault is not fully synced locally. The vault root is not otherwise swept, so an evicted `Sources.base` is not caught — a Base is Obsidian's view, which no phase reads.
+- **Every scanned directory can be read**, as `readable_notes` and `readable_assets`.
+  - No scan can stand in for this. A directory the OS refuses to list is what a scan reads as an empty one unless it was written not to: `Path.glob` swallows the refusal, and `is_dir()` still answers `True` because that `stat` goes through the parent.
+  - Within the scanned set, it is the only place an unreadable folder is reported at all for the scans not yet under the rule, and what stops the run before each of the others reports it separately.
+  - Outside that set nothing reports one. `Daily/` is the case — globbed by the daily pick and deliberately no precondition of it — so an unreadable `Daily/` costs exactly what an absent one does, and a scan there cannot lean on this check.
+  - The pair splits by cost on the same rule as the placeholder pair below, and by what a refusal actually costs rather than by which directory it is in.
+    - A note directory **fails** however it is unreadable: its listing is a phase's input.
+    - An asset directory that is unlistable but still **traversable** only warns. No phase lists `PDFs/` — ingest writes one path and the slug migration probes one by name — so nothing is affected, and a failure would stop the routine over it.
+    - The **asset directory itself** failing to be traversable is the exception, because there the per-name probes do answer wrongly: they read "absent" for a file that is there, so the slug migration moves a note away from a PDF it takes for gone, with `reading_link` retargeted at nothing. That is `_pdf_state`'s refusal-blindness, which is not this check's to fix — but it is why this one state is not a warning.
+    - A directory *below* it warns whatever its mode: the probes name `PDFs/<slug>.pdf` at the top level, so nothing there is affected, and failing would stop the whole routine over a folder no phase reads.
+  - The scan is recursive and the failure deliberately wider than a phase's input: a subfolder under a note directory is one nothing lists, and it fails all the same, because what the check establishes is that the vault can be read rather than that today's phases happened to reach everything in it.
+  - A directory that goes away mid-scan is not a refusal and only **warns**: the walk listed a parent and the child was gone by the time it descended, which clears itself before anyone can act. The refusals name their `strerror` in `detail`, so the two are told apart without parsing a name out of `paths`.
+- **No iCloud placeholder shadows a file** in the scanned set: the note directories and `PDFs/`, each recursively, plus `Questions.md` by name.
+  - Recursively, since a placeholder in a subfolder hides a file just as completely — though not into a symlinked subdirectory, since one symlink loop would hang the check every run waits on.
+  - `Questions.md` is reported by the `questions_file` check rather than `icloud_notes`, since from there an evicted backlog and an absent one are the same finding with different remedies.
+  - An evicted file leaves a `.<name>.icloud` placeholder where the file was, which means the vault is not fully synced locally.
+  - A placeholder sitting beside its own present file is not that and is reported by nothing: the file is here, so calling it evicted would tell a reader the wait is on a download that already happened, in the same report that shows the file was read.
+    - That is the file-before-placeholder precedence the writers apply when they claim a name, asked of the reporting side by `kboat.io_utils.evictions` so one rule covers both.
+    - It has a second half, and skipping the pair is only safe with it: a writer that renames or unlinks the file makes that stub a lone placeholder, which fails `icloud_notes` and stops the routine every day out of a report that never mentioned it.
+    - So the side that breaks the pair names what it left. There are three such sides, and a writer that vacates a name is one whether it renames or deletes.
+      - `migrate-slugs` puts it in the row's `detail` and `kboat-repos refresh` on the `adopted` entry as `stranded`, both via `kboat.io_utils.stranded_stub` (the reporting probe described under "The write contract"), each passing on a could-not-tell as itself.
+      - `kboat-ingest` is the third: it deletes a drained `Queue/` capture, and `Queue/` is a note directory, so a stub left there fails `icloud_notes` exactly as one under `Sources/` would. That deletion is an agent's rather than a tool's, so the check is prose in `kboat-ingest` rather than a call.
+    - Removing the stub is a human's, deliberately: deleting a placeholder is how a file leaves iCloud.
+  - The sweep is only as complete as `readable_notes` and `readable_assets`: a directory that could not be listed holds no findings for this check either, so an `icloud_notes` of `ok` beside a failing readability check says nothing was found rather than that nothing is there.
+  - The vault root is not otherwise swept, so an evicted `Sources.base` is not caught — a Base is Obsidian's view, which no phase reads.
 
 The placeholder check is split by what an eviction actually costs, because a doctor failure stops the whole routine and must not stop it over a file the routine never reads.
 
@@ -43,7 +67,7 @@ The report on stdout is a JSON object with `vault`, `ok` (true when nothing fail
 Each entry in `checks` carries `name`, `status` (`ok`, `warning`, or `failed`), `detail`, `paths`, and `path_count` — every key on every entry, and `counts` likewise carries `total` plus one count per status even at zero, so a reader never has to decide whether an absent key means empty or means nothing.
 A check's names live in its `paths` alone, never restated in `detail`, so a reader acting on one list is not left wondering whether the other holds more.
 `paths` names at most five, with `path_count` giving the true total: the failure these checks exist for can evict thousands of files at once, and the caller is an unattended agent whose context both streams land in, so the report is bounded rather than answering a question about the vault with the vault itself.
-A failing root is reported alone, so a short-circuited run has fewer entries but never fewer keys.
+A **short-circuiting** root failure — absent, or the name held by a non-directory — is reported alone, so that run has fewer entries but never fewer keys.
 Every non-`ok` check is also written to stderr, one line per finding, so an unattended log shows the reason without parsing the JSON back.
 
 ## Naming
@@ -72,7 +96,20 @@ One consequence every writer handles: 48 bits is collision-resistant but not col
 A note already in the vault under an older name is repaired by `kboat-note migrate-slugs --dry-run|--apply`, which reports every URL-named note whose filename is not the slug its `url` names and, on `--apply`, renames it.
 A PDF source is a pair: `PDFs/<slug>.pdf` and the note's `reading_link` link to it are both derived from the slug, so the file and the link move with the note or nothing does.
 Only the filename inside that link is rewritten — a PDF++ page or highlight subpath is where the reader had got to, and it is carried across.
-Three things make a row a conflict, all reported and skipped and never overwritten: an existing note or PDF at a target name, a slug two notes both want, and a `reading_link` that names the note's PDF in a shape the tool cannot rewrite (which would dangle if the pair moved).
+Several things make a row a conflict, all reported and skipped and never overwritten, and the row's `detail` names which.
+A row that is **not** a conflict can carry one too: an `--apply` that vacates a name a stale stub sits beside — the note's own, its PDF's, or both — says so there, since the note's slug then matches and no later pass revisits it.
+Removing that stub is a human's, deliberately — deleting a placeholder is how a file leaves iCloud.
+They group by who clears them, which is what a reader triaging a dry run needs, and the groups are the contract rather than their number.
+
+- **The file has to come back**, and then a re-run moves the pair: a note iCloud has evicted at the target name, or a source's PDF it has evicted at the source name — or at the target name while something still holds the source. Neither can be merged with or even opened meanwhile, so neither is a human's to resolve.
+  - An evicted PDF at the target with **nothing** at the source is not a conflict: the pair is already across and one rename from done, so refusing the row would strand it for good.
+- **A human merges the two**: an existing note or PDF at a target name, or a slug two notes both want.
+- **A human repairs the note**: a `reading_link` that names the note's PDF in a shape the tool cannot rewrite, which would dangle if the pair moved.
+- **The vault is what needs looking at**: a target name it refuses to let the pass read at all, or one held by something that is not a note — a dangling symlink being the one that occurs, which nothing frees on its own.
+
+A note the pass could not read at all is not a row but a `skipped` entry, and a note directory it could not list is one too — reported under the directory's own name, because "nothing to migrate" and "nothing I could see" are the same JSON otherwise, and this report is what an `--apply` is approved from.
+The counts keep the two apart: `unreadable_dirs` counts the directories and `skipped` counts only the notes, so `counts.skipped` is deliberately smaller than the `skipped` array when a directory is in it.
+One directory entry stands for however many notes went unseen, which is why folding it into a note count would put a fixed number where the true one is unknown.
 A non-zero exit says a pass left work behind, not that a human must move a file: where the pass renamed the note that was in the way, a re-run clears the conflict on its own.
 What no pass can clear is two notes each holding the name the other wants — that one is a human's to break.
 A missing vault root is refused in both modes rather than reported as a vault with nothing to migrate, since the dry run is what an `--apply` is approved from.
@@ -99,7 +136,7 @@ That restatement drifts, so `packages/kboat/tests/test_doc_schema_sync.py` (run 
 The per-field prose (defaults, kinds, enums) is woven into the `Meaning` cells and is *not* machine-checked, so keep it accurate by hand.
 When a field changes, update the owning spec's table and `kboat.schema` together.
 
-`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines and `parse_error`.
+`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines, `parse_error`, and two for a note the pass could not read at all: `icloud_placeholder` against the placeholder's own path, and `unreadable_dir` against a note directory the OS refused to list. Both are violations like any other, so both enter `violations`, `counts.total` and `counts.by_code`; what they leave alone is `checked` and the stats, which keep their own meanings — `checked` counts the notes the pass could list and the stats the ones it could read, a note that would not parse being in the first and not the second. What they add is that a vault read in part stops reporting as a clean one, which is the reading a short backlog otherwise invites.
 It is read-only and report-only by default (exit 0; `--strict` exits non-zero), so a routine runs it last and surfaces the violations as drift for a human to fix.
 `--stats` adds a block of backlog-health counts, defined by the owning member over its own lifecycle predicates rather than over the schema; K-Boat's set is in `kboat-notes` ("Backlog stats").
 Stats never affect the exit code — they describe how the backlog is moving, not whether a note is well-formed.
@@ -134,6 +171,30 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - "Does not write" is per line, so a comment sharing a line with a field the record writes goes with it. Put a note to self on its own line, where it is an entry of its own and survives.
 
 The merge rule gives a member a clean **resurrection** idiom: to re-surface a note it force-writes the fields it owns (e.g. a status boolean back to `false`) while omitting the fields a human owns, so the human's values survive the update.
+
+**A name an iCloud placeholder holds is taken, not free.**
+The vault is iCloud-synced, so an evicted file is not gone: it is a `.<name>.icloud` placeholder beside where the file was, and `Path.exists()` answers `False` for it exactly as it does for a name nothing occupies.
+An evicted note matches no `*.md` glob either, so a folder scan reads a half-synced vault as a complete one.
+So this is a rule to hold a writer to, not a description of what they all do: whatever decides anything from a file's absence — whether a rename's target is free, whether a note is new rather than one to merge into, whether a source's PDF is there — asks the placeholder question of both names first, or it writes over an identity another file still holds and reports success.
+What follows is not a conflict anyone sees: iCloud settles the two later by suffixing or dropping one, so the duplicate arrives quietly and long after the run that made it.
+`kboat.io_utils` owns the recipe, and it is four questions rather than one — copy them rather than a call site, which may be older than the rule.
+
+- `name_taken(path)` — is this name spoken for at all.
+- `file_present(path)` — is a **file** there, which is what says *by what* a taken name is held. This is where the swallow used to live: `exists()` answers "no file" for a link into an unreadable tree, so a caller reported a name nothing will free and sent a human after a broken symlink that was not there.
+- `name_occupied(path)` — is anything at **that name itself**, which is `name_taken`'s first half and what separates the two ways a non-file holds a name.
+- `list_note_dir(directory)` — one folder's notes and the placeholders shadowing them.
+
+A caller classifying a taken name asks the middle two in that order, and never reaches "evicted" by elimination.
+`name_taken` ORs the name and the placeholder beside it, so once `file_present` says no, testing only the placeholder lets a stale stub answer for a directory or a dangling symlink at the name — reporting a name no download will ever free as one that is merely waiting on iCloud, which is the one answer both skills route to nobody.
+
+Those four **raise** where the vault refuses the read, so every caller owes a boundary — per item for the first three, per directory for `list_note_dir` — and decides the *cause* inside it: a refusal named as anything but a refusal is the defect they exist to prevent.
+`stranded_stub(path)` is the exception and the only one: it is asked after the decision to move, about a name the writer is giving up, so it **reports** rather than refuses. It answers found, none, or could-not-tell, and a caller passes that third answer on. Refusing there would abort a rename over a stub — and the probe fails on exactly the long names this repair exists for, since a filename of 248 bytes or more makes its `.icloud` sibling exceed the limit.
+The two are not interchangeable: a scan needs `list_note_dir` whether or not it also claims a name, since `name_taken` answers about a name it was already given and an evicted note is one nothing handed it.
+Which names a writer has to ask about depends on where each came from: a name a `list_note_dir` listing produced is already answered, and one a record or a slug formula produced is not.
+So a rename driven by a scan asks about its target, while one that derives both names itself asks about both, since either being evicted is a reason not to move.
+That is what `pathlib` will not do for them: from CPython 3.14 `Path.exists` swallows every `OSError`, and `Path.glob` swallows the one `os.scandir` raises on an unlistable directory in every version, so a permission-denied probe comes back as an invitation to write there and an unreadable folder as an empty, clean one.
+**A `created` status is not a claim that the name was free.** `upsert`'s create-versus-merge decision is a bare `exists()`, so at an evicted slug it takes the note for a new one: the merge and the collision check above are both skipped and the note is rewritten from what the record alone carries. Read it as "the writer found no file there" and nothing further.
+The `kboat-doctor` placeholder scan is a precondition and not a substitute: it runs once, before the phases, and an eviction can land on a vault it passed.
 
 ## Durability and the vault lock
 

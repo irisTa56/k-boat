@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat
 import sys
 from collections import Counter
 from contextlib import nullcontext
@@ -37,7 +38,7 @@ from kboat.cli import (
 )
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.naming import note_slug
-from kboat.note.migrate import migrate
+from kboat.note.migrate import UNREADABLE_DIR, migrate
 from kboat.schema import BY_TYPE
 from kboat.write import upsert
 
@@ -100,12 +101,23 @@ def _migrate_slugs(argv: list[str]) -> int:
     mode.add_argument("--apply", action="store_true", help="Rename them.")
     args = parser.parse_args(argv)
     vault = vault_path(parser, args)
-    if not vault.is_dir():
-        # A vault root is a precondition, not something a tool creates. Reported
-        # in both modes, because the dry run is the report a human approves the
-        # apply from: a mis-typed `--vault` that scanned nothing would read as a
-        # vault already canonical.
+    # A vault root is a precondition, not something a tool creates. Reported in
+    # both modes, because the dry run is the report a human approves the apply
+    # from: a mis-typed `--vault` that scanned nothing would read as a vault
+    # already canonical. Three answers from one `stat` rather than `is_dir()`,
+    # which swallows a refusal on 3.14 and raises on 3.13 — either way reporting a
+    # vault that is sitting there as one that is not, with nothing naming the
+    # readability that is actually wrong.
+    try:
+        mode = vault.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
         sys.stderr.write(f"no vault at {vault}\n")
+        return 1
+    except OSError as exc:
+        sys.stderr.write(f"vault at {vault} could not be read: {exc}\n")
+        return 1
+    if not stat.S_ISDIR(mode):
+        sys.stderr.write(f"vault at {vault} is not a directory\n")
         return 1
 
     try:
@@ -138,8 +150,18 @@ def _migrate_slugs(argv: list[str]) -> int:
         # otherwise hide the note that actually needs a look. It is not an exit
         # code: nothing about a skipped note stops the rest of the pass.
         by_reason = Counter(s.reason.split(":")[0] for s in report.skipped)
-        named = ", ".join(f"{n} {reason}" for reason, n in sorted(by_reason.items()))
-        sys.stderr.write(f"{len(report.skipped)} note(s) skipped ({named})\n")
+        # A directory entry is counted apart from the notes: one of them stands for
+        # however many notes went unseen, so folding it in would put a fixed "1"
+        # where the true number is unknown — on the report an `--apply` is approved
+        # from, and for the one skip whose remedy is the vault rather than the note.
+        dirs = by_reason.pop(UNREADABLE_DIR, 0)
+        parts = []
+        if by_reason:
+            named = ", ".join(f"{n} {reason}" for reason, n in sorted(by_reason.items()))
+            parts.append(f"{sum(by_reason.values())} note(s) skipped ({named})")
+        if dirs:
+            parts.append(f"{dirs} note director(ies) unreadable, contents unseen")
+        sys.stderr.write("; ".join(parts) + "\n")
     return 1 if report.unresolved else 0
 
 

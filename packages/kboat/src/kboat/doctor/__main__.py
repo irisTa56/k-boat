@@ -6,8 +6,9 @@ failed, 1 when anything did — with each failed check also written to stderr, s
 an unattended run's log shows the reason without parsing the JSON back.
 
 A run calls this before its first phase: the checks are what the phases assume
-and cannot verify for themselves, and a vault that is absent, unwritable, or
-half-synced makes every later report a report about a vault that was not there.
+and cannot verify for themselves, and a vault that is absent, unwritable,
+unreadable, or half-synced makes every later report a report about a vault that
+was not there.
 """
 
 from __future__ import annotations

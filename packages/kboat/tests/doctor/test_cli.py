@@ -42,7 +42,7 @@ def test_failure_exits_one_and_lists_every_failed_check(
     failed = {c["name"] for c in out["checks"] if c["status"] == "failed"}
     assert failed == {"required_folders", "questions_file", "icloud_notes"}
     assert out["counts"]["failed"] == 3
-    assert out["counts"]["total"] == 7
+    assert out["counts"]["total"] == 9
     # Diagnostics on stderr, one line per finding, so an unattended log shows
     # the reason without parsing the JSON back.
     lines = captured.err.strip().splitlines()
