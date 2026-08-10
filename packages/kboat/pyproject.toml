@@ -2,7 +2,10 @@
 name = "kboat"
 version = "0.1.0"
 description = "Deterministic K-Boat tools over a shared frontmatter core: lifecycle, repos, the daily pick, validation, and the note writer."
-requires-python = ">=3.13"
+# A behavioural floor: from 3.14 `Path.exists()` is `os.path.exists` and swallows
+# every `OSError`. `kboat.note.migrate` rests on that to report a probe it cannot
+# make as a row rather than aborting the scan.
+requires-python = ">=3.14"
 # Intentionally zero runtime dependencies: the mechanical core stays a pure,
 # independently-testable package. The browser-driven NotebookLM CLI lives outside
 # this env as a mise tool (`pipx:notebooklm-py`), so it never leaks in here.

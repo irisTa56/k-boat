@@ -231,10 +231,10 @@ def _pdf_state(vault: Path, current: str, expected: str) -> tuple[str, Path, Pat
     # Asked with `exists()` rather than `name_taken`, which raises: every probe in
     # here answers the same way, and that is one thing, tracked and fixed in one
     # place. Raising from the middle of a function whose caller has no boundary
-    # for it would abort the whole scan on a refused `PDFs/` read instead — which
-    # `name_taken` would do on every version, where `exists()` does it only on the
-    # 3.13 that `requires-python` still admits. So the uniformity is 3.14's, and
-    # the deferred fix starts from two states rather than one.
+    # for it would abort the whole scan on a refused `PDFs/` read instead, which
+    # `name_taken` would do on every version. The uniformity rests on `exists()`
+    # swallowing every `OSError`, which `requires-python` guarantees, so the
+    # deferred fix starts from two states rather than one.
     across = new.exists() or icloud_placeholder(new).exists()
     return ("moved" if across else "absent"), old, new, None
 
