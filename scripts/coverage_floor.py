@@ -22,10 +22,12 @@ import json
 import sys
 from pathlib import Path
 
-# The floor the user set after measuring current `main`: the lowest per-file
-# figure there is 80.0% (kboat's `io_utils.py`), so the floor sits exactly at
-# that measured minimum rather than below it. Not a CLI flag -- the floor is a
-# fixed policy value, not something a caller should be able to loosen.
+# A floor rather than a running measurement: it says how far one `src/` file may
+# fall before the gate refuses, not how well covered the package is today. It is
+# the user's to raise, and raising it is a policy decision rather than
+# bookkeeping -- so it does not track the measured minimum, and the slack between
+# the two is deliberate rather than drift. Not a CLI flag either, for the same
+# reason: a caller must not be able to loosen it.
 FLOOR = 80.0
 
 # Any malformed-report shape lands here (e.g. a `files` entry missing

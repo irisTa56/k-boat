@@ -63,7 +63,11 @@ branch = true
 [tool.coverage.report]
 exclude_also = [
     "if TYPE_CHECKING:",
-    "\\.\\.\\.",
+    # Anchored to a bare ellipsis *body*. Unanchored it matched any line with
+    # three dots — every `tuple[str, ...]` annotation — and a match on a `def`
+    # clause excludes the whole function, so the gate reported a pass over
+    # code it had never measured.
+    "^\\s*\\.\\.\\.$",
     # The entrypoint guard is unreachable under pytest. Not-yet-implemented
     # dispatch arms use an explicit `# pragma: no cover` at the call site —
     # deliberately NOT a blanket `raise NotImplementedError` exclude, so a

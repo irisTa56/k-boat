@@ -14,7 +14,155 @@ from pathlib import Path
 
 import pytest
 
-from kboat.io_utils import atomic_write_text
+from kboat.io_utils import (
+    atomic_write_text,
+    file_present,
+    icloud_placeholder,
+    list_note_dir,
+    name_taken,
+)
+
+
+def test_a_name_an_icloud_placeholder_holds_is_taken(tmp_path: Path) -> None:
+    # The distinction `Path.exists()` cannot draw: an evicted file answers `False`
+    # exactly as a name nothing occupies does, and the two are opposite answers to
+    # "may I write here?".
+    free = tmp_path / "note.md"
+    assert not name_taken(free)
+
+    evicted = tmp_path / "evicted.md"
+    icloud_placeholder(evicted).write_bytes(b"")
+    assert not evicted.exists()
+    assert name_taken(evicted)
+
+    local = tmp_path / "local.md"
+    local.write_text("x\n", encoding="utf-8")
+    assert name_taken(local)
+
+
+def test_a_name_a_dangling_symlink_holds_is_taken(tmp_path: Path) -> None:
+    # `exists()` follows the link and calls it missing, which would have a writer
+    # replace the link instead of the file it names. `kboat.doctor` answers the
+    # same question the same way.
+    dangling = tmp_path / "dangling.md"
+    dangling.symlink_to(tmp_path / "nowhere.md")
+    assert not dangling.exists()
+    assert name_taken(dangling)
+
+
+def test_a_refused_read_raises_rather_than_answering_free(tmp_path: Path) -> None:
+    # The answer that must never be given by default: `Path.exists` swallows every
+    # `OSError` from CPython 3.14 on, so a probe the vault refuses would come back
+    # as a free name and the writer would claim it.
+    directory = tmp_path / "Repos"
+    directory.mkdir()
+    (directory / ".abc123.md.icloud").write_bytes(b"")
+    directory.chmod(0o000)
+    try:
+        with pytest.raises(PermissionError):
+            name_taken(directory / "abc123.md")
+    finally:
+        directory.chmod(0o755)
+
+
+def test_list_note_dir_splits_notes_from_placeholders(tmp_path: Path) -> None:
+    directory = tmp_path / "Sources"
+    directory.mkdir()
+    (directory / "b.md").write_text("x\n", encoding="utf-8")
+    (directory / "a.md").write_text("x\n", encoding="utf-8")
+    (directory / ".evicted.md.icloud").write_bytes(b"")
+    (directory / "notes.txt").write_text("x\n", encoding="utf-8")
+    # `glob("*.md")` matches all three of these, so this must too: one it dropped
+    # would be in neither list and reported by nothing. `.md` is the exemplar that
+    # matters — its `Path.suffix` is `""`, so a suffix test passes the other two
+    # and silently loses this one.
+    (directory / ".hidden.md").write_text("x\n", encoding="utf-8")
+    (directory / ".md").write_text("x\n", encoding="utf-8")
+
+    # A stub beside its own present file is a stale leftover, not an eviction:
+    # reporting it would tell a caller the wait is on a download that already
+    # happened, in the same report that shows the note was read.
+    (directory / ".b.md.icloud").write_bytes(b"")
+
+    # An evicted attachment beside a note is a real eviction and not a note one:
+    # this helper answers about notes, and its callers say "the note could not be
+    # read" in words. `kboat-doctor` reports files and keeps the breadth.
+    (directory / ".diagram.png.icloud").write_bytes(b"")
+
+    notes, placeholders = list_note_dir(directory)
+
+    assert [p.name for p in notes] == [".hidden.md", ".md", "a.md", "b.md"]
+    assert [p.name for p in notes] == sorted(p.name for p in directory.glob("*.md"))
+    assert [p.name for p in placeholders] == [".evicted.md.icloud"]
+
+
+def test_list_note_dir_reads_an_absent_directory_as_empty(tmp_path: Path) -> None:
+    # Creating it belongs to declaring a note type, and its absence is
+    # `kboat-doctor`'s to report — so it is not this helper's refusal.
+    assert list_note_dir(tmp_path / "Nope") == ([], [])
+
+
+def test_list_note_dir_raises_on_a_directory_it_cannot_list(tmp_path: Path) -> None:
+    # `Path.glob` would swallow this and hand back an empty directory, so a scan
+    # would report a vault it never read as a vault with nothing in it — the same
+    # silence an eviction produces, from the other direction.
+    directory = tmp_path / "Sources"
+    directory.mkdir()
+    (directory / "a.md").write_text("x\n", encoding="utf-8")
+    directory.chmod(0o111)
+    try:
+        assert list(directory.glob("*.md")) == [], "the answer this helper must not give"
+        with pytest.raises(PermissionError):
+            list_note_dir(directory)
+    finally:
+        directory.chmod(0o755)
+
+
+def test_list_note_dir_raises_on_a_directory_it_cannot_traverse(tmp_path: Path) -> None:
+    # `r--` lists its names and refuses every read beneath it, so `iterdir` alone
+    # answers "fine" and the caller gets one note-shaped failure per note for a
+    # single vault-shaped cause — and a count of unread directories of nought.
+    directory = tmp_path / "Sources"
+    directory.mkdir()
+    (directory / "a.md").write_text("x\n", encoding="utf-8")
+    directory.chmod(0o444)
+    try:
+        assert [p.name for p in directory.iterdir()] == ["a.md"], "listing alone says fine"
+        with pytest.raises(PermissionError, match="not traversable"):
+            list_note_dir(directory)
+    finally:
+        directory.chmod(0o755)
+
+
+def test_file_present_raises_where_exists_would_call_a_refused_read_absent(
+    tmp_path: Path,
+) -> None:
+    # The caller has been told the name is taken and has to say by what. `exists()`
+    # answers "no file" for a link into an unreadable tree, so the caller reports a
+    # name nothing will free and a human hunts a broken symlink that is not there.
+    walled = tmp_path / "walled"
+    walled.mkdir()
+    (walled / "real.md").write_text("x\n", encoding="utf-8")
+    link = tmp_path / "link.md"
+    link.symlink_to(walled / "real.md")
+    walled.chmod(0o000)
+    try:
+        assert name_taken(link), "the name is spoken for"
+        assert not link.exists(), "the answer this helper must not give"
+        with pytest.raises(PermissionError):
+            file_present(link)
+    finally:
+        walled.chmod(0o755)
+
+    dangling = tmp_path / "dangling.md"
+    dangling.symlink_to(tmp_path / "nowhere.md")
+    assert not file_present(dangling), "a dangling link is the case that answers no"
+
+    # A *file*, as the name says. A directory at a note's slug routes to the
+    # opposite remedy from a note there: a name no run frees, not a merge.
+    directory = tmp_path / "dir.md"
+    directory.mkdir()
+    assert not file_present(directory)
 
 
 def test_writes_content_and_creates_missing_parents(tmp_path: Path) -> None:

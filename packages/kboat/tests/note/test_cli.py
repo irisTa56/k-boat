@@ -248,6 +248,25 @@ def test_migrate_slugs_says_on_stderr_that_it_skipped_notes(
     assert json.loads(captured.out)["skipped"][0]["path"] == "Sources/broken.md"
 
 
+def test_migrate_slugs_does_not_count_an_unreadable_directory_as_one_note(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # One directory entry stands for however many notes went unseen, so reporting
+    # it among the notes would put a fixed "1" where the true number is unknown —
+    # on the very report an `--apply` is approved from.
+    (vault / "Sources" / "broken.md").write_text("no frontmatter here\n", encoding="utf-8")
+    (vault / "Feeds").mkdir(exist_ok=True)
+    (vault / "Feeds").chmod(0o111)
+    try:
+        assert main(["migrate-slugs", "--vault", str(vault), "--dry-run"]) == 0
+    finally:
+        (vault / "Feeds").chmod(0o755)
+    captured = capsys.readouterr()
+
+    assert "1 note(s) skipped" in captured.err
+    assert "1 note director(ies) unreadable, contents unseen" in captured.err
+
+
 def test_migrate_slugs_exits_nonzero_on_a_conflict(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -308,6 +327,29 @@ def test_migrate_slugs_refuses_a_locked_vault_but_reads_one_freely(
         # The dry run is read-only, so it neither waits nor is refused.
         assert main(["migrate-slugs", "--vault", str(vault), "--dry-run"]) == 0
     assert json.loads(capsys.readouterr().out)["rows"] == []
+
+
+def test_migrate_slugs_tells_a_refused_vault_root_from_an_absent_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The third of the three vault-root gates, and the only one whose refusal and
+    # not-a-directory arms no test reached — so collapsing it back to `is_dir()`
+    # would restore the swallow and stay green, and this command's report is what
+    # an `--apply` is approved from.
+    walled = tmp_path / "walled"
+    walled.mkdir()
+    (walled / "vault").mkdir()
+    walled.chmod(0o000)
+    try:
+        assert main(["migrate-slugs", "--vault", str(walled / "vault"), "--dry-run"]) == 1
+    finally:
+        walled.chmod(0o755)
+    assert "could not be read" in capsys.readouterr().err
+
+    not_a_dir = tmp_path / "afile"
+    not_a_dir.write_text("x\n", encoding="utf-8")
+    assert main(["migrate-slugs", "--vault", str(not_a_dir), "--dry-run"]) == 1
+    assert "is not a directory" in capsys.readouterr().err
 
 
 def test_migrate_slugs_refuses_a_vault_that_is_not_there_in_either_mode(

@@ -22,6 +22,7 @@ from pathlib import Path
 
 from kboat.cli import add_today_argument, add_vault_argument, vault_path
 from kboat.frontmatter import FrontmatterError, parse_frontmatter
+from kboat.io_utils import list_note_dir
 from kboat.lifecycle.core import Kindle, Source
 from kboat.schema import DIR_BY_TYPE
 
@@ -46,7 +47,29 @@ def _validate_vault(
     for note_type, subdir in DIR_BY_TYPE.items():
         directory = vault / subdir
         count = 0
-        for path in sorted(directory.glob("*.md")) if directory.is_dir() else []:
+        # `checked` counts what this pass could **list**; the stats count what it
+        # could read, so a note that will not parse is in the first and not the
+        # second. What the two entries below buy is not a truer count either: it is
+        # that a vault this pass could not read whole says so in the same report,
+        # instead of handing back a short backlog that reads like a healthy one. A
+        # directory the OS will not give up and a note iCloud evicted are the same
+        # silence from two directions, and `*.md` alone sees neither.
+        try:
+            found, placeholders = list_note_dir(directory)
+        except OSError as exc:
+            violations.append(Violation(subdir, "_dir", "unreadable_dir", str(exc)))
+            checked[note_type] = count
+            continue
+        for placeholder in placeholders:
+            violations.append(
+                Violation(
+                    placeholder.relative_to(vault).as_posix(),
+                    "_file",
+                    "icloud_placeholder",
+                    "evicted to an iCloud placeholder, so the note could not be read",
+                )
+            )
+        for path in found:
             rel = path.relative_to(vault).as_posix()
             count += 1
             try:
