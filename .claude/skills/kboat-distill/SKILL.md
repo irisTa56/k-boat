@@ -56,13 +56,12 @@ Process each `phase_b.ripe` source in this exact order. The order is what makes 
    - **Saved dialogue notes (dialogue)**: for each *other* source from step 2 (reading-time dialogue you saved into the notebook), `fulltext` it the same way and read it. Its content is dialogue, not the source — treat its claims as dialogue-origin: vet each per the accretion policy's dialogue handling (keep as-is, correct, or drop) before accreting, and key its provenance to the **original** source's `url`. Skip any note that won't extract and report it in the run summary (non-fatal, per the opener). There may be zero such notes.
    - `notebooklm --quiet history --notebook <notebooklm_id> --json` — reading-time dialogue left in the chat (may be empty when you saved it as notes instead). The dialogue happens through the Gemini UI, which grounds answers in the notebook source but **also draws on web and world knowledge**, citing the sources it used. Keep those citations: a cited claim is source-grounded, an uncited one is external, and the accretion policy treats them differently.
    - `notebooklm --quiet summary --notebook <notebooklm_id>` — NotebookLM's own summary (text only; no `--json`).
-4. **Review material** (optional, best-effort). `notebooklm --quiet generate flashcards --wait --json --notebook <notebooklm_id>` and/or `generate quiz`. These are async, so `--wait` is required. On timeout or error, mark them `pending` in the report and continue — do not abort the source. If you skip this step entirely (it is optional), record `skipped` instead.
-5. **Distill into Basic Memory** following the accretion policy below.
-6. **Write the review report** section for this source into `Reviews/YYYY-MM-DD.md` in the vault. Written before the discard, so the extracted material survives even if the discard fails.
-7. **Stamp `distilled_date`** with today's date on the source note. This is the commit point; after it the source leaves the ripe set.
-8. **Discard the notebook** (see kboat-notes) — **unless `keep` is also set**, in which case retain it and note the retention in the run summary instead. When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
+4. **Distill into Basic Memory** following the accretion policy below.
+5. **Write the review report** section for this source into `Reviews/YYYY-MM-DD.md` in the vault. Written before the discard, so the extracted material survives even if the discard fails.
+6. **Stamp `distilled_date`** with today's date on the source note. This is the commit point; after it the source leaves the ripe set.
+7. **Discard the notebook** (see kboat-notes) — **unless `keep` is also set**, in which case retain it and note the retention in the run summary instead. When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
 
-A crash anywhere in 1–6 leaves the source ripe and replayable. A crash between 7 and 8 leaves a notebook to clean up later, never lost data.
+A crash anywhere in 1–5 leaves the source ripe and replayable. A crash between 6 and 7 leaves a notebook to clean up later, never lost data.
 
 ## Phase C: distil Kindle books
 
@@ -141,7 +140,6 @@ Source: <url> (for a Kindle book: ASIN:<asin>)
 - `skipped (dup of):` observations dropped as duplicates.
 - `uncreated candidates:` concepts left for the human to promote — including `#dialogue` claims you could neither confirm nor confidently correct.
 - `merge candidates:` pairs flagged for `memory-curate`.
-- `flashcards/quiz:` the generated review material, `pending` (attempted but not ready), or `skipped` (the optional step was skipped).
 ```
 
 Write the Basic Memory Report values in the **same language as the Summary** (Japanese prose), keeping concept-note names and established English terms (`recompute`, FLOP, OCS, …) in English (the backtick keys are fixed literals, never translated). Each key holds **one line**, with `; ` as the top-level item separator so a `、` inside a clause is never read as an item boundary:
@@ -150,14 +148,13 @@ Write the Basic Memory Report values in the **same language as the Summary** (Ja
 - `appended-to:` — the concept-note names that grew (same plain-text rule), each optionally followed by a `（…）` note of what was added.
 - `related in KB:` — the related concept-note names as plain text (same rule as `appended-to:`), each with a short `（…）` note of the connection or why it recurs.
 - `kept from dialogue:`, `corrected from dialogue:`, `uncreated candidates:`, `skipped (dup of):`, `merge candidates:` — short, self-contained Japanese phrases.
-- `flashcards/quiz:` — its own status (the generated material / `pending` / `skipped`), never `none`.
 
-Write `none` for any of these keys except `flashcards/quiz:` when there is nothing to report. Annotate a per-run create-cap hit **once**: suffix `created:` with `(N created, create cap reached)`, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
+Write `none` for any of these keys when there is nothing to report. Annotate a per-run create-cap hit **once**: suffix `created:` with `(N created, create cap reached)`, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
 
 When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in: invoke a matching writing skill for that language up front if the environment offers one, and follow its conventions rather than drafting from memory of the rules.
 Then, before finalizing the prose you just drafted, re-read it once against that skill's own self-check as a distinct pass, rather than trusting that you kept the rules in mind while drafting.
 
-A **Kindle book** (Phase C) uses the same two-subsection layout, with `ASIN:<asin>` as the reference and its Summary drawn from the book and the reader's own `#dialogue` commentary in the body. Kindle books have no notebook, so they omit the `flashcards/quiz:` line.
+A **Kindle book** (Phase C) uses the same two-subsection layout, with `ASIN:<asin>` as the reference and its Summary drawn from the book and the reader's own `#dialogue` commentary in the body.
 
 Everything operational stays out of the report and goes to the run summary only — the Run summary section below is the authoritative list of what to report there.
 
