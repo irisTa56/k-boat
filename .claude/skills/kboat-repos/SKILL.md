@@ -43,10 +43,11 @@ This skill writes only the note; deleting the queue file is `kboat-ingest`'s job
 Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
 
 1. Run `kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`; pass `--dry-run` to preview). It re-fetches every `Repos/*.md` via `gh` in parallel, rewrites only the GitHub-derived frontmatter plus `status` and `refreshed_date`, and **preserves** the judged `role`/`domain`/`summary` and the `## Notes` body. When `gh` resolves a new canonical `owner/repo`, it **adopts the rename**: updates `url`/`title` and renames the file to the new slug, carrying the judgement and body across. It reads the JSON report on stdout.
-   Capture that stdout to a file and read the report from the file, rather than from the stream as it goes past.
-   The report names every note it updated, so on a catalogue of any size the `updated` list is most of its length — and `counts` is emitted ahead of that list, so reading only the stream's tail never reaches the counts at all.
-   Re-running to see them is the trap this avoids: a second pass re-fetches the whole catalogue through `gh` to answer a question the first pass already answered.
-   Read `counts` from the file first, then read step 2's entry arrays from that same file for whichever count is nonzero.
+   - Capture that stdout to a file and read the report from there, not from the stream as it goes past.
+   - The report names every note it updated, so the `updated` list is most of its length on a catalogue of any size.
+     - `counts` is emitted ahead of that list, so reading only the stream's tail never reaches it.
+     - Re-running to see the counts re-fetches the whole catalogue through `gh` to answer what the first pass already answered.
+   - Read `counts` from the file first, then read step 2's entry arrays from that same file for whichever count is nonzero.
 2. **Relay** the report: counts (`total`/`updated`/`adopted`/`rename_collisions`/`failed`/`anomalies`), and the entries below. The routine never deletes a note.
    - `adopted` — renames it healed: `was` → `now`, `from` → `to`.
      - An entry may also carry `stranded`, where the rename leaves an iCloud stub behind at the old name. Name it: a lone placeholder under `Repos/` fails the next `kboat-doctor` and stops the routine, and only this report says where it came from.
