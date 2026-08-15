@@ -1,3 +1,9 @@
+[settings]
+# Put the workspace venv and the mise tools at the front of PATH rather than
+# wherever the inherited PATH happens to place mise's shims dir. Without this
+# a bare `python3` resolves to macOS's system Python in a `mise env` shell.
+activate_aggressive = true
+
 [tools]
 gitleaks = "latest"
 lychee = "latest"
