@@ -8,7 +8,7 @@ description: Find shelved "read later" sources by a natural-language question, a
 Answer "do I have something saved to read about X?" by searching the source notes.
 A K-Boat source marked `keep` is the **read-later shelf** — kept as a searchable archive entry whose notebook is retained for re-reading and dialogue (see kboat-notes lifecycle). Its `summary` and `topics`, captured at ingest, are the durable signal this skill searches.
 
-Follow the kboat-notes skill for the source-note schema and the lifecycle. The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag, through `kboat-pick`. Neither use touches NotebookLM.
+Follow the kboat-notes skill for the source-note schema and the lifecycle. The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag, through `kboat-pick`. The search touches no NotebookLM; the pick reaches it only to read the shortlisted candidates' bodies.
 
 ## Scope
 
