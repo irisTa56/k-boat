@@ -181,7 +181,8 @@ def test_the_same_page_reached_by_another_link_updates_rather_than_collides(
     fm = _fm(vault, f"Sources/{S}.md")
     assert fm["title"] == "B", why
     # The identity the note was created with is what it keeps: it is the
-    # provenance, and the string a notebook's source is resolved by matching.
+    # provenance, and — for a normally-fetched web source — the string a
+    # notebook's source is resolved by matching.
     assert fm["url"] == SOURCE_URL, why
 
 

@@ -461,8 +461,8 @@ def upsert(
                 }
             # The identity a note was created with is the one it keeps. The two
             # forms name one page or the write was refused above, so overwriting
-            # buys nothing and costs the provenance — and, for a source, the
-            # string the NotebookLM source id is resolved by matching.
+            # buys nothing and costs the provenance — and, for a normally-fetched
+            # web source, the string the NotebookLM source id is resolved by matching.
             if isinstance(old, str) and isinstance(new, str) and old != new:
                 provided[schema.identity] = old
         existing_body = body_after_frontmatter(text)
