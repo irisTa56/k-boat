@@ -34,6 +34,8 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 ## Environment
 
 - Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke it bare. It loads `.env` over `mise.toml`'s defaults and puts the single workspace `.venv` (both members' console scripts) and the `notebooklm` mise tool on `PATH`. Re-run it per block — the Bash tool keeps no state.
+  - `mise env` prints the whole of `.env`, secrets included, so `eval` it and never read its output.
+    - To inspect the environment, filter to the one variable you need: `mise env | grep '^export PATH='`.
 - Run Python itself as `.venv/bin/python` from the repo root, never as a bare `python3`.
   - Only the workspace venv carries `kboat`, `feed_filter`, and `yaml`; a bare `python3` resolves by `PATH` order and lands on an interpreter without them.
 
