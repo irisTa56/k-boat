@@ -36,8 +36,8 @@ def _parse_date(stem: str) -> date | None:
 
 def extract_daily_notes(
     daily_dir: Path, today: date, lookback_days: int = DEFAULT_LOOKBACK_DAYS
-) -> list[DailyNote]:
-    """Recent Daily-note bodies, newest-first, within the look-back window.
+) -> tuple[list[DailyNote], list[dict[str, str]]]:
+    """Recent Daily-note bodies newest-first, and the notes that could not be read.
 
     A day is in scope when its date `d` satisfies `earliest <= d <= today`, where
     `earliest = today - lookback_days` (the window is inclusive of both ends). A note
@@ -45,15 +45,26 @@ def extract_daily_notes(
     so it carries no signal into the pick.
     """
     days: list[DailyNote] = []
+    unreadable: list[dict[str, str]] = []
     if not daily_dir.is_dir():
-        return days
+        return days, unreadable
     earliest = today - timedelta(days=lookback_days)
     for path in daily_dir.glob("*.md"):
         d = _parse_date(path.stem)
         if d is None or d > today or d < earliest:
             continue
-        body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
+        # A daily note is ambient signal, not a work item, so one that cannot be
+        # read costs the pick a note rather than the whole run — but it is reported,
+        # because a day whose note could not be read is not a day with no note, and
+        # nothing else would ever say so. A day with no file never reaches here, and
+        # a file whose body is empty carries no signal and is skipped silently.
+        # `UnicodeDecodeError` is a `ValueError`, so it needs naming beside `OSError`.
+        try:
+            body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            unreadable.append({"path": path.name, "error": str(exc)})
+            continue
         if body:
             days.append(DailyNote(date=d.isoformat(), body=body))
     days.sort(key=lambda dn: dn.date, reverse=True)
-    return days
+    return days, unreadable

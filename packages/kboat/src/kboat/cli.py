@@ -169,7 +169,10 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
         return 2
     except VaultLockedError as e:
         return emit_locked(e)
-    except (FrontmatterError, OSError) as e:
+    # `UnicodeDecodeError` alongside them: it is a `ValueError`, so an existing note
+    # that is not UTF-8 would escape this edge and the caller would get a traceback
+    # and empty stdout where the write contract promises a `status` record.
+    except (FrontmatterError, OSError, UnicodeDecodeError) as e:
         sys.stderr.write(f"write failed: {e}\n")
         return 1
     json.dump(result, sys.stdout, ensure_ascii=False, indent=2)

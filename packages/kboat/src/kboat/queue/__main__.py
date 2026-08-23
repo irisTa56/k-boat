@@ -30,7 +30,10 @@ def _cmd_list(vault: Path, folder: str) -> dict[str, object]:
         rel = path.relative_to(vault).as_posix()
         try:
             capture = parse_capture(path.read_text(encoding="utf-8"))
-        except OSError as exc:
+        # `UnicodeDecodeError` for the reason `kboat.repos.refresh` gives: it is a
+        # `ValueError`, so a capture that is not UTF-8 would escape this boundary and
+        # take the whole drain with it.
+        except (OSError, UnicodeDecodeError) as exc:
             files.append({"path": rel, "url": None, "title": "", "error": str(exc)})
             continue
         entry: dict[str, object] = {"path": rel, "url": capture.url, "title": capture.title}

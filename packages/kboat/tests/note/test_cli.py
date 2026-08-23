@@ -401,3 +401,26 @@ def test_a_vault_root_that_does_not_exist_is_reported_not_created(
     assert _run(["write", "--type", "source", "--vault", str(missing)], rec, monkeypatch) == 1
     assert "write failed:" in capsys.readouterr().err
     assert not missing.exists()
+
+
+def test_an_existing_note_that_is_not_utf8_fails_with_a_record_not_a_traceback(
+    vault: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # This is the one writer every note-writing skill goes through, and the caller
+    # branches on the `status` key of the record it prints. `UnicodeDecodeError` is
+    # a `ValueError`, so without it at this edge the caller gets no record at all —
+    # a status the write contract has no member for.
+    (vault / "Sources" / f"{SLUG}.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
+    rec = json.dumps(
+        {
+            "slug": SLUG,
+            "fields": {
+                "type": "source",
+                "title": "T",
+                "url": URL,
+                "source_type": "web_page",
+            },
+        }
+    )
+    assert _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch) == 1
+    assert "write failed:" in capsys.readouterr().err

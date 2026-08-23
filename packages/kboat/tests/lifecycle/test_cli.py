@@ -200,6 +200,18 @@ def test_a_filed_date_it_could_not_write_is_an_anomaly(vault: Path, capsys):
     assert out["anomalies"][0]["error"].startswith("filed_date write failed")
 
 
+def test_a_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_pass(vault: Path, capsys):
+    # `UnicodeDecodeError` is a `ValueError`, so without it in the boundary a
+    # single bad note escapes and takes the whole pass with it.
+    # In the stamping loop it would escape partway, leaving some `filed_date`
+    # values written and none of it reported.
+    (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
+    (vault / "Kindles").mkdir(exist_ok=True)
+    (vault / "Kindles" / "B0BAD.md").write_bytes(b"---\ntype: kindle\ntitle: \xff\n---\n")
+    out = run(vault, capsys)
+    assert sorted(a["path"] for a in out["anomalies"]) == ["Kindles/B0BAD.md", "Sources/bad.md"]
+
+
 def test_missing_kindles_dir_is_empty(vault: Path, capsys):
     # Kindles/ is optional — a sources-only vault must not error.
     out = run(vault, capsys)

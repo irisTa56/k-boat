@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from kboat.pick.dailynotes import extract_daily_notes
+from kboat.pick.dailynotes import DEFAULT_LOOKBACK_DAYS, DailyNote, extract_daily_notes
+
+
+def _days(
+    daily_dir: Path, today: date, lookback_days: int = DEFAULT_LOOKBACK_DAYS
+) -> list[DailyNote]:
+    """The readable half, for the cases that are not about unreadable notes."""
+    return extract_daily_notes(daily_dir, today, lookback_days)[0]
 
 
 def _write(daily: Path, name: str, text: str) -> None:
@@ -19,7 +26,7 @@ def test_newest_first_and_skips_empty_body(tmp_path: Path) -> None:
     _write(daily, "2026-06-04.md", "- read up on distributed training\n- and agents\n")
     # A note with only frontmatter (no body) carries no signal and is skipped.
     _write(daily, "2026-06-03.md", "---\ntags: [daily]\n---\n\n   \n")
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert [dn.date for dn in out] == ["2026-06-04", "2026-06-02"]
     assert "distributed training" in out[0].body
     assert out[1].body == "wondering about KV cache tricks"
@@ -32,7 +39,7 @@ def test_frontmatter_is_stripped(tmp_path: Path) -> None:
         "2026-06-04.md",
         "---\ntags: [daily]\nmood: ok\n---\n\n## Notes\n- curious about RAG\n",
     )
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert out[0].body == "## Notes\n- curious about RAG"
     assert "tags:" not in out[0].body
 
@@ -40,7 +47,7 @@ def test_frontmatter_is_stripped(tmp_path: Path) -> None:
 def test_body_without_frontmatter_kept_whole(tmp_path: Path) -> None:
     daily = tmp_path / "Daily"
     _write(daily, "2026-06-04.md", "just a plain line about geospatial indexing\n")
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert out[0].body == "just a plain line about geospatial indexing"
 
 
@@ -49,7 +56,7 @@ def test_first_closing_fence_ends_frontmatter(tmp_path: Path) -> None:
     # A `---` thematic break inside the body must not be mistaken for the closing
     # fence: only the first `---` after the opener ends the frontmatter.
     _write(daily, "2026-06-04.md", "---\ntags: [daily]\n---\nintro\n\n---\n\nmore\n")
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert out[0].body == "intro\n\n---\n\nmore"
 
 
@@ -58,7 +65,7 @@ def test_crlf_frontmatter_is_stripped(tmp_path: Path) -> None:
     # CRLF line endings (a note edited on another platform) must still be parsed.
     (daily).mkdir(parents=True, exist_ok=True)
     (daily / "2026-06-04.md").write_bytes(b"---\r\ntags: [daily]\r\n---\r\ncurious about RAG\r\n")
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert out[0].body == "curious about RAG"
 
 
@@ -66,7 +73,7 @@ def test_unclosed_frontmatter_is_not_stripped(tmp_path: Path) -> None:
     daily = tmp_path / "Daily"
     # A leading `---` with no closing fence is not frontmatter; keep the text whole.
     _write(daily, "2026-06-04.md", "---\nstray dashes, then prose\n")
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert out[0].body == "---\nstray dashes, then prose"
 
 
@@ -75,12 +82,12 @@ def test_future_dated_and_non_date_files_ignored(tmp_path: Path) -> None:
     _write(daily, "2026-06-20.md", "from the future\n")
     _write(daily, "scratch.md", "not a daily note\n")
     _write(daily, "2026-06-04.md", "valid\n")
-    out = extract_daily_notes(daily, date(2026, 6, 12))
+    out = _days(daily, date(2026, 6, 12))
     assert [dn.date for dn in out] == ["2026-06-04"]
 
 
 def test_missing_daily_dir_is_empty(tmp_path: Path) -> None:
-    assert extract_daily_notes(tmp_path / "Daily", date(2026, 6, 12)) == []
+    assert _days(tmp_path / "Daily", date(2026, 6, 12)) == []
 
 
 def test_lookback_window_excludes_stale_notes(tmp_path: Path) -> None:
@@ -89,7 +96,7 @@ def test_lookback_window_excludes_stale_notes(tmp_path: Path) -> None:
     _write(daily, "2026-05-30.md", "exactly at the boundary\n")
     _write(daily, "2026-05-29.md", "one day too old\n")
     _write(daily, "2026-06-13.md", "today\n")
-    out = extract_daily_notes(daily, date(2026, 6, 13))
+    out = _days(daily, date(2026, 6, 13))
     assert [dn.date for dn in out] == ["2026-06-13", "2026-05-30"]
 
 
@@ -98,7 +105,7 @@ def test_lookback_window_is_configurable(tmp_path: Path) -> None:
     _write(daily, "2026-06-04.md", "eight days back\n")
     _write(daily, "2026-06-10.md", "two days back\n")
     # A 3-day window keeps only 2026-06-10 (2026-06-04 is out of scope).
-    out = extract_daily_notes(daily, date(2026, 6, 12), lookback_days=3)
+    out = _days(daily, date(2026, 6, 12), lookback_days=3)
     assert [dn.date for dn in out] == ["2026-06-10"]
 
 
@@ -107,5 +114,29 @@ def test_lookback_zero_is_today_only(tmp_path: Path) -> None:
     # earliest == today, so only today's note is in scope (inclusive boundary).
     _write(daily, "2026-06-12.md", "today\n")
     _write(daily, "2026-06-11.md", "yesterday\n")
-    out = extract_daily_notes(daily, date(2026, 6, 12), lookback_days=0)
+    out = _days(daily, date(2026, 6, 12), lookback_days=0)
     assert [dn.date for dn in out] == ["2026-06-12"]
+
+
+def test_a_daily_note_that_is_not_utf8_is_reported_rather_than_raised_or_dropped(
+    tmp_path: Path,
+) -> None:
+    # It costs the pick a note rather than the whole run, and it is reported: a day
+    # whose note could not be read is not a day with no note, and nothing else here
+    # would ever say so. `UnicodeDecodeError` is a `ValueError`, so without it named
+    # in the boundary this raises out of the gather instead.
+    daily = tmp_path / "Daily"
+    _write(daily, "2026-06-04.md", "read up on agents\n")
+    (daily / "2026-06-05.md").write_bytes(b"\xff\n")
+    days, unreadable = extract_daily_notes(daily, today=date(2026, 6, 5), lookback_days=7)
+    assert [n.date for n in days] == ["2026-06-04"]
+    assert [u["path"] for u in unreadable] == ["2026-06-05.md"]
+
+
+def test_a_day_with_no_note_is_not_reported(tmp_path: Path) -> None:
+    # Only a file that is there and cannot be read is an anomaly. A day with no
+    # file, and a file whose body is empty, both stay silent.
+    daily = tmp_path / "Daily"
+    _write(daily, "2026-06-04.md", "---\ntitle: x\n---\n\n")
+    days, unreadable = extract_daily_notes(daily, today=date(2026, 6, 5), lookback_days=7)
+    assert (days, unreadable) == ([], [])

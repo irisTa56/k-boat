@@ -57,6 +57,20 @@ def test_list_reports_unreadable_capture(
     assert out["counts"]["malformed"] == 1
 
 
+def test_list_reports_a_capture_that_is_not_utf8(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `UnicodeDecodeError` is a `ValueError`, so without it in the boundary a
+    # single bad note escapes and takes the whole pass with it.
+    queue = tmp_path / "Queue"
+    queue.mkdir()
+    (queue / "bad.md").write_bytes(b"[t](https://example.com/\xff)\n")
+    main(["--vault", str(tmp_path), "list"])
+    out = json.loads(capsys.readouterr().out)
+    broken = next(f for f in out["files"] if f["path"] == "Queue/bad.md")
+    assert broken["url"] is None and broken["error"]
+
+
 def test_list_missing_folder_is_empty(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "Sources").mkdir()  # a vault without a Queue/ folder
     assert main(["--vault", str(tmp_path), "list"]) == 0

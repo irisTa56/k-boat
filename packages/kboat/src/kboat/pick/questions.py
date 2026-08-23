@@ -35,6 +35,14 @@ class Question:
     note: str  # nested sub-bullets/continuation joined by newlines, "" when none
 
 
+class QuestionsUnreadableError(Exception):
+    """The questions file is there and could not be read.
+
+    Its own type, because the caller answers it differently from a missing file:
+    that one is normal and silent, this one is an anomaly to report.
+    """
+
+
 def extract_questions(questions_file: Path) -> list[Question]:
     """Parse the open-questions backlog file into ordered questions.
 
@@ -47,7 +55,15 @@ def extract_questions(questions_file: Path) -> list[Question]:
     """
     if not questions_file.is_file():
         return []
-    text = strip_frontmatter(questions_file.read_text(encoding="utf-8"))
+    # Raising `QuestionsUnreadableError` rather than returning nothing: the backlog is
+    # the pick's primary signal, so a file that is there and cannot be read is not
+    # the same as no file, and the caller has to be able to tell them apart.
+    # `UnicodeDecodeError` is a `ValueError`, so it needs naming beside `OSError`.
+    try:
+        raw = questions_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise QuestionsUnreadableError(str(exc)) from exc
+    text = strip_frontmatter(raw)
     questions: list[Question] = []
     note_lines: list[str] = []
     open_for_note = False

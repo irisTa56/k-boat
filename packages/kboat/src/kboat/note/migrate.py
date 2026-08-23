@@ -147,7 +147,10 @@ def _read_target(path: Path, identity: str) -> tuple[_Target | None, str]:
         text = path.read_text(encoding="utf-8")
         fm = parse_frontmatter(text)
         entries = parse_entries(text)
-    except (FrontmatterError, OSError) as exc:
+    # `UnicodeDecodeError` among them: it is a `ValueError`, so without it the
+    # traceback this docstring promises not to produce is exactly what one note
+    # that is not UTF-8 produces.
+    except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
         return None, f"parse_error: {exc}"
     value = fm.get(identity)
     if value is None:
@@ -526,7 +529,13 @@ def migrate(vault: Path, *, apply: bool) -> Report:
                 continue
             try:
                 apply_row(vault, row)
-            except (FrontmatterError, OSError) as exc:
+            # `UnicodeDecodeError` alongside `OSError`, as `kboat.repos.refresh`
+            # catches it: `apply_row` re-reads the note, and this loop already
+            # accepts that the second read can fail where `plan`'s did not. Being
+            # a `ValueError` it would otherwise escape, ending the pass on a
+            # traceback and an empty stdout — where the contract owes a `failed`
+            # row and the rows that follow it.
+            except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
                 row.status = "failed"
                 # `plan` names a strand before the move, and this row's move may
                 # have failed anywhere: before the first rename, between the PDF's

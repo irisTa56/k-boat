@@ -75,7 +75,11 @@ def _load_sources(sources_dir: Path, vault: Path) -> tuple[list[Source], list[di
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-        except (FrontmatterError, OSError) as exc:
+        # `UnicodeDecodeError` for the reason `kboat.repos.refresh` gives: it is a
+        # `ValueError`, so a note that is not UTF-8 would escape every boundary in
+        # this pass and take the whole work list with it — and in the stamping loop
+        # below it would do so partway, leaving some dates written and none reported.
+        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "source":
@@ -96,7 +100,7 @@ def _load_kindles(kindles_dir: Path, vault: Path) -> tuple[list[Kindle], list[di
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-        except (FrontmatterError, OSError) as exc:
+        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "kindle":
@@ -118,7 +122,7 @@ def _apply_phase_a(
         path = vault / s.path
         try:
             atomic_write_text(path, set_filed_date(path.read_text(encoding="utf-8"), value))
-        except (FrontmatterError, OSError) as exc:
+        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
             anomalies.append({"path": s.path, "error": f"filed_date write failed: {exc}"})
     return anomalies
 

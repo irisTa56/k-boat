@@ -74,7 +74,10 @@ def _validate_vault(
             count += 1
             try:
                 fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-            except (FrontmatterError, OSError) as exc:
+            # `UnicodeDecodeError` for the reason `kboat.repos.refresh` gives: it is a
+            # `ValueError`, so a note that is not UTF-8 would escape this boundary and
+            # take the whole vault's report with it.
+            except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
                 violations.append(Violation(rel, "_frontmatter", "parse_error", str(exc)))
                 continue
             violations.extend(check_note(note_type, fm, rel))
