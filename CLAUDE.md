@@ -61,7 +61,7 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 
 The product skills live at the repo-root `.claude/skills/`.
 The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
-The eight K-Boat skills:
+The nine K-Boat skills:
 
 - `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, and where concept notes live. Defers to `kboat-vault-conventions` for the shared mechanics. Read it before touching any note format.
 - `kboat-ingest` — drains the vault's `Queue/` folder into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos`, but a GitHub blob/raw `.pdf`/`.md` file link stays a source.
@@ -69,6 +69,7 @@ The eight K-Boat skills:
 - `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome, into an ASIN-named `Kindles/` note.
 - `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
 - `kboat-recall` — read-only lexical search over source notes for a "read later" source matching a question. Also hosts the **daily-pick mode** the routine runs: surface up to two `web_page` picks for today, inferred from the `Questions.md` open-questions backlog and recent Daily notes.
+- `kboat-notebook-health` — checks whether a live notebook still holds its original source and adds the original back where it has gone, over the sources the reader has opened, plus whatever the summary backfill, the distillation pass, and the daily pick reported (the skill states the exact set; this file does not restate it). It restores in place and never rebuilds a notebook, so saved dialogue, the chat persona, and the source's lifecycle all survive.
 - `kboat-rescue` — interactive, Mac-only: works a DLQ (`blocked`) source to one of its two exits — completing it by pulling the content through the user's real Chrome, or abandoning it where there is no content to pull or the user decides not to chase it.
 - `kboat-curate` — on-demand maintenance of the knowledge base: curates the concept graph and checks the concept-note tags for drift and gaps. Human-run, not in the routine.
 
@@ -79,6 +80,7 @@ The prose skills carry no automated tests (only the `kboat` library is unit-test
 Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
 
 - One notebook per source (1:1), throwaway by default but retained for a `keep` source; its `notebooklm_id`/`gemini_url`/`notebooklm_url` live on the source note. At creation every notebook is given the same fixed honest-dialogue chat persona. Reading-time dialogue saved back as NotebookLM notes (usually `url: null`) distills as `#dialogue`.
+- A notebook's existence is never proof it holds its source. NotebookLM has been seen dropping a web source weeks after a verified ingest, leaving a titled notebook whose `source list` returns zero with exit 0, so every reader resolves the original rather than trusting `notebooklm_id`. What may be done about it turns on an asymmetry: the original is recoverable from the `url` or the file at any time, while the saved dialogue, the chat persona, and the notebook id are recoverable from nothing — so the answer is to add the original back into the notebook that survived (`kboat-notebook-health`, via kboat-notes "restore a source's original into its notebook"), never to rebuild it. Reactivation, which does rebuild, is left to a notebook that is actually gone.
 - A source is a web page or a PDF (`source_type`); a PDF is uploaded into the notebook as a file at `PDFs/<slug>.pdf`, never fetched from a URL. No Google Drive or Play Books — Play Books has no upload API, so it would break the unattended routine.
 - The DLQ is exactly the *durably* un-ingestable set: a source whose ingest cannot obtain what its path requires becomes a `blocked` note keeping its `url`. It has two exits, both human-initiated and both clearing `blocked`: a `kboat-rescue` that supplies the content, or an abandonment where there is no content to be had or the human decides the wall is not worth the trouble. A transient failure is not a member (it keeps its queue file and retries).
 - The NotebookLM source id is never stored — it is resolved on demand in `notebooklm source list`: a PDF by `type: pdf`, a web page by `url` (or `title`, for a rescued text upload).
@@ -95,7 +97,7 @@ Load-bearing model — cross-cutting invariants no single skill owns, so easy to
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, run daily) runs `kboat-doctor` as a precondition, then `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then `kboat-validate --stats`, under a single auth refresh. A `kboat-doctor` failure stops the run before any phase — a vault the precondition could not establish makes every later report a report about a vault that was not there. It must be local — the queue lives in the iCloud vault, and the NotebookLM auth cookies, the vault itself, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
+- A Claude Code Desktop local scheduled task (`kboat-routine`, run daily) runs `kboat-doctor` as a precondition, then `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then the `kboat-notebook-health` sweep, then `kboat-validate --stats`, under a single auth refresh. A `kboat-doctor` failure stops the run before any phase — a vault the precondition could not establish makes every later report a report about a vault that was not there. It must be local — the queue lives in the iCloud vault, and the NotebookLM auth cookies, the vault itself, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
 - A failure that needs the user's action but would otherwise go unseen posts one `osascript` desktop notification; routine and self-healing outcomes stay in the run summary. The notification strings are a closed set the prompt owns; a new trigger reuses one rather than adding one. The triggers:
   - a `kboat-doctor` precondition failure;
   - auth unusable;
@@ -103,7 +105,10 @@ Automation:
   - Basic Memory down;
   - a `kboat-repos` defect no retry can clear (`gather`'s `defect-payload` verdict, or a `refresh` failure with `reason: payload`);
   - a `kboat-repos refresh` that updated nothing while reporting failures or anomalies, or that failed more than one note for the same reason no later run clears — a common cause, whatever the per-note reasons say;
-  - a backlog-health count past its threshold.
+  - a backlog-health count past its threshold;
+  - a notebook that lost its original source, whether or not `kboat-notebook-health` restored it. This one is the stated exception to "routine outcomes stay in the run summary": a source vanishing out of a notebook is a loss even when the article comes back, since whatever the reader built on it was built over a gap;
+  - a source whose `notebooklm_id` names no notebook at all, wherever in the run it is found — the notebook-health sweep, `kboat-ingest`'s backfill, `kboat-distill`'s ripe-source resolution, and the daily pick's body read each meet it, and for some sources only one of them can. Nothing automatic clears it — only a human-run reactivation does — so without this it is the most actionable thing a run produces and the one that stays unseen;
+  - a notebook `kboat-notebook-health` left unrestored as ambiguous — it holds a source the identification rule could not match, so the sweep restores nothing and re-reports it every run. Neither a loss nor a failed restore, and it never self-heals: a human compares the note against what the notebook holds and takes one of the writes `kboat-notes` names there — delete a leftover, or align the title, renaming the notebook's source rather than overwriting the note's unless they want the older title back.
 
 ## Tooling config
 
@@ -133,6 +138,6 @@ The authority is every value the command can emit, wherever along its path the r
 Reconcile what each one tells its reader to do, and not only the value's name: a value a list omits is read as the neighbours it does name, and inherits their response.
 
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
-But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), and the `osascript` notification trigger set.
+But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), the `osascript` notification trigger set, and which phases' reports are threaded into a later phase as input — the notebook-health step reads three that way and covers far less without them.
 It also reads the library's reports by key name.
 When a change alters what it hardcodes, or the report keys it reads, reconcile that prompt in the same change and confirm it back.
