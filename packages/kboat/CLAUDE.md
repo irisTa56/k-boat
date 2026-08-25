@@ -5,7 +5,7 @@ This file covers only what is specific to working on the library; the K-Boat pro
 
 ## What this package is
 
-The library surface — its eight console scripts and eight shared modules (`kboat.frontmatter`, `kboat.schema`, `kboat.canonical`, `kboat.naming`, `kboat.write`, `kboat.io_utils`, `kboat.lock`, `kboat.cli`) — is described in [README.md](README.md).
+The library surface — its nine console scripts and eight shared modules (`kboat.frontmatter`, `kboat.schema`, `kboat.canonical`, `kboat.naming`, `kboat.write`, `kboat.io_utils`, `kboat.lock`, `kboat.cli`) — is described in [README.md](README.md).
 Its **spec** is split (both at the repo-root `.claude/skills/`): the shared vault contract — naming, the schema/validate/write contract, durability and the vault lock, Base discipline — is the `kboat-vault-conventions` skill, and K-Boat's note-type field semantics and lifecycle are the `kboat-notes` skill.
 
 ## Working on it

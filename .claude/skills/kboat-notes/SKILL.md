@@ -1001,14 +1001,35 @@ Drain ingestion snapshots a repo once; this keeps the GitHub-derived fields fres
 
 ## Concept notes (`KBOAT_KNOWLEDGE_PATH`)
 
-Distillation writes concept notes into the Basic Memory project `k-boat-knowledge`, rooted at `KBOAT_KNOWLEDGE_PATH`.
+Distillation writes concept notes into the Basic Memory project `k-boat-knowledge`, rooted at `KBOAT_KNOWLEDGE_PATH`, in its `concepts/` folder. Every `write_note` passes that folder as its `directory`, which the tool requires and does not default: it is the folder `kboat-knowledge` reads, so a note written anywhere else never has its *shape* read and is absent from `checked`; outside `meta/` it does not go unmentioned either, the check reporting it as `note_outside_concepts`. `meta/` is the exception in both directions — the check treats it as out of scope, so a concept note that lands there is reported by nothing, and it is also where the repair sends a hub or vocabulary note, at `uncovered` — read that finding's own `repair`, which says whether the file belongs back under `concepts/` or is no part of the base at all. The `meta/` folder beside it holds hub and vocabulary notes, which are not concept notes and follow none of the rules below.
 The concept-note format and the accretion procedure are defined by the Basic Memory skills — kboat-distill defers to `memory-notes` (note structure), `memory-ingest` (entity matching), and `memory-curate` (merging), the same way kboat-ingest defers to this skill.
 
 Relations between concepts use wikilinks (`- relation_type [[Other Concept]]`); both ends live in this same root, so they resolve in Basic Memory, Obsidian, and Foam.
-Provenance back to a source is different: the source note lives in the vault, a separate root, so a wikilink to it could not resolve. Record provenance instead as an observation carrying the source's canonical URL, e.g. `- [source] <title> — <url>`. This is root-independent, stable, and greppable.
+A relation line carries no `#`-prefixed word, for the same reason a heading does not (below): the observation parser reads any inline, so a `#`-word anywhere on the line makes the graph hold it as a claim as well as an edge — one carrying no `[source]` line and sitting outside every reading group. Where the context needs the idea, spell it out as a word.
+Provenance back to a source is different: the source note lives in the vault, a separate root, so a wikilink to it could not resolve. Record provenance instead as an observation carrying the source's canonical URL, e.g. `- [source] <title> — <url>`. This is root-independent, stable, and greppable. It is an observation like any other and belongs at the end of the group it closes — which is the end of `## Observations` only in a note that holds one group — and never in a provenance section of its own — a section would put it outside the group its claims sit in (see "Reading groups in a multi-source note" below) and leave a second source with nothing to append to.
 Tag each distilled observation by grounding — `#grounded` for claims the source supports, `#dialogue` for external knowledge the reading-time conversation surfaced — so a chat-derived claim is never mistaken for a source claim (kboat-distill defines how the two are sorted and verified).
 A note's frontmatter facet tags (the snake_case categorisation tags, distinct from the per-observation grounding tags above) come from a controlled vocabulary that lives in the knowledge base itself, as the `meta/Tag vocabulary` note (`memory://k-boat-knowledge/meta/tag-vocabulary`), listing the canonical tags and the variant-to-canonical aliases to avoid.
 It is data, not skill config — the right tags depend on what the base accumulates — so kboat-distill reads it when tagging: reuse a canonical tag where one fits, and mint a new one only when none does, recording it in that note in the same change.
+
+A concept note carries `## Observations` and `## Relations`, in that order, both present even where one of them is empty, and adjacent — a group is inserted *before* `## Relations`, anchored on that line, so anything standing between the two takes the group with it. Every writer leans on that: `## Relations` is the anchor a new group is inserted before, and a note missing it aborts the item that needs it rather than being written around, the rest of the run going on (kboat-distill).
+
+### Reading groups in a multi-source note
+
+A **reading group** is a run of observations closed by the `[source]` line (or lines) that support them — the boundary a provenance line has always drawn, since it stands under the bullets it grounds rather than over them.
+Every observation in a concept note sits in one, so the base carries no claim without a provenance.
+A note with one group keeps its observations as one flat list and takes no heading, because there is nothing to divide; that holds whether one source closed the group or several did jointly.
+A note with more than one group gives each an `###` heading, and the groups run oldest-distilled first, so the note reads in the order the reader met its sources.
+
+The heading says **what that reading contributed to this concept**, not which article it came from and not which facet of the concept it owns.
+The source is already named in the `[source]` line closing the group, so repeating it as the heading spends a line on nothing.
+Naming a facet instead would over-promise: groups are never merged, so a later source writing about the same facet opens its own group rather than joining an earlier one.
+Phrasing carries that distinction — "Why online RL turns it off" reads as a contribution, while "Online RL" reads as a slot the concept reserves — so prefer the first shape, and write it in the language the note is written in.
+
+One thing the layout cannot show: a claim two sources both support is not duplicated, so it stays in the group of whichever source distilled first.
+A heading says where a claim was written down, never that the group's source is its only support.
+
+The grouping changes nothing about what the graph indexes from the bullets: an observation is read out of any bullet regardless of the heading above it. The heading's own text is not exempt, though — it is an inline like any other, which is what the next sentence is about.
+Three things do not belong in a heading: a `#`-prefixed word and a leading `[...]`, either of which makes the heading itself parse as an observation, and a `[[wikilink]]`, which the relation parser turns into a `links_to` edge the graph then carries as though a bullet had declared it.
 
 These notes are plain Markdown and degrade gracefully: the `## Observations` lines (`- [category] content #tag`) and the in-root relation wikilinks read as ordinary bullets and working links in Obsidian or Foam, so the knowledge stays browsable even without the Basic Memory runtime, which is only the search layer.
 
