@@ -13,6 +13,7 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), and `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name).
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
 - `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain.
+- `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all, which is the branch `kboat-distill` takes before adding to one; text carrying no such heading is refused (exit 2, empty stdout) rather than answered.
 
 ## Shared modules
 
