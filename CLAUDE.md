@@ -139,6 +139,11 @@ Altering it means adding, dropping, or renaming a value, changing the response o
 The authority is every value the command can emit, wherever along its path the record is composed.
 Reconcile what each one tells its reader to do, and not only the value's name: a value a list omits is read as the neighbours it does name, and inherits their response.
 
+The same reconciliation is owed to a plain key, and it is what a key costs.
+The JSON a console script prints on stdout — whatever its own docstring calls it — is read by prose an agent executes, so a key costs a restatement in every prose site that names it, this file included, whether or not anything branches on it.
+Take as few keys, and as few values in any closed set among them, as the prose that reads it actually needs: the lines grow out of them and not the other way round.
+Little of that is checked, and only the part inside this repository can be — where both sides are structured, a table on one and a field list or a `StrEnum` on the other, which is what `packages/kboat/tests/test_doc_schema_sync.py` pins and the pattern to reach for.
+
 The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
 But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), the `osascript` notification trigger set, and which phases' reports are threaded into a later phase as input — the notebook-health step reads three that way and covers far less without them.
 It also reads the library's reports by key name.
