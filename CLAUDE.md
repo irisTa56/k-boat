@@ -151,7 +151,7 @@ What has actually been caught stale:
 
 An untracked local copy of a tracked template counts as outside this repository.
 
-A record's keys are such a set, so reconciling them is what a key costs.
+The keys of the JSON a console script prints on stdout — whatever its own docstring calls it — are such a set, so reconciling them is what a key costs.
 Take as few keys, and as few values in any closed set among them, as the prose that reads it actually needs: the lines grow out of them and not the other way round.
 Little of that is checked, and only the part inside this repository can be — where both sides are structured, a table on one and a field list or a `StrEnum` on the other, which is what `packages/kboat/tests/test_doc_schema_sync.py` pins and the pattern to reach for.
 
