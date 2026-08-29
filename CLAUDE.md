@@ -134,13 +134,24 @@ Automation:
 The shared vault mechanics (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
 When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
 
-When a change alters a closed set a tool this project drives emits and its readers restate or branch on, update every place that restates that set or keys a response on it, in the same change — a place outside this repository drafted and confirmed back rather than applied.
+When a change alters a closed set its readers restate or branch on, update every place that restates that set or keys a response on it, in the same change — a place outside this repository drafted and confirmed back rather than applied.
+The set is one a tool this project drives emits, or one the project defines for itself.
 Altering it means adding, dropping, or renaming a value, changing the response owed to one, or writing or editing a list that enumerates it.
-The authority is every value the command can emit, wherever along its path the record is composed.
+The authority is the set's own declaration — for an emitted one, every value the command can emit, wherever along its path the record is composed.
 Reconcile what each one tells its reader to do, and not only the value's name: a value a list omits is read as the neighbours it does name, and inherits their response.
 
-The same reconciliation is owed to a plain key, and it is what a key costs.
-The JSON a console script prints on stdout — whatever its own docstring calls it — is read by prose an agent executes, so a key costs a restatement in every prose site that names it, this file included, whether or not anything branches on it.
+A restatement is anywhere the set is named back — a value prescribed, described, or branched on, or the set's size counted — so sweep by that test rather than by a list of files, and sweep each file whole.
+What has actually been caught stale:
+
+- a count, and the per-item list beside it, wherever they sit;
+- in a skill:
+  - its frontmatter `description`;
+  - its bare-CLI preamble;
+  - its procedure body, a section that declares itself the authoritative list included.
+
+An untracked local copy of a tracked template counts as outside this repository.
+
+A record's keys are such a set, so reconciling them is what a key costs.
 Take as few keys, and as few values in any closed set among them, as the prose that reads it actually needs: the lines grow out of them and not the other way round.
 Little of that is checked, and only the part inside this repository can be — where both sides are structured, a table on one and a field list or a `StrEnum` on the other, which is what `packages/kboat/tests/test_doc_schema_sync.py` pins and the pattern to reach for.
 
