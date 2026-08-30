@@ -68,7 +68,7 @@ The 💬 separator is an emoji on purpose: a plain punctuation separator could i
 The other three columns are the human's triage checkboxes, ordered by when the call is made: `dismissed` and `read`, the two settled on the spot, then `shelved`, the one that defers.
 `added_date` orders the rows without being displayed, and the direction follows what the view is for.
 The two working views run oldest first, because a queue is worked from its old end and newest-first buries the card that has waited longest under every arrival since.
-The two retired views run newest first, because what a reader comes back to undo is the tick they just made.
+The two retired views keep filing order, newest first: `added_date` is stamped when the note is created and never refreshed, so no property on the note records when a card was ticked.
 
 - **Inbox** (`read != true && shelved != true && dismissed != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row appears here like any other (it is an untriaged keep); the 🔒 prefix flags it, and judging whether the wall is worth clearing is part of triaging the card.
 - **Shelf** (`shelved && read != true && dismissed != true`) — the read-later shelf; a shelved card the reader later reads or dismisses drops out of here too, since both retiring flags hide from either working view.
