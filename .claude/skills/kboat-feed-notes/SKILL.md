@@ -27,7 +27,7 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 | `read` | Checkbox, set by the **human**. "Read it here": the page was worth reading and has been read, so the card is done. Always present (default `false`). feed-filter **resets it to `false` on every write**, for the same reason `dismissed` is reset. |
 | `shelved` | Checkbox, set by the **human**. "Read later": move the card to the Shelf view to look at when there is time. Always present (default `false`); feed-filter omits it on a re-write, so a shelved card stays shelved. |
 | `dismissed` | Checkbox, set by the **human**. "Not worth reading": hide the card from the working views as a future auto-cleanup target. Always present (default `false`). feed-filter **resets it to `false` on every write**, so a re-reminded topic (a new qualifying forum post) resurfaces into the Inbox rather than staying dismissed. |
-| `wall` | Boolean, set by **feed-filter**. The page is behind a login or paywall, so it was admitted on its summary alone; surfaced in the Walls view for the human to judge. Always present (default `false`). |
+| `wall` | Boolean, set by **feed-filter**. The page is behind a login or paywall, so it was admitted on its summary alone; flagged on the card with a 🔒 prefix for the human to judge. Always present (default `false`). |
 | `feed_kind` | `article` or `forum`. Not a 1:1 record of which gather ran: feed-filter has three (registered feeds, Discourse forums, and neural-search queries), and a query keep is written `article` because that is the shape it has — a page, not a forum topic. `site_id` is what distinguishes a query keep. |
 | `site_id` | Where the page came from: a registered site's id (from feed-filter's `sites.toml`), or the literal `exa` for a page the query gather found, which belongs to no registered site. The provenance and grouping key. |
 | `summary` | A short summary or snippet from the feed entry, in the language it came in. Empty when the source gave none. Lets a card be judged at a glance in the Base. |
@@ -54,7 +54,7 @@ A feed note has no destructive routine action and no cooldown, so its lifecycle 
 
 ## Feeds Base
 
-A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human five table views of the triage queue.
+A standalone Base at the vault root, `Feeds.base`, over `type == "feed"`, gives the human four table views of the triage queue.
 Every filter is a plain boolean over an always-present property, per the Base-authoring discipline in `kboat-vault-conventions` — never a `!=` over a possibly-missing property, never a date-emptiness test.
 
 The column set is driven by the triage motion: read the summary, open the page when it looks worth it, tick a checkbox.
@@ -66,11 +66,12 @@ The formula points at `url` rather than at the note's own file because a feed no
 The 💬 separator is an emoji on purpose: a plain punctuation separator could itself occur inside a title or summary and blur the boundary, which an emoji will not.
 `wall` rides in the same cell as a 🔒 prefix rather than spending a column of its own: a glyph on the card costs no horizontal room, and being feed-filter's read-only flag it is not a fourth checkbox either.
 The other three columns are the human's triage checkboxes, ordered by when the call is made: `dismissed` and `read`, the two settled on the spot, then `shelved`, the one that defers.
-`added_date` orders the rows without being displayed.
+`added_date` orders the rows without being displayed, and the direction follows what the view is for.
+The two working views run oldest first, because a queue is worked from its old end and newest-first buries the card that has waited longest under every arrival since.
+The two retired views run newest first, because what a reader comes back to undo is the tick they just made.
 
-- **Inbox** (`read != true && shelved != true && dismissed != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row still appears here (it is an untriaged keep); the 🔒 prefix flags it.
+- **Inbox** (`read != true && shelved != true && dismissed != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row appears here like any other (it is an untriaged keep); the 🔒 prefix flags it, and judging whether the wall is worth clearing is part of triaging the card.
 - **Shelf** (`shelved && read != true && dismissed != true`) — the read-later shelf; a shelved card the reader later reads or dismisses drops out of here too, since both retiring flags hide from either working view.
-- **Walls** (`wall`) — the focused subset admitted on their summary alone, for the human to judge whether the wall is worth clearing. It is a flag view rather than a working view, so unlike the Inbox and the Shelf it does not filter on the dispositions at all.
 - **Read** (`read`) — the finished rows, kept visible for the same reason the Dismissed view is: a tick that retires a card must be undoable.
 - **Dismissed** (`dismissed`) — the cleanable rows, kept visible here so a dismissal can be undone before any future cleanup.
 
@@ -95,7 +96,7 @@ views:
       - shelved
     sort:
       - property: added_date
-        direction: DESC
+        direction: ASC
   - type: table
     name: Shelf
     filters:
@@ -110,20 +111,7 @@ views:
       - shelved
     sort:
       - property: added_date
-        direction: DESC
-  - type: table
-    name: Walls
-    filters:
-      and:
-        - wall
-    order:
-      - formula.title_summary
-      - dismissed
-      - read
-      - shelved
-    sort:
-      - property: added_date
-        direction: DESC
+        direction: ASC
   - type: table
     name: Read
     filters:
