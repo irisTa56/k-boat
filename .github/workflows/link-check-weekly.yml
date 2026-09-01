@@ -24,8 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # `--hidden` reaches `.claude/skills`; see `check:links` in mise.toml for
-      # why a directory target keeps `.gitignore`d paths excluded regardless,
-      # and why `--include-fragments` is on.
+      # why a directory target keeps `.gitignore`d paths excluded regardless.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
           args: --verbose --no-progress --hidden --include-fragments .
