@@ -116,12 +116,9 @@ jobs:
       # Offline-only: catches broken relative links inside the repo's own
       # markdown without depending on the network, so it is cheap enough to run
       # (and block) on every PR -- matching the local `mise run qa:links:offline`
-      # task. `--hidden` reaches `.claude/skills`, the product content, which
-      # lychee otherwise skips as a dotdir; a directory target (not a `**` glob)
-      # is what keeps `.gitignore`d paths like `.venv/` excluded regardless.
-      # The full networked check runs separately, non-blocking, in
-      # link-check-weekly.yml.
+      # task. Scope comes from `lychee.toml`. The full networked check runs
+      # separately, non-blocking, in link-check-weekly.yml.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
-          args: --offline --no-progress --hidden --include-fragments .
+          args: --offline --no-progress --config lychee.toml .
           fail: true

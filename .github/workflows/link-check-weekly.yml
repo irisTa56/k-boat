@@ -23,9 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # `--hidden` reaches `.claude/skills`; see `check:links` in mise.toml for
-      # why a directory target keeps `.gitignore`d paths excluded regardless.
+      # Scope comes from `lychee.toml`.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
-          args: --verbose --no-progress --hidden --include-fragments .
+          args: --verbose --no-progress --config lychee.toml .
           fail: false

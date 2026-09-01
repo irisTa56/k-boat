@@ -9,3 +9,15 @@ exclude = [
     # data used throughout the test fixtures; never a real link.
     "^https?://([a-z0-9-]+\\.)*example\\.com([:/]|$)",
 ]
+
+# Scope, shared by every invocation -- hence here rather than on four command
+# lines. Each names this file with `--config`, so a config that cannot be found
+# fails loudly instead of narrowing the walk in silence.
+
+# `.claude/skills` is the product content, and lychee skips dotdirs by default.
+# A directory target still honours `.gitignore`; a `**` glob target would not.
+hidden = true
+
+# A link into a section that was renamed or moved otherwise passes on the
+# filename alone.
+include_fragments = "anchor-only"
