@@ -5,7 +5,7 @@ name: CI
 # It runs the same ruff / ty / pytest / coverage-floor / rumdl / gitleaks /
 # offline-link-check checks -- uv for the Python gates, official actions for
 # rumdl, gitleaks, and lychee. Keep the checks here in sync with mise.toml's
-# `qa:*` tasks.
+# `qa:**` tasks.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -119,10 +119,11 @@ jobs:
       # task. `--hidden` reaches `.claude/skills`, the product content, which
       # lychee otherwise skips as a dotdir; a directory target (not a `**` glob)
       # is what keeps `.gitignore`d paths like `.venv/` excluded regardless.
-      # Fragment/anchor checking is not enabled (`--include-fragments` is not
-      # passed), only the link target itself. The full networked check runs
-      # separately, non-blocking, in link-check-weekly.yml.
+      # `--include-fragments` extends the check to the anchor, so a link into a
+      # section that was renamed or moved fails here instead of passing on the
+      # filename alone. The full networked check runs separately,
+      # non-blocking, in link-check-weekly.yml.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
-          args: --offline --no-progress --hidden .
+          args: --offline --no-progress --hidden --include-fragments .
           fail: true

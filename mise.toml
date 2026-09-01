@@ -36,23 +36,26 @@ mise generate git-pre-commit --write --task=pre-commit
 description = "Format markdown files"
 run = "rumdl check --fix"
 
-# Not in `qa:*`: full-repo external link check is too slow / network-bound for pre-commit.
+# Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
 # `--hidden`: without it lychee skips every dotdir, including `.claude/skills` --
 # the actual product content, and the one place most likely to accumulate a
 # stale relative link. `.gitignore`d paths (e.g. `.venv/`) stay excluded either
 # way -- a directory target makes lychee walk it through the same
 # gitignore-aware walker as `git status`, unlike a `**` glob target, which does not.
+# `--include-fragments`: without it lychee stops at the file, so a link whose
+# target section was renamed or moved still passes.
 [tasks."check:links"]
 description = "Check links in the repo"
-run = "lychee -v --hidden ."
+run = "lychee -v --hidden --include-fragments ."
 
-# In `qa:*` (unlike `check:links` above): offline-only, so it stays fast and
+# In `qa:**` (unlike `check:links` above): offline-only, so it stays fast and
 # network-independent enough to gate every commit -- mirrors CI's
 # `link-check-offline` job so a broken relative link is caught locally, not
-# only in CI. Same scope as `check:links` (see its comment for `--hidden`).
+# only in CI. Same scope as `check:links` (see its comment for `--hidden` and
+# `--include-fragments`).
 [tasks."qa:links:offline"]
 description = "Check markdown links offline (no network)"
-run = "lychee --offline --no-progress --hidden ."
+run = "lychee --offline --no-progress --hidden --include-fragments ."
 
 [tasks."nblm:login"]
 description = "Log in to NotebookLM with a Google account"
@@ -62,9 +65,13 @@ run = "notebooklm login"
 description = "Check the authentication status"
 run = "notebooklm auth check --test --json"
 
+# `qa:**`, not `qa:*`: a single `*` matches one task segment, so `qa:*` reached
+# `qa:py` but not `qa:links:offline`, which has no parent task to be pulled in
+# by and so ran nowhere. `**` gates every `qa:` task whatever its depth,
+# including one added later.
 [tasks.pre-commit]
 description = "Run all pre-commit checks"
-depends = ["qa:*"]
+depends = ["qa:**"]
 
 [tasks."qa:md"]
 description = "Lint markdown files"
