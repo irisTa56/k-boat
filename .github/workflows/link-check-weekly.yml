@@ -2,7 +2,7 @@ name: Link check (weekly)
 
 # The full networked lychee run: every link in the repo, hitting the network,
 # same scope as `mise run check:links` locally. Kept out of ci.yml on purpose
-# (mirroring why `check:links` is kept out of `qa:*`) -- it is too slow and
+# (mirroring why `check:links` is kept out of `qa:**`) -- it is too slow and
 # too flaky on external hosts to gate a PR. Runs weekly instead, and
 # non-blocking (`fail: false`): never a red merge button over a link some
 # third-party site took down. `jobSummary` (the action's default) still writes
@@ -27,5 +27,5 @@ jobs:
       # why a directory target keeps `.gitignore`d paths excluded regardless.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
-          args: --verbose --no-progress --hidden .
+          args: --verbose --no-progress --hidden --include-fragments .
           fail: false
