@@ -50,7 +50,7 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 ## Commands
 
 `mise.toml` is the task list and carries its own reasons; `mise run pre-commit` is the gate, run by the git hook its postinstall generates.
-The one thing written nowhere else: the coverage floor is per-`src/`-file rather than per package, so a collapse in one file cannot hide behind a healthy average.
+What the task definitions do not carry is the reason for the coverage floor being per-`src/`-file rather than per package: a collapse in one file cannot then hide behind a healthy average.
 
 ## Architecture (K-Boat)
 
@@ -99,8 +99,7 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 ## Writing conventions
 
 - In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
-- Property keys and enum values are `snake_case`; dates are `YYYY-MM-DD`.
-- Source, repo, and feed notes are named by a URL hash and Kindle notes by their ASIN, with the readable title always in `title`. `kboat-vault-conventions` has the hash recipe and the rule for every other name.
+- Source, repo, and feed notes are named by a URL hash and Kindle notes by their ASIN, with the readable title always in `title`. `kboat-vault-conventions` has the hash recipe, the rule for every other name, and the frontmatter conventions.
 
 ## Keep this file current
 
@@ -112,13 +111,16 @@ The daily routine reads these files unattended on every run, so a copy that has 
 
 A copy stands only where its reader has to act on the values and will not be opening the owner — a step that executes a precondition, a procedure that branches, a table the schema is checked against, a `description` the harness matches, an invariant put where a local edit would trip over it.
 Carry only what that reader acts on, leave the reason to the owner, and take a sweep obligation in place of the ban.
-Adding, dropping, or renaming a value in a set this project commits to — whether a tool emits it or the project declares it for itself — means reconciling, in the same change, every site that branches on that set, enumerates it, or states its size.
+Adding, dropping, or renaming a value in a set this project commits to — whether a tool emits it or the project declares it for itself — means reconciling, in the same change, every site where the set is named back — one that branches on it, enumerates it, names a single value of it, or counts it — and sweeping each such file whole rather than the places you remember.
 Changing the response a value is owed does the same, and it is the trigger that fires where no name changed.
 For an emitted set the authority is every value the command can produce, wherever along its path the record is composed, and not the enum they start from.
 A value a site does not name is not skipped there: it inherits whatever that site does with the values it does name.
 The keys a console script prints on stdout are one such set, so take as few of them as the prose reading them needs — each one is another site the next sweep has to reach.
 Where both sides are structured, pin them with a test rather than trusting the sweep, as `packages/kboat/tests/test_doc_schema_sync.py` does.
 
-What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
+Some of what is here is neither a pointer nor a copy: a convention spanning both members, the reason an alternative was rejected, a procedure another file points here for.
+Those originate here because nothing else has a reader for them, and moving one into a member or a skill puts it where half its audience will not look.
+
+The obligation this file owns outright is toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
 Each takes a change drafted and confirmed back rather than applied to it.
 What a routine prompt hardcodes is the run's shape rather than any skill's content: the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, its own notification triggers, and the report keys it reads.

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 The feed-filter workspace member.
-Shared conventions (git workflow, QA commands, markdown rules) are in the [root CLAUDE.md](../../CLAUDE.md); this file covers what is specific to feed-filter.
+Shared conventions (git workflow, markdown rules) are in the [root CLAUDE.md](../../CLAUDE.md); this file covers what is specific to feed-filter.
 
 ## What this repo is
 
