@@ -57,7 +57,7 @@ Each skill carries its own `description`, which is what says when to reach for i
 Ownership runs one way: a skill defers to `kboat-notes` for K-Boat's note types and their lifecycle or to `kboat-feed-notes` for feed-filter's, and both of those to `kboat-vault-conventions` for the vault mechanics every writer shares.
 In the [`kboat` library](packages/kboat/README.md), the schema is code-authoritative for a field's mechanics and the owning skill above for what it means.
 
-A skill's procedures carry no automated tests — only its schema tables do, pinned by `test_doc_schema_sync.py` — so validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
+The only automated check over a skill is `test_doc_schema_sync.py`, which pins the field names and their order in the two note-type skills' tables — so validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
 These invariants cut across skills, so a local edit can break one without any skill's own reader noticing.
 Each is named here and specified by `kboat-notes`, or by `kboat-vault-conventions` where marked.
@@ -103,8 +103,8 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 
 ## Keep this file current
 
-Anything in this repository that could state a fact twice — every markdown file, and the code composing the records the scripts emit — is governed by `.claude/rules/one-owner.md`, which the harness loads with those paths: one owner per fact, when a copy is allowed instead, and what adding a value to a set costs.
+This repository's prose, its toolchain config and the code composing its emitted records are governed by `.claude/rules/one-owner.md`, which the harness loads with those paths: one owner per fact, when a copy is allowed instead, and what adding a value to a set costs.
 
-What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
+The obligation this file owns outright is toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
 Each takes a change drafted and confirmed back rather than applied to it.
 What a routine prompt hardcodes is the run's shape rather than any skill's content: the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, its own notification triggers, and the report keys it reads.

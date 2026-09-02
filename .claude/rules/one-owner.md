@@ -2,13 +2,15 @@
 description: One owner per fact — when a copy is allowed, and what a value set costs
 paths:
   - "**/*.md"
-  - "packages/*/src/**/*.py"
+  - "**/*.py"
+  - "**/*.toml"
+  - ".github/workflows/*.yml"
 ---
 
 # One owner per fact
 
-These rules govern everything in this repository that states a fact twice: every markdown file it tracks, and the code that composes the records its console scripts emit.
-Its `CLAUDE.md` files, its skills, its READMEs and its architecture notes are all inside that, and so is a report's key set at the point the report is built.
+These rules govern everything in this repository that can state a fact twice: its prose, its toolchain and workflow config, and the code that composes the records its console scripts emit.
+A `CLAUDE.md`, a skill, a README, an architecture note, a report's key set where the report is built, and a CI job restating a task the task runner already defines are all inside that.
 The daily routine reads those files unattended on every run, so a copy that has stopped matching is acted on before anyone sees it.
 
 ## Do not reproduce what another file maintains
@@ -28,7 +30,8 @@ Those originate where they sit because nothing else has a reader for them, and m
 Adding, dropping, or renaming a value in a set this project commits to — whether a tool emits it or the project declares it for itself — means reconciling, in the same change, every site where the set is named back: one that branches on it, enumerates it, names a single value of it, or counts it.
 Sweep each such file whole rather than the places you remember.
 
-Changing the response a value is owed does the same, and it is the trigger that fires where no name changed.
+Changing the response a value is owed does the same, and so does writing or editing a list that enumerates the set.
+Those two are the triggers that fire where no value changed — the second because a list authored against a stale idea of the set is born incomplete.
 
 For an emitted set the authority is every value the command can produce, wherever along its path the record is composed, and not the enum they start from.
 A value a site does not name is not skipped there: it inherits whatever that site does with the values it does name.
