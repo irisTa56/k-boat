@@ -293,9 +293,10 @@ def test_a_held_vault_is_waited_for_rather_than_refused(tmp_path: Path) -> None:
     def hold() -> None:
         with vault_lock(tmp_path):
             took_the_lock.set()
-            # The hold outlasts the clock reading below, so the wait it measures is one
-            # the write genuinely had to serve.
-            hold_on.wait(timeout=5)
+            # Held until the writing thread has read its start clock — no timeout, since
+            # waking on one would let this sleep, and the release after it, begin before
+            # that reading and leave the assertion below measuring a hold it did not span.
+            hold_on.wait()
             time.sleep(held_for)
 
     holder = threading.Thread(target=hold)
@@ -307,13 +308,15 @@ def test_a_held_vault_is_waited_for_rather_than_refused(tmp_path: Path) -> None:
         result = _write(tmp_path)
         waited = time.monotonic() - started
     finally:
+        hold_on.set()  # idempotent: on a path that never reached the set above, this ends the holder
         holder.join()
 
-    # Waited rather than won a start race: `took_the_lock` says the holder had the
-    # lock, so the write blocked, and the release it was blocked on cannot come before
-    # `started` plus the holder's sleep. Both readings are this thread's own — the
-    # release instant is not observable from out here, and a stamp taken in the holder
-    # after its `with` block is a stamp taken after the release it claims to mark.
+    # `hold_on` is set after `started`, so the holder's sleep begins no earlier than that
+    # reading and its release no earlier than `started` plus `held_for` — and `flock`
+    # hands the lock on only at that release. So the write spans a hold it could not have
+    # jumped, timed by one thread's own clock: the release instant is not observable from
+    # out here, and a stamp the holder takes after its `with` block is a stamp taken
+    # after the release it claims to mark.
     assert result["status"] == "created"
     assert waited >= held_for
 

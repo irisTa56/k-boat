@@ -169,9 +169,10 @@ def test_a_waiting_acquisition_takes_the_lock_once_it_comes_free(tmp_path: Path)
     def hold() -> None:
         with vault_lock(tmp_path):
             took_it.set()
-            # The hold outlasts the clock reading below, so the wait it measures is one
-            # this acquisition genuinely had to serve.
-            hold_on.wait(timeout=5)
+            # Held until the waiter has read its start clock — no timeout, since waking
+            # on one would let this sleep, and the release after it, begin before that
+            # reading and leave the assertion below measuring a hold it did not span.
+            hold_on.wait()
             time.sleep(BRIEF)
 
     holder = threading.Thread(target=hold)
@@ -184,13 +185,15 @@ def test_a_waiting_acquisition_takes_the_lock_once_it_comes_free(tmp_path: Path)
             waited = time.monotonic() - started
             assert json.loads(lock_path.read_text(encoding="utf-8"))["pid"] == os.getpid()
     finally:
+        hold_on.set()  # idempotent: on a path that never reached the set above, this ends the holder
         holder.join()
 
-    # Waited rather than won a start race: `took_it` says the holder had the lock, so
-    # this acquisition blocked, and the release it was blocked on cannot come before
-    # `started` plus the holder's sleep. Both readings are this thread's own — the
-    # release instant is not observable from out here, and a stamp taken in the holder
-    # after its `with` block is a stamp taken after the release it claims to mark.
+    # `hold_on` is set after `started`, so the holder's sleep begins no earlier than that
+    # reading and its release no earlier than `started` plus `BRIEF` — and `flock` hands
+    # the lock on only at that release. So this acquisition spans a hold it could not
+    # have jumped, timed by one thread's own clock: the release instant is not observable
+    # from out here, and a stamp the holder takes after its `with` block is a stamp taken
+    # after the release it claims to mark.
     assert waited >= BRIEF
 
 
