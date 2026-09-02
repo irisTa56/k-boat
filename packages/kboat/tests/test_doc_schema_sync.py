@@ -27,19 +27,21 @@ from kboat.validate.stats import Stats
 # packages/kboat/tests/, so walk up three levels (tests → kboat → packages → root).
 SKILLS = Path(__file__).resolve().parents[3] / ".claude/skills"
 
-# Each note type's Property table lives in its owning skill, under an H2 whose
-# text contains the heading below. The K-Boat types are in `kboat-notes`; the
-# feed type in `kboat-feed-notes`.
+# Each note type's Property table lives in its owning skill, in the file below
+# and under a heading whose text contains the given text. `kboat-notes` keeps a
+# reference per K-Boat type; `kboat-feed-notes` keeps the feed type in its
+# SKILL.md.
 _SPEC: dict[str, tuple[str, str]] = {
-    "source": ("kboat-notes", "Source note"),
-    "kindle": ("kboat-notes", "Kindle note"),
-    "repo": ("kboat-notes", "Repo note"),
-    "feed": ("kboat-feed-notes", "Feed note"),
+    "source": ("kboat-notes/references/source-note.md", "Source note"),
+    "kindle": ("kboat-notes/references/kindle-note.md", "Kindle note"),
+    "repo": ("kboat-notes/references/repo-note.md", "Repo note"),
+    "feed": ("kboat-feed-notes/SKILL.md", "Feed note"),
 }
-# Track the section by its H2 heading only; a deeper `###` subheading within a
-# section must not reset the current type, so an edit that inserts a subsection
-# before the Property table cannot hide it (which would fail the test spuriously).
-_HEADING = re.compile(r"^##\s+(.*)")
+# Track the section by its H1 or H2 heading — a reference titles its type with an
+# H1, a SKILL.md gives it an H2. A deeper `###` subheading must not reset the
+# current type, so an edit that inserts a subsection before the Property table
+# cannot hide it (which would fail the test spuriously).
+_HEADING = re.compile(r"^#{1,2}\s+(.*)")
 _TABLE_HEADER = re.compile(r"^\|\s*Property\s*\|\s*Meaning\s*\|")
 # The field name is the leading backticked token of the Property cell; a trailing
 # annotation (e.g. `` `url` (immutable) ``) must not drop the field, so match the
@@ -78,12 +80,11 @@ def _parse_doc_tables(text: str, sections: dict[str, str]) -> dict[str, list[str
 def _doc_tables() -> dict[str, list[str]]:
     """All note types' tables, each parsed from its owning skill file."""
     by_file: dict[str, dict[str, str]] = {}
-    for note_type, (skill, heading) in _SPEC.items():
-        by_file.setdefault(skill, {})[heading] = note_type
+    for note_type, (path, heading) in _SPEC.items():
+        by_file.setdefault(path, {})[heading] = note_type
     tables: dict[str, list[str]] = {}
-    for skill, sections in by_file.items():
-        text = (SKILLS / skill / "SKILL.md").read_text()
-        tables.update(_parse_doc_tables(text, sections))
+    for path, sections in by_file.items():
+        tables.update(_parse_doc_tables((SKILLS / path).read_text(), sections))
     return tables
 
 
@@ -92,21 +93,22 @@ DOC_TABLES = _doc_tables()
 
 @pytest.mark.parametrize("schema", [SOURCE, KINDLE, REPO, FEED], ids=lambda s: s.type)
 def test_doc_table_matches_schema_fields(schema: NoteSchema) -> None:
-    skill = _SPEC[schema.type][0]
+    path = _SPEC[schema.type][0]
     doc = DOC_TABLES.get(schema.type)
     assert doc is not None, (
-        f"no Property/Meaning table found for {schema.type} in {skill} — "
+        f"no Property/Meaning table found for {schema.type} in {path} — "
         "did a section heading change?"
     )
     assert doc == list(schema.field_names()), (
-        f"{schema.type} schema table in {skill} is out of sync with "
+        f"{schema.type} schema table in {path} is out of sync with "
         "kboat.schema (fields differ or are reordered)"
     )
 
 
 # The same drift risk, for the two tables `kboat-notes` keeps of things the
-# `kboat` package declares in code. Both sit under an H3 and are found by their
-# own header row rather than by section, each header being unique in the file.
+# `kboat` package declares in code. Both sit in its validation reference and are
+# found by their own header row rather than by section, each header being unique
+# in the file.
 _STATS_TABLE = re.compile(r"^\|\s*Field\s*\|\s*Meaning\s*\|")
 _RULES_TABLE = re.compile(r"^\|\s*Code\s*\|\s*Field\s*\|\s*Rule\s*\|")
 
@@ -130,21 +132,26 @@ def _first_column(text: str, header: re.Pattern[str]) -> list[str]:
     return out
 
 
-def _kboat_notes() -> str:
-    return (SKILLS / "kboat-notes/SKILL.md").read_text()
+_VALIDATION = "kboat-notes/references/validation.md"
+
+
+def _validation_reference() -> str:
+    return (SKILLS / _VALIDATION).read_text()
 
 
 def test_backlog_stats_table_matches_the_stats_fields() -> None:
-    assert _first_column(_kboat_notes(), _STATS_TABLE) == [
+    assert _first_column(_validation_reference(), _STATS_TABLE) == [
         f.name for f in dataclass_fields(Stats)
     ], (
-        "the Backlog stats table in kboat-notes is out of sync with kboat.validate.stats.Stats "
+        f"the Backlog stats table in {_VALIDATION} is out of sync with kboat.validate.stats.Stats "
         "(fields differ or are reordered) — the JSON keys come from the field order"
     )
 
 
 def test_cross_field_rules_table_matches_the_emitted_codes() -> None:
-    assert _first_column(_kboat_notes(), _RULES_TABLE) == [c.value for c in CrossFieldCode], (
-        "the Cross-field rules table in kboat-notes is out of sync with "
+    assert _first_column(_validation_reference(), _RULES_TABLE) == [
+        c.value for c in CrossFieldCode
+    ], (
+        f"the Cross-field rules table in {_VALIDATION} is out of sync with "
         "kboat.validate.core.CrossFieldCode (codes differ or are reordered)"
     )
