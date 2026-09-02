@@ -57,7 +57,7 @@ Each skill carries its own `description`, which is what says when to reach for i
 Ownership runs one way: a skill defers to `kboat-notes` for K-Boat's note types and their lifecycle or to `kboat-feed-notes` for feed-filter's, and both of those to `kboat-vault-conventions` for the vault mechanics every writer shares.
 In the [`kboat` library](packages/kboat/README.md), the schema is code-authoritative for a field's mechanics and the owning skill above for what it means.
 
-No check reads a skill's procedures — the gate lints and link-checks every skill file, and it pins whatever table in one is structured on both sides — so validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
+No check reads a skill's procedures, though the gate does lint and link-check every skill file — so validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
 These invariants cut across skills, so a local edit can break one without any skill's own reader noticing.
 Each is named here and specified by `kboat-notes`, or by `kboat-vault-conventions` where marked.

@@ -20,7 +20,8 @@ Treat a copy you find as a defect, not as something to keep in sync.
 
 A copy stands only where its reader has to act on the values and will not be opening the owner — a step that executes a precondition, a procedure that branches, a table the schema is checked against, a `description` the harness matches, an invariant put where a local edit would trip over it.
 Carry only what that reader acts on, leave the reason to the owner, and take a sweep obligation in place of the ban.
-When the fact itself changes, the owner is edited first and the copy after it, never the other way round: a copy edited alone leaves the runtime reader executing the old rule.
+When the fact itself changes, the owner is edited first and the copy after it, never the other way round — the copy is derived from the owner, so writing it first ships a copy of something not yet settled.
+That order opens an interval where the owner has moved and the copy has not, and in it the runtime reader is still on the old rule; an out-of-repo copy stays in that interval until the human applies the draft, so say so where you hand the draft over.
 
 Some content is neither a pointer nor a copy: a convention spanning both members, the reason an alternative was rejected, a procedure another file points here to find.
 Those originate where they sit because nothing else has a reader for them, and moving one into a member or a skill puts it where half its audience will not look.
@@ -40,4 +41,4 @@ The keys a console script prints on stdout are one such set.
 Take as few keys, and as few values in any closed set among them, as the prose reading the record actually needs — each one is another site the next sweep has to reach.
 
 Where both sides are structured — a table on one, a field list or an enum on the other — a test can pin that much against drift, which is what `packages/kboat/tests/test_doc_schema_sync.py` does and the pattern to reach for.
-What a value obliges its reader to do is structured on neither side, so that stays the sweep's whatever a test covers.
+What a value obliges its reader to do is structured on neither side, so that stays the sweep's work, whatever a test covers.
