@@ -39,6 +39,5 @@ A value a site does not name is not skipped there: it inherits whatever that sit
 The keys a console script prints on stdout are one such set.
 Take as few keys, and as few values in any closed set among them, as the prose reading the record actually needs — each one is another site the next sweep has to reach.
 
-Where both sides are structured, a test can pin the part that is.
-`packages/kboat/tests/test_doc_schema_sync.py` pins three such pairs — each note type's property table against the schema's field names, the backlog-stats table against the `Stats` field order, and the cross-field rules table against the emitted code values — each on names and order alone.
-What a value obliges its reader to do is not structured on either side, so that stays the sweep's whatever a test covers.
+Where both sides are structured — a table on one, a field list or an enum on the other — a test can pin that much against drift, which is what `packages/kboat/tests/test_doc_schema_sync.py` does and the pattern to reach for.
+What a value obliges its reader to do is structured on neither side, so that stays the sweep's whatever a test covers.
