@@ -7,7 +7,7 @@ description: Ingest a Kindle book into the K-Boat vault from its reader URL. Use
 
 Adds one Kindle book to the vault as a `type: kindle` note (`Kindles/<ASIN>.md`). Given a Kindle reader URL (`https://read.amazon.co.jp/?asin=<ASIN>`) or a bare ASIN, it reads the book's bibliographic metadata from the Amazon product page through the user's logged-in Chrome and writes the note, with the reader URL recorded as `reading_link`.
 
-Follow kboat-notes for the schema and "Procedure: create or update a Kindle note"; this skill adds the browser mechanics. It is **interactive and Mac-only** — it needs the user present and their Chrome connected. Do not run it from the unattended routine.
+Follow kboat-notes for the schema and [Procedure: create or update a Kindle note](../kboat-notes/SKILL.md#procedure-create-or-update-a-kindle-note); this skill adds the browser mechanics. It is **interactive and Mac-only** — it needs the user present and their Chrome connected. Do not run it from the unattended routine.
 
 A Kindle note has no NotebookLM notebook and no fetched URL: it is a permanent catalogue entry whose **body** holds reading highlights that distillation later draws on. This skill creates the entry with an empty body; the highlights are added afterwards (by hand or with the `organize-reading-note` skill).
 
@@ -17,7 +17,7 @@ Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), a
 
 ## Procedure
 
-1. **Resolve the ASIN.** From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key. Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded from `.env` by `eval "$(mise env)"` (see kboat-notes "Environment").
+1. **Resolve the ASIN.** From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key. Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded from `.env` by `eval "$(mise env)"` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 2. **De-dup.** If `Kindles/<ASIN>.md` already exists, this is the same book — report it as already recorded and stop (do not re-extract), unless the user asked to refresh its metadata, in which case update it in place. The filename, being the ASIN, never changes.
 3. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser. If none, fall back to the manual path (step 5).
 4. **Extract metadata through the real browser.** Navigate the user's Chrome to `https://www.amazon.co.jp/dp/<ASIN>` and read the page:
@@ -26,7 +26,7 @@ Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), a
    - `publisher` and `published` — from the product-details / 登録情報 section. Keep `published` at whatever precision is shown (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); do not zero-pad to fake precision.
    - If a CAPTCHA / "Human Verification" / sign-in wall appears, ask the user to clear it in their browser, then continue once the product page loads. If the page is unavailable or extraction is ambiguous (wrong product, missing fields), show the user what you found and ask them to confirm or supply the missing fields.
 5. **Manual fallback.** If Claude in Chrome is unavailable or the wall cannot be cleared, ask the user for the title, author(s), publisher, and publication date, and proceed with those.
-6. **Write the note** per kboat-notes "Procedure: create or update a Kindle note": `Kindles/<ASIN>.md` with `type: kindle`, the extracted fields, `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `reading`, `finished`, and `distill` start `false`; `distilled_date` empty. Leave the body empty. There is no `isbn` field (a Kindle page shows the ASIN, not an ISBN).
+6. **Write the note** per kboat-notes [Procedure: create or update a Kindle note](../kboat-notes/SKILL.md#procedure-create-or-update-a-kindle-note): `Kindles/<ASIN>.md` with `type: kindle`, the extracted fields, `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `reading`, `finished`, and `distill` start `false`; `distilled_date` empty. Leave the body empty. There is no `isbn` field (a Kindle page shows the ASIN, not an ISBN).
 7. **Report.** State that the book was added (or already present), echo the resolved fields, and remind the user that reading highlights go in the note body — added by hand or with `organize-reading-note` — that `reading` and `finished` track reading progress (checking `finished` drops the book off the Base reading-list view), and that checking `distill` opts it into the next distillation run.
 
 ## Notes
