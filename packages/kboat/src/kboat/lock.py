@@ -9,11 +9,10 @@ rewrite. `vault_lock` closes that window between the runs that take it. The huma
 in Obsidian is outside it — Obsidian holds no lock — which
 `kboat-vault-conventions` records along with the rest of what is outside.
 
-The lock is an advisory `flock` on `<vault>/.kboat.lock`. The file also holds a
-JSON `{pid, started}` record, rewritten by each holder, so a refusal can name who
-has the vault; advisory locking does not prevent reading, so a waiter reads that
-record while the holder works. The record is a diagnostic and nothing more — no
-decision here is made from it.
+The lock file also holds a record of its holder, rewritten on each acquisition, so
+a refusal can name who has the vault: advisory locking does not prevent reading,
+so a waiter reads it while the holder works. It is a diagnostic and nothing more
+— no decision here is made from it.
 
 **The kernel releases the lock, which is why there is no stale state to recover.**
 An `flock` belongs to the open file description, so it goes when the fd closes,
@@ -54,9 +53,7 @@ an fd the child kept would hold the lock past the parent's release for as long a
 child lived. It is `exec` this covers — a `fork`ed child that never execs keeps the
 open file description, and so the lock; nothing here forks.
 
-**One policy: wait a little, then refuse.** Every caller gets `DEFAULT_WAIT_S` and
-then a `VaultLockedError` naming the holder — no per-caller variation, and no
-attended/unattended split. `kboat-vault-conventions` argues for it; the shape it
+**One policy for every caller**, which `kboat-vault-conventions` argues for. What it
 constrains here is that the wait covers a hold measured in note writes and not the
 long ones, so `wait_s` is a bound and never a guarantee of acquiring.
 

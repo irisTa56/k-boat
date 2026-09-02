@@ -41,7 +41,7 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 
 ## Environment gotchas
 
-- The ingest queue is the vault's `Queue/` folder: one `Queue/*.md` capture per URL (a `[title](url)` link), filled by the capture bookmarklet (`kboat-bookmarklet` prints it) through the Obsidian URI scheme and drained by `kboat-ingest`, which treats the captured title/URL as untrusted page text. The daily pick's open-questions backlog is the vault's `Questions.md`, read via `kboat-pick` (see the `kboat-recall` bullet).
+- The ingest queue is the vault's `Queue/` folder: one `Queue/*.md` capture per URL (a `[title](url)` link), filled by the capture bookmarklet (`kboat-bookmarklet` prints it) through the Obsidian URI scheme and drained by `kboat-ingest`, which treats the captured title/URL as untrusted page text. The daily pick's open-questions backlog is the vault's `Questions.md`, read via `kboat-pick`.
 - GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
 - Distillation writes to a Basic Memory project (`k-boat-knowledge`) rooted at `KBOAT_KNOWLEDGE_PATH`, via its MCP tools.
   - Basic Memory is a soft dependency: the concept notes are plain Markdown, so it is only the search/query layer. If it is down, distillation defers (it must not extract and then discard a notebook with nowhere to write).
@@ -59,43 +59,31 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 
 ## Architecture (K-Boat)
 
-The product skills live at the repo-root `.claude/skills/`.
-The shared `kboat-vault-conventions` skill owns the vault mechanics every writer follows — URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline; both K-Boat and feed-filter defer to it.
-The nine K-Boat skills:
-
-- `kboat-notes` — the source of truth for K-Boat's note *types* and their lifecycle: the source, Kindle, and repo note schemas, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, where concept notes live, and what a concept note's `## Observations` looks like once more than one reading has fed it. Defers to `kboat-vault-conventions` for the shared mechanics. Read it before touching any note format.
-- `kboat-ingest` — drains the vault's `Queue/` folder into source notes, each with its own 1:1 notebook; routes a GitHub repo URL to `kboat-repos`, but a GitHub blob/raw `.pdf`/`.md` file link stays a source.
-- `kboat-repos` — non-interactive: catalogues a GitHub repository (`type: repo`) via `gh` and refreshes the catalogue's metadata.
-- `kboat-kindle` — interactive, Mac-only: ingests a Kindle book from its read.amazon URL by reading metadata off the Amazon page through the user's real Chrome, into an ASIN-named `Kindles/` note.
-- `kboat-distill` — the post-reading pass: advances source lifecycle state, distills ripe sources, and distills ripe Kindle books (from their note body) into the knowledge graph.
-- `kboat-recall` — read-only lexical search over source notes for a "read later" source matching a question. Also hosts the **daily-pick mode** the routine runs: surface up to two `web_page` picks for today, inferred from the `Questions.md` open-questions backlog and recent Daily notes.
-- `kboat-notebook-health` — checks whether a live notebook still holds its original source and adds the original back where it has gone, over the sources the reader has opened, plus whatever the summary backfill, the distillation pass, and the daily pick reported (the skill states the exact set; this file does not restate it). It restores in place and never rebuilds a notebook, so saved dialogue, the chat persona, and the source's lifecycle all survive.
-- `kboat-rescue` — interactive, Mac-only: works a DLQ (`blocked`) source to one of its two exits — completing it by pulling the content through the user's real Chrome, or abandoning it where there is no content to pull or the user decides not to chase it.
-- `kboat-curate` — on-demand maintenance of the knowledge base: curates the concept graph and checks the concept-note tags for drift and gaps. Human-run, not in the routine.
-
-Each skill defers to `kboat-notes` for the K-Boat note schema, and `kboat-notes` in turn to `kboat-vault-conventions` for the shared vault contract. The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)) — the nine console scripts (`kboat-lifecycle`, `kboat-repos`, `kboat-pick`, `kboat-validate`, `kboat-note`, `kboat-bookmarklet`, `kboat-queue`, `kboat-doctor`, `kboat-concept`) over a shared frontmatter core and the code-authoritative schema (`kboat.schema`), whose field semantics are specified by `kboat-notes` and whose shared contract by `kboat-vault-conventions`. See its README for the library surface.
+The product skills live at the repo-root `.claude/skills/`; each carries its own `description`, which is what says when to reach for it.
+Ownership runs one way: a skill defers to `kboat-notes` for K-Boat's note types and their lifecycle, and `kboat-notes` to `kboat-vault-conventions` for the vault mechanics every writer shares, feed-filter included.
+The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)), whose schema is code-authoritative while the field semantics are `kboat-notes`'.
 
 The prose skills carry no automated tests (only the `kboat` library is unit-tested); validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
-Load-bearing model — cross-cutting invariants no single skill owns, so easy to break with a local edit (the mechanics and rationale live in `kboat-notes`):
+These invariants cut across skills, so a local edit can break one without any skill's own reader noticing.
+Each is named here and specified by `kboat-notes`, or by `kboat-vault-conventions` where marked.
 
-- One notebook per source (1:1), throwaway by default but retained for a `keep` source; its `notebooklm_id`/`gemini_url`/`notebooklm_url` live on the source note. At creation every notebook is given the same fixed honest-dialogue chat persona. Reading-time dialogue saved back as NotebookLM notes (usually `url: null`) distills as `#dialogue`.
-- A notebook's existence is never proof it holds its source. NotebookLM has been seen dropping a web source weeks after a verified ingest, leaving a titled notebook whose `source list` returns zero with exit 0, so every reader resolves the original rather than trusting `notebooklm_id`. What may be done about it turns on an asymmetry: the original is recoverable from the `url` or the file at any time, while the saved dialogue, the chat persona, and the notebook id are recoverable from nothing — so the answer is to add the original back into the notebook that survived (`kboat-notebook-health`, via kboat-notes "restore a source's original into its notebook"), never to rebuild it. Reactivation, which does rebuild, is left to a notebook that is actually gone.
-- A source is a web page or a PDF (`source_type`); a PDF is uploaded into the notebook as a file at `PDFs/<slug>.pdf`, never fetched from a URL. No Google Drive or Play Books — Play Books has no upload API, so it would break the unattended routine.
-- The DLQ is exactly the *durably* un-ingestable set: a source whose ingest cannot obtain what its path requires becomes a `blocked` note keeping its `url`. It has two exits, both human-initiated and both clearing `blocked`: a `kboat-rescue` that supplies the content, or an abandonment where there is no content to be had or the human decides the wall is not worth the trouble. A transient failure is not a member (it keeps its queue file and retries).
-- The NotebookLM source id is never stored — it is resolved on demand in `notebooklm source list`: a PDF by `type: pdf`, a web page by `url` (or `title`, for a rescued text upload).
-- Reading state is one informational `reading` checkbox plus three dispositions: `distill` and `keep` compose; `dismiss` is exclusive, so combining it is the ambiguous case the routine refuses. The routine stamps `filed_date` on first disposition, runs a 7-day cooldown from it, then acts; `distilled_date` is terminal.
-- Crash-safety: a ripe source's notebook is discarded **last** (if at all), after `distilled_date` is stamped and the review report written.
-- Every source carries `summary` (Japanese) and `topics` (English) captured at ingest — the durable description `kboat-recall` searches once the notebook is gone. A source-guide failure leaves them unset rather than written empty.
-- The daily pick is a routine step, not a disposition: each run resets the hidden `picked` boolean and re-sets it on at most two `web_page` sources matched to interests inferred from two **read-only** signals (the `Questions.md` open-questions backlog, ordered by list position, and recent Daily notes). Spec in `kboat-notes` "Daily pick".
-- A concept note divides its `## Observations` into `###` reading groups once it carries more than one insight. A group is named by what was learned, each reading's claims carry that reading's own provenance line, and the groups run oldest first.
-- Whether a concept note's `## Observations` carries any `###` group at all is the one thing `kboat-concept shape` answers — not whether every claim in it is under one, which is why the second insert below has a trigger the record cannot supply; which insight a reading's claims belong to is the writer's judgement, never the tool's. The two answers together choose the write: an insert anchored on the heading that follows where the claims belong, plus a second insert putting a heading over claims that are still bare — owed where a new group opens on a flat note, and owed again on any append to a note that still carries bare claims above its first `###`, which is what repairs a heading that did not land.
-- Concept→source provenance is an observation carrying the source URL; concept→concept stays a wikilink. Claims are tagged `#grounded` or `#dialogue`; distillation verifies the `#dialogue` ones and targets the `k-boat-knowledge` project explicitly.
-- Concept-note facet tags come from a controlled vocabulary (`meta/Tag vocabulary` in the KB), reuse-first at write time. `kboat-distill` enforces reuse (prevention); `kboat-curate` is the on-demand drift sweep (detection).
-- A Kindle book (`type: kindle`, ASIN-keyed) and a GitHub repo (`type: repo`, URL-hash-named) are parallel simpler kinds — no notebook, distilled-from-note-body (Kindle) or never distilled (repo).
-- The Sources, Kindle, and Repos Bases filter only on plain booleans or `source_type ==` — never `!=` over a possibly-missing property or a date-emptiness test — which is why those booleans are written on every note.
-- Every vault write goes through `kboat.io_utils.atomic_write_text` (temp file, `fsync`, `os.replace`, directory `fsync`), and every mutating run holds `kboat.lock.vault_lock` — an advisory `flock` on `<vault>/.kboat.lock` — so two runs cannot interleave. One policy for every writer: wait a few seconds, then refuse with a `{status: "locked", holder}` record and a non-zero exit. A read-only command takes no lock. There is no stale lock to recover, because the kernel drops an `flock` when the holder's fd closes however the process ended; the design rests on all contention being same-host on a local volume, which the iCloud vault is. A lock that cannot be taken at all is a different outcome — reported with an empty stdout and no `locked` record, and not self-healing. Spec in `kboat-vault-conventions` "Durability and the vault lock", including what sits outside both mechanics.
-- On this iCloud-synced vault, "nothing there" is what the filesystem answers for several different situations, so a run that takes that answer at face value processes part of the vault as though it were the whole. What to ask instead, which situations there are, what each check reports and what boundary a caller owes: `kboat-vault-conventions` "The write contract" and "Vault preconditions".
+- One notebook per source, throwaway unless the source is `keep`.
+- A notebook's existence is never proof it holds its source, so a reader resolves the original rather than trusting the stored id.
+- A source is a web page or an uploaded PDF; nothing is read from Google Drive or Play Books.
+- The NotebookLM source id is never stored, only resolved on demand.
+- The DLQ is exactly the durably un-ingestable set, and both its exits are human-initiated.
+- Reading state is one informational checkbox plus three dispositions, acted on after a cooldown from `filed_date`.
+- A ripe source's notebook is discarded last, so a crash cannot lose an undistilled reading.
+- `summary` and `topics`, captured at ingest, are what stays searchable once the notebook is gone.
+- The daily pick is a routine step rather than a disposition, and reads its signals read-only.
+- A concept note's `## Observations` divides into per-reading groups; which group a claim joins is the writer's judgement, never the tool's.
+- Concept-to-source provenance is an observation carrying the URL, concept-to-concept a wikilink.
+- Concept facet tags come from a controlled vocabulary, enforced at write time and swept on demand.
+- Kindle books and GitHub repos are parallel simpler kinds, with no notebook.
+- The Bases filter only on plain booleans or `source_type ==`, which is why those booleans are written on every note.
+- Every vault write is atomic and every mutating run holds the vault lock (`kboat-vault-conventions`).
+- On this iCloud vault "nothing there" is several different situations, and a run must tell them apart (`kboat-vault-conventions`).
 
 Automation:
 

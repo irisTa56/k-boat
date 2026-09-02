@@ -1,6 +1,6 @@
 ---
 name: kboat-recall
-description: Find shelved "read later" sources by a natural-language question, and run the routine's daily pick. Use when the user asks whether they saved something to read on a topic, wants to surface kept sources matching a question, or says things like "do I have anything about X to read", "find that paper I shelved", "what's on my read-later shelf about Y" — and when the kboat-routine runs the daily pick after distillation (the write-capable "Daily pick mode" below: surface up to two web sources for today by inferring the reader's interests from their open-questions backlog and their recent Daily notes, via the kboat-pick package). Searches source-note title/summary/topics; defers to kboat-notes for the schema.
+description: Find shelved "read later" sources by a natural-language question, and run the routine's daily pick. Use when the user asks whether they saved something to read on a topic, or says things like "do I have anything about X to read", "find that paper I shelved" — and when kboat-routine runs the daily pick after distillation (the write-capable "Daily pick mode" below: surface up to two web sources for today by inferring the reader's interests from their open-questions backlog and their recent Daily notes). Searches source-note title, summary, and topics; defers to kboat-notes for the schema.
 ---
 
 # K-Boat recall

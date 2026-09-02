@@ -1,6 +1,6 @@
 ---
 name: kboat-notes
-description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source note, a Kindle note, or a GitHub repo note, discarding a source's notebook, or when you need the exact frontmatter schema, naming rules, lifecycle state, the cross-field validation rules, the backlog-health counts `kboat-validate --stats` reports, the Sources, Kindle, Repos, or Reviews Base, where distilled concept notes live, or how a concept note's `## Observations` divides into reading groups once more than one reading has fed it. This is the source of truth for K-Boat's note types and their lifecycle; the shared vault mechanics (URL-hash naming, the schema/validate contract, the write contract, Base discipline) are the kboat-vault-conventions skill, which this defers to. kboat-ingest, kboat-distill, kboat-kindle, kboat-repos, kboat-recall, kboat-rescue, and kboat-notebook-health defer to this skill.
+description: Conventions for creating and updating K-Boat notes. Use when creating or updating a source, Kindle, or GitHub repo note, discarding a source's notebook, or when you need the frontmatter schema, naming rules, lifecycle state, the cross-field validation rules, the backlog-health counts, one of the Bases, where distilled concept notes live, or how a concept note's `## Observations` divides into reading groups. This is the source of truth for K-Boat's note types and their lifecycle; the shared vault mechanics are the kboat-vault-conventions skill, which this defers to.
 ---
 
 # K-Boat note conventions
