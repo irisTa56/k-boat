@@ -33,12 +33,12 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Sources/` — one note per source. Each tracks one piece of content and its 1:1 notebook.
 - `PDFs/` — the downloaded file for each PDF source, named `<slug>.pdf` by the same URL-hash slug as its note. Only PDF sources have one; web-page sources do not. It is the reading copy (opened in Obsidian) and the file uploaded to NotebookLM.
 - `Reviews/` — one `YYYY-MM-DD.md` per run that distilled something, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary. A run that distilled nothing writes no file. Covers both source and Kindle distillation. Carries a small `type: review`/`date`/`read` frontmatter block for the read-tracking Base (see [Review note](references/review-note.md#review-note-reviewsmd)); the body layout is kboat-distill "Review report".
-- `Reviews.base` — a top-level standalone Base listing the review reports with their read flag (see [Review note](references/review-note.md#review-note-reviewsmd)).
+- `Reviews.base` — a top-level standalone Base listing the review reports with their read flag (see [Review Base](references/bases.md#review-base)).
 - `Sources.base` — a top-level standalone Base listing sources still to read (see [Sources Base](references/bases.md#sources-base)).
 - `Kindles/` — one `type: kindle` note per Kindle book, named by ASIN. No notebook; read on a Kindle and distilled from highlights pasted into the note body. See [Kindle note](references/kindle-note.md#kindle-note-kindlesmd).
-- `Kindles.base` — a top-level standalone Base listing Kindle books (see [Kindle note](references/kindle-note.md#kindle-note-kindlesmd)).
+- `Kindles.base` — a top-level standalone Base listing Kindle books (see [Kindle Base](references/bases.md#kindle-base)).
 - `Repos/` — one `type: repo` note per GitHub repository, named by a URL hash. No notebook; a metadata catalogue entry, not distilled. See [Repo note](references/repo-note.md#repo-note-reposmd).
-- `Repos.base` — a top-level standalone Base listing GitHub repositories (see [Repo note](references/repo-note.md#repo-note-reposmd)).
+- `Repos.base` — a top-level standalone Base listing GitHub repositories (see [Repo Base](references/bases.md#repo-base)).
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled side:
 

@@ -1,6 +1,6 @@
 # Bases
 
-Each grant below is the spec, not the file on disk: the live `.base` carries per-vault cosmetics besides — column widths, and the `columnSize` block `Kindles.base` has.
+Each YAML block below is the spec, not the file on disk: a live `.base` carries per-vault cosmetics besides — column widths, and the `columnSize` block `Kindles.base` has.
 
 - [Sources Base](#sources-base)
 - [Kindle Base](#kindle-base)
