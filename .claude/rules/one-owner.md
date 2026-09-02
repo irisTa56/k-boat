@@ -40,4 +40,5 @@ The keys a console script prints on stdout are one such set.
 Take as few keys, and as few values in any closed set among them, as the prose reading the record actually needs — each one is another site the next sweep has to reach.
 
 Where both sides are structured, a test can pin the part that is.
-`packages/kboat/tests/test_doc_schema_sync.py` compares a table's field names and their order against the code; it reaches nothing else, so the response a value is owed stays the sweep's.
+`packages/kboat/tests/test_doc_schema_sync.py` pins three such pairs — each note type's property table against the schema's field names, the backlog-stats table against the `Stats` field order, and the cross-field rules table against the emitted code values — each on names and order alone.
+What a value obliges its reader to do is not structured on either side, so that stays the sweep's whatever a test covers.
