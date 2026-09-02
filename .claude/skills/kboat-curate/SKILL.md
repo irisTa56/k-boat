@@ -81,4 +81,4 @@ Apply only what the user confirms; relay what changed.
 
 - **memory-curate** — the generic graph mechanics (orphans, relations, dedup, hub notes).
 - **`meta/Tag vocabulary`** (in the KB) — the canonical tags and aliases.
-- **kboat-notes** — the concept-note conventions ("Concept notes"); **kboat-distill** — the accretion and write-time tag policy.
+- **kboat-notes** — the concept-note conventions ([Concept notes](../kboat-notes/SKILL.md#concept-notes-kboat_knowledge_path)); **kboat-distill** — the accretion and write-time tag policy.
