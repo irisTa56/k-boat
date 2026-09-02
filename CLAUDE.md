@@ -103,7 +103,7 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 
 ## Keep this file current
 
-Editing this file, a skill, or a README is governed by `.claude/rules/one-owner.md`, which the harness loads with those paths: one owner per fact, when a copy is allowed instead, and what adding a value to a set costs.
+Anything in this repository that could state a fact twice — every markdown file, and the code composing the records the scripts emit — is governed by `.claude/rules/one-owner.md`, which the harness loads with those paths: one owner per fact, when a copy is allowed instead, and what adding a value to a set costs.
 
 What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
 Each takes a change drafted and confirmed back rather than applied to it.
