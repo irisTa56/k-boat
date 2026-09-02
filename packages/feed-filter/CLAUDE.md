@@ -20,7 +20,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault wri
 
 ## Commands
 
-Install and the QA gates are workspace-wide — see the [root CLAUDE.md](../../CLAUDE.md).
+Install and the QA gates are workspace-wide: `mise.toml` defines both, and the [root README](../../README.md) has the setup order.
 This member's Python gate is `mise run qa:py:feed-filter`; the browser ingestion path is an optional extra (see Environment gotchas).
 
 ## Architecture

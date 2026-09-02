@@ -56,7 +56,7 @@ The one thing written nowhere else: the coverage floor is per-`src/`-file rather
 
 The product skills live at the repo-root `.claude/skills/`; each carries its own `description`, which is what says when to reach for it.
 Ownership runs one way: a skill defers to `kboat-notes` for K-Boat's note types and their lifecycle or to `kboat-feed-notes` for feed-filter's, and both of those to `kboat-vault-conventions` for the vault mechanics every writer shares.
-The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)), whose schema is code-authoritative while the field semantics are `kboat-notes`'.
+The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)): its schema is code-authoritative for the mechanics, and the owning skill above for what a field means.
 
 The prose skills carry no automated tests, unlike both Python members; validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
@@ -76,7 +76,7 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 - Concept-to-source provenance is an observation carrying the URL, concept-to-concept a wikilink.
 - Concept facet tags come from a controlled vocabulary, enforced at write time and swept on demand.
 - Kindle books and GitHub repos are parallel simpler kinds, with no notebook.
-- A Base filters only over always-present values — never `!=` over one that may be missing, never a date-emptiness test — which is why those booleans are written on every note (`kboat-vault-conventions`).
+- A Base filters only over always-present values, never `!=` over one that may be missing and never a date-emptiness test (`kboat-vault-conventions`).
 - Every vault write is atomic and every mutating run holds the vault lock (`kboat-vault-conventions`).
 - On this iCloud vault "nothing there" is several different situations, and a run must tell them apart (`kboat-vault-conventions`).
 
@@ -88,7 +88,7 @@ Automation:
 
 ## Tooling config
 
-The root `pyproject.toml` carries the workspace's ruff and pytest configuration along with its own reasons, and `.rumdl.toml` and `lychee.toml` are workspace-wide beside it.
+The root `pyproject.toml` carries the workspace's ruff configuration along with its own reasons; each member carries its own pytest configuration, and `.rumdl.toml` and `lychee.toml` are workspace-wide.
 It defers here for one thing: clearing `required-version` after a ruff minor bump fails the gate.
 Diff `ruff check --isolated --show-settings` between the old and the new binary, decide about whatever the new default no longer covers, then widen the range.
 
@@ -104,15 +104,14 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 
 ## Keep this file current
 
-Every convention here has an owner, and this file carries a pointer rather than a copy: shared vault mechanics belong to the `kboat-vault-conventions` skill, a note type and its lifecycle to `kboat-notes` or `kboat-feed-notes`, a member's internals to that member's `CLAUDE.md`.
+Every convention here has an owner, and this file carries a pointer rather than a copy — the owners are the skills and members named under `## Architecture (K-Boat)`.
 Edit the owner first, and change this file only where the pointer itself no longer lands.
 
 Do not reproduce what another file maintains as its content, and treat a copy you find as a defect rather than as something to keep in sync.
-Naming a thing and handing over its owner is not reproducing it — that is a pointer with a handle on it, which is what the invariant list above is.
 The daily routine reads these files unattended on every run, so a copy that has stopped matching is acted on before anyone sees it.
 
-A pointer is not always available: where the reader has to act on the values themselves, the copy stands. A procedure names what it branches on, a spec table is what the schema gets checked against, a run precondition has to sit in the step that executes it, a frontmatter `description` is what the harness matches on, and a README's reader has landed on the repo rather than on the declaration.
-Those sites carry a sweep obligation in place of the ban.
+A copy stands only where its reader has to act on the values and will not be opening the owner — a step that executes a precondition, a procedure that branches, a table the schema is checked against, a `description` the harness matches, an invariant put where a local edit would trip over it.
+Carry only what that reader acts on, leave the reason to the owner, and take a sweep obligation in place of the ban.
 Adding, dropping, or renaming a value in a set this project commits to — whether a tool emits it or the project declares it for itself — means reconciling, in the same change, every site that branches on that set, enumerates it, or states its size.
 Changing the response a value is owed does the same, and it is the trigger that fires where no name changed.
 For an emitted set the authority is every value the command can produce, wherever along its path the record is composed, and not the enum they start from.
