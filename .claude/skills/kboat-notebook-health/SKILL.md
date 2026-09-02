@@ -41,7 +41,7 @@ One sliver escapes all three — an ambiguous source (`dismiss` beside `keep` or
    - **With a slug or `url` argument** — the set is that source alone, whatever its dispositions.
      - The scope above bounds what the sweep seeks on its own, not what a human may ask after.
      - Resolve a `url` with `kboat-note slug`, load `Sources/<slug>.md`, and route on `notebooklm_id` rather than on the flags.
-     - With one, check it — including on a `blocked` note, which can still carry a live notebook (kboat-notes, the `blocked_has_notebook` row).
+     - With one, check it — including on a `blocked` note, which can still carry a live notebook (kboat-notes [Cross-field rules](../kboat-notes/SKILL.md#cross-field-rules), the `blocked_has_notebook` row).
        - Such a note needs `blocked` cleared once its notebook is sound, which `kboat-rescue`'s step 1 does and nothing else will.
        - Name that as outstanding rather than reporting the source healthy and leaving it in the DLQ.
      - With no `notebooklm_id`, there is nothing to check: name kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/SKILL.md#procedure-reactivate-a-sources-notebook), or `kboat-rescue` where the note is `blocked`.
@@ -94,7 +94,7 @@ Detect and report; do not work around.
   - Not transient and not this skill's to fix — report it against kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/SKILL.md#procedure-reactivate-a-sources-notebook).
 - The step 2 `notebooklm list` call itself failing, or resolving none of the vault's stored ids.
   - A missing notebook and a healthy one become indistinguishable, so stop the sweep and report.
-- A notebook holding a content-typed source the identification rule did not match (the stop side of kboat-notes restore step 1).
+- A notebook holding a content-typed source the identification rule did not match (the stop side of kboat-notes [restore](../kboat-notes/SKILL.md#procedure-restore-a-sources-original-into-its-notebook) step 1).
   - A PDF note reaches it as readily as a web one.
   - Report what the notebook holds; this is neither a loss nor a failure to restore.
 - `source list` failing for one source.
