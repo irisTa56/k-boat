@@ -25,7 +25,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 ## Layout
 
-- **Root** — the K-Boat umbrella: the shared workspace config, the toolchain and QA config, and every product skill under `.claude/skills/`.
+- **Root** — the K-Boat umbrella: the shared workspace config, the toolchain and QA config, and the product skills.
 - **`packages/kboat/`** — the `kboat` library (K-Boat's deterministic mechanical core).
 - **`packages/feed-filter/`** — the feed-filter member (its own package, skills-at-root, and docs).
 
@@ -50,15 +50,14 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 ## Commands
 
 `mise.toml` is the task list and carries its own reasons; `mise run pre-commit` is the gate, run by the git hook its postinstall generates.
-What the task definitions do not carry is the reason for the coverage floor being per-`src/`-file rather than per package: a collapse in one file cannot then hide behind a healthy average.
 
 ## Architecture (K-Boat)
 
-The product skills live at the repo-root `.claude/skills/`; each carries its own `description`, which is what says when to reach for it.
+Each skill carries its own `description`, which is what says when to reach for it.
 Ownership runs one way: a skill defers to `kboat-notes` for K-Boat's note types and their lifecycle or to `kboat-feed-notes` for feed-filter's, and both of those to `kboat-vault-conventions` for the vault mechanics every writer shares.
-The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)): its schema is code-authoritative for the mechanics, and the owning skill above for what a field means.
+In the [`kboat` library](packages/kboat/README.md), the schema is code-authoritative for a field's mechanics and the owning skill above for what it means.
 
-The prose skills carry no automated tests, unlike both Python members; validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
+A skill's procedures carry no automated tests — only its schema tables do, pinned by `test_doc_schema_sync.py` — so validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
 These invariants cut across skills, so a local edit can break one without any skill's own reader noticing.
 Each is named here and specified by `kboat-notes`, or by `kboat-vault-conventions` where marked.
@@ -99,28 +98,13 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 ## Writing conventions
 
 - In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
+- A key this project emits — in a script's stdout JSON, in `sites.toml` — is `snake_case`, as a note's frontmatter is; `kboat-vault-conventions` owns the frontmatter half.
 - Source, repo, and feed notes are named by a URL hash and Kindle notes by their ASIN, with the readable title always in `title`. `kboat-vault-conventions` has the hash recipe, the rule for every other name, and the frontmatter conventions.
 
 ## Keep this file current
 
-Every convention here has an owner, and this file carries a pointer rather than a copy — the owners are the skills and members named under `## Architecture (K-Boat)`.
-Edit the owner first, and change this file only where the pointer itself no longer lands.
+Editing this file, a skill, or a README is governed by `.claude/rules/one-owner.md`, which the harness loads with those paths: one owner per fact, when a copy is allowed instead, and what adding a value to a set costs.
 
-Do not reproduce what another file maintains as its content, and treat a copy you find as a defect rather than as something to keep in sync.
-The daily routine reads these files unattended on every run, so a copy that has stopped matching is acted on before anyone sees it.
-
-A copy stands only where its reader has to act on the values and will not be opening the owner — a step that executes a precondition, a procedure that branches, a table the schema is checked against, a `description` the harness matches, an invariant put where a local edit would trip over it.
-Carry only what that reader acts on, leave the reason to the owner, and take a sweep obligation in place of the ban.
-Adding, dropping, or renaming a value in a set this project commits to — whether a tool emits it or the project declares it for itself — means reconciling, in the same change, every site where the set is named back — one that branches on it, enumerates it, names a single value of it, or counts it — and sweeping each such file whole rather than the places you remember.
-Changing the response a value is owed does the same, and it is the trigger that fires where no name changed.
-For an emitted set the authority is every value the command can produce, wherever along its path the record is composed, and not the enum they start from.
-A value a site does not name is not skipped there: it inherits whatever that site does with the values it does name.
-The keys a console script prints on stdout are one such set, so take as few of them as the prose reading them needs — each one is another site the next sweep has to reach.
-Where both sides are structured, pin them with a test rather than trusting the sweep, as `packages/kboat/tests/test_doc_schema_sync.py` does.
-
-Some of what is here is neither a pointer nor a copy: a convention spanning both members, the reason an alternative was rejected, a procedure another file points here for.
-Those originate here because nothing else has a reader for them, and moving one into a member or a skill puts it where half its audience will not look.
-
-The obligation this file owns outright is toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
+What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
 Each takes a change drafted and confirmed back rather than applied to it.
 What a routine prompt hardcodes is the run's shape rather than any skill's content: the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, its own notification triggers, and the report keys it reads.

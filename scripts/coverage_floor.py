@@ -27,7 +27,8 @@ from pathlib import Path
 # the user's to raise, and raising it is a policy decision rather than
 # bookkeeping -- so it does not track the measured minimum, and the slack between
 # the two is deliberate rather than drift. Not a CLI flag either, for the same
-# reason: a caller must not be able to loosen it.
+# reason: a caller must not be able to loosen it. Per `src/` file rather than a
+# package average, so that a collapse in one file cannot hide behind the rest.
 FLOOR = 80.0
 
 # Any malformed-report shape lands here (e.g. a `files` entry missing
