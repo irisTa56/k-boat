@@ -84,7 +84,7 @@ That makes each rule a check on the procedures too: one that leads a human into 
 
 | Code | Field | Rule |
 | --- | --- | --- |
-| `ambiguous` | `_dispositions` | `dismiss` set together with `keep` or `distill`. "Keep" and "discard" contradict, so the routine refuses to process the source at all (see [Lifecycle and state](#lifecycle-and-state)). |
+| `ambiguous` | `_dispositions` | `dismiss` set together with `keep` or `distill`. "Keep" and "discard" contradict, so the routine refuses to process the source at all (see [Source lifecycle and state](#source-lifecycle-and-state)). |
 | `distilled_without_distill` | `distilled_date` | On a source **or a Kindle note** — both are distillable, so both are checked. `distilled_date` set while `distill` is unchecked. The date is the terminal marker of a distillation that `distill` asked for, so the note records a request it also says was never made. What follows depends on what else is ticked: with no disposition left the routine reads the source as active again and clears `filed_date`, returning something already in the knowledge graph to the inbox; with `keep` still set it is a silent no-op. |
 | `blocked_has_notebook` | `notebooklm_id` | `blocked: true` on a source that still carries a `notebooklm_id`. Ingest leaves a DLQ entry without one (see [The DLQ](#the-dlq-blocked-sources)), so this reports a source that has both. Unlike its neighbours it has a known *procedural* producer as well as a hand edit — a fully ingested source re-captured against a wall, where recording the DLQ entry merges `blocked: true` onto a note whose notebook it never touched — so by the standard above it marks a defect in that path rather than only drift in the note. While that path can produce it, treat the state as reachable: [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source) gates on it, because clearing `blocked` silences this rule and can put the notebook in line for deletion. A run reporting this rule is therefore worth tracing to which producer it was, since only one of them is the human's to fix. |
 | `picked_non_web` | `picked` | `picked: true` on a source that is not a `web_page`. The daily pick surfaces web pages only (see [Daily pick](#daily-pick)). |
@@ -182,7 +182,7 @@ Derive both from `notebooklm_id`:
 - `notebooklm_url`: `https://notebooklm.google.com/notebook/<id>`
 - `gemini_url`: `https://gemini.google.com/notebook/<id>`
 
-### Lifecycle and state
+### Source lifecycle and state
 
 `reading` is an independent checkbox (reading progress) that no lifecycle transition turns on; outside the lifecycle two routine steps read it — it selects the `kboat-notebook-health` sweep's own set and excludes the source from the daily pick's pool. The three **dispositions** — `distill`, `keep`, `dismiss` — are what the human sets to finish with a source; `filed_date` and `distilled_date` are dates the routine stamps. The dispositions share one effect — the source leaves the active inbox the moment any of them is checked (the Base filters on them, not on a date) — and otherwise mean different things: `distill` enters the knowledge graph, `keep` retains the source as a searchable archive with its notebook intact, `dismiss` abandons it. `keep` composes with `distill`; `dismiss` is exclusive of both. Because `reading` is orthogonal, a part-read source can be kept or distilled without touching `reading`.
 
@@ -250,7 +250,7 @@ The note **write is owned by `kboat-note write`** (`kboat-note write --type kind
 
 There is deliberately no `isbn` field: a Kindle product page shows the ASIN, not an ISBN, so it would be empty for almost every Kindle title.
 
-### Lifecycle and state
+### Kindle lifecycle and state
 
 Simpler than a source's, because there is no notebook to retain or discard and so nothing destructive to gate: no cooldown, and no `keep`/`dismiss`/`blocked`. A Kindle note is created, marked `reading` then `finished` as reading progresses, optionally marked `distill`, and once distilled carries `distilled_date`. The note is never deleted — it is a permanent catalogue and de-dup record.
 
@@ -386,7 +386,7 @@ The subagent judges three fields; prefer existing values and keep the vocabulary
   `general` is the fallback when nothing else fits. `embedded-iot` and `media` are umbrellas (embedded/iot/home-automation; graphics/audio/game-dev). Fold the obvious neighbours rather than inventing: storage/search → `data`; messaging/networking/blockchain → `distributed-systems`; cloud/observability → `infrastructure`; api/api-gateway/microservices → `web-development`; code-intelligence → `devtools`; osint → `security`; transportation → `geospatial`.
 - `summary` — one or two plain Japanese sentences saying what the project is and who it is for. No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is.
 
-### Lifecycle and state
+### Repo lifecycle and state
 
 There is nothing destructive to gate, so the state is minimal:
 
