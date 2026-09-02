@@ -1,8 +1,8 @@
 """Pure lifecycle predicates and work-set computation.
 
 No I/O here: `compute_plan` takes parsed sources plus today's date and returns
-the plan the CLI acts on. The predicates mirror `kboat-notes` ("Lifecycle and
-state"):
+the plan the CLI acts on. The predicates mirror `kboat-notes` ("Source
+lifecycle and state"):
 
 - ripe         = distill && !dismiss && !blocked && cooldown elapsed && distilled_date empty
 - dismiss      = dismiss && !keep && !distill && !blocked && cooldown elapsed
