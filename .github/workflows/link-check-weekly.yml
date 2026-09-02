@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Scope comes from `lychee.toml`.
+      # Shared settings come from `lychee.toml`.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
           args: --verbose --no-progress --config lychee.toml .

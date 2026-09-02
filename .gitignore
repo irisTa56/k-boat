@@ -1,8 +1,8 @@
 __pycache__/
 .claude/settings.local.json
 # Nested worktree checkouts the Claude Code harness creates here -- each is a
-# full copy of the repo. Without this, `--hidden` (used by `check:links` /
-# `qa:links:offline` to reach `.claude/skills`) would recurse into them too.
+# full copy of the repo. Without this the link check would recurse into them:
+# `hidden = true` in `lychee.toml` puts every dotdir in its walk.
 .claude/worktrees/
 .DS_Store
 .env

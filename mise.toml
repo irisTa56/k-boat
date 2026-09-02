@@ -37,7 +37,7 @@ description = "Format markdown files"
 run = "rumdl check --fix"
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
-# Scope comes from `lychee.toml`.
+# Shared settings come from `lychee.toml`.
 [tasks."check:links"]
 description = "Check links in the repo"
 run = "lychee -v --config lychee.toml ."
@@ -45,7 +45,7 @@ run = "lychee -v --config lychee.toml ."
 # In `qa:**` (unlike `check:links` above): offline-only, so it stays fast and
 # network-independent enough to gate every commit -- mirrors CI's
 # `link-check-offline` job so a broken relative link is caught locally, not
-# only in CI. Same scope as `check:links`, from the same `lychee.toml`.
+# only in CI. Same shared settings as `check:links`, from the same `lychee.toml`.
 [tasks."qa:links:offline"]
 description = "Check markdown links offline (no network)"
 run = "lychee --offline --no-progress --config lychee.toml ."

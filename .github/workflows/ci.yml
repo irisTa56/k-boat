@@ -116,7 +116,7 @@ jobs:
       # Offline-only: catches broken relative links inside the repo's own
       # markdown without depending on the network, so it is cheap enough to run
       # (and block) on every PR -- matching the local `mise run qa:links:offline`
-      # task. Scope comes from `lychee.toml`. The full networked check runs
+      # task. Shared settings come from `lychee.toml`. The full networked check runs
       # separately, non-blocking, in link-check-weekly.yml.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
