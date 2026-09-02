@@ -16,16 +16,16 @@ Two workspace members under `packages/`:
 - **`kboat`** — K-Boat's deterministic mechanical core (the library). See [packages/kboat/CLAUDE.md](packages/kboat/CLAUDE.md).
 - **feed-filter** — the upstream triage stage: it funnels new pages into the same vault, from registered feeds and forums and from natural-language queries answered by neural search. See [packages/feed-filter/CLAUDE.md](packages/feed-filter/CLAUDE.md).
 
-Each piece of content gets its own throwaway NotebookLM notebook (1:1) for reading and dialogue. A week after a source is filed for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless the source is also kept).
+Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue, and what the reading yields matures into concept notes that accrete across sources.
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. Top-level: `Queue/` (the ingest inbox, one capture file per URL, drained by `kboat-ingest`), `Sources/` (one note per source), `Kindles/` (one note per Kindle book, ASIN-named, no notebook), `Repos/` (one note per GitHub repository, URL-hash-named, no notebook), `PDFs/` (the downloaded file for each PDF source), `Reviews/` (distillation reports, each with a `read` flag), `Feeds/` (feed-filter's triage notes, one URL-hash-named note per kept feed, forum, or query item), `Questions.md` (the daily pick's open-questions backlog, a hand-maintained bullet list), `Daily/` (Obsidian daily notes — the pick's ambient signal, optional and deliberately not a `kboat-doctor` precondition), `.kboat.lock` (the vault lock — created on first use and never removed; see below), and the standalone Bases `Sources.base`, `Kindles.base`, `Repos.base`, `Reviews.base`, `Feeds.base`.
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side: a folder and a Base per note type, plus the ingest inbox, the distillation reports, the PDFs, the vault lock, and two hand-maintained inputs to the daily pick. `kboat.schema` declares the set and `kboat-vault-conventions` says what a missing member means.
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Layout
 
-- **Root** — the K-Boat umbrella: shared workspace config (`pyproject.toml`), toolchain and QA (`mise.toml`, `.rumdl.toml`, `lychee.toml`, `.github/`, `scripts/`), one `LICENSE`, this `CLAUDE.md` and `README.md`, `.claude/skills/` (all product skills), and the K-Boat product architecture (below).
+- **Root** — the K-Boat umbrella: the shared workspace config, the toolchain and QA config, and every product skill under `.claude/skills/`.
 - **`packages/kboat/`** — the `kboat` library (K-Boat's deterministic mechanical core).
 - **`packages/feed-filter/`** — the feed-filter member (its own package, skills-at-root, and docs).
 
@@ -41,21 +41,21 @@ Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude
 
 ## Environment gotchas
 
-- The ingest queue is the vault's `Queue/` folder: one `Queue/*.md` capture per URL (a `[title](url)` link), filled by the capture bookmarklet (`kboat-bookmarklet` prints it) through the Obsidian URI scheme and drained by `kboat-ingest`, which treats the captured title/URL as untrusted page text. The daily pick's open-questions backlog is the vault's `Questions.md`, read via `kboat-pick`.
+- The ingest queue is a vault folder that `kboat-ingest` drains, filled by the capture bookmarklet. A capture's title and URL come off the page, so every reader treats them as untrusted text.
+- The daily pick's open-questions backlog is the vault's `Questions.md`, hand-maintained and read via `kboat-pick`.
 - GitHub repo metadata is fetched with the `gh` CLI (separate auth from NotebookLM; `gh auth status`).
 - Distillation writes to a Basic Memory project (`k-boat-knowledge`) rooted at `KBOAT_KNOWLEDGE_PATH`, via its MCP tools.
   - Basic Memory is a soft dependency: the concept notes are plain Markdown, so it is only the search/query layer. If it is down, distillation defers (it must not extract and then discard a notebook with nowhere to write).
 
 ## Commands
 
-- `mise install` — install tools (including `notebooklm` as the `pipx:notebooklm-py` mise tool), then a postinstall hook runs `uv sync` (installs both members editable into the one workspace venv) and generates the git pre-commit hook. Chromium for NotebookLM is installed lazily by `notebooklm login` on first run, not here.
-- NotebookLM auth: `mise run nblm:login` (authenticate once) / `mise run nblm:auth:check` (verify with a network test).
-- Quality gates (`mise run pre-commit` runs them all; the git pre-commit hook calls it, so a failure blocks commits):
-  - `mise run qa:md` / `fmt:md` — markdown lint / autofix (rumdl).
-  - `mise run qa:secrets` — gitleaks over staged changes.
-  - `mise run qa:py` / `fmt:py` — ruff + ty + pytest across both members; per-member as `qa:py:kboat` / `qa:py:feed-filter` (and `fmt:py:*`). Each member's `pytest` also writes `coverage.json` (`--cov-report=json` in its `addopts`), which `scripts/coverage_floor.py` then checks, failing under an 80% per-`src/`-file floor — a collapse in one file can't hide behind a healthy package average. `qa:py:scripts` / `fmt:py:scripts` run the same ruff/ty/pytest commands over that script itself (it is flat tooling, not a workspace member, so it carries no coverage floor of its own).
-  - `mise run qa:links:offline` — offline lychee pass over the repo (no network; shared settings from `lychee.toml`, which every invocation names with `--config`); mirrors CI's `link-check-offline` job so a broken relative link is caught locally, not only in CI.
-- `mise run check:links` — the same pass over the network (not in `qa:**`/pre-commit: too slow and network-bound). CI mirrors it, non-blocking, on a weekly schedule (`.github/workflows/link-check-weekly.yml`). `ci.yml` itself also runs weekly, to catch drift in whatever an exact action-tag pin doesn't reach: the runner image, `actions/checkout` and `gitleaks/gitleaks-action` on a floating major tag, and the `uv`/`rumdl` binaries themselves (pinning `setup-uv`'s/`rumdl`'s own action tag doesn't also pin the tool version each installs).
+`mise.toml` is the task list, and `mise run pre-commit` is the gate; the generated git hook calls it, so a failing check blocks the commit.
+What the task definitions do not say:
+
+- `mise install` runs `uv sync` from a postinstall hook. Chromium for NotebookLM is not installed there — `notebooklm login` pulls it lazily on first run.
+- NotebookLM is authenticated once (`mise run nblm:login`) and verified with a network test (`mise run nblm:auth:check`).
+- The coverage floor is per-`src/`-file rather than per package, so a collapse in one file cannot hide behind a healthy average.
+- `check:links` is the networked pass, kept out of `qa:**` because a third-party host being down must not block a commit. CI mirrors it weekly and non-blocking; each workflow's own header says why it runs when it does.
 
 ## Architecture (K-Boat)
 
@@ -87,25 +87,16 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 
 Automation:
 
-- A Claude Code Desktop local scheduled task (`kboat-routine`, run daily) runs `kboat-doctor` as a precondition, then `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then the `kboat-notebook-health` sweep, then `kboat-validate --stats`, under a single auth refresh. A `kboat-doctor` failure stops the run before any phase — a vault the precondition could not establish makes every later report a report about a vault that was not there. It must be local — the queue lives in the iCloud vault, and the NotebookLM auth cookies, the vault itself, and the Basic Memory store are all local-only. The task prompt lives at `~/.claude/scheduled-tasks/kboat-routine/SKILL.md`.
-- A failure that needs the user's action but would otherwise go unseen posts one `osascript` desktop notification; routine and self-healing outcomes stay in the run summary. The notification strings are a closed set the prompt owns; a new trigger reuses one rather than adding one. The triggers:
-  - a `kboat-doctor` precondition failure;
-  - auth unusable;
-  - the `k-boat-knowledge` project missing;
-  - Basic Memory down;
-  - a `kboat-repos` defect no retry can clear (`gather`'s `defect-payload` verdict, or a `refresh` failure with `reason: payload`);
-  - a `kboat-repos refresh` that updated nothing while reporting failures or anomalies, or that failed more than one note for the same reason no later run clears — a common cause, whatever the per-note reasons say;
-  - a backlog-health count past its threshold;
-  - a notebook that lost its original source, whether or not `kboat-notebook-health` restored it. This one is the stated exception to "routine outcomes stay in the run summary": a source vanishing out of a notebook is a loss even when the article comes back, since whatever the reader built on it was built over a gap;
-  - a source whose `notebooklm_id` names no notebook at all, wherever in the run it is found — the notebook-health sweep, `kboat-ingest`'s backfill, `kboat-distill`'s ripe-source resolution, and the daily pick's body read each meet it, and for some sources only one of them can. Nothing automatic clears it — only a human-run reactivation does — so without this it is the most actionable thing a run produces and the one that stays unseen;
-  - a notebook `kboat-notebook-health` left unrestored as ambiguous — it holds a source the identification rule could not match, so the sweep restores nothing and re-reports it every run. Neither a loss nor a failed restore, and it never self-heals: a human compares the note against what the notebook holds and takes one of the writes `kboat-notes` names there — delete a leftover, or align the title, renaming the notebook's source rather than overwriting the note's unless they want the older title back.
+- A local Claude Code scheduled task (`kboat-routine`, daily) runs the whole pipeline under one auth refresh, with `kboat-doctor` as its precondition — a vault the precondition could not establish makes every later report a report about a vault that was not there.
+- It has to run locally: the queue, the NotebookLM auth cookies, the vault, and the Basic Memory store are all local-only, so no part of this moves to a cloud runner.
+- Its prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) owns the phase order, the notification policy, and the report keys it reads.
 
 ## Tooling config
 
 - One `[tool.ruff]` at the root `pyproject.toml`; members carry none and inherit it by directory walk-up, so the coding style is identical everywhere. `.rumdl.toml` and `lychee.toml` are workspace-wide.
 - Ruff's own default rule set is taken as given, and `extend-select` adds to it. So a ruff upgrade can *drop* enforcement silently, each release's default being a curated selection rather than a superset of the last. Dependabot groups every Python dependency into one monthly PR, where green CI would be the only signal.
   - `required-version` in the root `pyproject.toml` is what stops that: a minor bump fails the gate rather than merging quietly. To clear it, diff `ruff check --isolated --show-settings` between the old and new binaries, decide about whatever the new default no longer covers, then widen the range.
-- The pytest quality bar is identical per member (branch coverage ≥80, ResourceWarning-as-error, the same coverage excludes); only the `--cov` target module differs, which pytest cannot inherit. ty type-checks `src` + `tests` for both.
+- Both members carry the same pytest bar and the same ty scope. Only the `--cov` target differs, and pytest cannot inherit it — the one reason that config is duplicated rather than shared.
 
 ## Git workflow
 
@@ -115,7 +106,7 @@ Automation:
 
 - In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
 - Property keys and enum values are `snake_case`; dates are `YYYY-MM-DD`.
-- Source, repo, and feed notes are named by a URL hash (first 12 hex of the SHA-256 of the `url`'s canonical form, from `kboat-note slug`; recipe in `kboat-vault-conventions`); Kindle notes by their ASIN. All keep the readable title in the `title` property. Other note names replace the Obsidian-forbidden characters `/ \ : * ? " < > |` with `-`.
+- Source, repo, and feed notes are named by a URL hash and Kindle notes by their ASIN, with the readable title always in `title`. `kboat-vault-conventions` has the hash recipe and the rule for every other name.
 
 ## Keep this file current
 
