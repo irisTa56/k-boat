@@ -4,7 +4,7 @@ paths:
   - "**/*.md"
   - "**/*.py"
   - "**/*.toml"
-  - ".github/workflows/*.yml"
+  - ".github/**/*.yml"
 ---
 
 # One owner per fact
