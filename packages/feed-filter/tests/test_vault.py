@@ -287,28 +287,35 @@ def test_a_held_vault_is_waited_for_rather_than_refused(tmp_path: Path) -> None:
     # the next gather rediscovers it. No monkeypatch — the shipped
     # `kboat.lock.DEFAULT_WAIT_S` is what makes this pass, so zeroing it fails here.
     took_the_lock = threading.Event()
-    released_at: list[float] = []
+    hold_on = threading.Event()
+    held_for = 0.1
 
     def hold() -> None:
         with vault_lock(tmp_path):
             took_the_lock.set()
-            time.sleep(0.1)
-        released_at.append(time.monotonic())
+            # The hold outlasts the clock reading below, so the wait it measures is one
+            # the write genuinely had to serve.
+            hold_on.wait(timeout=5)
+            time.sleep(held_for)
 
     holder = threading.Thread(target=hold)
     holder.start()
     try:
         assert took_the_lock.wait(timeout=5), "the holder never took the lock"
+        started = time.monotonic()
+        hold_on.set()
         result = _write(tmp_path)
-        wrote_at = time.monotonic()
+        waited = time.monotonic() - started
     finally:
         holder.join()
 
-    # Compared by clock, not by a flag the holder sets after syscalls that drop the
-    # GIL: the write happened after the holder's release, so it waited rather than
-    # winning a start race.
+    # Waited rather than won a start race: `took_the_lock` says the holder had the
+    # lock, so the write blocked, and the release it was blocked on cannot come before
+    # `started` plus the holder's sleep. Both readings are this thread's own — the
+    # release instant is not observable from out here, and a stamp taken in the holder
+    # after its `with` block is a stamp taken after the release it claims to mark.
     assert result["status"] == "created"
-    assert released_at and wrote_at >= released_at[0]
+    assert waited >= held_for
 
 
 def test_an_expired_wait_raises_and_writes_no_note(

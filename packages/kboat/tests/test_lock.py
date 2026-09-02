@@ -164,28 +164,34 @@ def test_the_lock_is_released_when_the_block_raises(tmp_path: Path) -> None:
 
 def test_a_waiting_acquisition_takes_the_lock_once_it_comes_free(tmp_path: Path) -> None:
     took_it = threading.Event()
-    released_at: list[float] = []
+    hold_on = threading.Event()
 
     def hold() -> None:
         with vault_lock(tmp_path):
             took_it.set()
+            # The hold outlasts the clock reading below, so the wait it measures is one
+            # this acquisition genuinely had to serve.
+            hold_on.wait(timeout=5)
             time.sleep(BRIEF)
-        released_at.append(time.monotonic())
 
     holder = threading.Thread(target=hold)
     holder.start()
     try:
         assert took_it.wait(timeout=5), "the holder never took the lock"
+        started = time.monotonic()
+        hold_on.set()
         with vault_lock(tmp_path) as lock_path:
-            acquired_at = time.monotonic()
+            waited = time.monotonic() - started
             assert json.loads(lock_path.read_text(encoding="utf-8"))["pid"] == os.getpid()
     finally:
         holder.join()
 
-    # Waited rather than won a start race, and compared by clock rather than by a flag
-    # the holder sets after two syscalls that each drop the GIL: this acquisition
-    # happened after the holder's release, not merely after it decided to let go.
-    assert released_at and acquired_at >= released_at[0]
+    # Waited rather than won a start race: `took_it` says the holder had the lock, so
+    # this acquisition blocked, and the release it was blocked on cannot come before
+    # `started` plus the holder's sleep. Both readings are this thread's own — the
+    # release instant is not observable from out here, and a stamp taken in the holder
+    # after its `with` block is a stamp taken after the release it claims to mark.
+    assert waited >= BRIEF
 
 
 def test_a_holder_that_dies_without_releasing_leaves_no_lock_behind(tmp_path: Path) -> None:
