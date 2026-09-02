@@ -131,31 +131,18 @@ Automation:
 
 ## Keep this file current
 
-The shared vault mechanics (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) are owned by the `kboat-vault-conventions` skill; K-Boat's note types and their lifecycle by the `kboat-notes` skill.
-When a shared convention changes, update `kboat-vault-conventions` first; when a K-Boat note type or lifecycle changes, update `kboat-notes` first. Either way, then reconcile this file and the members' docs.
+Every convention here has an owner, and this file carries a pointer rather than a copy: shared vault mechanics belong to the `kboat-vault-conventions` skill, K-Boat's note types and their lifecycle to `kboat-notes`, a member's internals to that member's `CLAUDE.md`.
+Edit the owner first, and change this file only where the pointer itself no longer lands.
 
-When a change alters a closed set its readers restate or branch on, update every place that restates that set or keys a response on it, in the same change — a place outside this repository drafted and confirmed back rather than applied.
-The set is one a tool this project drives emits, or one the project defines for itself.
-Altering it means adding, dropping, or renaming a value, changing the response owed to one, or writing or editing a list that enumerates it.
-The authority is the set's own declaration — for an emitted one, every value the command can emit, wherever along its path the record is composed.
-Reconcile what each one tells its reader to do, and not only the value's name: a value a list omits is read as the neighbours it does name, and inherits their response.
+Do not add a restatement, and treat one you find as a defect rather than as something to keep in sync.
+The daily routine reads these files unattended on every run, so a copy that has stopped matching is acted on before anyone sees it.
 
-A restatement is anywhere the set is named back — a value prescribed, described, or branched on, or the set's size counted — so sweep by that test rather than by a list of files, and sweep each file whole.
-What has actually been caught stale:
+The exception is a run precondition a skill needs written out where it is executed, such as loading the environment before a project CLI: a pointer inside a runnable step yields a step nobody can run as written.
+Where an exception does leave a copy somewhere, changing the owner changes the copy in the same change; where both sides are structured, pin them with a test instead, as `packages/kboat/tests/test_doc_schema_sync.py` does.
 
-- a count, and the per-item list beside it, wherever they sit;
-- in a skill:
-  - its frontmatter `description`;
-  - its bare-CLI preamble;
-  - its procedure body, a section that declares itself the authoritative list included.
+Branching is not restating, and no pointer covers it: adding, dropping, or renaming a value in a set the code emits obliges a sweep of everything that branches on that set.
+A value a branch does not name is not skipped — it falls to whatever that branch does with the values it does name.
 
-An untracked local copy of a tracked template counts as outside this repository.
-
-The keys of the JSON a console script prints on stdout — whatever its own docstring calls it — are such a set, so reconciling them is what a key costs.
-Take as few keys, and as few values in any closed set among them, as the prose that reads it actually needs: the lines grow out of them and not the other way round.
-Little of that is checked, and only the part inside this repository can be — where both sides are structured, a table on one and a field list or a `StrEnum` on the other, which is what `packages/kboat/tests/test_doc_schema_sync.py` pins and the pattern to reach for.
-
-The `kboat-routine` prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) defers to the skills at runtime, so a pure schema change need not touch it.
-But it hardcodes the cross-phase orchestration: the phase set and order, the identifiers the run depends on (the vault's `Queue/` folder and `Questions.md`, the `k-boat-knowledge` project, the `kboat-*` script and scheduled-task names), the `osascript` notification trigger set, and which phases' reports are threaded into a later phase as input — the notebook-health step reads three that way and covers far less without them.
-It also reads the library's reports by key name.
-When a change alters what it hardcodes, or the report keys it reads, reconcile that prompt in the same change and confirm it back.
+What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository, and a gitignored local copy of a tracked template.
+`kboat-routine` is the one that carries weight: it hardcodes what no skill states — the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, its notification triggers — and it reads the library's reports by key name.
+A change touching any of those owes it a reconciliation, drafted and confirmed back rather than applied.
