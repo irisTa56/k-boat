@@ -46,8 +46,8 @@ class Stats:
     def to_json(self) -> dict[str, object]:
         # `asdict` in declaration order, so this method spells no field names of
         # its own and the JSON keys stay the report. What a new count owes
-        # elsewhere is the root CLAUDE.md's "Keep this file current" duty, which
-        # reaches restatements no test does.
+        # elsewhere is the sweep in `.claude/rules/one-owner.md`, which reaches
+        # restatements no test does.
         return dataclasses.asdict(self)
 
 

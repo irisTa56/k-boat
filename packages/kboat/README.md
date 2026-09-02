@@ -29,4 +29,4 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 ## Development
 
 - Zero runtime dependencies by design, so the core stays a pure, independently-testable package.
-- QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`. The workspace-wide gates and layout are in the [root README](../../README.md) and [CLAUDE.md](../../CLAUDE.md).
+- QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`. `mise.toml` defines the workspace-wide gates, and the [root README](../../README.md) has the layout and the setup order.

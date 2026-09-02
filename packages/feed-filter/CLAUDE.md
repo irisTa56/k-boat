@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 The feed-filter workspace member.
-Shared conventions (git workflow, QA commands, markdown rules) are in the [root CLAUDE.md](../../CLAUDE.md); this file covers what is specific to feed-filter.
+Shared conventions (git workflow, markdown rules) are in the [root CLAUDE.md](../../CLAUDE.md); this file covers what is specific to feed-filter.
 
 ## What this repo is
 
@@ -20,7 +20,7 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault wri
 
 ## Commands
 
-Install and the QA gates are workspace-wide — see the [root CLAUDE.md](../../CLAUDE.md).
+Install and the QA gates are workspace-wide: `mise.toml` defines both, and the [root README](../../README.md) has the setup order.
 This member's Python gate is `mise run qa:py:feed-filter`; the browser ingestion path is an optional extra (see Environment gotchas).
 
 ## Architecture

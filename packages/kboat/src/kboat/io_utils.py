@@ -1,12 +1,8 @@
 """Shared I/O helpers.
 
 `atomic_write_text` is the single writer for every durable file this workspace's
-tools write — the notes `kboat.write` assembles, the in-place frontmatter
-rewrites the lifecycle, daily-pick and repo-refresh CLIs make, and feed-filter's
-`sites.toml`. A file an agent authors with its own editor is outside it, as
-`kboat-vault-conventions` records. Writes go to a sibling temp file in the same
-directory and are renamed into place with ``os.replace`` — one atomic syscall on
-POSIX. Four guarantees:
+tools write. A file an agent authors with its own editor is outside it, as
+`kboat-vault-conventions` records. Four guarantees:
 
 - A crash mid-write never leaves a truncated note at the target path.
 - iCloud (the vault is iCloud-synced) sees the new content appear in one step,
