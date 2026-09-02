@@ -164,28 +164,37 @@ def test_the_lock_is_released_when_the_block_raises(tmp_path: Path) -> None:
 
 def test_a_waiting_acquisition_takes_the_lock_once_it_comes_free(tmp_path: Path) -> None:
     took_it = threading.Event()
-    released_at: list[float] = []
+    hold_on = threading.Event()
 
     def hold() -> None:
         with vault_lock(tmp_path):
             took_it.set()
+            # Held until the waiter has read its start clock — no timeout, since waking
+            # on one would let this sleep, and the release after it, begin before that
+            # reading and leave the assertion below measuring a hold it did not span.
+            hold_on.wait()
             time.sleep(BRIEF)
-        released_at.append(time.monotonic())
 
     holder = threading.Thread(target=hold)
     holder.start()
     try:
         assert took_it.wait(timeout=5), "the holder never took the lock"
+        started = time.monotonic()
+        hold_on.set()
         with vault_lock(tmp_path) as lock_path:
-            acquired_at = time.monotonic()
+            waited = time.monotonic() - started
             assert json.loads(lock_path.read_text(encoding="utf-8"))["pid"] == os.getpid()
     finally:
+        hold_on.set()  # idempotent: on a path that never reached the set above, this ends the holder
         holder.join()
 
-    # Waited rather than won a start race, and compared by clock rather than by a flag
-    # the holder sets after two syscalls that each drop the GIL: this acquisition
-    # happened after the holder's release, not merely after it decided to let go.
-    assert released_at and acquired_at >= released_at[0]
+    # `hold_on` is set after `started`, so the holder's sleep begins no earlier than that
+    # reading and its release no earlier than `started` plus `BRIEF` — and `flock` hands
+    # the lock on only at that release. So this acquisition spans a hold it could not
+    # have jumped, timed by one thread's own clock: the release instant is not observable
+    # from out here, and a stamp the holder takes after its `with` block is a stamp taken
+    # after the release it claims to mark.
+    assert waited >= BRIEF
 
 
 def test_a_holder_that_dies_without_releasing_leaves_no_lock_behind(tmp_path: Path) -> None:
