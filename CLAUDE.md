@@ -20,7 +20,7 @@ Each piece of content gets its own throwaway NotebookLM notebook for reading and
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
-- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. `kboat.schema` declares the folders and files a run depends on — one folder per note type, plus the ingest inbox, the distillation reports, the PDFs, and the daily pick's two hand-maintained inputs — and `kboat-vault-conventions` says what a missing one means. The lock file is `kboat.lock`'s and the Bases are `kboat-vault-conventions`'.
+- `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side. `kboat.schema` declares where the vault keeps things, and `kboat-vault-conventions` says what a missing one means and how far a run may proceed without it. The lock file is `kboat.lock`'s, and each Base belongs to whichever skill owns its note type.
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph. It may live outside the vault (for K-Boat it is a Git-managed directory). Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
 
 ## Layout
@@ -58,7 +58,7 @@ The product skills live at the repo-root `.claude/skills/`; each carries its own
 Ownership runs one way: a skill defers to `kboat-notes` for K-Boat's note types and their lifecycle, and `kboat-notes` to `kboat-vault-conventions` for the vault mechanics every writer shares, feed-filter included.
 The deterministic mechanical core is the `kboat` library ([packages/kboat/](packages/kboat/README.md)), whose schema is code-authoritative while the field semantics are `kboat-notes`'.
 
-The prose skills carry no automated tests (only the `kboat` library is unit-tested); validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
+The prose skills carry no automated tests, unlike both Python members; validate a skill change by running it against the real NotebookLM CLI, the vault, and the `k-boat-knowledge` Basic Memory project.
 
 These invariants cut across skills, so a local edit can break one without any skill's own reader noticing.
 Each is named here and specified by `kboat-notes`, or by `kboat-vault-conventions` where marked.
@@ -107,7 +107,8 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 Every convention here has an owner, and this file carries a pointer rather than a copy: shared vault mechanics belong to the `kboat-vault-conventions` skill, K-Boat's note types and their lifecycle to `kboat-notes`, a member's internals to that member's `CLAUDE.md`.
 Edit the owner first, and change this file only where the pointer itself no longer lands.
 
-Do not add a restatement, and treat one you find as a defect rather than as something to keep in sync.
+Do not reproduce what another file maintains as its content, and treat a copy you find as a defect rather than as something to keep in sync.
+Naming a thing and handing over its owner is not reproducing it — that is a pointer with a handle on it, which is what the invariant list above is.
 The daily routine reads these files unattended on every run, so a copy that has stopped matching is acted on before anyone sees it.
 
 A pointer is not always available. A run precondition has to sit in the step that executes it; a skill's frontmatter `description` is what the harness matches on; a README's reader has landed on the repo rather than on the declaration.
@@ -118,6 +119,6 @@ A value a site does not name is not skipped there: it inherits whatever that sit
 The keys a console script prints on stdout are one such set, so take as few of them as the prose reading them needs — each one is another site the next sweep has to reach.
 Where both sides are structured, pin them with a test rather than trusting the sweep, as `packages/kboat/tests/test_doc_schema_sync.py` does.
 
-What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository, and a gitignored local copy of a tracked template.
-Both take a change drafted and confirmed back rather than applied to them.
-`kboat-routine` is the one that carries weight: it hardcodes the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, and its notification triggers, and it reads the library's reports by key name.
+What this file owns outright is the obligation toward the sites no gate here reaches: a Claude Code scheduled-task prompt outside this repository — there is one per routine, not one in total — and a gitignored local copy of a tracked template.
+Each takes a change drafted and confirmed back rather than applied to it.
+What a routine prompt hardcodes is the run's shape rather than any skill's content: the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, its own notification triggers, and the report keys it reads.
