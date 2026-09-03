@@ -14,13 +14,15 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault wri
 
 - The routine MUST run locally: the vault is the local iCloud folder, so cloud routines cannot be used.
   - The Mac must be awake and the Claude runtime idle at fire time.
-- `OBSIDIAN_VAULT_PATH` must be set (from the workspace `.env`); kept entries become `Feeds/` notes under it, and an unset vault path fails a write loudly rather than silently dropping it.
+- `OBSIDIAN_VAULT_PATH` must be set (from the workspace `.env`); kept entries become `Feeds/` notes under it.
+  - An unset vault path fails a write loudly rather than silently dropping it.
 - `feed-filter.db` (seen-store), `sites.toml` (the personal subscription list), and `prompts/selection.md` (the personal keep/drop criteria) are **gitignored local state** — personal config, never commit them.
   - Only `prompts/selection.example.md` (an English template, overridable via `FEED_FILTER_SELECTION`) is version-controlled.
 - `EXA_API_KEY` (workspace `.env`) powers the `query-new` query gather.
   - It is a secret: never write it into `sites.toml`, a skill, or emitted JSON.
   - Without it `query-new` reports the missing key per query instead of failing the run.
-- The browser ingestion path is an optional extra (`uv sync --extra browser && uv run playwright install chromium`); the base install and the httpx path import no Playwright.
+- The browser ingestion path is an optional extra (`uv sync --extra browser && uv run playwright install chromium`).
+  - The base install and the httpx path import no Playwright.
   - A `requires_browser` site on a machine without it fails fast with the install command, never a silent httpx fallback.
 
 ## Commands
@@ -39,6 +41,11 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 - Synchronous throughout: a sequential CLI batch over a sync `httpx.Client`, no `asyncio`.
   - The one exception is the `new-entries` gather, which fetches independent hosts concurrently via a bounded thread pool over the sync client (same-host requests stay serialized, the seen-filter stays on the main thread) — threads, not `asyncio`.
 - Always dedupe on `canonical_url`, never the raw URL.
-- Design bias is **never-lost over never-duplicated**: a judging error writes-then-records anyway; a gather failure records nothing so the next run retries.
-- Forum posts use a second, post-grain dedupe authority (`forum_store.py`); `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned.
-- Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write; it is telemetry **outside** the never-lost authority, and a `persistent` site is surfaced for a human to investigate — the CLI never auto-disables.
+- Design bias is **never-lost over never-duplicated**.
+  - A judging error writes-then-records anyway.
+  - A gather failure records nothing so the next run retries.
+- Forum posts use a second, post-grain dedupe authority (`forum_store.py`).
+- `forum-poll-done` must be the **last** call for a topic in a run, after all posts are dispositioned.
+- Site-health escalation (`site_health.py`) is a durable per-site consecutive-failure counter both gather paths write.
+  - It is telemetry **outside** the never-lost authority.
+  - A `persistent` site is surfaced for a human to investigate — the CLI never auto-disables.

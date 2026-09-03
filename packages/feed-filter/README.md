@@ -171,7 +171,8 @@ Guidance:
 The design favors **never-lost over never-duplicated**:
 
 - An entry that errors during judging is written as a feed note anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
-- A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
+- A gather-time fetch failure records nothing seen, so the next run retries the site naturally.
+  - There is no backoff, so a permanently broken feed stays visible in run summaries by design.
 - A gather failure is contained to the smallest unit that can still emit, whether it is a fetch error or one the CLI could not classify.
   - An *article* site's fetch failure stays its own: one site cannot discard the entries the other ~80 already fetched.
     - Its seen-store filtering is not yet guarded that way, so an unclassified failure there still ends the run.

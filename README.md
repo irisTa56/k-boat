@@ -33,14 +33,16 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Reviews/` — one report per run that distilled something, read for memory consolidation (the distillation knowledge only; operational detail stays in the run summary).
   - Each carries a `read` flag you tick once you have read it.
 - `Feeds/` — one note per item the upstream feed-filter kept from your registered feeds, forums, and saved queries.
-- `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority; the daily pick reads it to infer what you are chewing on.
+- `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority.
+  - The daily pick reads it to infer what you are chewing on.
 - `Daily/` — your Obsidian daily notes, if you keep them.
   - The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.
 - `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good.
   - It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
   - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
-- `Sources.base` — a standalone Base, with four kinds of view:
-  - to-read (web by default, plus all-unread and PDF subsets);
+- `Sources.base` — a standalone Base, with views over the sources:
+  - Today, the daily pick's shortlist plus what you are mid-read — the one Obsidian opens;
+  - to-read inboxes: web, all-unread, and PDF;
   - Holding, every filed source — the read-later shelf plus lifecycle state;
   - Ambiguous, contradictory dispositions;
   - DLQ, unfetched sources.
@@ -74,7 +76,8 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph.
   - It defers to kboat-notes for the concept note's reading-group format and to the Basic Memory skills for the generic concept-note conventions.
-- [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`; also runs the routine's **daily pick**, surfacing up to two web reads matched to your `Questions.md` open-questions backlog and recent Daily notes, or time-sensitive to act on early (a security advisory, a release, a best-practice) regardless of theme.
+- [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
+  - It also runs the routine's **daily pick**, surfacing up to two web reads matched to your `Questions.md` open-questions backlog and recent Daily notes, or time-sensitive to act on early (a security advisory, a release, a best-practice) regardless of theme.
 - [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — check that the sources you have opened still have their content.
   - NotebookLM occasionally drops a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing; this adds the source back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page): finish it by pulling it through your real browser, or give it up where the page has died or you would rather not chase it.

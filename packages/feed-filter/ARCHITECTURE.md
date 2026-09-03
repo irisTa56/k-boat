@@ -24,7 +24,8 @@ Pure primitives:
   - **Always dedupe on `canonical_url`, never the raw URL.**
   - It lives there because the vault's note slug is the hash of the same canonical form, so a second copy would let a `Feeds/` note and the seen-store that gates it disagree about what one page is.
 - `seen.py` — the sqlite seen-store; the sole dedupe authority.
-  - It also owns the ordered migration list every colocated table shares (one `user_version` counter); each migration's statements and its version stamp commit in one transaction, so an interrupted upgrade rolls back whole and the next open retries it.
+  - It also owns the ordered migration list every colocated table shares (one `user_version` counter).
+    - Each migration's statements and its version stamp commit in one transaction, so an interrupted upgrade rolls back whole and the next open retries it.
 - `site_health.py` — the durable per-site consecutive-failure counter (`site_health` table, v4 migration in `seen.py`); source-kind-agnostic, keyed by `site_id`.
   - Operational telemetry, **not** dedupe/never-lost state (see the site-health invariant below).
 - `body_cache.py` — a transient per-run cache of full feed bodies (`entry_body` table, v5 migration in `seen.py`), rewritten wholesale each `new-entries`.
@@ -203,7 +204,9 @@ The user-facing narrative of the observable behavior is README's "Failure and se
 - **Run bounds.** Per-site cap 20 and global cap 80 on entries/candidates judged (`DEFAULT_PER_SITE_CAP` / `DEFAULT_GLOBAL_CAP` in `config.py`).
 - **Bounded per-host gather concurrency (article path).** `cmd_new_entries` fetches sites in two phases: the network-only `fetch_site` runs concurrently across hosts in a thread pool bounded at `DEFAULT_GATHER_CONCURRENCY` (16), then the DB-touching `filter_gathered` runs serially on the main thread in registry order.
   - It exists because the gather was a slow sequential sum over ~80 sites (each up to `fetch.DEFAULT_TIMEOUT`), which pushed a run past the foreground timeout and forced backgrounding.
-  - Two constraints on *what runs where* are load-bearing: sites sharing a host (`_gather_host_key`) are grouped into one worker and fetched **in turn**, so no host is ever hit by two concurrent requests (crawler politeness — `sites.toml` has, e.g., six `aws.amazon.com` feeds); and `requires_browser` sites are fetched on the main thread because Playwright's sync API is not thread-safe.
+  - Two constraints on *what runs where* are load-bearing:
+    - Sites sharing a host (`_gather_host_key`) are grouped into one worker and fetched **in turn**, so no host is ever hit by two concurrent requests (crawler politeness — `sites.toml` has, e.g., six `aws.amazon.com` feeds).
+    - `requires_browser` sites are fetched on the main thread because Playwright's sync API is not thread-safe.
   - The concurrency collapses only the network wall-clock — it does not reorder results (round-robin is unchanged) or read the seen-store off the main thread.
   - A fetch failure is absorbed per site, and so is an *unexpected* worker exception: it becomes that site's `error` instead of aborting the drain, so one bad site never discards the entries every other site already fetched.
     - Isolation is per site, not per host group — a group's remaining sites are fetched after one of them raises.

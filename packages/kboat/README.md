@@ -8,7 +8,8 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat-lifecycle` — the distillation lifecycle state machine: boolean/date predicates over frontmatter, no judgement.
 - `kboat-repos` — the repo catalogue's mechanics: `gather` and `refresh` over the `gh` CLI, and `write` over the shared writer.
 - `kboat-pick` — the daily-pick mechanics (`candidates`/`set`), no LLM and no NotebookLM.
-- `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON; `--stats` adds the backlog-health counts.
+- `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON.
+  - `--stats` adds the backlog-health counts.
 - `kboat-doctor` — checks the vault's environment preconditions (root, writability, folders, the questions file, directory readability, iCloud placeholders) before a run.
 - `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), and `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name).
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
