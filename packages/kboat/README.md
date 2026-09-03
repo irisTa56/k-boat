@@ -17,16 +17,30 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 
 ## Shared modules
 
-- `kboat.frontmatter` — read, scoped rewrite, YAML-safe rendering. Reading is a focused scanner rather than a YAML parser, so `parse_entries` hands back each entry's verbatim source alongside its value, for a caller that has to write the note back whole.
-- `kboat.schema` — the code-authoritative mechanical schema (field names, order, kinds, defaults, the always-present booleans, the enums). `kboat-vault-conventions` describes the schema/validate/write contract around it, and `kboat-notes` keeps the K-Boat field semantics; both point here.
-- `kboat.canonical` — URL canonicalization (`canonical_url`, the `CanonicalUrl` NewType, `resolve_link`). One page reached by two links normalizes to one string, which is what both the note slug below and feed-filter's seen-store key on — so a note and the store that gates it cannot disagree about what one page is.
+- `kboat.frontmatter` — read, scoped rewrite, YAML-safe rendering.
+  - Reading is a focused scanner rather than a YAML parser, so `parse_entries` hands back each entry's verbatim source alongside its value, for a caller that has to write the note back whole.
+- `kboat.schema` — the code-authoritative mechanical schema (field names, order, kinds, defaults, the always-present booleans, the enums).
+  - `kboat-vault-conventions` describes the schema/validate/write contract around it, and `kboat-notes` keeps the K-Boat field semantics; both point here.
+- `kboat.canonical` — URL canonicalization (`canonical_url`, the `CanonicalUrl` NewType, `resolve_link`).
+  - One page reached by two links normalizes to one string, which is what both the note slug below and feed-filter's seen-store key on — so a note and the store that gates it cannot disagree about what one page is.
 - `kboat.naming` — `note_slug`, the single slug oracle: the URL-hash of a note's canonical `url`, shared by every URL-named type and exposed to the skills as `kboat-note slug`.
-- `kboat.write` — schema-driven note assembly and create-or-update (`build_note`/`render_field`/`upsert`), the one writer all note types share. An update re-renders only what it changes, so the existing body and any frontmatter the write is not about survive it untouched, and a record whose slug is not the one its `url` names is refused rather than written.
-- `kboat.io_utils` — `atomic_write_text`, the single writer for every durable file these tools write (feed-filter's `sites.toml` too): temp file in the same directory, `fsync`, `os.replace`, then an `fsync` of the parent directory, so a write is both atomic and durable past a power loss. A raise means nothing was written. It also answers what is there — `name_taken` (a file, an iCloud placeholder, or a symlink all take a name), `file_present` (a file, and so what a taken name is held *by*), `name_occupied` (anything at that name itself, which is what separates a stale stub from a non-file holding the name), and `list_note_dir` (one directory's notes and the placeholders a `*.md` scan would walk past). All four raise where the vault refuses the read rather than answering "nothing there", which is what `pathlib` would have said.
-- `kboat.lock` — `vault_lock`, the vault-wide mutual exclusion every mutating run holds so two runs cannot interleave over one vault. An advisory `flock`, so a crashed holder's lock is released by the kernel and there is no stale state to recover; a held vault is waited on for a few seconds and then refused with a record naming the holder.
+- `kboat.write` — schema-driven note assembly and create-or-update (`build_note`/`render_field`/`upsert`), the one writer all note types share.
+  - An update re-renders only what it changes, so the existing body and any frontmatter the write is not about survive it untouched.
+  - A record whose slug is not the one its `url` names is refused rather than written.
+- `kboat.io_utils` — `atomic_write_text`, the single writer for every durable file these tools write (feed-filter's `sites.toml` too): temp file in the same directory, `fsync`, `os.replace`, then an `fsync` of the parent directory, so a write is both atomic and durable past a power loss.
+  - A raise means nothing was written.
+  - It also answers what is there, and all four probes raise where the vault refuses the read rather than answering "nothing there", which is what `pathlib` would have said.
+    - `name_taken` — a file, an iCloud placeholder, or a symlink all take a name.
+    - `file_present` — a file, and so what a taken name is held *by*.
+    - `name_occupied` — anything at that name itself, which is what separates a stale stub from a non-file holding the name.
+    - `list_note_dir` — one directory's notes and the placeholders a `*.md` scan would walk past.
+- `kboat.lock` — `vault_lock`, the vault-wide mutual exclusion every mutating run holds so two runs cannot interleave over one vault.
+  - An advisory `flock`, so a crashed holder's lock is released by the kernel and there is no stale state to recover.
+  - A held vault is waited on for a few seconds and then refused with a record naming the holder.
 - `kboat.cli` — the plumbing the console scripts share: the `--vault` and `--today` flags every vault CLI takes (feed-filter's note-writing subcommands too, so a date reaching the writer has been validated the same way whatever CLI it arrived at), plus — for the two note writers — the stdin record read and the mapping from outcome to exit code, so two contracts over one writer cannot drift apart.
 
 ## Development
 
 - Zero runtime dependencies by design, so the core stays a pure, independently-testable package.
-- QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`. `mise.toml` defines the workspace-wide gates, and the [root README](../../README.md) has the layout and the setup order.
+- QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`.
+  - `mise.toml` defines the workspace-wide gates, and the [root README](../../README.md) has the layout and the setup order.
