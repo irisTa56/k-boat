@@ -39,7 +39,11 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good.
   - It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
   - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
-- `Sources.base` — a standalone Base: to-read views (web by default, plus all-unread and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
+- `Sources.base` — a standalone Base, with four kinds of view:
+  - to-read (web by default, plus all-unread and PDF subsets);
+  - Holding, every filed source — the read-later shelf plus lifecycle state;
+  - Ambiguous, contradictory dispositions;
+  - DLQ, unfetched sources.
 - `Kindles.base` — a standalone Base over the Kindle books: a Reading-list view (books not yet finished, shown by default), an All catalogue, and a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 - `Reviews.base` — a standalone Base over the review reports: an Unread view (shown by default) and an All view, each with a `read` checkbox to tick off.
@@ -53,10 +57,18 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as
 
 The detailed conventions and procedures live in skills, so they are documented once and reused by every entry point.
 
-- [`kboat-vault-conventions`](.claude/skills/kboat-vault-conventions/SKILL.md) — the shared vault mechanics every writer follows: URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline.
-  - Both K-Boat and the feed-filter member defer to it.
-- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types and their lifecycle: source-, Kindle-, and repo-note frontmatter, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, where concept notes live, and what a concept note's `## Observations` looks like once more than one reading has fed it.
-  - Defers to `kboat-vault-conventions` for the shared mechanics.
+- [`kboat-vault-conventions`](.claude/skills/kboat-vault-conventions/SKILL.md) — the shared vault mechanics every writer follows; both K-Boat and the feed-filter member defer to it.
+  - URL-hash naming.
+  - The `kboat.schema` / `kboat-validate` contract.
+  - The `kboat.write.upsert` write contract.
+  - Durability and the vault lock.
+  - Base-authoring discipline.
+- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types and their lifecycle; defers to `kboat-vault-conventions` for the shared mechanics.
+  - Source-, Kindle-, and repo-note frontmatter.
+  - The lifecycle state machines.
+  - The Sources, Kindle, Repos, and Reviews Bases.
+  - Where concept notes live.
+  - What a concept note's `## Observations` looks like once more than one reading has fed it.
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the vault's `Queue/` folder (one `Queue/*.md` capture per URL, filled by the capture bookmarklet that `kboat-bookmarklet` prints) into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
 - [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
