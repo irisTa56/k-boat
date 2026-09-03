@@ -42,9 +42,8 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
   - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
 - `Sources.base` — a standalone Base, with views over the sources:
   - Today, the daily pick's shortlist plus what you are mid-read — the one Obsidian opens;
-  - the to-read inboxes:
+  - the all-unread inbox, exhaustive over the readable, undispositioned sources, with two focused subsets of it:
     - web;
-    - all-unread;
     - PDF;
   - Holding, every filed source — the read-later shelf plus lifecycle state;
   - Ambiguous, contradictory dispositions;

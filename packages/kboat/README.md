@@ -10,11 +10,22 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat-pick` — the daily-pick mechanics (`candidates`/`set`), no LLM and no NotebookLM.
 - `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON.
   - `--stats` adds the backlog-health counts.
-- `kboat-doctor` — checks the vault's environment preconditions (root, writability, folders, the questions file, directory readability, iCloud placeholders) before a run.
-- `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), and `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name).
+- `kboat-doctor` — checks the vault's environment preconditions before a run:
+  - the vault root;
+  - its writability;
+  - the required folders;
+  - the questions file;
+  - directory readability;
+  - iCloud placeholders.
+- `kboat-note` — three subcommands over one note:
+  - `write` — create-or-update one note from a `{slug, fields, body?}` JSON record.
+  - `slug` — the slug oracle for one URL.
+  - `migrate-slugs` — rename the vault's URL-named notes to the slugs their URLs name.
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
 - `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain.
-- `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all, which is the branch `kboat-distill` takes before adding to one; text carrying no such heading is refused (exit 2, empty stdout) rather than answered.
+- `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
+  - That answer is the branch `kboat-distill` takes before adding to one.
+  - Text carrying no such heading is refused (exit 2, empty stdout) rather than answered.
 
 ## Shared modules
 
@@ -38,7 +49,9 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat.lock` — `vault_lock`, the vault-wide mutual exclusion every mutating run holds so two runs cannot interleave over one vault.
   - An advisory `flock`, so a crashed holder's lock is released by the kernel and there is no stale state to recover.
   - A held vault is waited on for a few seconds and then refused with a record naming the holder.
-- `kboat.cli` — the plumbing the console scripts share: the `--vault` and `--today` flags every vault CLI takes (feed-filter's note-writing subcommands too, so a date reaching the writer has been validated the same way whatever CLI it arrived at), plus — for the two note writers — the stdin record read and the mapping from outcome to exit code, so two contracts over one writer cannot drift apart.
+- `kboat.cli` — the plumbing the console scripts share.
+  - The `--vault` and `--today` flags every vault CLI takes, feed-filter's note-writing subcommands too, so a date reaching the writer has been validated the same way whatever CLI it arrived at.
+  - For the two note writers, the stdin record read and the mapping from outcome to exit code, so two contracts over one writer cannot drift apart.
 
 ## Development
 

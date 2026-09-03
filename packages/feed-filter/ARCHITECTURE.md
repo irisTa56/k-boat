@@ -73,8 +73,10 @@ The forum kind extends the existing abstractions — `SiteConfig.kind == "forum"
 
 New modules:
 
-- `discourse.py` — URL derivation (`latest_feed_url`, `top_feed_url`, `topic_json_url`), topic-id extraction (`topic_id_from_url`), and JSON parsing (`parse_topic` → `ForumTopic` + `list[ForumPost]`, reading `post_stream.posts` and taking each post's like count from `actions_summary id==2`).
-  - All HTTP and RSS goes through the reused `fetch`/`parse_feed` primitives.
+- `discourse.py` — what Discourse's own shapes mean, and nothing else: all HTTP and RSS goes through the reused `fetch`/`parse_feed` primitives.
+  - URL derivation — `latest_feed_url`, `top_feed_url`, `topic_json_url`.
+  - Topic-id extraction — `topic_id_from_url`.
+  - JSON parsing — `parse_topic` → `ForumTopic` + `list[ForumPost]`, reading `post_stream.posts` and taking each post's like count from `actions_summary id==2`.
 - `forum_store.py` — the post-grain dedupe authority in its own two tables: `admit_topic` / `set_op_verdict` / `is_post_seen` / `record_post` / `due_topics` / `finalize_poll` / `last_like_count`.
 - `forum_pipeline.py` — `admit_from_feeds` (RSS ingestion + Rule-A candidate emission) and `gather_forum` (due-topic Rule-B candidate assembly + `polled_topics` finalize worklist).
 
@@ -221,6 +223,10 @@ The user-facing narrative of the observable behavior is README's "Failure and se
     - It resets on any run whose admission reached the site, and a dead-topic retirement, a partial feed failure, or a raise inside the Rule-B gather does **not** increment.
       - The last of those is deliberate: the admission already reported the site reachable, so a chronically raising Rule-B gather is surfaced every run through `unexpected_error` instead.
   - `cmd_new_entries` mirrors this for article sites, which fetch a single feed/index: it increments when `gathered.error is not None` and resets otherwise, and a `zero_links` scrape (a broken pattern healed by `heal-site`, not an outage) does **not** increment.
-  - At `DEFAULT_PERSISTENT_FAILURE_RUNS` (3) the emitted `sites[]` entry flags `persistent`, and both run skills escalate: they flag it as actionable in the run summary (which classes of actionable item reach a desktop notification is the unattended routine's own decision — it owns that trigger set, not this repo) and recommend checking for a moved URL first, then `disable-site` if truly gone, noting an `unexpected_error` message verbatim since that failure may not be the site's at all.
-    - The CLI never auto-disables — a persistent failure is as often a recoverable migration (the elixirforum subdomain move) as a dead site, so termination stays a human decision.
+  - At `DEFAULT_PERSISTENT_FAILURE_RUNS` (3) the emitted `sites[]` entry flags `persistent`, and both run skills escalate.
+    - They flag it as actionable in the run summary.
+      - Which classes of actionable item reach a desktop notification is the unattended routine's own decision — it owns that trigger set, not this repo.
+    - They recommend checking for a moved URL first, then `disable-site` if truly gone.
+      - The CLI never auto-disables — a persistent failure is as often a recoverable migration (the elixirforum subdomain move) as a dead site, so termination stays a human decision.
+    - They note an `unexpected_error` message verbatim, since that failure may not be the site's at all.
   - This write is **operational telemetry, outside the never-lost dedupe authority**: it touches no `seen`/`forum_post_seen`/`forum_watch`/`completed_polls` state, so a crash after it costs at most one extra increment on a failure that would recur anyway — never a lost post.
