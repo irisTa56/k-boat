@@ -11,10 +11,15 @@ This repository is a uv workspace. K-Boat's deterministic mechanical core is the
 
 ## Setup
 
-- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; it installs the tools and a postinstall hook syncs the venv.
-- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run. To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
-- `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
-- Distilled knowledge is a Basic Memory project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
+- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/).
+  - Run `mise install`; it installs the tools and a postinstall hook syncs the venv.
+- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv).
+  - Authenticate once with `mise run nblm:login`, which also installs Chromium on first run.
+- To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
+- `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`.
+  - The values in `mise.toml` are only defaults and are overridden by `.env`.
+- Distilled knowledge is a Basic Memory project.
+  - Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
 
 ## Layout
 
@@ -25,11 +30,15 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Kindles/` — one note per Kindle book, named by ASIN; no notebook, with reading highlights in the body.
 - `Repos/` — one note per GitHub repository, named by a URL hash; no notebook, a metadata catalogue entry.
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
-- `Reviews/` — one report per run that distilled something, read for memory consolidation (the distillation knowledge only; operational detail stays in the run summary). Each carries a `read` flag you tick once you have read it.
+- `Reviews/` — one report per run that distilled something, read for memory consolidation (the distillation knowledge only; operational detail stays in the run summary).
+  - Each carries a `read` flag you tick once you have read it.
 - `Feeds/` — one note per item the upstream feed-filter kept from your registered feeds, forums, and saved queries.
 - `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority; the daily pick reads it to infer what you are chewing on.
-- `Daily/` — your Obsidian daily notes, if you keep them. The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.
-- `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good. It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time. Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
+- `Daily/` — your Obsidian daily notes, if you keep them.
+  - The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.
+- `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good.
+  - It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
+  - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
 - `Sources.base` — a standalone Base: to-read views (web by default, plus all-unread and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
 - `Kindles.base` — a standalone Base over the Kindle books: a Reading-list view (books not yet finished, shown by default), an All catalogue, and a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
@@ -44,14 +53,18 @@ The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as
 
 The detailed conventions and procedures live in skills, so they are documented once and reused by every entry point.
 
-- [`kboat-vault-conventions`](.claude/skills/kboat-vault-conventions/SKILL.md) — the shared vault mechanics every writer follows: URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline. Both K-Boat and the feed-filter member defer to it.
-- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types and their lifecycle: source-, Kindle-, and repo-note frontmatter, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, where concept notes live, and what a concept note's `## Observations` looks like once more than one reading has fed it. Defers to `kboat-vault-conventions` for the shared mechanics.
+- [`kboat-vault-conventions`](.claude/skills/kboat-vault-conventions/SKILL.md) — the shared vault mechanics every writer follows: URL-hash naming, the `kboat.schema` / `kboat-validate` contract, the `kboat.write.upsert` write contract, durability and the vault lock, and Base-authoring discipline.
+  - Both K-Boat and the feed-filter member defer to it.
+- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types and their lifecycle: source-, Kindle-, and repo-note frontmatter, the lifecycle state machines, the Sources, Kindle, Repos, and Reviews Bases, where concept notes live, and what a concept note's `## Observations` looks like once more than one reading has fed it.
+  - Defers to `kboat-vault-conventions` for the shared mechanics.
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the vault's `Queue/` folder (one `Queue/*.md` capture per URL, filled by the capture bookmarklet that `kboat-bookmarklet` prints) into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
 - [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
-- [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph. It defers to kboat-notes for the concept note's reading-group format and to the Basic Memory skills for the generic concept-note conventions.
+- [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph.
+  - It defers to kboat-notes for the concept note's reading-group format and to the Basic Memory skills for the generic concept-note conventions.
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search your "read later" shelf by a question, over each source's saved `summary`/`topics`; also runs the routine's **daily pick**, surfacing up to two web reads matched to your `Questions.md` open-questions backlog and recent Daily notes, or time-sensitive to act on early (a security advisory, a release, a best-practice) regardless of theme.
-- [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — check that the sources you have opened still have their content. NotebookLM occasionally drops a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing; this adds the source back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
+- [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — check that the sources you have opened still have their content.
+  - NotebookLM occasionally drops a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing; this adds the source back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page): finish it by pulling it through your real browser, or give it up where the page has died or you would rather not chase it.
 - [`kboat-curate`](.claude/skills/kboat-curate/SKILL.md) — tidy the knowledge base on demand: curate the concept graph (orphans, duplicates, naming, relations) and check the concept-note tags for drift and gaps, against the KB's tag vocabulary.
 
@@ -64,7 +77,8 @@ A source ingest cannot fetch — a PDF behind a CAPTCHA wall, or a member-only w
 One progress checkbox plus three dispositions drive a source. `reading` is just reading progress. Checking any disposition takes the source off the to-read inbox at once:
 
 - `distill` — distil it into the knowledge graph (a week later), then discard the notebook.
-- `keep` — hold it on the searchable "read later" shelf, keeping its notebook for re-reading. Combine with `distill` to distil *and* keep the notebook.
+- `keep` — hold it on the searchable "read later" shelf, keeping its notebook for re-reading.
+  - Combine with `distill` to distil *and* keep the notebook.
 - `dismiss` — throw it away: discard the notebook and drop it from recall.
 
 The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
