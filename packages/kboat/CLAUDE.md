@@ -10,8 +10,16 @@ Its **spec** is split (both at the repo-root `.claude/skills/`): the shared vaul
 
 ## Working on it
 
-- Change the spec first. Edit the owning spec — `kboat-vault-conventions` for a shared convention, `kboat-notes` for a K-Boat note type or lifecycle — then the code (`src/kboat/`) and its tests (`tests/`), then reconcile the schema tables (the `test_doc_schema_sync` gate checks them against `kboat.schema`).
-- `kboat.lock` and `kboat.io_utils` are the vault's concurrency and durability floor. Take the lock at a CLI edge, never inside a writer (an `flock` is per open file description, so a nested acquisition waits out its own hold), and never add a second file-writing path beside `atomic_write_text`.
-- `kboat.io_utils` also owns whether a name is free, which on this iCloud-synced vault is not what `Path.exists()` or a glob answers. Ask the `kboat.io_utils` probes rather than `pathlib`; they raise rather than guessing, so a caller owes a boundary. Which to ask where, and at what granularity, is `kboat-vault-conventions` "The write contract".
-- Zero runtime dependencies by design, so the core stays a pure, independently-testable package. Do not add a runtime dependency.
-- Ruff is configured workspace-wide in the root `pyproject.toml`; `ty` and pytest in this package's own. `mise run qa:py:kboat` runs this member's gate, and `scripts/coverage_floor.py` is the binding coverage floor rather than pytest's own `--cov-fail-under`.
+- Change the spec first, then the code (`src/kboat/`) and its tests (`tests/`), then reconcile the schema tables.
+  - The owning spec is `kboat-vault-conventions` for a shared convention, `kboat-notes` for a K-Boat note type or lifecycle.
+  - The `test_doc_schema_sync` gate checks those tables against `kboat.schema`.
+- `kboat.lock` and `kboat.io_utils` are the vault's concurrency and durability floor.
+  - Take the lock at a CLI edge, never inside a writer: an `flock` is per open file description, so a nested acquisition waits out its own hold.
+  - Never add a second file-writing path beside `atomic_write_text`.
+- `kboat.io_utils` also owns whether a name is free, which on this iCloud-synced vault is not what `Path.exists()` or a glob answers.
+  - Ask its probes rather than `pathlib`; they raise rather than guessing, so a caller owes a boundary.
+  - Which to ask where, and at what granularity, is `kboat-vault-conventions` "The write contract".
+- Do not add a runtime dependency: zero of them by design is what keeps the core a pure, independently-testable package.
+- Ruff is configured workspace-wide in the root `pyproject.toml`; `ty` and pytest in this package's own.
+- `mise run qa:py:kboat` runs this member's gate.
+  - `scripts/coverage_floor.py` is the binding coverage floor, not pytest's own `--cov-fail-under`.
