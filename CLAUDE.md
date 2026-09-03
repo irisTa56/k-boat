@@ -106,5 +106,5 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 This repository's prose, its toolchain config and the code composing its emitted records are governed by [.claude/rules/one-owner.md](.claude/rules/one-owner.md), which the harness loads with those paths: one owner per fact, when a copy is allowed instead, and what adding a value to a set costs.
 
 The obligation this file owns outright is toward every site no gate here reaches, wherever it turns out to sit.
-One outside this repository is drafted and confirmed back rather than applied to: a Claude Code scheduled-task prompt, of which there is one per routine rather than one in total, and a gitignored local copy of a tracked template are the two that recur.
+One outside this repository is drafted and confirmed back rather than applied to: a Claude Code scheduled-task prompt, of which there are several to sweep rather than one to look up, and a gitignored local copy of a tracked template are the two that recur.
 What a routine prompt hardcodes is the run's shape rather than any skill's content: the phase set and order, which phase's report feeds a later phase, the identifiers the run depends on, its own notification triggers, and the report keys it reads — along with the values it branches on inside them, which is what a renamed enum member reaches.
