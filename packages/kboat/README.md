@@ -30,7 +30,7 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
   - A record whose slug is not the one its `url` names is refused rather than written.
 - `kboat.io_utils` — `atomic_write_text`, the single writer for every durable file these tools write (feed-filter's `sites.toml` too): temp file in the same directory, `fsync`, `os.replace`, then an `fsync` of the parent directory, so a write is both atomic and durable past a power loss.
   - A raise means nothing was written.
-  - It also answers what is there, and all four probes raise where the vault refuses the read rather than answering "nothing there", which is what `pathlib` would have said.
+  - It also answers what is there, and each probe below raises where the vault refuses the read rather than answering "nothing there", which is what `pathlib` would have said.
     - `name_taken` — a file, an iCloud placeholder, or a symlink all take a name.
     - `file_present` — a file, and so what a taken name is held *by*.
     - `name_occupied` — anything at that name itself, which is what separates a stale stub from a non-file holding the name.
