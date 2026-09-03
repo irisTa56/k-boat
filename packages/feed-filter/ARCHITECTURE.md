@@ -145,7 +145,12 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 These are the rules a multi-module change must preserve, each named with where it is enforced.
 The user-facing narrative of the observable behavior is README's "Failure and self-heal behavior" — keep the two in sync.
 
-- **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) writes the note *then* records seen, recording only on success; `write_feed_note` raises `VaultError` on a slug collision, `VaultLockedError` when the vault lock's wait expires, `VaultLockUnavailableError` when that lock cannot be operated at all, and lets an `OSError` from the atomic write propagate (`vault.py`), so a failed write is never recorded as seen.
+- **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) writes the note *then* records seen, recording only on success, so a failed write is never recorded as seen.
+  - `write_feed_note` (`vault.py`) fails in four ways, and each of them stops the record:
+    - `VaultError` — a slug collision.
+    - `VaultLockedError` — the vault lock's wait expired with another run still holding it.
+    - `VaultLockUnavailableError` — that lock cannot be operated at all.
+    - an `OSError` from the atomic write, which is let through rather than caught.
   - The lock refusal is the one of those that does not recur — the holder finishes — which is why the run skills leave that entry for the next run and carry on rather than stopping.
   - A judging error still writes the note (title or URL fallback) before recording.
   - The only duplicate window is a crash in the gap between write and record — and the hash-named upsert makes even that re-run write idempotent, so nothing duplicates.
@@ -159,8 +164,8 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - An OP that is both interesting and popular is recorded under **both** axes, but yields **one** note: both `forum-remind` calls hash-name by the same topic URL, so the second upserts the same `Feeds/` note the first wrote — one note per topic, each disposition still recorded.
 - **Seen-store is the dedupe authority at gather time (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; the sink now also dedupes (a hash-named `kboat.write.upsert` is idempotent), but the seen-store remains the authority that stops an already-processed article from being re-gathered and re-judged.
   - A gather-time fetch failure records nothing, so the next run retries — there is no *cross-run* backoff (within a single fetch, `fetch.py` does retry transient `429`/`503` throttling per `Retry-After`).
-  **Forum carve-out:** the forum adapter is a second, post-grain dedupe authority in `forum_store.py` / `forum_post_seen`.
-  Post-grain re-reminding is deliberate (a later post on a watched topic crosses the like bar); this suspends the "seen is final" invariant for forum sources only, leaving `seen.py` and every non-forum path untouched.
+  - **Forum carve-out:** the forum adapter is a second, post-grain dedupe authority in `forum_store.py` / `forum_post_seen`.
+    - Post-grain re-reminding is deliberate (a later post on a watched topic crosses the like bar); this suspends the "seen is final" invariant for forum sources only, leaving `seen.py` and every non-forum path untouched.
 - **A query gather offers, never records.** `cmd_query_new` (`cli.py`) reads the seen-store and writes nothing to it, exactly like `new-entries` — the disposition commands (`remind` / `mark-seen`) are the sole recorders.
   - Two dedupe layers run before the cap: the seen-store (a page already dispositioned (kept or dropped), or snapshotted at registration), then a within-run set (a page two queries both return, keeping the earlier query's copy).
   - A page truncated by the global cap stays unrecorded and reappears next run.
@@ -188,7 +193,8 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - Every boundary re-raises `sqlite3.Error`, the forum counterpart of the article path's `MissingPlaywrightError` carve-out: a store error is scoped to a connection, table, or lock rather than to one site or topic, so absorbing it would report one store bug as N site outages — each with a rising failure counter that escalates healthy forums to `persistent`.
     - It cannot be left to the unguarded `site_health` write to surface, because a breakage scoped to the forum tables leaves that write working.
     - `main` reports it as `error: …` with exit 1, which is the honest outcome: the disposition commands the emitted candidates feed need that same store.
-  - The absorbed exception is flagged `sites[].unexpected_error`, the same typed classification the article path emits, and `discourse_fetches` is a rough figure rather than an exact total: it counts attempts, and only those a returned result carried home, so a site whose admission the per-site boundary caught reports none of the calls it made.
+  - The absorbed exception is flagged `sites[].unexpected_error`, the same typed classification the article path emits.
+  - `discourse_fetches` is a rough figure rather than an exact total: it counts attempts, and only those a returned result carried home, so a site whose admission the per-site boundary caught reports none of the calls it made.
   - One forum failure still has no signal of any kind: a moved domain whose old host answers the feeds 200 with a non-feed page admits nothing while reporting a wholly clean status (`AdmitResult.all_feeds_failed` keys on the fetch, not on what parsed).
     - The article path catches the analogue with `zero_links`; the forum path needs a typed zero-admission signal, and until it has one the case is unflagged rather than compensated in skill prose — deriving it from the error text is exactly what the counter's typed-signal rule refuses.
 - **Operational notices never become notes.** The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's summary, not as feed notes.
