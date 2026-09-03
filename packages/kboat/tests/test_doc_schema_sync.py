@@ -27,101 +27,40 @@ from kboat.validate.stats import Stats
 # packages/kboat/tests/, so walk up three levels (tests → kboat → packages → root).
 SKILLS = Path(__file__).resolve().parents[3] / ".claude/skills"
 
-# Each note type's Property table lives in its owning skill, under an H2 whose
-# text contains the heading below. The K-Boat types are in `kboat-notes`; the
-# feed type in `kboat-feed-notes`.
-_SPEC: dict[str, tuple[str, str]] = {
-    "source": ("kboat-notes", "Source note"),
-    "kindle": ("kboat-notes", "Kindle note"),
-    "repo": ("kboat-notes", "Repo note"),
-    "feed": ("kboat-feed-notes", "Feed note"),
+# Every table below has a file to itself — `kboat-notes` keeps a reference per
+# K-Boat note type plus one for the two code-derived tables, and `kboat-feed-notes`
+# keeps the feed type in its SKILL.md — so a table is found by its own header row
+# and nothing has to locate the section it sits in. `_first_column` asserts that
+# header is unique in the file, which is what makes a second table with the same
+# columns a loud failure rather than a silent choice between the two.
+_SPEC: dict[str, str] = {
+    "source": "kboat-notes/references/source-note.md",
+    "kindle": "kboat-notes/references/kindle-note.md",
+    "repo": "kboat-notes/references/repo-note.md",
+    "feed": "kboat-feed-notes/SKILL.md",
 }
-# Track the section by its H2 heading only; a deeper `###` subheading within a
-# section must not reset the current type, so an edit that inserts a subsection
-# before the Property table cannot hide it (which would fail the test spuriously).
-_HEADING = re.compile(r"^##\s+(.*)")
+_VALIDATION = "kboat-notes/references/validation.md"
+
 _TABLE_HEADER = re.compile(r"^\|\s*Property\s*\|\s*Meaning\s*\|")
-# The field name is the leading backticked token of the Property cell; a trailing
+_STATS_TABLE = re.compile(r"^\|\s*Field\s*\|\s*Meaning\s*\|")
+_RULES_TABLE = re.compile(r"^\|\s*Code\s*\|\s*Field\s*\|\s*Rule\s*\|")
+# The name is the leading backticked token of the row's first cell; a trailing
 # annotation (e.g. `` `url` (immutable) ``) must not drop the field, so match the
 # first token rather than requiring the whole cell to be one token.
 _FIELD_NAME = re.compile(r"`([^`]+)`")
 
 
-def _parse_doc_tables(text: str, sections: dict[str, str]) -> dict[str, list[str]]:
-    """Return {note_type: [field names]} from each type's first Property table.
-
-    `sections` maps a heading substring to the note type it introduces.
-    """
-    tables: dict[str, list[str]] = {}
-    lines = text.splitlines()
-    heading: str | None = None
-    i = 0
-    while i < len(lines):
-        m = _HEADING.match(lines[i])
-        if m:
-            heading = next((t for k, t in sections.items() if k in m.group(1)), None)
-        if heading and heading not in tables and _TABLE_HEADER.match(lines[i]):
-            i += 2  # skip the header row and the `| --- | --- |` separator
-            fields: list[str] = []
-            while i < len(lines) and lines[i].startswith("|"):
-                cell = lines[i].split("|")[1].strip()
-                cm = _FIELD_NAME.search(cell)
-                if cm:
-                    fields.append(cm.group(1))
-                i += 1
-            tables[heading] = fields
-            continue
-        i += 1
-    return tables
-
-
-def _doc_tables() -> dict[str, list[str]]:
-    """All note types' tables, each parsed from its owning skill file."""
-    by_file: dict[str, dict[str, str]] = {}
-    for note_type, (skill, heading) in _SPEC.items():
-        by_file.setdefault(skill, {})[heading] = note_type
-    tables: dict[str, list[str]] = {}
-    for skill, sections in by_file.items():
-        text = (SKILLS / skill / "SKILL.md").read_text()
-        tables.update(_parse_doc_tables(text, sections))
-    return tables
-
-
-DOC_TABLES = _doc_tables()
-
-
-@pytest.mark.parametrize("schema", [SOURCE, KINDLE, REPO, FEED], ids=lambda s: s.type)
-def test_doc_table_matches_schema_fields(schema: NoteSchema) -> None:
-    skill = _SPEC[schema.type][0]
-    doc = DOC_TABLES.get(schema.type)
-    assert doc is not None, (
-        f"no Property/Meaning table found for {schema.type} in {skill} — "
-        "did a section heading change?"
-    )
-    assert doc == list(schema.field_names()), (
-        f"{schema.type} schema table in {skill} is out of sync with "
-        "kboat.schema (fields differ or are reordered)"
-    )
-
-
-# The same drift risk, for the two tables `kboat-notes` keeps of things the
-# `kboat` package declares in code. Both sit under an H3 and are found by their
-# own header row rather than by section, each header being unique in the file.
-_STATS_TABLE = re.compile(r"^\|\s*Field\s*\|\s*Meaning\s*\|")
-_RULES_TABLE = re.compile(r"^\|\s*Code\s*\|\s*Field\s*\|\s*Rule\s*\|")
-
-
-def _first_column(text: str, header: re.Pattern[str]) -> list[str]:
+def _first_column(path: str, header: re.Pattern[str]) -> list[str]:
     """The leading backticked token of each row's first cell, for one table."""
-    lines = text.splitlines()
+    lines = (SKILLS / path).read_text().splitlines()
     matches = [i for i, line in enumerate(lines) if header.match(line)]
     assert len(matches) == 1, (
-        f"expected exactly one table matching {header.pattern!r}, found {len(matches)} — "
-        "did a header row change, or did a second table adopt the same columns?"
+        f"expected exactly one table matching {header.pattern!r} in {path}, found "
+        f"{len(matches)} — did a header row change, or did a second table adopt "
+        "the same columns?"
     )
-    start = matches[0]
     out: list[str] = []
-    for line in lines[start + 2 :]:  # skip the header row and the `| --- |` separator
+    for line in lines[matches[0] + 2 :]:  # skip the header row and the `| --- |` separator
         if not line.startswith("|"):
             break
         cell = _FIELD_NAME.search(line.split("|")[1].strip())
@@ -130,21 +69,26 @@ def _first_column(text: str, header: re.Pattern[str]) -> list[str]:
     return out
 
 
-def _kboat_notes() -> str:
-    return (SKILLS / "kboat-notes/SKILL.md").read_text()
+@pytest.mark.parametrize("schema", [SOURCE, KINDLE, REPO, FEED], ids=lambda s: s.type)
+def test_doc_table_matches_schema_fields(schema: NoteSchema) -> None:
+    path = _SPEC[schema.type]
+    assert _first_column(path, _TABLE_HEADER) == list(schema.field_names()), (
+        f"{schema.type} schema table in {path} is out of sync with "
+        "kboat.schema (fields differ or are reordered)"
+    )
 
 
+# The same drift risk, for the two tables `kboat-notes` keeps of things the
+# `kboat` package declares in code. Both sit in its validation reference.
 def test_backlog_stats_table_matches_the_stats_fields() -> None:
-    assert _first_column(_kboat_notes(), _STATS_TABLE) == [
-        f.name for f in dataclass_fields(Stats)
-    ], (
-        "the Backlog stats table in kboat-notes is out of sync with kboat.validate.stats.Stats "
+    assert _first_column(_VALIDATION, _STATS_TABLE) == [f.name for f in dataclass_fields(Stats)], (
+        f"the Backlog stats table in {_VALIDATION} is out of sync with kboat.validate.stats.Stats "
         "(fields differ or are reordered) — the JSON keys come from the field order"
     )
 
 
 def test_cross_field_rules_table_matches_the_emitted_codes() -> None:
-    assert _first_column(_kboat_notes(), _RULES_TABLE) == [c.value for c in CrossFieldCode], (
-        "the Cross-field rules table in kboat-notes is out of sync with "
+    assert _first_column(_VALIDATION, _RULES_TABLE) == [c.value for c in CrossFieldCode], (
+        f"the Cross-field rules table in {_VALIDATION} is out of sync with "
         "kboat.validate.core.CrossFieldCode (codes differ or are reordered)"
     )
