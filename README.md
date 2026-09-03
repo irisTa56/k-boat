@@ -41,14 +41,17 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
   - It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
   - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
 - `Sources.base` — a standalone Base, with views over the sources:
-  - Today, the daily pick's shortlist plus what you are mid-read — the one Obsidian opens;
+  - Today, the daily pick's shortlist plus what you are mid-read (shown by default);
   - the all-unread inbox, exhaustive over the readable, undispositioned sources, with two focused subsets of it:
     - web;
     - PDF;
   - Holding, every filed source — the read-later shelf plus lifecycle state;
   - Ambiguous, contradictory dispositions;
   - DLQ, unfetched sources.
-- `Kindles.base` — a standalone Base over the Kindle books: a Reading-list view (books not yet finished, shown by default), an All catalogue, and a To-distill view.
+- `Kindles.base` — a standalone Base over the Kindle books:
+  - a Reading-list view, books not yet finished (shown by default);
+  - an All catalogue;
+  - a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 - `Reviews.base` — a standalone Base over the review reports: an Unread view (shown by default) and an All view, each with a `read` checkbox to tick off.
 - `Feeds.base` — a standalone Base over the feed-filter items, with the triage views that member's own docs describe.
@@ -84,7 +87,9 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — check that the sources you have opened still have their content.
   - NotebookLM occasionally drops a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing; this adds the source back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page): finish it by pulling it through your real browser, or give it up where the page has died or you would rather not chase it.
-- [`kboat-curate`](.claude/skills/kboat-curate/SKILL.md) — tidy the knowledge base on demand: curate the concept graph (orphans, duplicates, naming, relations) and check the concept-note tags for drift and gaps, against the KB's tag vocabulary.
+- [`kboat-curate`](.claude/skills/kboat-curate/SKILL.md) — tidy the knowledge base on demand.
+  - Curate the concept graph: orphans, duplicates, naming, relations.
+  - Check the concept-note tags for drift and gaps, against the KB's tag vocabulary.
 
 The mechanical cores live in one tested Python package, [`kboat`](packages/kboat/src/kboat/), rather than in prose, so the routine is cheaper and the logic is unit-tested. It exposes nine tools over a shared frontmatter core, a code-authoritative schema (`kboat.schema`), and a schema-driven writer (`kboat.write`): `kboat-lifecycle` (the distill pass's cooldown clock and work-set predicates), `kboat-repos` (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically), `kboat-pick` (the daily pick's Daily-note/candidate gather and `picked` flag), `kboat-validate` (checks every vault note against the schema; `--stats` adds the backlog-health counts), `kboat-doctor` (checks the vault's environment preconditions — root, writability, folders, the questions file, directory readability, iCloud placeholders — before a run), `kboat-note` (schema-driven create-or-update of a note from a JSON record), `kboat-bookmarklet` (prints the queue-capture bookmarklet to paste into a browser), `kboat-queue` (parses the `Queue/` captures into `{url, title}` for ingest to drain), and `kboat-concept` (classifies a concept note's `## Observations` into the shape the distill pass branches on before adding a reading group). Its quality gate (ruff, `ty`, pytest, plus a per-file coverage floor) runs in pre-commit; invoke it with `mise run qa:py`, and autofix with `mise run fmt:py`.
 

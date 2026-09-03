@@ -83,7 +83,8 @@ New modules:
 State store (v2 migration in `seen.py`, colocated for shared `user_version`):
 
 - `forum_watch` — `(site_id, topic_id)` PK; tracks `first_seen_at`, `op_interest_kept`, `completed_polls`, `last_like_count`, `retired`, `poll_eligible` (v3).
-  - Admission is idempotent (`INSERT-OR-IGNORE`); retirement is offset-only.
+  - Admission is idempotent (`INSERT-OR-IGNORE`).
+  - Retirement is offset-only.
 - `forum_post_seen` — `(site_id, post_id)` PK; tracks `topic_id`, `kept`, `seen_at`.
 
 Poll set is bounded to the top-N: only a topic surfaced by a top feed (`top.rss` daily ∪ weekly) is admitted `poll_eligible=1` and JSON-polled for Rule B.
