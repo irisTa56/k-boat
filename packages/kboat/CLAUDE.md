@@ -22,4 +22,4 @@ Its **spec** is split (both at the repo-root `.claude/skills/`): the shared vaul
 - Do not add a runtime dependency: zero of them by design is what keeps the core a pure, independently-testable package.
 - Ruff is configured workspace-wide in the root `pyproject.toml`; `ty` and pytest in this package's own.
 - `mise run qa:py:kboat` runs this member's gate.
-  - `scripts/coverage_floor.py` is the binding coverage floor, not pytest's own `--cov-fail-under`.
+  - The repo root's `scripts/coverage_floor.py` is the binding coverage floor, not pytest's own `--cov-fail-under`.

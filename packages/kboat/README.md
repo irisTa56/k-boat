@@ -17,7 +17,7 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
   - the questions file;
   - directory readability;
   - iCloud placeholders.
-- `kboat-note` — three subcommands over one note:
+- `kboat-note` — the note-level operations the skills call:
   - `write` — create-or-update one note from a `{slug, fields, body?}` JSON record.
   - `slug` — the slug oracle for one URL.
   - `migrate-slugs` — rename the vault's URL-named notes to the slugs their URLs name.

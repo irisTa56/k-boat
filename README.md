@@ -73,7 +73,8 @@ The detailed conventions and procedures live in skills, so they are documented o
   - The Sources, Kindle, Repos, and Reviews Bases.
   - Where concept notes live.
   - What a concept note's `## Observations` looks like once more than one reading has fed it.
-- [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the vault's `Queue/` folder (one `Queue/*.md` capture per URL, filled by the capture bookmarklet that `kboat-bookmarklet` prints) into source notes, each with its own 1:1 notebook; a GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
+- [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the vault's `Queue/` folder (one `Queue/*.md` capture per URL, filled by the capture bookmarklet that `kboat-bookmarklet` prints) into source notes, each with its own 1:1 notebook.
+  - A GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
 - [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass: advancing lifecycle state, distilling ripe sources, and distilling ripe Kindle books from their highlights, into the knowledge graph.
