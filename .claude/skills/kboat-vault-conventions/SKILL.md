@@ -335,6 +335,6 @@ A [Base](https://help.obsidian.md/bases) is a saved view over the vault's notes;
   - A date-named note needs no formula: `file.name` is already legible.
   - Where that formula links is the Base's own call.
     - `file.asLink(note.title)` shows `title` as text but opens the hash-named file — the default, and the right one whenever the note itself is worth opening: it has a body, or fields the reader wants in full.
-  - Point somewhere else when nothing behind the row is worth opening: a body-less note whose hidden fields are only provenance is better served by `link(url, …)` onto the page itself.
+    - Point somewhere else when nothing behind the row is worth opening: a body-less note whose hidden fields are only provenance is better served by `link(url, …)` onto the page itself.
 - **First view is the default.** A Base shows [its first view on open](https://help.obsidian.md/bases/views), so order the day-to-day working view first.
 - Column widths and other cosmetics are per-vault tweaks, not part of the authored Base.

@@ -78,11 +78,12 @@ Process each `phase_b.ripe` source in this exact order.
 The order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
 1. **Resolve the notebook.** Take `notebooklm_id` from the ripe entry (the tool read it from the source note).
-   - Run `notebooklm --quiet list --json 2>/dev/null`; if the id is absent, record it as an anomaly in the run summary and skip this source without stamping or discarding.
-     - **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
-     - Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
-     - The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
-     - This is the same contract as an original-source extraction error in step 3.
+   Run `notebooklm --quiet list --json 2>/dev/null`; if the id is absent, record it as an anomaly in the run summary and skip this source without stamping or discarding.
+   **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
+
+   - Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
+   - The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
+   - This is the same contract as an original-source extraction error in step 3.
 2. **Resolve the sources.** Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment): the warning it hides fires on exactly the notebooks holding saved dialogue, which this step is about).
    - If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
    - The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, a note / "unknown" type, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
@@ -156,8 +157,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
     - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups)).
     - A heading you mint must repeat no `###` the note already carries: `edit_note` refuses a section header it finds twice, so a repeated one is an anchor nothing can add to that group by again.
-  - **Which shape the note is in.**
-    - `read_note` the hit and give its text to `kboat-concept shape` on stdin.
+  - **Which shape the note is in.** `read_note` the hit and give its text to `kboat-concept shape` on stdin.
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
     - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
     - Read with `output_format="json"` and treat a null `content` as not having got the note: a miss in text mode composes a document that reads like one.
