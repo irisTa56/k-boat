@@ -53,9 +53,11 @@ Discovery:
 
 Browser path (opt-in):
 
-- `browser.py` — synchronous Playwright gather: lazy single-instance Chromium, a cold non-persisted context, and the `require_playwright_*` install gates.
-  - The User-Agent is rebuilt without the `HeadlessChrome` marker to skip Cloudflare's first-line bot check.
-  - Replaying clearance cookies re-triggers the challenge on a headless session, so the context is deliberately not persisted.
+- `browser.py` — synchronous Playwright gather, whose User-Agent is rebuilt without the `HeadlessChrome` marker to skip Cloudflare's first-line bot check.
+  - A lazy single-instance Chromium.
+  - A cold context.
+    - Replaying clearance cookies re-triggers the challenge on a headless session, so it is deliberately not persisted.
+  - The `require_playwright_*` install gates.
 
 Side effects and orchestration:
 
@@ -221,9 +223,13 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - `cmd_forum_new` keys it on the admission alone, that call being the site's reachability probe.
     - It increments on the typed `AdmitResult.all_feeds_failed` signal — every discovery feed raised `FetchError`, so the site was **wholly unreachable** this run — never on a heuristic parse of the error string.
     - It also increments when `admit_from_feeds` itself raised, which returns no reachability verdict at all and so must not be allowed to reset the streak.
-    - It resets on any run whose admission reached the site, and a dead-topic retirement, a partial feed failure, or a raise inside the Rule-B gather does **not** increment.
-      - The last of those is deliberate: the admission already reported the site reachable, so a chronically raising Rule-B gather is surfaced every run through `unexpected_error` instead.
-  - `cmd_new_entries` mirrors this for article sites, which fetch a single feed/index: it increments when `gathered.error is not None` and resets otherwise, and a `zero_links` scrape (a broken pattern healed by `heal-site`, not an outage) does **not** increment.
+    - It resets on any run whose admission reached the site, and these do **not** increment:
+      - a dead-topic retirement;
+      - a partial feed failure;
+      - a raise inside the Rule-B gather.
+        - Deliberate: the admission already reported the site reachable, so a chronically raising Rule-B gather is surfaced every run through `unexpected_error` instead.
+  - `cmd_new_entries` mirrors this for article sites, which fetch a single feed/index: it increments when `gathered.error is not None` and resets otherwise.
+    - A `zero_links` scrape does **not** increment — a broken pattern healed by `heal-site`, not an outage.
   - At `DEFAULT_PERSISTENT_FAILURE_RUNS` (3) the emitted `sites[]` entry flags `persistent`, and both run skills escalate.
     - They flag it as actionable in the run summary.
       - Which classes of actionable item reach a desktop notification is the unattended routine's own decision — it owns that trigger set, not this repo.
