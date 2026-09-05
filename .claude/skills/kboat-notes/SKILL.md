@@ -9,7 +9,8 @@ K-Boat reads content through Google NotebookLM and matures what it learns into a
 Each piece of content gets one NotebookLM notebook all to itself (1:1), plus one source note in the Obsidian vault that tracks it.
 The notebook is a throwaway reading-and-dialogue workspace; the durable record is the source note and, after distillation, the concept notes.
 
-Most content is a **source** read through NotebookLM as above. Two parallel kinds are exceptions, each with no notebook:
+Most content is a **source** read through NotebookLM as above.
+Two parallel kinds are exceptions, each with no notebook:
 
 - A **Kindle book** is read on a Kindle, has no fetched URL, and is tracked by a `type: kindle` note in `Kindles/` that distillation draws on from highlights captured in the note body.
 - A **GitHub repository** is a tagged, searchable catalogue entry — a `type: repo` note in `Repos/` carrying GitHub metadata plus a judged role/domain/summary. It is never read through NotebookLM and never distilled into the knowledge graph; it is a bookmark you can browse and search. See [Repo note](references/repo-note.md#repo-note-reposmd).

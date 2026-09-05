@@ -5,15 +5,21 @@ description: Ingest a Kindle book into the K-Boat vault from its reader URL. Use
 
 # K-Boat Kindle ingest
 
-Adds one Kindle book to the vault as a `type: kindle` note (`Kindles/<ASIN>.md`). Given a Kindle reader URL (`https://read.amazon.co.jp/?asin=<ASIN>`) or a bare ASIN, it reads the book's bibliographic metadata from the Amazon product page through the user's logged-in Chrome and writes the note, with the reader URL recorded as `reading_link`.
+Adds one Kindle book to the vault as a `type: kindle` note (`Kindles/<ASIN>.md`).
+Given a Kindle reader URL (`https://read.amazon.co.jp/?asin=<ASIN>`) or a bare ASIN, it reads the book's bibliographic metadata from the Amazon product page through the user's logged-in Chrome and writes the note, with the reader URL recorded as `reading_link`.
 
-Follow kboat-notes for the schema and [Procedure: create or update a Kindle note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-kindle-note); this skill adds the browser mechanics. It is **interactive and Mac-only** — it needs the user present and their Chrome connected. Do not run it from the unattended routine.
+Follow kboat-notes for the schema and [Procedure: create or update a Kindle note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-kindle-note); this skill adds the browser mechanics.
+It is **interactive and Mac-only** — it needs the user present and their Chrome connected.
+Do not run it from the unattended routine.
 
-A Kindle note has no NotebookLM notebook and no fetched URL: it is a permanent catalogue entry whose **body** holds reading highlights that distillation later draws on. This skill creates the entry with an empty body; the highlights are added afterwards (by hand or with the `organize-reading-note` skill).
+A Kindle note has no NotebookLM notebook and no fetched URL: it is a permanent catalogue entry whose **body** holds reading highlights that distillation later draws on.
+This skill creates the entry with an empty body; the highlights are added afterwards (by hand or with the `organize-reading-note` skill).
 
 ## Why the browser
 
-Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), and a Kindle ASIN (`B0…`) is not an ISBN, so the ISBN-keyed metadata APIs cannot resolve it. The reliable path is the user's real, logged-in Chrome — the same mechanism kboat-rescue uses for walled PDFs. The trade-off is that ingest is interactive and macOS-only rather than deterministic; that is acceptable because adding a finished book is itself a manual moment.
+Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), and a Kindle ASIN (`B0…`) is not an ISBN, so the ISBN-keyed metadata APIs cannot resolve it.
+The reliable path is the user's real, logged-in Chrome — the same mechanism kboat-rescue uses for walled PDFs.
+The trade-off is that ingest is interactive and macOS-only rather than deterministic; that is acceptable because adding a finished book is itself a manual moment.
 
 ## Procedure
 

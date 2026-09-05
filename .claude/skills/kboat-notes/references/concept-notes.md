@@ -5,7 +5,9 @@ The generic note mechanics and the accretion procedure are defined by the Basic 
 What `## Observations` looks like once more than one reading has fed a note is K-Boat's own, and this skill owns it: [Reading groups](#reading-groups) below.
 
 Relations between concepts use wikilinks (`- relation_type [[Other Concept]]`); both ends live in this same root, so they resolve in Basic Memory, Obsidian, and Foam.
-Provenance back to a source is different: the source note lives in the vault, a separate root, so a wikilink to it could not resolve. Record provenance instead as an observation carrying the source's canonical URL, e.g. `- [source] <title> — <url>`. This is root-independent, stable, and greppable.
+Provenance back to a source is different: the source note lives in the vault, a separate root, so a wikilink to it could not resolve.
+Record provenance instead as an observation carrying the source's canonical URL, e.g. `- [source] <title> — <url>`.
+This is root-independent, stable, and greppable.
 Tag each distilled observation by grounding — `#grounded` for claims the source supports, `#dialogue` for external knowledge the reading-time conversation surfaced — so a chat-derived claim is never mistaken for a source claim (kboat-distill defines how the two are sorted and verified).
 A note's frontmatter facet tags (the snake_case categorisation tags, distinct from the per-observation grounding tags above) come from a controlled vocabulary that lives in the knowledge base itself, as the `meta/Tag vocabulary` note (`memory://k-boat-knowledge/meta/tag-vocabulary`), listing the canonical tags and the variant-to-canonical aliases to avoid.
 It is data, not skill config — the right tags depend on what the base accumulates — so kboat-distill reads it when tagging: reuse a canonical tag where one fits, and mint a new one only when none does, recording it in that note in the same change.
@@ -30,7 +32,9 @@ It is not a shape the format admits, and nothing self-heals it on its own: the n
 `## Observations` and `## Relations` each appear exactly once, in that order, and the `###` headings within a note are distinct.
 They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.
 
-**The shape record.** `kboat-concept shape` reads a concept note's text on stdin and prints `{"shape": "flat"|"grouped"}` — the one key kboat-distill branches on. It reports whether the section carries **any** `###` group, which is not the same as whether every claim in it is under one: a note in the third state above answers `grouped`, so that state is the writer's to see in the text and not the record's to name.
+**The shape record.**
+`kboat-concept shape` reads a concept note's text on stdin and prints `{"shape": "flat"|"grouped"}` — the one key kboat-distill branches on.
+It reports whether the section carries **any** `###` group, which is not the same as whether every claim in it is under one: a note in the third state above answers `grouped`, so that state is the writer's to see in the text and not the record's to name.
 It opens no file and resolves no title, so it answers about exactly the text it was handed.
 Text carrying no `## Observations` heading it **refuses** rather than answers: exit 2 — the code for a record the caller has to fix — with an empty stdout and the reason on stderr.
 That is not a third shape but the tool declining to report on something that is not a concept note; kboat-distill's rule is that a shape it did not give is never assumed.

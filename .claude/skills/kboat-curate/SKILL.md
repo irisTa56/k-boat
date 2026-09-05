@@ -25,7 +25,8 @@ Load the env so `$KBOAT_KNOWLEDGE_PATH` is set from `.env`:
 eval "$(mise env)"
 ```
 
-Basic Memory must be reachable (it is the search/query layer). If it is down, the tag census still works (it reads files on disk), but the graph audit (`memory-curate`) does not — say so and defer that half.
+Basic Memory must be reachable (it is the search/query layer).
+If it is down, the tag census still works (it reads files on disk), but the graph audit (`memory-curate`) does not — say so and defer that half.
 On-disk frontmatter edits are picked up by Basic Memory's file watcher, so editing a tag block directly is fine; new notes and relation edits go through the Basic Memory tools.
 
 ## Part A — graph health
@@ -46,7 +47,8 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 
 ## Part B — tag hygiene
 
-The canonical tag set and the variant→canonical aliases live in the KB as the **`meta/Tag vocabulary`** note (`memory://k-boat-knowledge/meta/tag-vocabulary`) — the tag source of truth. Read it first.
+The canonical tag set and the variant→canonical aliases live in the KB as the **`meta/Tag vocabulary`** note (`memory://k-boat-knowledge/meta/tag-vocabulary`) — the tag source of truth.
+Read it first.
 
 1. **Census.** Aggregate every concept note's frontmatter tags:
 
@@ -68,7 +70,8 @@ The canonical tag set and the variant→canonical aliases live in the KB as the 
    for f in "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md; do grep -q '^tags:' "$f" || echo "$f"; done
    ```
 
-   For each, propose tags from the canonical set, reuse-first (prefer existing spellings; per-family guidance in the vocabulary note). Insert the `tags:` block as the last frontmatter key (after `permalink:`), matching how the other concept notes carry tags; keep the YAML list indentation identical so the file Basic Memory re-ingests stays valid.
+   For each, propose tags from the canonical set, reuse-first (prefer existing spellings; per-family guidance in the vocabulary note).
+   Insert the `tags:` block as the last frontmatter key (after `permalink:`), matching how the other concept notes carry tags; keep the YAML list indentation identical so the file Basic Memory re-ingests stays valid.
 
 4. **Apply on confirmation.** Edit tag blocks (on disk or via `edit_note`). Keep the two in sync: when you **adopt** a new tag, add it to `meta/Tag vocabulary`; when you **fold** a variant, record it in that note's Aliases table so it does not return.
 

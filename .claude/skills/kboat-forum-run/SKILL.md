@@ -8,7 +8,8 @@ description: Run one forum-filter pass — gather Rule-A and Rule-B candidates f
 One pass of the forum filter: gather due Rule-A and Rule-B candidates across all registered Discourse forum sites, judge each against `prompts/selection.md`, write the keeps into the vault, and advance each topic's poll counter.
 This is the periodic half of the forum adapter.
 Judging is split by model: **Rule A** (the subtle cross-domain call) runs on a **Sonnet** subagent; **Rule B** (a local per-post value call) stays on **haiku**.
-Rule A needs the stronger model because haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure" — a distinction no prompt wording reliably fixes on a model that cannot apply it. Rule B's local per-post value call is within haiku's reach.
+Rule A needs the stronger model because haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure" — a distinction no prompt wording reliably fixes on a model that cannot apply it.
+Rule B's local per-post value call is within haiku's reach.
 The global cap (`DEFAULT_GLOBAL_CAP=80`) is the primary cost bound; a steady-state run judges only a handful of new topics, so the Sonnet cost is small except at cold start.
 
 Run every `feed-filter` command from the repo root.
@@ -85,11 +86,15 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - `--is-op` records the **topic-grain** Rule-A interest verdict (`op_interest_kept`). A Rule-A disposition carries `--is-op` and **no** `--post-id` — Rule A reads the OP from RSS and never holds its `post_id`, so it never fetches the topic JSON.
    - `--post-id` records the **post-grain** Rule-B seen (`forum_post_seen`). A Rule-B disposition carries `--post-id` (from the candidate's `trigger_posts`) and **no** `--is-op`, even when the trigger post is the OP — Rule B does not own the interest verdict.
 
-   Because the axes are independent, the OP can be dispositioned under both rules. The two keeps resolve to the **same** topic URL, hence the same hash-named `Feeds/` note: the second `forum-remind` upserts that one note (an idempotent update — its `summary` is last-write-wins) while recording each axis independently. This is intended: one note per topic, both axes recorded — no duplicate to suppress.
+   Because the axes are independent, the OP can be dispositioned under both rules.
+   The two keeps resolve to the **same** topic URL, hence the same hash-named `Feeds/` note: the second `forum-remind` upserts that one note (an idempotent update — its `summary` is last-write-wins) while recording each axis independently.
+   This is intended: one note per topic, both axes recorded — no duplicate to suppress.
 
    - **Keep** (Rule A) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --summary <summary> --is-op` (the note carries the `summary`).
      Writes the `Feeds/` note AND records the interest verdict (kept=1) in one process; vault write first, verdict only on success.
-     A non-zero exit means the vault write failed. A `{"status": "locked", "holder": …}` record on stdout means a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock"): it does not recur, so leave this topic for the next run and carry on with the remaining keeps. Any other non-zero exit will recur — surface it and stop reminding.
+     A non-zero exit means the vault write failed.
+     A `{"status": "locked", "holder": …}` record on stdout means a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock"): it does not recur, so leave this topic for the next run and carry on with the remaining keeps.
+     Any other non-zero exit will recur — surface it and stop reminding.
    - **Drop** (Rule A) → `feed-filter forum-mark-seen --site-id <id> --topic-id <topic_id> --url <topic_url> --title <title> --is-op`.
      Records the interest verdict (kept=0); no note, and **no** post-grain seen — so if the OP later gains likes, Rule B re-judges it.
    - **Keep** (Rule B, per trigger post) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --post-id <post_id> --url <topic_url> --title <title> --summary <summary>` (the note carries the `summary`).
@@ -136,7 +141,8 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Run summary
 
 Emit a run summary as the run's text output — the pass's durable record.
-Lead with what is **actionable** and name the offending sites: a `persistent` site (step 5), or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit). A gather `error` on its own is reported, not led with.
+Lead with what is **actionable** and name the offending sites: a `persistent` site (step 5), or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
+A gather `error` on its own is reported, not led with.
 Routine keeps need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
 A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's URL-change recommendation (first check for a moved forum URL, else the remedy is `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill), noting the `error` verbatim when it is an `unexpected_error`.
 Whether to escalate this summary to a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.

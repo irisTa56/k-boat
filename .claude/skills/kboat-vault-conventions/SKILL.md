@@ -136,7 +136,9 @@ That restatement drifts, so `packages/kboat/tests/test_doc_schema_sync.py` (run 
 The per-field prose (defaults, kinds, enums) is woven into the `Meaning` cells and is *not* machine-checked, so keep it accurate by hand.
 When a field changes, update the owning spec's table and `kboat.schema` together.
 
-`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines, `parse_error`, and two for a note the pass could not read at all: `icloud_placeholder` against the placeholder's own path, and `unreadable_dir` against a note directory the OS refused to list. Both are violations like any other, so both enter `violations`, `counts.total` and `counts.by_code`; what they leave alone is `checked` and the stats, which keep their own meanings — `checked` counts the notes the pass could list and the stats the ones it could read, a note that would not parse being in the first and not the second. What they add is that a vault read in part stops reporting as a clean one, which is the reading a short backlog otherwise invites.
+`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines, `parse_error`, and two for a note the pass could not read at all: `icloud_placeholder` against the placeholder's own path, and `unreadable_dir` against a note directory the OS refused to list.
+Both are violations like any other, so both enter `violations`, `counts.total` and `counts.by_code`; what they leave alone is `checked` and the stats, which keep their own meanings — `checked` counts the notes the pass could list and the stats the ones it could read, a note that would not parse being in the first and not the second.
+What they add is that a vault read in part stops reporting as a clean one, which is the reading a short backlog otherwise invites.
 It is read-only and report-only by default (exit 0; `--strict` exits non-zero), so a routine runs it last and surfaces the violations as drift for a human to fix.
 `--stats` adds a block of backlog-health counts, defined by the owning member over its own lifecycle predicates rather than over the schema; K-Boat's set is in `kboat-notes` ([Backlog stats](../kboat-notes/references/validation.md#backlog-stats)).
 Stats never affect the exit code — they describe how the backlog is moving, not whether a note is well-formed.
@@ -188,12 +190,16 @@ A caller classifying a taken name asks the middle two in that order, and never r
 `name_taken` ORs the name and the placeholder beside it, so once `file_present` says no, testing only the placeholder lets a stale stub answer for a directory or a dangling symlink at the name — reporting a name no download will ever free as one that is merely waiting on iCloud, which is the one answer both skills route to nobody.
 
 Those four **raise** where the vault refuses the read, so every caller owes a boundary — per item for the first three, per directory for `list_note_dir` — and decides the *cause* inside it: a refusal named as anything but a refusal is the defect they exist to prevent.
-`stranded_stub(path)` is the exception and the only one: it is asked after the decision to move, about a name the writer is giving up, so it **reports** rather than refuses. It answers found, none, or could-not-tell, and a caller passes that third answer on. Refusing there would abort a rename over a stub — and the probe fails on exactly the long names this repair exists for, since a filename of 248 bytes or more makes its `.icloud` sibling exceed the limit.
+`stranded_stub(path)` is the exception and the only one: it is asked after the decision to move, about a name the writer is giving up, so it **reports** rather than refuses.
+It answers found, none, or could-not-tell, and a caller passes that third answer on.
+Refusing there would abort a rename over a stub — and the probe fails on exactly the long names this repair exists for, since a filename of 248 bytes or more makes its `.icloud` sibling exceed the limit.
 The two are not interchangeable: a scan needs `list_note_dir` whether or not it also claims a name, since `name_taken` answers about a name it was already given and an evicted note is one nothing handed it.
 Which names a writer has to ask about depends on where each came from: a name a `list_note_dir` listing produced is already answered, and one a record or a slug formula produced is not.
 So a rename driven by a scan asks about its target, while one that derives both names itself asks about both, since either being evicted is a reason not to move.
 That is what `pathlib` will not do for them: from CPython 3.14 `Path.exists` swallows every `OSError`, and `Path.glob` swallows the one `os.scandir` raises on an unlistable directory in every version, so a permission-denied probe comes back as an invitation to write there and an unreadable folder as an empty, clean one.
-**A `created` status is not a claim that the name was free.** `upsert`'s create-versus-merge decision is a bare `exists()`, so at an evicted slug it takes the note for a new one: the merge and the collision check above are both skipped and the note is rewritten from what the record alone carries. Read it as "the writer found no file there" and nothing further.
+**A `created` status is not a claim that the name was free.**
+`upsert`'s create-versus-merge decision is a bare `exists()`, so at an evicted slug it takes the note for a new one: the merge and the collision check above are both skipped and the note is rewritten from what the record alone carries.
+Read it as "the writer found no file there" and nothing further.
 The `kboat-doctor` placeholder scan is a precondition and not a substitute: it runs once, before the phases, and an eviction can land on a vault it passed.
 
 ## Durability and the vault lock
@@ -219,7 +225,8 @@ Each tool holds it across its own read as well as its own writes, because a plan
 **There is no stale lock to recover, because the kernel releases it.**
 An `flock` belongs to the open file description, so it goes when the file descriptor closes — including on a `SIGKILL`, an OOM kill or a panic.
 An interrupted run therefore leaves no lock behind at all: nothing here needs a stale window, an age heuristic, a liveness check on a recorded pid, or a takeover.
-**Do not delete `<vault>/.kboat.lock`.** It persists between holds — carrying the last holder's record, which is why it looks like leftover state and is not — because exclusion is an agreement about one inode: remove it mid-run and the next writer creates a different inode and locks that instead, leaving two runs writing at once.
+**Do not delete `<vault>/.kboat.lock`.**
+It persists between holds — carrying the last holder's record, which is why it looks like leftover state and is not — because exclusion is an agreement about one inode: remove it mid-run and the next writer creates a different inode and locks that instead, leaving two runs writing at once.
 Nothing ever needs it cleared, which is the difference from a design with a stale window a human has to break.
 What buys that is a premise worth stating, because it is the one thing that would invalidate the design: **all contention is same-host on a local volume.**
 `~/Library/Mobile Documents/…` is not a network mount but a local APFS directory with a file-provider sync extension, so `flock` there is ordinary APFS advisory locking — verified against this vault, including that a holder killed without releasing leaves the lock free.

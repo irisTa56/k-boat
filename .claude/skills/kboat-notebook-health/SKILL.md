@@ -10,7 +10,9 @@ It has been seen twice on the same page, 16.6 and 9.4 days after a fully verifie
 
 Follow kboat-notes for the source-note schema, for [One notebook per source (1:1)](../kboat-notes/references/source-note.md#one-notebook-per-source-11) (how the original is told apart from saved dialogue), and for [Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook), which owns the repair.
 
-**Nothing here rebuilds a notebook.** The notebook is not what failed, so the missing source is added back into the one already there, and the saved dialogue, the chat persona, the notebook id and the source's whole lifecycle come through untouched. A source the restore cannot finish is reported and left exactly as found.
+**Nothing here rebuilds a notebook.**
+The notebook is not what failed, so the missing source is added back into the one already there, and the saved dialogue, the chat persona, the notebook id and the source's whole lifecycle come through untouched.
+A source the restore cannot finish is reported and left exactly as found.
 
 ## Scope
 
@@ -25,7 +27,11 @@ One sliver escapes all three — an ambiguous source (`dismiss` beside `keep` or
 - **Distillation** (`kboat-distill` Phase B, step 2) — the only route in for a ripe source, which the third exclusion holds back.
 - **The daily pick** (`kboat-recall` "Daily pick mode", steps 5 and 7) — read-only against NotebookLM, so it reports and this skill acts.
 
-**What none of that reaches.** A source never marked `reading` enters no set: the pick's pool is `web_page` and excludes every disposition (`kboat.pick.candidates.is_active_web`), a `keep`-only source is a no-op in distillation, and no routine ticks `reading`. Measured against the vault this was built for: 53 live notebooks, of which the sweep's own set is 4, plus the pick's daily shortlist of three to five from a pool of 22. That is the deliberate shape — this skill watches what the reader has opened — not a backlog that drains. The check is one `source list` per source, so the cost tracks a set that accumulates.
+**What none of that reaches.**
+A source never marked `reading` enters no set: the pick's pool is `web_page` and excludes every disposition (`kboat.pick.candidates.is_active_web`), a `keep`-only source is a no-op in distillation, and no routine ticks `reading`.
+Measured against the vault this was built for: 53 live notebooks, of which the sweep's own set is 4, plus the pick's daily shortlist of three to five from a pool of 22.
+That is the deliberate shape — this skill watches what the reader has opened — not a backlog that drains.
+The check is one `source list` per source, so the cost tracks a set that accumulates.
 
 ## Prerequisites
 
@@ -119,4 +125,5 @@ No vault write happens in this skill, so no `status: locked` refusal can arise.
 - Every source that was not healthy, by slug and title, with its verdict, whether the sweep found it or a phase reported it, and where it ended.
 - Errors, each with the source it affected and the cause.
 
-A source found without its original is a loss even where the restore succeeded: the article came back from the `url`, but whatever the reader built on it was built over a gap. Say so rather than reporting a clean run.
+A source found without its original is a loss even where the restore succeeded: the article came back from the `url`, but whatever the reader built on it was built over a gap.
+Say so rather than reporting a clean run.
