@@ -23,20 +23,31 @@ The trade-off is that ingest is interactive and macOS-only rather than determini
 
 ## Procedure
 
-1. **Resolve the ASIN.** From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim. This is the de-dup key. Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded from `.env` by `eval "$(mise env)"` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
-2. **De-dup.** If `Kindles/<ASIN>.md` already exists, this is the same book — report it as already recorded and stop (do not re-extract), unless the user asked to refresh its metadata, in which case update it in place. The filename, being the ASIN, never changes.
-3. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser. If none, fall back to the manual path (step 5).
+1. **Resolve the ASIN.** From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim.
+   - This is the de-dup key.
+   - Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded from `.env` by `eval "$(mise env)"` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
+2. **De-dup.** If `Kindles/<ASIN>.md` already exists, this is the same book — report it as already recorded and stop (do not re-extract), unless the user asked to refresh its metadata, in which case update it in place.
+   - The filename, being the ASIN, never changes.
+3. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser.
+   - If none, fall back to the manual path (step 5).
 4. **Extract metadata through the real browser.** Navigate the user's Chrome to `https://www.amazon.co.jp/dp/<ASIN>` and read the page:
    - `title` — the product title, in the page's own language (keep a Japanese title Japanese).
-   - `author` — every listed contributor (author/translator) from the **byline** under the title (the `by … (Author)` line), as a list. Prefer this byline over the "Follow the author" / "About the author" widget, which can name a different person (e.g. a corporate author in the byline but an individual in the widget).
-   - `publisher` and `published` — from the product-details / 登録情報 section. Keep `published` at whatever precision is shown (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); do not zero-pad to fake precision.
-   - If a CAPTCHA / "Human Verification" / sign-in wall appears, ask the user to clear it in their browser, then continue once the product page loads. If the page is unavailable or extraction is ambiguous (wrong product, missing fields), show the user what you found and ask them to confirm or supply the missing fields.
+   - `author` — every listed contributor (author/translator) from the **byline** under the title (the `by … (Author)` line), as a list.
+     - Prefer this byline over the "Follow the author" / "About the author" widget, which can name a different person (e.g. a corporate author in the byline but an individual in the widget).
+   - `publisher` and `published` — from the product-details / 登録情報 section.
+     - Keep `published` at whatever precision is shown (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); do not zero-pad to fake precision.
+
+   If a CAPTCHA / "Human Verification" / sign-in wall appears, ask the user to clear it in their browser, then continue once the product page loads.
+   If the page is unavailable or extraction is ambiguous (wrong product, missing fields), show the user what you found and ask them to confirm or supply the missing fields.
 5. **Manual fallback.** If Claude in Chrome is unavailable or the wall cannot be cleared, ask the user for the title, author(s), publisher, and publication date, and proceed with those.
-6. **Write the note** per kboat-notes [Procedure: create or update a Kindle note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-kindle-note): `Kindles/<ASIN>.md` with `type: kindle`, the extracted fields, `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `reading`, `finished`, and `distill` start `false`; `distilled_date` empty. Leave the body empty. There is no `isbn` field (a Kindle page shows the ASIN, not an ISBN).
+6. **Write the note** per kboat-notes [Procedure: create or update a Kindle note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-kindle-note): `Kindles/<ASIN>.md` with `type: kindle`, the extracted fields, `reading_link` = the reader URL (directly under `title`), `store_link` = the product-page link `https://www.amazon.co.jp/dp/<ASIN>`, `added_date` = today; `reading`, `finished`, and `distill` start `false`; `distilled_date` empty.
+   - Leave the body empty.
+   - There is no `isbn` field (a Kindle page shows the ASIN, not an ISBN).
 7. **Report.** State that the book was added (or already present), echo the resolved fields, and remind the user that reading highlights go in the note body — added by hand or with `organize-reading-note` — that `reading` and `finished` track reading progress (checking `finished` drops the book off the Base reading-list view), and that checking `distill` opts it into the next distillation run.
 
 ## Notes
 
 - Identity is the ASIN throughout; the filename (the ASIN) never changes, so re-running on the same book reuses the existing note — no duplicate.
-- This skill mutates only the source-of-record note: it writes `Kindles/<ASIN>.md`. It creates no NotebookLM notebook and deletes nothing.
+- This skill mutates only the source-of-record note: it writes `Kindles/<ASIN>.md`.
+  - It creates no NotebookLM notebook and deletes nothing.
 - Future extensions (not done here): pulling Kindle highlights from `read.amazon.co.jp/notebook` to fill the body automatically, and auto-routing read.amazon URLs dropped into the `Queue/` folder.
