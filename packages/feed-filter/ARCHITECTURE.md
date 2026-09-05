@@ -133,7 +133,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 `query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it.
 `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
 
-- `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site`.
+- `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site` for an article site, and `add-forum` for a Discourse URL, which takes neither step (a snapshot would discard every topic due for first-run Rule-A judgment).
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
 - `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
 - `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
