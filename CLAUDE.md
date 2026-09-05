@@ -11,12 +11,12 @@ It is a Claude Code skill package plus a thin Python environment: K-Boat's skill
 The exception is the deterministic, purely-mechanical core, extracted into a tested Python library — the `kboat` package (`packages/kboat/`) — so the model neither re-derives it nor pays tokens for it.
 The browser-driven NotebookLM CLI is a separate mise tool (`pipx:notebooklm-py`).
 
-Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name — so a globally-invoked product skill has to live at the root.
+Product skills stay at the root rather than in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name.
 
 Two workspace members under `packages/`:
 
 - **`kboat`** — see [packages/kboat/CLAUDE.md](packages/kboat/CLAUDE.md).
-- **feed-filter** — the upstream triage stage: it funnels new pages into the same vault, from registered feeds and forums and from natural-language queries answered by neural search. See [packages/feed-filter/CLAUDE.md](packages/feed-filter/CLAUDE.md).
+- **feed-filter** — the upstream triage stage, which writes into the same vault. See [packages/feed-filter/CLAUDE.md](packages/feed-filter/CLAUDE.md).
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
