@@ -124,6 +124,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `forum-poll-done` | advance the poll counter for one topic (call last, after all posts dispositioned) |
 
 `new-entries` filters to `kind != "forum"` and `forum-new` filters to `kind == "forum"` — neither path ever sees the other's sites.
+Both filter on `enabled` as well, so a paused site reaches no gather at all and appears in no run's per-site report.
 `query-new` is registry-free: it belongs to no site, stamps every entry `site_id: "exa"`, and shares only the seen-store, so a page another gather already dispositioned (kept or dropped), or snapshotted at registration is dropped rather than re-offered.
 `new-entries` puts only a preview of each entry's body on stdout and caches the full body (`body_cache`); the judge pulls it with `entry-body`, so a full article is loaded into the cheap judging subagent's context, never the run orchestrator's.
 
