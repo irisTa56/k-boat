@@ -134,10 +134,9 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
        When it is also an `unexpected_error`, still give the investigation, but lead with the message: the flag does not say which call raised, and the count says only that the admission returned no positive verdict — so a moved URL is the first hypothesis to test, not an established diagnosis.
        1. **Check first for a moved or renamed forum URL.** A "persistent" 5xx/4xx is frequently a domain migration, not a dead site: e.g. `elixirforum.com` moved to the `forum.elixirforum.com` subdomain and its apex began serving an unrelated 500 landing page, which read as a chronic outage until `forum_url` was updated in `sites.toml`.
           If the forum moved, fixing `forum_url` restores it, and nothing is re-gathered or re-judged — the seen-store keys on `(site_id, topic_id)`, not the domain.
-          Name the move as the likely cause in the summary, with the candidate URL where the error suggests one, and leave the registry alone — the edit is a hand-edit of local config and belongs to the user (see "Fix a site that moved" in `kboat-manage-feed-sites`).
-          Where nothing in the error points to a move, say that instead of naming one.
+          Name the move as the likely cause in the summary and leave the registry alone — the edit is a hand-edit of local config and belongs to the user (see "Fix a site that moved" in `kboat-manage-feed-sites`).
        2. **Only if the forum is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
-          A long run of failures is not what establishes that, whichever way step 1 went — a moved forum and a dead one fail the same way, and disabling here ends the very reports that would prompt the user to look.
+          A long run of failures is not what establishes that — a moved forum and a dead one fail the same way, and disabling here ends the very reports that would prompt the user to look.
      - **Not `persistent`** (the common case): report the `error` in the summary and move on, without escalating on a single bad run.
        Withholding escalation is not a claim that the failure is transient: the counter only tracks whether the admission reached the site, so a Rule-B failure can repeat run after run without moving it.
        So report what the fields say and let the counter do its job; never write a repeating failure up as self-healing.
