@@ -7,7 +7,8 @@ description: Run one forum-filter pass — gather Rule-A and Rule-B candidates f
 
 One pass of the forum filter: gather due Rule-A and Rule-B candidates across every enabled Discourse forum site, judge each against `prompts/selection.md`, write the keeps into the vault, and advance each topic's poll counter.
 A paused site is not in that set — `forum-new` drops it before any fetch, so it raises no error and appears nowhere in the run's per-site report.
-A registered site missing from that report is paused rather than failing, and `kboat-manage-feed-sites` is where it comes back on.
+Absence from that report is not itself a pause, though: more than one thing keeps a site out of it.
+Read the site's `enabled` field off the `list-sites` rows this run already reads; `kboat-manage-feed-sites` is where a paused site comes back on.
 This is the periodic half of the forum adapter.
 Judging is split by model: **Rule A** (the subtle cross-domain call) runs on a **Sonnet** subagent; **Rule B** (a local per-post value call) stays on **haiku**.
 Rule A needs the stronger model because haiku misreads native ecosystem tooling (e.g. an Erlang JSON parser) as cross-domain "data infrastructure" — a distinction no prompt wording reliably fixes on a model that cannot apply it.

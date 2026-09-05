@@ -7,7 +7,8 @@ description: Run one feed-filter pass — gather new entries from registered art
 
 One pass of the filter: gather unseen entries across every enabled article site, judge each against `prompts/selection.md`, write the keeps into the vault, and record everything processed as seen.
 A paused site is not in that set — `new-entries` drops it before any fetch, so it raises no error and appears nowhere in the run's per-site report.
-A registered site missing from that report is paused rather than failing, and `kboat-manage-feed-sites` is where it comes back on.
+Absence from that report is not itself a pause, though: more than one thing keeps a site out of it.
+Read the site's `enabled` field off the `list-sites` rows this run already reads; `kboat-manage-feed-sites` is where a paused site comes back on.
 Forums are not this run's: `new-entries` skips them, and `kboat-forum-run` is the pass that judges their topics.
 This is the periodic, cost-sensitive half of feed-filter's article path — the judging runs on **haiku** subagents, and the per-site/global caps, not subagent cleverness, are the primary cost bound.
 
