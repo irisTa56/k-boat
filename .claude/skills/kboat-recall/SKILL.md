@@ -39,10 +39,10 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 - **Just read it:** open `reading_link` — a web URL, or for a PDF the Obsidian/PDF++ link to `PDFs/<slug>.pdf`.
   - No notebook is needed to read.
 - **Chat with it or distil it:** decide by the result's `notebooklm_id`, not its disposition.
-  - If it is empty the source has no notebook — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) is the way back, and its opener says which sources it takes and which are already on their way to one.
-  - If it is present, open `gemini_url` to chat or check `distill` to have the routine distil it.
-    - A present id is not proof the notebook can answer, though, and no property marks the difference — a notebook whose text some check condemned is kept deliberately, one deleted out of band leaves its id behind, and one can survive intact having lost the source inside it — so the chat is where you find out.
-      - What to do then is that same opener's business; `distill` is not the answer either way, since it would go ripe and abort every run.
+  If it is empty the source has no notebook — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) is the way back, and its opener says which sources it takes and which are already on their way to one.
+  If it is present, open `gemini_url` to chat or check `distill` to have the routine distil it.
+  A present id is not proof the notebook can answer, though, and no property marks the difference — a notebook whose text some check condemned is kept deliberately, one deleted out of band leaves its id behind, and one can survive intact having lost the source inside it — so the chat is where you find out.
+  What to do then is that same opener's business; `distill` is not the answer either way, since it would go ripe and abort every run.
 
 ## Daily pick mode
 
@@ -72,9 +72,9 @@ The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#dai
      - The first is a candidate whose notebook no longer holds its original source — the listing came back with `count` 0, or with nothing in it that the [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11) rule identifies as the original.
      - The second is a candidate whose `notebooklm_id` names **no notebook at all**: `kboat-pick`'s candidate predicate does not check the id, so a stale one reaches here, and the listing then fails with a message reporting a `Not found` RPC and going on to suggest a signed-in-account mismatch.
        - That message is not evidence about auth and one candidate is not "NotebookLM cannot be reached at all", so it must not trigger the whole-run fallback above — confirm the id against `notebooklm --quiet list --json 2>/dev/null` — reading that listing as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to, against the vault's other stored ids rather than this one alone, since a listing fetched under the wrong signed-in account makes every id read as absent — and report a source whose notebook is gone, which only a human-run reactivation clears (kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook)).
-     - This mode is the only place in the run that meets such a source: the health sweep needs `reading`, the backfill needs an empty `summary`, and distillation needs a disposition.
-     - That is content lost after a clean ingest (kboat-notebook-health opens with what is known about it), not a call that failed, and the degraded judgment reads identically to a healthy one, so it would otherwise leave no trace.
-     - Judge either candidate on its `summary`/`topics` like any other unreadable one, and **record it separately** for step 7, saying which of the two it was.
+     This mode is the only place in the run that meets such a source: the health sweep needs `reading`, the backfill needs an empty `summary`, and distillation needs a disposition.
+     That is content lost after a clean ingest (kboat-notebook-health opens with what is known about it), not a call that failed, and the degraded judgment reads identically to a healthy one, so it would otherwise leave no trace.
+     Judge either candidate on its `summary`/`topics` like any other unreadable one, and **record it separately** for step 7, saying which of the two it was.
    - This mode stays read-only against NotebookLM, so it never restores the missing source: `kboat-notebook-health` acts on what this step reports, adding the original back into the notebook that is still there.
 6. `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices.
    - Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
