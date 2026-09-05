@@ -1189,8 +1189,8 @@ def main(argv: Sequence[str] | None = None) -> int:
       willing to wait, so the note was not written and the entry stays unseen. This
       one also prints ``{"status": "locked", …}`` on stdout, because it is the only
       failure in this list that will *not* recur: the holder finishes. A run skill
-      needs to tell it apart from a collision or a disk error, which recur and mean
-      stop, so it can leave this entry for the next run and keep reminding;
+      needs to tell it apart from a refused write or a disk error, which recur and
+      mean stop, so it can leave this entry for the next run and keep reminding;
     - ``BadInputError`` — the shared writer refused the record itself. Nothing
       feed-filter assembles can trip it (its slug is a URL hash and its field
       names are literals), so this is the writer's contract being honoured here

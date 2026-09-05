@@ -848,8 +848,8 @@ def test_remind_reports_a_vault_it_could_not_lock_and_records_nothing(
     captured = capsys.readouterr()
     assert "error: vault is locked" in captured.err
     # A `locked` marker on stdout, because this is the one write failure that does
-    # not recur: the run skill has to tell it from a collision or a disk error so it
-    # leaves this entry for the next run instead of stopping the whole pass.
+    # not recur: the run skill has to tell it from a refused write or a disk error
+    # so it leaves this entry for the next run instead of stopping the whole pass.
     assert json.loads(captured.out)["status"] == "locked"
     with contextlib.closing(open_db(db_path())) as conn:
         assert not is_seen(conn, canonical_url("https://e.example.com/a"))
