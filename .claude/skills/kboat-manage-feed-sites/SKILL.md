@@ -24,7 +24,7 @@ This is the only place the on/off status lives; there is no separate state to co
 `feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`.
 The run then skips it entirely — no fetch, no error, no notification — while its `[[site]]` config and its seen-store stay intact.
 Use this when a site is chronically failing (a recurring error named in the run's summary), temporarily noisy, or simply unwanted for now.
-Prefer it over deleting the `[[site]]` block by hand, which changes what the site does when it comes back: `add-site` records the current entries as seen, so everything published in the gap is skipped unjudged, where a resume judges it.
+Prefer it over deleting the `[[site]]` block by hand, which loses the row's own settings and, on an article site, changes what it does when it comes back: `add-site` records the current entries as seen, so everything published in the gap is skipped unjudged, where a resume judges it.
 
 ## Resume a site
 
@@ -43,9 +43,10 @@ No `feed-filter` subcommand edits a URL, and none is needed: `sites.toml` is the
 2. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
    - Change the value only. Which of the three fields is set is what makes a site a feed, a scrape, or a forum site, and the registry loader rejects a row that sets anything other than exactly one of them (`index_url` also requires an `article_url_pattern` beside it).
    - Note the old value in the run's report before overwriting it. `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit.
-3. **Confirm the registry still loads.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
+3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
+   Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
 4. **Report what the move cost.** Where it changed the URLs of what the site serves, those URLs read as new: an article is judged a second time, and a keep — an article's or a topic's — lands as a fresh `Feeds/` note instead of updating the one already there.
-   On a scrape site `feed-filter heal-site --site-id <id> --pattern <the pattern list-sites reports>` re-scrapes under the new `index_url` and records what it finds as seen, which ends the re-judging; otherwise it ends on its own once the site's current window has aged out.
+   On a scrape site `feed-filter heal-site --site-id <id> --pattern <the pattern list-sites reports>` re-scrapes under the new `index_url` and records what it finds as seen, which ends the re-judging at once; on a feed site it ends once those entries have each been judged, at most twenty in a run.
    Either way the move is not free, so do not report it as such.
 
 ## Finding the id

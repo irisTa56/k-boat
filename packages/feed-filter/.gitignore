@@ -2,7 +2,7 @@
 # are ignored workspace-wide by the root .gitignore; only this member's own local
 # files live here.
 
-# Mutable runtime state (the seen-store); config lives in version control.
+# Mutable runtime state (the seen-store).
 feed-filter.db
 feed-filter.db-wal
 feed-filter.db-shm
