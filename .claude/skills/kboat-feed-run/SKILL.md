@@ -68,8 +68,11 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - **Escalation** — by design there is no backoff, so the durable `consecutive_failures`/`persistent` fields carry it (both kinds count toward them):
      - **Not `persistent`** (the common case): report the `error` in the summary and move on. A transient failure self-heals; the durable counter resets on the next successful gather, so do not escalate on a single bad run. An `unexpected_error` is worth reporting even on one run, because a failure the CLI could not classify is not self-evidently transient — report it, but still do not escalate it.
      - **`persistent == true`**: the site's gather has errored for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient"). Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below. The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site. When it is also an `unexpected_error`, say so and lead with the message: the investigation may end at "this is a bug to fix", but a chronically failing site still needs one.
-       1. **Check first for a moved or renamed feed/index URL.** A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated. If the site moved, updating its `index_url`/`feed_url` (see `kboat-manage-feed-sites`) restores it with no loss — the seen-store keys on `canonical_url`, not the domain.
+       1. **Check first for a moved or renamed feed/index URL.** A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated.
+          If the site moved, pointing it at the new URL restores it with its id and config intact.
+          Name the move as the likely cause in the summary and leave the registry alone — the edit is a hand-edit of local config and belongs to the user (see "Fix a site that moved" in `kboat-manage-feed-sites`).
        2. **Only if the site is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
+          A long run of failures is not what establishes that — a moved site and a dead one fail the same way, and disabling here ends the very reports that would prompt the user to look.
 
 ## Run summary
 
@@ -77,7 +80,7 @@ Emit a run summary as the run's text output — the pass's durable record, and t
 Lead with what is **actionable** — a gather `error` or an operational failure (a `remind` / `heal-site` non-zero exit, a missing-Playwright gate) — and name the offending sites so they can be fixed or paused.
 A self-heal is worth surfacing too, but as an informational record (the run repaired the scrape pattern itself), not an action.
 Routine keeps and walls need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
-A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and step 5's recommendation (first check for a moved feed/index URL, else `feed-filter disable-site --site-id <id>`; see the `kboat-manage-feed-sites` skill), noting the `error` verbatim when it is an `unexpected_error`.
+A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and whichever of step 5's two branches you took, noting the `error` verbatim when it is an `unexpected_error`.
 Whether to escalate this summary to a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.

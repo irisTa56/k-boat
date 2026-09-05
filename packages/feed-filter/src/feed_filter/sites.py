@@ -1,4 +1,4 @@
-"""Site registry — the version-controlled ``sites.toml`` config.
+"""Site registry — the gitignored, user-authored ``sites.toml`` config (see packages/feed-filter/CLAUDE.md).
 
 A site is a *feed* (``feed_url``), a *scrape* (``article_url_pattern`` matched
 against links on an ``index_url``), or a *forum* (``forum_url`` pointing at a

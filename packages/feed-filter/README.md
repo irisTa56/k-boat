@@ -67,12 +67,13 @@ To stop gathering a site without losing it — a chronically failing site, or on
 
 ```sh
 feed-filter disable-site --site-id example   # the run skips it; config + seen-store kept
-feed-filter enable-site  --site-id example   # resume; only post-resume entries are written
+feed-filter enable-site  --site-id example   # resume gathering
 ```
 
 A disabled site is skipped entirely (no fetch, no error, no notification) and stays in `sites.toml` with an `enabled = false` line.
 Because its seen-store is preserved, re-enabling never floods the back-catalog.
-This is reversible and cheap, unlike deleting and re-registering (which re-runs discovery and loses history).
+It does not skip the pause either: nothing is gathered while a site is disabled, so whatever was published during the pause and is still in the feed or index is judged over the runs after it.
+Deleting the block and re-registering does something different rather than the same thing again: on an article site `add-site` records the current entries as seen, so the gap is skipped unjudged rather than judged on return.
 
 ### Sites that need a browser (JS / anti-bot)
 
