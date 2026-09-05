@@ -6,7 +6,7 @@ Shared conventions (git workflow, markdown rules) are in the [root CLAUDE.md](..
 ## What this repo is
 
 feed-filter is a simplified reimplementation of the sibling project `loose-feeds` (`../loose-feeds`).
-A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against `prompts/selection.md` using cheap subagents, and writes survivors as `type: feed` notes in the Obsidian vault's `Feeds/` folder.
+A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against `prompts/selection.md` using subagents, and writes survivors as `type: feed` notes in the Obsidian vault's `Feeds/` folder.
 A second routine does the same for registered Discourse forums, writing keeps as the same `Feeds/` notes (post-grain, re-writes the note as new posts cross a like threshold).
 Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault writer) lives in plain Python behind a single `feed-filter` CLI; what is left to the LLM is under Architecture below.
 
