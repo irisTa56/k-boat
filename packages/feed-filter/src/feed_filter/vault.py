@@ -73,7 +73,7 @@ def write_feed_note(
     `shelved`, the reader's "read later" flag, which `upsert` defaults to `false`
     on create and preserves on a re-write. A blank `title` falls back to the URL,
     so the note's required `title` is never empty. Returns `upsert`'s
-    `{status, slug, path}`; raises `VaultError` on a slug collision, or
+    `{status, slug, path}`; raises `VaultError` on a write the writer refused, or
     `VaultLockedError` when the shared wait passes with another run still holding the
     vault.
     """

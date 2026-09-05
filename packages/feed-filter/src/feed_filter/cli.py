@@ -521,9 +521,9 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
 def cmd_remind(args: argparse.Namespace) -> int:
     """Write the kept entry as a ``Feeds/`` note, then record seen (kept=1).
 
-    Vault write **first**, seen-record only on success: a ``VaultError`` (slug
-    collision) or ``OSError`` (the atomic write) raises before the record, so an
-    entry whose note could not be written stays unseen for the next run to retry
+    Vault write **first**, seen-record only on success: a ``VaultError`` (a write
+    the writer refused) or ``OSError`` (the atomic write) raises before the record,
+    so an entry whose note could not be written stays unseen for the next run to retry
     — the never-lost half. ``write_feed_note`` falls the note's ``title`` back to
     the URL when blank, so a ``--title ""`` still writes a valid note.
     """
@@ -1184,7 +1184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     — never a traceback, never a silent success:
 
     - ``FetchError`` — network / discover transport failure;
-    - ``VaultError`` — a feed note could not be written (slug collision);
+    - ``VaultError`` — a feed note could not be written (the writer refused it);
     - ``VaultLockedError`` — a K-Boat run held the vault for longer than the write was
       willing to wait, so the note was not written and the entry stays unseen. This
       one also prints ``{"status": "locked", …}`` on stdout, because it is the only
