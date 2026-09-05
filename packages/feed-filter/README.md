@@ -73,8 +73,7 @@ feed-filter enable-site  --site-id example   # resume gathering
 A disabled site is skipped entirely (no fetch, no error, no notification) and stays in `sites.toml` with an `enabled = false` line.
 Because its seen-store is preserved, re-enabling never floods the back-catalog.
 It does not skip the pause either: nothing is gathered while a site is disabled, so whatever was published during the pause and is still in the feed or index is judged on the first run back.
-Deleting the block and re-registering does something different rather than the same thing again: `add-site` snapshots the current entries as seen, so the gap is skipped unjudged rather than judged on return.
-It carries its own price — the site is registered nowhere from the deletion until `add-site` succeeds — while the seen-store survives either way, its rows keying on the entry's URL rather than on the registry.
+Deleting the block and re-registering does something different rather than the same thing again: `add-site` records the current entries as seen, so the gap is skipped unjudged rather than judged on return.
 
 ### Sites that need a browser (JS / anti-bot)
 
