@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 K-Boat is a personal reading pipeline, and this repo is its umbrella.
-K-Boat reads content through Google NotebookLM and matures what it learns into a knowledge base; an upstream member, feed-filter, triages new pages into the same vault — from registered feeds and forums, and from natural-language queries answered by neural search.
+K-Boat reads content through Google NotebookLM and matures what it learns into a knowledge base.
 This file is the umbrella project doc — the shared conventions plus the K-Boat product architecture; each member package has its own `CLAUDE.md` for its internals.
 
 ## What this repo is
@@ -11,12 +11,12 @@ It is a Claude Code skill package plus a thin Python environment: K-Boat's skill
 The exception is the deterministic, purely-mechanical core, extracted into a tested Python library — the `kboat` package (`packages/kboat/`) — so the model neither re-derives it nor pays tokens for it.
 The browser-driven NotebookLM CLI is a separate mise tool (`pipx:notebooklm-py`).
 
+Product skills stay at the root rather than in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name.
+
 Two workspace members under `packages/`:
 
-- **`kboat`** — K-Boat's deterministic mechanical core (the library). See [packages/kboat/CLAUDE.md](packages/kboat/CLAUDE.md).
-- **feed-filter** — the upstream triage stage: it funnels new pages into the same vault, from registered feeds and forums and from natural-language queries answered by neural search. See [packages/feed-filter/CLAUDE.md](packages/feed-filter/CLAUDE.md).
-
-Each piece of content gets its own throwaway NotebookLM notebook for reading and dialogue, and what the reading yields matures into concept notes that accrete across sources.
+- **`kboat`** — see [packages/kboat/CLAUDE.md](packages/kboat/CLAUDE.md).
+- **feed-filter** — the upstream triage stage, which writes into the same vault. See [packages/feed-filter/CLAUDE.md](packages/feed-filter/CLAUDE.md).
 
 Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
@@ -27,14 +27,6 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph.
   - It may live outside the vault (for K-Boat it is a Git-managed directory).
   - Defaults to `<OBSIDIAN_VAULT_PATH>/Knowledge` when unset.
-
-## Layout
-
-- **Root** — the K-Boat umbrella: the shared workspace config, the toolchain and QA config, and the product skills.
-- **`packages/kboat/`** — the `kboat` library (K-Boat's deterministic mechanical core).
-- **`packages/feed-filter/`** — the feed-filter member (its own package, skills-at-root, and docs).
-
-Product skills stay at the repo-root `.claude/skills/`, not in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name — so a globally-invoked product skill has to live at the root.
 
 ## Environment
 
