@@ -84,6 +84,7 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
      - No `--title`: NotebookLM resets a file source's title to the filename, and a PDF resolves by `type: pdf`.
    - **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
      - A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.
+
    Then set `blocked: false`, write `notebooklm_id`/`gemini_url`/`notebooklm_url` and the captured `summary`/`topics`, and set `reading_link` = `[[<slug>.pdf]]` for a PDF (leave it as the `url` for a web page).
 6. **Report.** State that the source left the DLQ and is now a normal source (in the inbox).
    Four non-clean endings:
