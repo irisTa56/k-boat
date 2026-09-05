@@ -7,7 +7,7 @@ Read this when a change touches more than one module or the Python ↔ skills co
 ## The split: deterministic Python vs. LLM
 
 Everything verifiable and cheap is plain Python — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer.
-The LLM is reserved for the genuinely fuzzy judgments: picking the article cluster during site registration, authoring the descriptions `query-new` searches on (ad hoc — no skill drives it yet), and per-page keep/drop at run time.
+The LLM is reserved for the genuinely fuzzy judgments: picking the article cluster — at site registration, and again when a scrape site self-heals — authoring the descriptions `query-new` searches on (ad hoc — no skill drives it yet), and per-page keep/drop at run time.
 
 A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the **only** contract between the Python core and the Claude Code skills.
 Skills never reach into Python internals.
