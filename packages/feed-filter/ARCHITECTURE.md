@@ -222,7 +222,8 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - `cmd_forum_new` keys it on the admission alone, that call being the site's reachability probe.
     - It increments on the typed `AdmitResult.all_feeds_failed` signal — every discovery feed raised `FetchError`, so the site was **wholly unreachable** this run — never on a heuristic parse of the error string.
     - It also increments when `admit_from_feeds` itself raised, which returns no reachability verdict at all and so must not be allowed to reset the streak.
-    - It resets on any run whose admission reached the site, and these do **not** increment:
+    - It resets on any run whose admission reached the site.
+    - These do **not** increment:
       - a dead-topic retirement;
       - a partial feed failure;
       - a raise inside the Rule-B gather.

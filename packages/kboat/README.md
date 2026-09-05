@@ -25,7 +25,7 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain.
 - `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
   - That answer is the branch `kboat-distill` takes before adding to one.
-  - Text carrying no such heading is refused (exit 2, empty stdout) rather than answered.
+  - Text carrying no `## Observations` heading at all is refused (exit 2, empty stdout) rather than answered.
 
 ## Shared modules
 

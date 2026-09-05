@@ -89,7 +89,9 @@ The detailed conventions and procedures live in skills, so they are documented o
   - Run the routine's **daily pick**, surfacing up to two web reads matched to your `Questions.md` open-questions backlog and recent Daily notes, or time-sensitive to act on early (a security advisory, a release, a best-practice) regardless of theme.
 - [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — check that the sources you have opened still have their content.
   - NotebookLM occasionally drops a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing; this adds the source back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
-- [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page): finish it by pulling it through your real browser, or give it up where the page has died or you would rather not chase it.
+- [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page), by one of its two exits.
+  - Finish it, by pulling it through your real browser.
+  - Give it up, where the page has died or you would rather not chase it.
 - [`kboat-curate`](.claude/skills/kboat-curate/SKILL.md) — tidy the knowledge base on demand.
   - Curate the concept graph: orphans, duplicates, naming, relations.
   - Check the concept-note tags for drift and gaps, against the KB's tag vocabulary.
