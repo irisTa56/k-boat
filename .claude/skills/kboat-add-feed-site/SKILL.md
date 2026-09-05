@@ -29,19 +29,28 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
-   - **Non-zero exit** → the initial URL could not be fetched (a transport failure). Report the error to the user and stop; do not register a site you could not reach.
+   - **Non-zero exit** → the initial URL could not be fetched (a transport failure).
+     - Report the error to the user and stop; do not register a site you could not reach.
    - **`rejection` is set** (exit 0, no usable candidate) → relay its actionable message instead of proceeding:
-     - `needs_js` → the page renders its content with JavaScript, which the default httpx path cannot follow. Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below). This rejection is the hint that a scrape index is JS-rendered.
-     - `no_article_clusters` → no feed and no article-shaped link cluster was found. Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
+     - `needs_js` → the page renders its content with JavaScript, which the default httpx path cannot follow.
+       - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
+       - This rejection is the hint that a scrape index is JS-rendered.
+     - `no_article_clusters` → no feed and no article-shaped link cluster was found.
+       - Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
    - Otherwise you have one or more `candidates`.
 
 2. **Pick the candidate.**
-   - **Prefer a feed candidate** (`feed_type == "feed"`) when one exists — feeds carry titles and summaries, so the run is cheaper and more accurate. If several feeds surface, prefer the one whose `entry_count` and `sample_urls` look like the main article feed (not a comments or tag feed).
-   - **Otherwise choose a scrape cluster.** Each scrape candidate carries `index_url`, `article_url_pattern`, and up to five `sample_urls`. Inspect the `sample_urls` and pick the cluster whose URLs are real articles, not navigation, tags, or pagination. Discovery already drops shallow nav clusters, but it emits every survivor — the judgment of which cluster is *the* article cluster is yours. Spinning up a subagent to eyeball the samples is at your discretion, not required.
+   - **Prefer a feed candidate** (`feed_type == "feed"`) when one exists — feeds carry titles and summaries, so the run is cheaper and more accurate.
+     - If several feeds surface, prefer the one whose `entry_count` and `sample_urls` look like the main article feed (not a comments or tag feed).
+   - **Otherwise choose a scrape cluster.** Each scrape candidate carries `index_url`, `article_url_pattern`, and up to five `sample_urls`.
+     - Inspect the `sample_urls` and pick the cluster whose URLs are real articles, not navigation, tags, or pagination.
+       - Discovery already drops shallow nav clusters, but it emits every survivor — the judgment of which cluster is *the* article cluster is yours.
+       - Spinning up a subagent to eyeball the samples is at your discretion, not required.
    - If no candidate looks like real articles, do **not** guess — tell the user what was found and ask for a better listing URL.
 
 3. **Choose an id and name.**
-   - `--id` is a short, stable, unique slug (e.g. the domain stem, like `example-blog` for `example-blog.com`). It keys the seen-store and self-heal, so it must not collide with an existing site — run `feed-filter list-sites` if unsure.
+   - `--id` is a short, stable, unique slug (e.g. the domain stem, like `example-blog` for `example-blog.com`).
+     - It keys the seen-store and self-heal, so it must not collide with an existing site — run `feed-filter list-sites` if unsure.
    - `--name` is a human-readable label for the site (used in the notes/summaries).
 
 4. **Register.** Run the matching form:
@@ -97,7 +106,8 @@ The flag needs the optional Playwright extra (`uv sync --extra browser && uv run
 
 There are two ways you arrive here:
 
-- **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery. Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
+- **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
+  - Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
 - **A JS-rendered scrape index.** A `needs_js` rejection in step 1 is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
@@ -112,5 +122,6 @@ That file is gitignored personal state (see `packages/feed-filter/CLAUDE.md`), s
 
 ## Notes
 
-- `sites.toml` is trusted, user-authored config — discovery applies no SSRF guard (SEC-001). Only register URLs the user intends.
+- `sites.toml` is trusted, user-authored config — discovery applies no SSRF guard (SEC-001).
+  - Only register URLs the user intends.
 - Discovery is deterministic and network-bound; if it is slow, it is fetching candidate feed URLs, not hanging.
