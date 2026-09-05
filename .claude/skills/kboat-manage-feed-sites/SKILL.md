@@ -24,7 +24,7 @@ This is the only place the on/off status lives; there is no separate state to co
 `feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`.
 The run then skips it entirely — no fetch, no error, no notification — while its `[[site]]` config and its seen-store stay intact.
 Use this when a site is chronically failing (a recurring error named in the run's summary), temporarily noisy, or simply unwanted for now.
-Prefer it over deleting the `[[site]]` block by hand, which loses the row's own settings and, on an article site, changes what it does when it comes back: `add-site` records the current entries as seen, so everything published in the gap is skipped unjudged, where a resume judges it.
+Prefer it over deleting the `[[site]]` block by hand, which loses the row's own settings and, on an article site, changes what it does when it comes back: `add-site` records the current entries as seen, so everything published in the gap is skipped unjudged, where a resume judges whatever of it the feed or index still carries.
 
 ## Resume a site
 
