@@ -88,9 +88,9 @@ The order is what makes a crash safe: nothing the notebook holds is destroyed be
    - The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, a note / "unknown" type, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
    - Identify the original (see kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11)): for a `pdf`, the source with `type: pdf`; for a `web_page`, the source whose `url` matches the note's `url`, or — where that source has `url: null`, a rescued page added as text — whose `title` matches the note's `title`.
      - Take its id as the grounded authority, and treat **every other source as saved dialogue** to extract in step 3.
-   - If nothing matches, report that the original could not be identified and list what the notebook does hold, then skip this source without stamping or discarding.
-     - Report it **for the notebook-health step**, which runs later in the routine and takes exactly this source (`kboat-notebook-health`, "Scope"): the original went missing out of a notebook that is still there, so it is added back in place rather than rebuilt, and the source stays ripe and distils on a later run with its `distill` disposition and its elapsed cooldown intact.
-     - Do not carry step 1's pointer across — that one is for a notebook that is gone, and this notebook is not.
+     - If nothing matches, report that the original could not be identified and list what the notebook does hold, then skip this source without stamping or discarding.
+       - Report it **for the notebook-health step**, which runs later in the routine and takes exactly this source (`kboat-notebook-health`, "Scope"): the original went missing out of a notebook that is still there, so it is added back in place rather than rebuilt, and the source stays ripe and distils on a later run with its `distill` disposition and its elapsed cooldown intact.
+       - Do not carry step 1's pointer across — that one is for a notebook that is gone, and this notebook is not.
    - `fulltext` is keyed by source id.
 3. **Extract** (read-only, safe to repeat).
    Only an extraction error on the **original** source aborts this source — do not stamp, do not discard; record the error in the run summary and continue to the next source.
