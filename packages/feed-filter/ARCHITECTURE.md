@@ -53,11 +53,9 @@ Discovery:
 
 Browser path (opt-in):
 
-- `browser.py` — synchronous Playwright gather, whose User-Agent is rebuilt without the `HeadlessChrome` marker to skip Cloudflare's first-line bot check.
-  - A lazy single-instance Chromium.
-  - A cold context.
-    - Replaying clearance cookies re-triggers the challenge on a headless session, so it is deliberately not persisted.
-  - The `require_playwright_*` install gates.
+- `browser.py` — synchronous Playwright gather: lazy single-instance Chromium, a cold non-persisted context, and the `require_playwright_*` install gates.
+  - The User-Agent is rebuilt without the `HeadlessChrome` marker to skip Cloudflare's first-line bot check.
+  - Replaying clearance cookies re-triggers the challenge on a headless session, so the context is deliberately not persisted.
 
 Side effects and orchestration:
 
@@ -181,14 +179,15 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - A topic that did not complete contributes only an error message.
     - Each topic's whole contribution is assembled by `_gather_topic` and committed to the result only once it is complete, so a topic that raised cannot reach `polled_topics` and have its poll advanced past posts nobody dispositioned — it re-polls next run, having recorded nothing.
     - This is the property the design turns on, because `polls` is what the run skill feeds to `forum-poll-done`.
-  - Withholding is accepted rather than bounded, and the cost is site-wide, not per topic.
+  - Withholding an incomplete topic from the poll worklist is accepted rather than bounded.
     - `finalize_poll` is the only writer of `completed_polls`/`retired`, so a topic that never completes stays due forever — and an unclassified failure is usually a code bug, which hits *every* due topic.
-    - None of them retires, because none of them completes — and the admission keeps enrolling more, so the due set grows monotonically and each run spends one topic-JSON call and one error message per due topic.
+    - None of them retires, because none of them completes — and the admission keeps enrolling more, so the due set grows monotonically.
       - Narrowing or pausing the admission does not drain the stuck ones; only fixing the cause does.
+    - Bounding it would take a durable per-topic failure count, and retiring a topic after N failures would discard it over what is usually our own bug.
+  - The cost of that withholding is site-wide, not per topic: each run spends one topic-JSON call and one error message per due topic.
     - The signal holds up as the set grows: `unexpected` is OR'd across due topics, so `unexpected_error` keeps reporting the site as long as any one topic reaches the failing code.
     - What identifies it in a run is a shape a human reads back off the summary — errors reported while `polls` came back empty.
       - The run skill is not asked to detect that conjunction; a human acting on the summary is the drain.
-    - Bounding it would take a durable per-topic failure count, and retiring a topic after N failures would discard it over what is usually our own bug.
   - The Rule-A admission keeps a whole-path grain deliberately, not by oversight: its per-feed loop guards `FetchError` only, so an unclassified raise there forfeits all three feeds.
     - Lowering it to the feed grain needs an `unexpected` flag on `AdmitResult` and changes what `all_feeds_failed` can mean, so it is follow-up work rather than part of this boundary; until then `unexpected_error` is what tells the run skill not to read such a site's rising counter as a plain outage.
   - `_admit_or_absorb` / `_gather_or_absorb` (`cli.py`) are the outer net for what the pipeline cannot absorb itself — `admit_from_feeds` (guarded only per feed, and against `FetchError` only) and a raise outside `gather_forum`'s topic loop.
