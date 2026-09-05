@@ -1391,6 +1391,33 @@ def test_forum_new_emits_topics_and_polls(
     ]
 
 
+def test_forum_new_skips_disabled_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A paused forum is never admitted and is absent from the status, as with new-entries."""
+    _no_client(monkeypatch)
+    _add_forum_site()  # id "ef"
+    _add_forum_site(site_id="off")
+    assert cli.main(["disable-site", "--site-id", "off"]) == 0
+    capsys.readouterr()
+
+    admitted_ids: list[str] = []
+
+    def fake_admit(conn: object, site: SiteConfig, *, client: object, now: int) -> AdmitResult:
+        admitted_ids.append(site.id)
+        return _fake_admit_result()
+
+    monkeypatch.setattr(cli, "admit_from_feeds", fake_admit)
+    monkeypatch.setattr(
+        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+    )
+
+    assert cli.main(["forum-new"]) == 0
+    out = _out(capsys)
+    assert admitted_ids == [FORUM_SITE_ID]  # the disabled forum is never gathered
+    assert [s["site_id"] for s in out["sites"]] == [FORUM_SITE_ID]  # nor in the status
+
+
 def test_forum_new_sums_discourse_fetches_across_sites(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
