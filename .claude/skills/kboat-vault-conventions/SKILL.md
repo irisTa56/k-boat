@@ -209,8 +209,8 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - `identity_differs` — the note's identity value is plainly a different one.
   - `unreadable_identity` — the record names an identity but the note holds its own in a shape the reader cannot decode, so nothing can be compared.
     - Repairing the note by hand is the only way forward; the writer will not guess.
-  - The identity a note was created with is the one it keeps: where the record names the same page by another link, the stored value is preserved rather than overwritten.
-    - It is the note's provenance, and for a normally-fetched web source the string the NotebookLM source id is resolved by matching, so a second link's spelling must not replace it.
+  The identity a note was created with is the one it keeps: where the record names the same page by another link, the stored value is preserved rather than overwritten.
+  It is the note's provenance, and for a normally-fetched web source the string the NotebookLM source id is resolved by matching, so a second link's spelling must not replace it.
 - **Body.** The body *mode* is a fixed schema attribute (`NoteSchema.body`), not a record field: for a `verbatim` schema the record's `body` content is appended after the frontmatter, `notes` wraps it in a `## Notes` section, and `none` means the writer never authors one.
   - An `upsert` always preserves the body already in the note, under every mode — `none` says K-Boat writes no body of its own, not that it may delete one a human added below the fence, and `notes` owns its `## Notes` section rather than the whole body.
 - **Only what changes is re-rendered.** Every frontmatter entry the record does not write is put back exactly as the note held it, including one the reader can represent only approximately (an inline list, a quoted string) and one it cannot represent at all (a hyphenated or quoted key, a nested mapping, a block scalar).

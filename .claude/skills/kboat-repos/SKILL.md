@@ -91,7 +91,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
      - If the `conflict` path appears in `adopted` as a `from` **whose `to` differs**, this run renamed that note away after the collision was decided, each note's plan being made as its turn comes.
      - On an applying run the slug is free by now, so the next run adopts it cleanly and nobody is needed.
      - Under `--dry-run` that entry is a prediction and the slug is still held: it means an apply would free it, not that anything has.
-     - An `adopted` entry whose `from` and `to` are equal moved nothing: it is a note that adopted a new identity under the name it already had, and the collision it sits beside is a real one.
+     An `adopted` entry whose `from` and `to` are equal moved nothing: it is a note that adopted a new identity under the name it already had, and the collision it sits beside is a real one.
    - `evicted` — iCloud holds the note behind a placeholder.
      - The merge waits on the download, not on the human.
      - The same pass files the placeholder among the `anomalies`, under its own `.<name>.icloud` path.
