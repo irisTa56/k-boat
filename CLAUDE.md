@@ -90,8 +90,8 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 Automation:
 
 - A local Claude Code scheduled task (`kboat-routine`, daily) runs the whole pipeline under one auth refresh, with `kboat-doctor` as its precondition — a vault the precondition could not establish makes every later report a report about a vault that was not there.
-- It has to run locally: the queue, the NotebookLM auth cookies, the vault, and the Basic Memory store are all local-only, so no part of this moves to a cloud runner.
-- Its prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) hardcodes the run's shape, and `## Keep this file current` says what a change owes it.
+  - It has to run locally: the queue, the NotebookLM auth cookies, the vault, and the Basic Memory store are all local-only, so no part of this moves to a cloud runner.
+  - Its prompt (`~/.claude/scheduled-tasks/kboat-routine/SKILL.md`) hardcodes the run's shape, and `## Keep this file current` says what a change owes it.
 
 ## Tooling config
 
