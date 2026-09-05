@@ -6,7 +6,7 @@ description: Pause or resume a feed-filter site (disable/enable), point a site t
 # Manage feed-filter sites (pause / resume / move / status)
 
 Turn an individual site's gathering off or on without losing it, point one at a new URL after it moves, and report which sites are currently paused.
-This is the ad-hoc, user-driven half of site management — registration lives in the `kboat-add-feed-site` skill, the periodic run in `kboat-feed-run`.
+This is the ad-hoc, user-driven half of site management — registration lives in the `kboat-add-feed-site` skill, the periodic run in `kboat-feed-run` for article sites and in `kboat-forum-run` for forums.
 
 Run every `feed-filter` command from the repo root.
 The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
