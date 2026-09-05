@@ -37,9 +37,10 @@ The check is one `source list` per source, so the cost tracks a set that accumul
 
 - Run `eval "$(mise env)"` at the top of every shell block (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
   - Re-run it in each block — the Bash tool keeps no shell state.
-- `notebooklm auth refresh` must have run; the routine's single refresh covers this step.
+- `notebooklm auth refresh` must have run.
+  - The routine's single refresh covers this step.
   - If auth is unusable, stop and report rather than sweeping half the set.
-  - A partial sweep would report healthy for notebooks it never reached.
+    - A partial sweep would report healthy for notebooks it never reached.
 
 ## Procedure
 
@@ -66,7 +67,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Do not decide this on the sweep set, whose size is an accident of what the reader has opened: a set of one whose notebook is genuinely gone satisfies "all absent" as readily as a wrong account does.
      - Check the listing against **every `notebooklm_id` in the vault**, not only the set's.
      - The sweep opening already read that frontmatter; the argument opening read one note, so make the vault-wide read here — it is a frontmatter scan against a listing already fetched, not another call.
-     - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does. Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
+     - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
+     - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
 3. **Ask whether the original is still there.** For each source still in the set, run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11).
    - Redirect stderr per kboat-notes [Environment](../kboat-notes/SKILL.md#environment).
      - The warning it hides fires on exactly the notebooks holding saved dialogue, and reading it as a failure would drop them from the sweep for good.
