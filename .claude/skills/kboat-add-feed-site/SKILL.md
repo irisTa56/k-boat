@@ -106,7 +106,7 @@ The anti-bot handling covers Cloudflare's first-line bot check only (it normaliz
 
 If the user wants different keep/drop criteria for this one site, set its `selection` field.
 It overrides the **Topics** section of `prompts/selection.md` for that site only (see `prompts/selection.md`).
-Set it at registration with `feed-filter add-site … --selection "<criteria>"`, or add/change it later by editing the `selection = "..."` line under that site's `[[site]]` block in `sites.toml` (version-controlled config, so hand-editing is fine).
+Set it at registration with `feed-filter add-site … --selection "<criteria>"`, or add/change it later by editing the `selection = "..."` line under that site's `[[site]]` block in `sites.toml` (user-authored config, so hand-editing is fine — but it is gitignored personal state, so no checkout restores a bad edit).
 
 ## Notes
 
