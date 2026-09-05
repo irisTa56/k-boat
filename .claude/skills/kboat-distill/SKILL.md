@@ -30,8 +30,8 @@ The Bash tool keeps no shell state between calls, so re-run it in each block.
    - It **excludes `blocked` (DLQ) sources from both phases**, mechanically and whatever the note carries, so one is never stamped, flagged, or listed even if a human checked a disposition on it by mistake. Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: an entry re-captured after a successful ingest keeps its notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
 
    Parse this JSON; it is the work list for the rest of the run.
-The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
-If the tool is unavailable, fall back to evaluating those predicates by hand over `Sources/*.md`.
+   The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
+   If the tool is unavailable, fall back to evaluating those predicates by hand over `Sources/*.md`.
 
 ## Phase A: maintain the cooldown clock
 
