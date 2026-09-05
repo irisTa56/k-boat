@@ -12,7 +12,8 @@ This repository is a uv workspace. K-Boat's deterministic mechanical core is the
 ## Setup
 
 - Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; it installs the tools and a postinstall hook syncs the venv.
-- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run. To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
+- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run.
+- To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
 - `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
 - Distilled knowledge is a Basic Memory project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
 
@@ -29,8 +30,15 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Feeds/` — one note per item the upstream feed-filter kept from your registered feeds, forums, and saved queries.
 - `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority; the daily pick reads it to infer what you are chewing on.
 - `Daily/` — your Obsidian daily notes, if you keep them. The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.
-- `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good. It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time. Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
-- `Sources.base` — a standalone Base: to-read views (web by default, plus all-unread and PDF subsets), a Holding view of every filed source (read-later shelf plus lifecycle state), an Ambiguous view of contradictory dispositions, and a DLQ view of unfetched sources.
+- `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good.
+  - It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
+  - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
+- `Sources.base` — a standalone Base:
+  - a Today view of the day's picks and what you are mid-read, shown by default;
+  - to-read views — all-unread, plus web and PDF subsets;
+  - a Holding view of every filed source (read-later shelf plus lifecycle state);
+  - an Ambiguous view of contradictory dispositions;
+  - a DLQ view of unfetched sources.
 - `Kindles.base` — a standalone Base over the Kindle books: a Reading-list view (books not yet finished, shown by default), an All catalogue, and a To-distill view.
 - `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
 - `Reviews.base` — a standalone Base over the review reports: an Unread view (shown by default) and an All view, each with a `read` checkbox to tick off.

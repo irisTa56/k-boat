@@ -9,7 +9,7 @@ A second routine does the same for registered Discourse forums, judging topics a
 
 Responsibilities split deterministically.
 Plain Python owns everything verifiable and cheap — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer — exposed as a single `feed-filter` CLI.
-The LLM owns only the genuinely fuzzy judgments: picking the article cluster during site registration, authoring the descriptions the query gather searches on (ad hoc — no skill drives it yet), and per-page keep/drop selection.
+The LLM owns only the genuinely fuzzy judgments: picking what to register from discovery's candidates (at site registration, and again when a scrape site self-heals), authoring the descriptions the query gather searches on (ad hoc — no skill drives it yet), and per-page keep/drop selection.
 
 There are three ways a page reaches the filter. Two of them poll places you registered — article feeds and Discourse forums — so they return only what a known publisher published. The third, `query-new`, describes what you want in natural language and asks Exa for pages whose meaning matches, which is how a page on a site nobody registered becomes reachable.
 
@@ -170,11 +170,13 @@ The design favors **never-lost over never-duplicated**:
 - An entry that errors during judging is written as a feed note anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
 - A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
 - A gather failure is contained to the smallest unit that can still emit, whether it is a fetch error or one the CLI could not classify.
-  - An *article* site's fetch failure stays its own: one site cannot discard the entries the other ~80 already fetched. Its seen-store filtering is not yet guarded that way, so an unclassified failure there still ends the run.
-  - A *forum* site's failure normally stays with the topic that hit it, so a partially-gathered forum still emits the topics it finished; the topic that did not complete is withheld from the poll worklist and re-polls next run. A failure the gather cannot place on one topic is caught a level out and costs that site's whole Rule-A or Rule-B pass for the run, still leaving every other site's candidates standing.
+  - An *article* site's fetch failure stays its own: one site cannot discard the entries the other ~80 already fetched.
+    - Its seen-store filtering is not yet guarded that way, so an unclassified failure there still ends the run.
+  - A *forum* site's failure normally stays with the topic that hit it, so a partially-gathered forum still emits the topics it finished; the topic that did not complete is withheld from the poll worklist and re-polls next run.
+    - A failure the gather cannot place on one topic is caught a level out and costs that site's whole Rule-A or Rule-B pass for the run, still leaving every other site's candidates standing.
   - An error the CLI could not classify is flagged as such, so the run summary reports it verbatim instead of narrating it as an unreachable site.
 - The seen-store is the dedupe authority for article sources at gather time. The write-then-record pair runs in one process; a crash in the sub-millisecond gap between them re-runs the write next time, but the hash-named upsert makes that write idempotent — so even the crash window duplicates nothing.
 - Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-write its feed note as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
-  The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
+- The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
 
 When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's summary. The heal writes no feed note; the feed notes are pages only, and operational notices go there too.
