@@ -60,7 +60,7 @@ Browser path (opt-in):
 Side effects and orchestration:
 
 - `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run.
-  - Raises `VaultError` on a slug collision, and `VaultLockedError` when the lock's bounded wait expires with another run still holding it — either way a failed write is never recorded seen.
+  - Raises `VaultError` on a write the writer refused, and `VaultLockedError` when the lock's bounded wait expires with another run still holding it — either way a failed write is never recorded seen.
 - `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
   - `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
@@ -151,7 +151,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
 
 - **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) writes the note *then* records seen, recording only on success, so a failed write is never recorded as seen.
   - Every way `write_feed_note` (`vault.py`) can fail stops the record, among them:
-    - `VaultError` — a slug collision.
+    - `VaultError` — a write the writer refused: a slug collision, a note whose stored `url` cannot be read, or a record `upsert` rejected.
     - `VaultLockedError` — the vault lock's wait expired with another run still holding it.
       - This is the one refusal that does not recur — the holder finishes — which is why the run skills leave that entry for the next run and carry on rather than stopping.
     - `VaultLockUnavailableError` — that lock cannot be operated at all.

@@ -8,7 +8,7 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 - `kboat-lifecycle` — the distillation lifecycle state machine: boolean/date predicates over frontmatter, no judgement.
 - `kboat-repos` — the repo catalogue's mechanics:
   - `gather` — over the `gh` CLI.
-  - `refresh` — over the `gh` CLI.
+  - `refresh` — re-fetches every repo note's GitHub-derived fields over the `gh` CLI and rewrites them, holding the vault lock for the whole pass.
   - `write` — over the shared writer.
 - `kboat-pick` — the daily-pick mechanics, no LLM and no NotebookLM:
   - `candidates`;
@@ -22,7 +22,7 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
   - the questions file;
   - directory readability;
   - iCloud placeholders.
-- `kboat-note` — the note-level operations the skills call:
+- `kboat-note` — the skills' entry point for a note's name and a note's contents:
   - `write` — create-or-update one note from a `{slug, fields, body?}` JSON record.
   - `slug` — the slug oracle for one URL.
   - `migrate-slugs` — rename the vault's URL-named notes to the slugs their URLs name.

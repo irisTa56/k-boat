@@ -74,7 +74,7 @@ The detailed conventions and procedures live in skills, so they are documented o
   - The `kboat.write.upsert` write contract.
   - Durability and the vault lock.
   - Base-authoring discipline.
-- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types and their lifecycle; defers to `kboat-vault-conventions` for the shared mechanics.
+- [`kboat-notes`](.claude/skills/kboat-notes/SKILL.md) — K-Boat's note types, their lifecycle, and what is built on them; defers to `kboat-vault-conventions` for the shared mechanics.
   - Source-, Kindle-, and repo-note frontmatter.
   - The lifecycle state machines.
   - The Sources, Kindle, Repos, and Reviews Bases.
@@ -93,7 +93,7 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search and selection over your saved sources.
   - Search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
   - Run the routine's **daily pick**, surfacing up to two web reads matched to your `Questions.md` open-questions backlog and recent Daily notes, or time-sensitive to act on early (a security advisory, a release, a best-practice) regardless of theme.
-- [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — against NotebookLM occasionally dropping a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing.
+- [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — keeping a live notebook's original source in it, against NotebookLM occasionally dropping one weeks after a clean ingest and leaving a notebook that looks fine and answers nothing.
   - Check that the sources you have opened still have their content.
   - Add the original back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page), by one of its two exits.
