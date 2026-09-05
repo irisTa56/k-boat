@@ -11,7 +11,9 @@ Responsibilities split deterministically.
 Plain Python owns everything verifiable and cheap — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer — exposed as a single `feed-filter` CLI.
 The LLM owns only the genuinely fuzzy judgments: picking what to register from discovery's candidates (at site registration, and again when a scrape site self-heals), authoring the descriptions the query gather searches on (ad hoc — no skill drives it yet), and per-page keep/drop selection.
 
-There are three ways a page reaches the filter. Two of them poll places you registered — article feeds and Discourse forums — so they return only what a known publisher published. The third, `query-new`, describes what you want in natural language and asks Exa for pages whose meaning matches, which is how a page on a site nobody registered becomes reachable.
+There are three ways a page reaches the filter.
+Two of them poll places you registered — article feeds and Discourse forums — so they return only what a known publisher published.
+The third, `query-new`, describes what you want in natural language and asks Exa for pages whose meaning matches, which is how a page on a site nobody registered becomes reachable.
 
 The `feed-filter` CLI emits JSON on stdout and is the only contract between the Python core and the Claude Code skills; the skills never reach into Python internals.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the behavioral invariants.
@@ -56,7 +58,8 @@ feed-filter list-sites
 ```
 
 `sites.toml` (the registry), `prompts/selection.md` (the keep/drop criteria), and `feed-filter.db` (the seen-store) are **gitignored local state** — personal config that stays on your machine.
-Only the `prompts/selection.example.md` template is committed (Setup copies it to `prompts/selection.md`); set `FEED_FILTER_SELECTION` to keep the active prompt elsewhere. Edit the registry by hand or via the skills.
+Only the `prompts/selection.example.md` template is committed (Setup copies it to `prompts/selection.md`); set `FEED_FILTER_SELECTION` to keep the active prompt elsewhere.
+Edit the registry by hand or via the skills.
 
 ### Pause or resume a site
 
@@ -67,7 +70,9 @@ feed-filter disable-site --site-id example   # the run skips it; config + seen-s
 feed-filter enable-site  --site-id example   # resume; only post-resume entries are written
 ```
 
-A disabled site is skipped entirely (no fetch, no error, no notification) and stays in `sites.toml` with an `enabled = false` line. Because its seen-store is preserved, re-enabling never floods the back-catalog. This is reversible and cheap, unlike deleting and re-registering (which re-runs discovery and loses history).
+A disabled site is skipped entirely (no fetch, no error, no notification) and stays in `sites.toml` with an `enabled = false` line.
+Because its seen-store is preserved, re-enabling never floods the back-catalog.
+This is reversible and cheap, unlike deleting and re-registering (which re-runs discovery and loses history).
 
 ### Sites that need a browser (JS / anti-bot)
 
@@ -100,7 +105,8 @@ A body behind the same gate the browser gather passed is therefore unreadable to
 
 ### Run the filter
 
-Use the `kboat-feed-run` skill. One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and records everything processed as seen.
+Use the `kboat-feed-run` skill.
+One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
 
 ### Search for pages by description
@@ -139,12 +145,14 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 
 ### Run the forum filter
 
-Use the `kboat-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
+Use the `kboat-forum-run` skill.
+One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
 
 - **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
 - **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
 
-The two rules are independent axes. An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is recorded under both axes, but resolves to a single `Feeds/` note (see below).
+The two rules are independent axes.
+An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is recorded under both axes, but resolves to a single `Feeds/` note (see below).
 
 Topics are polled on a sparse schedule (`--poll-offsets-days`, default 0, 1, and 7 days from first-seen) and retire after the last offset.
 A re-reminded topic upserts the *same* `Feeds/` note (hash-named by the topic URL), so a topic never produces duplicate notes; the re-write resurfaces it by resetting the note's `read` and `dismissed` flags to `false`, so a topic the reader already finished with reappears when a new qualifying post arrives.
@@ -179,4 +187,5 @@ The design favors **never-lost over never-duplicated**:
 - Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-write its feed note as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
 - The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
 
-When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's summary. The heal writes no feed note; the feed notes are pages only, and operational notices go there too.
+When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's summary.
+The heal writes no feed note; the feed notes are pages only, and operational notices go there too.

@@ -5,9 +5,12 @@ Dump your content into a knowledge lake, then sail it with AI agents.
 K-Boat is a [Claude Code](https://www.anthropic.com/claude-code) skill package: the reading, distillation, and feed-triage procedures are skills an agent executes, so most of the product is prose rather than code.
 It reads each source through [NotebookLM](https://notebooklm.google.com/) (renamed [Gemini Notebook](https://blog.google/innovation-and-ai/products/gemini-notebook/notebooklm-gemini-notebook/) in July 2026), keeps the reading side in an [Obsidian](https://obsidian.md/) vault, and distills what it learns into a [Basic Memory](https://github.com/basicmachines-co/basic-memory) knowledge graph.
 Each piece of content gets its own throwaway notebook for reading and dialogue; a week after you file a source for distillation, K-Boat distills it into concept notes that accrete across sources, then discards the notebook (unless you also keep it).
-Two kinds are exceptions, each with no notebook. Books you read on **Kindle** are catalogued by ASIN in `Kindles/` and distilled from the highlights you paste into the note body. **GitHub repositories** are catalogued in `Repos/` — a tagged, searchable bookmark with GitHub metadata and a judged role/domain/summary, never distilled.
+Two kinds are exceptions, each with no notebook.
+Books you read on **Kindle** are catalogued by ASIN in `Kindles/` and distilled from the highlights you paste into the note body.
+**GitHub repositories** are catalogued in `Repos/` — a tagged, searchable bookmark with GitHub metadata and a judged role/domain/summary, never distilled.
 
-This repository is a uv workspace. K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package; an upstream triage stage, [**feed-filter**](packages/feed-filter/), funnels new pages into the same vault — from registered feeds and forums, and from natural-language queries answered by neural search.
+This repository is a uv workspace.
+K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package; an upstream triage stage, [**feed-filter**](packages/feed-filter/), funnels new pages into the same vault — from registered feeds and forums, and from natural-language queries answered by neural search.
 
 ## Setup
 
@@ -44,7 +47,10 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Reviews.base` — a standalone Base over the review reports: an Unread view (shown by default) and an All view, each with a `read` checkbox to tick off.
 - `Feeds.base` — a standalone Base over the feed-filter items, with the triage views that member's own docs describe.
 
-Every folder above, plus `Questions.md`, must exist before a scheduled run: `kboat-doctor` checks them first and stops the run if one is absent, since a folder that has gone missing is indistinguishable from a vault that has not finished syncing. Create them once, when you set the vault up. `Daily/` and the `.base` files are outside that check — the first is optional, and a Base is Obsidian's own view, which no phase reads. `.kboat.lock` is outside it too: the first run that writes creates it.
+Every folder above, plus `Questions.md`, must exist before a scheduled run: `kboat-doctor` checks them first and stops the run if one is absent, since a folder that has gone missing is indistinguishable from a vault that has not finished syncing.
+Create them once, when you set the vault up.
+`Daily/` and the `.base` files are outside that check — the first is optional, and a Base is Obsidian's own view, which no phase reads.
+`.kboat.lock` is outside it too: the first run that writes creates it.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
 
@@ -63,20 +69,32 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page): finish it by pulling it through your real browser, or give it up where the page has died or you would rather not chase it.
 - [`kboat-curate`](.claude/skills/kboat-curate/SKILL.md) — tidy the knowledge base on demand: curate the concept graph (orphans, duplicates, naming, relations) and check the concept-note tags for drift and gaps, against the KB's tag vocabulary.
 
-The mechanical cores live in one tested Python package, [`kboat`](packages/kboat/src/kboat/), rather than in prose, so the routine is cheaper and the logic is unit-tested. It exposes nine tools over a shared frontmatter core, a code-authoritative schema (`kboat.schema`), and a schema-driven writer (`kboat.write`): `kboat-lifecycle` (the distill pass's cooldown clock and work-set predicates), `kboat-repos` (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically), `kboat-pick` (the daily pick's Daily-note/candidate gather and `picked` flag), `kboat-validate` (checks every vault note against the schema; `--stats` adds the backlog-health counts), `kboat-doctor` (checks the vault's environment preconditions — root, writability, folders, the questions file, directory readability, iCloud placeholders — before a run), `kboat-note` (schema-driven create-or-update of a note from a JSON record), `kboat-bookmarklet` (prints the queue-capture bookmarklet to paste into a browser), `kboat-queue` (parses the `Queue/` captures into `{url, title}` for ingest to drain), and `kboat-concept` (classifies a concept note's `## Observations` into the shape the distill pass branches on before adding a reading group). Its quality gate (ruff, `ty`, pytest, plus a per-file coverage floor) runs in pre-commit; invoke it with `mise run qa:py`, and autofix with `mise run fmt:py`.
+The mechanical cores live in one tested Python package, [`kboat`](packages/kboat/src/kboat/), rather than in prose, so the routine is cheaper and the logic is unit-tested.
+It exposes nine tools over a shared frontmatter core, a code-authoritative schema (`kboat.schema`), and a schema-driven writer (`kboat.write`): `kboat-lifecycle` (the distill pass's cooldown clock and work-set predicates), `kboat-repos` (the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh — which adopts repo renames automatically), `kboat-pick` (the daily pick's Daily-note/candidate gather and `picked` flag), `kboat-validate` (checks every vault note against the schema; `--stats` adds the backlog-health counts), `kboat-doctor` (checks the vault's environment preconditions — root, writability, folders, the questions file, directory readability, iCloud placeholders — before a run), `kboat-note` (schema-driven create-or-update of a note from a JSON record), `kboat-bookmarklet` (prints the queue-capture bookmarklet to paste into a browser), `kboat-queue` (parses the `Queue/` captures into `{url, title}` for ingest to drain), and `kboat-concept` (classifies a concept note's `## Observations` into the shape the distill pass branches on before adding a reading group).
+Its quality gate (ruff, `ty`, pytest, plus a per-file coverage floor) runs in pre-commit; invoke it with `mise run qa:py`, and autofix with `mise run fmt:py`.
 
-The scheduled routine runs `kboat-doctor` as a precondition, then `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then the `kboat-notebook-health` sweep, then `kboat-validate --stats`, daily. A failed precondition stops the run before any phase: a vault that is absent, unwritable, unreadable, or only half-synced would make every later report a report about a vault that was not there.
+The scheduled routine runs `kboat-doctor` as a precondition, then `kboat-ingest`, then the `kboat-repos` refresh, then `kboat-distill`, then the daily pick, then the `kboat-notebook-health` sweep, then `kboat-validate --stats`, daily.
+A failed precondition stops the run before any phase: a vault that is absent, unwritable, unreadable, or only half-synced would make every later report a report about a vault that was not there.
 
-A source ingest cannot fetch — a PDF behind a CAPTCHA wall, or a member-only web page, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing. Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA or sign in once) and finishes the ingest, keeping the original URL. Where there is nothing to rescue — the URL has died, or you would rather not chase it — the same skill gives it up instead, so nothing sits in the DLQ with no way out.
+A source ingest cannot fetch — a PDF behind a CAPTCHA wall, or a member-only web page, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing.
+Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA or sign in once) and finishes the ingest, keeping the original URL.
+Where there is nothing to rescue — the URL has died, or you would rather not chase it — the same skill gives it up instead, so nothing sits in the DLQ with no way out.
 
-One progress checkbox plus three dispositions drive a source. `reading` is just reading progress. Checking any disposition takes the source off the to-read inbox at once:
+One progress checkbox plus three dispositions drive a source.
+`reading` is just reading progress.
+Checking any disposition takes the source off the to-read inbox at once:
 
 - `distill` — distil it into the knowledge graph (a week later), then discard the notebook.
 - `keep` — hold it on the searchable "read later" shelf, keeping its notebook for re-reading. Combine with `distill` to distil *and* keep the notebook.
 - `dismiss` — throw it away: discard the notebook and drop it from recall.
 
-The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all). `dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
+The 7-day clock starts when the routine first sees a disposition (and resets if you uncheck them all).
+`dismiss` together with `keep` or `distill` contradicts, so the routine leaves it untouched for you to fix.
 
-Kindle books are simpler. Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — `reading` marks it started, `finished` marks it read (which drops it off the reading-list view), and `distill` opts it in. Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
+Kindle books are simpler.
+Add one with `kboat-kindle` (paste the `read.amazon.co.jp/?asin=...` URL); it has no notebook, so no cooldown and no `keep`/`dismiss` — `reading` marks it started, `finished` marks it read (which drops it off the reading-list view), and `distill` opts it in.
+Paste your highlights into the note body (by hand or with `organize-reading-note`), check `distill`, and the next distill pass folds them into the knowledge graph with the book's ASIN as provenance.
 
-GitHub repos are simpler still — a catalogue, never distilled. Drop a `github.com/<owner>/<repo>` link into the `Queue/` folder (or hand one to `kboat-repos` directly); ingest fetches its metadata, a cheap subagent tags it with a `role`, a `domain` (from a small controlled vocabulary), and a short `summary`, and it lands in `Repos/`, browsable and searchable in `Repos.base`. The daily routine's `kboat-repos refresh` keeps each repo's stars, last-commit, and `status` current while leaving your tags and the `## Notes` body untouched.
+GitHub repos are simpler still — a catalogue, never distilled.
+Drop a `github.com/<owner>/<repo>` link into the `Queue/` folder (or hand one to `kboat-repos` directly); ingest fetches its metadata, a cheap subagent tags it with a `role`, a `domain` (from a small controlled vocabulary), and a short `summary`, and it lands in `Repos/`, browsable and searchable in `Repos.base`.
+The daily routine's `kboat-repos refresh` keeps each repo's stars, last-commit, and `status` current while leaving your tags and the `## Notes` body untouched.
