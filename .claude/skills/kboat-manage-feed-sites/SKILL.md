@@ -35,21 +35,21 @@ Say so when reporting a resume, rather than promising only post-resume entries.
 
 ## Fix a site that moved
 
-A moved site — a new domain, a new subdomain, a renamed feed or index path — keeps its id, its config and its seen-store; only one URL is wrong.
-So the fix is to change that one value, and never to disable the site.
+A moved site — a new domain, a new subdomain, a renamed feed or index path — keeps its id, its config and its seen-store; what is wrong is the URL it is registered under.
+So the fix is to change that value, and never to disable the site.
+Where a scrape site's article paths moved along with its index, its `article_url_pattern` no longer matches either; that repairs itself on the next run, and `kboat-feed-run`'s self-heal step owns it.
 No `feed-filter` subcommand edits a URL, and none is needed: `sites.toml` is the registry itself, and it is user-authored config that this skill edits by hand.
 What goes in is a URL confirmed to serve this same site, never one inferred from the error page that raised the suspicion — where the move is only suspected, report the candidate and leave the row alone.
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
 2. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
    - Change the value only, and leave the row's other fields where they are. A row's kind comes from which of `feed_url`, `article_url_pattern` and `forum_url` it sets — the loader takes exactly one and rejects anything else — while `index_url` is not one of those three and is instead required alongside `article_url_pattern`.
-   - Note the old value in the run's report before overwriting it. `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit.
+   - Give the user the old value when you report the change. `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
 4. **Report what the move cost.** Where it changed the URLs of what the site serves, those URLs read as new: an article is judged a second time, and a keep — an article's or a topic's — lands as a fresh `Feeds/` note instead of updating the one already there.
-   Nothing has to be run to end that: the next runs judge those entries, at most twenty a run, and it is over.
-   Do not reach for `heal-site` to end it sooner — it records what it finds as seen without judging any of it, which would discard whatever the site published while it was failing.
-   The move is not free, so do not report it as such.
+   It settles on its own as the runs resume, so the report is the whole of what this step owes; nothing here is to be run by hand.
+   The move is not free, though, so do not report it as such.
 
 ## Finding the id
 
