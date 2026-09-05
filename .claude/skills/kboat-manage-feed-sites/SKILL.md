@@ -24,8 +24,8 @@ This is the only place the on/off status lives; there is no separate state to co
 `feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`.
 The run then skips it entirely — no fetch, no error, no notification — while its `[[site]]` config and its seen-store stay intact.
 Use this when a site is chronically failing (a recurring error named in the run's summary), temporarily noisy, or simply unwanted for now.
-Prefer it over deleting the `[[site]]` block by hand: re-adding the site means running discovery again and choosing its cluster again, whereas pause and resume are one command each.
-The seen-store is not what is at stake there — its rows key on the entry's URL independently of the registry, so they outlive a deleted block.
+Prefer it over deleting the `[[site]]` block by hand, which changes what the site does when it comes back: `add-site` snapshots the current entries as seen, so everything published in the gap is skipped unjudged, where a resume judges it.
+Neither the seen-store nor discovery is what is at stake there — the store's rows key on the entry's URL independently of the registry, so they outlive a deleted block, and `list-sites` reports every field the row needs, so nothing has to be discovered again.
 
 ## Resume a site
 
@@ -37,7 +37,8 @@ Say so when reporting a resume, rather than promising only post-resume entries.
 ## Fix a site that moved
 
 A moved site — a new domain, a new subdomain, a renamed feed or index path — keeps its id, its config and its seen-store; only one URL is wrong.
-So the fix is to change that one value, never to disable the site or to delete and re-register it.
+So the fix is to change that one value, and never to disable the site.
+Replacing the whole row is not the default either, though on a feed site it is how the new URL goes in without costing a re-judge (below).
 No `feed-filter` subcommand edits a URL, and none is needed: `sites.toml` is the registry itself, and it is user-authored config that this skill edits by hand.
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
@@ -56,9 +57,12 @@ The two gather paths key their stores differently, so the same edit is free on o
   - The `seen` store keys on each entry's canonical URL, and a canonical URL carries its host, so every entry the site now serves reads as unseen.
   - Those entries are judged again, at the run's per-site cap each run (see `kboat-feed-run`, Cost controls), until that window drains. Most will drop, but some can be written as `Feeds/` notes a second time.
   - **A scrape site can close the window.** `feed-filter heal-site --site-id <id> --pattern <pattern>` re-scrapes under the `index_url` now on disk, snapshots what it finds as seen, and rewrites the pattern last.
-    - Pass the pattern `list-sites` already reports when the move left it valid. A domain move usually does not, so re-run discovery on the new `index_url` and pass the new pattern, exactly as `kboat-feed-run` does for a `zero_links` site.
+    - Pass the pattern `list-sites` already reports. The pattern is matched against an entry's path alone — the host is bound separately, to whatever `index_url` now says — so a move to a new domain or subdomain leaves it valid.
+      - Re-run discovery and pass a new pattern only when the move also renamed the article paths. `heal-site` writes the pattern last and `sites.toml` has no checkout behind it, so a needlessly re-derived pattern overwrites a working one for good.
     - `heal-site` refuses a disabled site, so re-enable one that was paused before the move came to light.
-  - **A feed site cannot.** `heal-site` takes scrape sites only, and nothing else re-snapshots a registered site, so accept the re-judge and say so in the report rather than calling the move free.
+  - **A feed site has no `heal-site`**, which takes scrape sites only. Either accept the re-judge and say so in the report rather than calling the move free, or replace the row.
+    - Replacing it stands in for steps 2 and 3 rather than following them, since it carries the new URL itself: delete the `[[site]]` block and run `add-site` with the same id and the new `feed_url`, which snapshots the site's current entries as seen before it writes config — the feed path's equivalent of a heal.
+    - Its price is that you retype the row from `list-sites`, and that the site is unregistered from the moment you delete the block until `add-site` succeeds — a failed fetch leaves it that way.
 
 ## Finding the id
 
