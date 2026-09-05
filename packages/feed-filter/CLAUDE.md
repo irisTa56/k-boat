@@ -33,7 +33,7 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 
 - Deterministic logic is plain Python behind a single `feed-filter <subcommand>` CLI emitting JSON on stdout; that CLI is the **only** contract with the Claude Code skills, which never reach into Python internals.
 - The LLM is reserved for:
-  - picking the article cluster — at registration, and again when a scrape site self-heals;
+  - picking the article cluster (at registration, and again when a scrape site self-heals);
   - query authoring for `query-new` — ad hoc, no skill drives it yet;
   - keep/drop at run time.
 - Three gather kinds share one seen-store and one vault sink:
