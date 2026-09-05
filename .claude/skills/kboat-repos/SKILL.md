@@ -87,10 +87,11 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
      - Report it and stop — a `Repos/` that is *there* and unreadable is an anomaly instead.
    Each `rename_collisions` entry carries a `reason` for why the slug was spoken for — one of four, decided by the pass rather than inferred here.
    Branch on it; never on whether a file happens to be at the `conflict` path, which is empty in two of the four — and in three under `--dry-run`, where nothing has been written yet:
-   - `taken` — a note is there, and a human merges the two. One caveat, answerable from the report alone:
-     - If the `conflict` path appears in `adopted` as a `from` **whose `to` differs**, this run renamed that note away after the collision was decided, each note's plan being made as its turn comes.
-     - On an applying run the slug is free by now, so the next run adopts it cleanly and nobody is needed.
-     - Under `--dry-run` that entry is a prediction and the slug is still held: it means an apply would free it, not that anything has.
+   - `taken` — a note is there, and a human merges the two.
+     - One caveat, answerable from the report alone:
+       - If the `conflict` path appears in `adopted` as a `from` **whose `to` differs**, this run renamed that note away after the collision was decided, each note's plan being made as its turn comes.
+       - On an applying run the slug is free by now, so the next run adopts it cleanly and nobody is needed.
+       - Under `--dry-run` that entry is a prediction and the slug is still held: it means an apply would free it, not that anything has.
      An `adopted` entry whose `from` and `to` are equal moved nothing: it is a note that adopted a new identity under the name it already had, and the collision it sits beside is a real one.
    - `evicted` — iCloud holds the note behind a placeholder.
      - The merge waits on the download, not on the human.
