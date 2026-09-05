@@ -13,9 +13,12 @@ It is the agreed home for tag-drift **detection**: the write-time guard in kboat
 
 ## Scope and boundary
 
-- **Target.** The `k-boat-knowledge` project only. Every Basic Memory call passes `project="k-boat-knowledge"`; the concept notes are at `$KBOAT_KNOWLEDGE_PATH/concepts/*.md`.
-- **Not the vault.** Vault-note schema is `kboat-validate`'s job (local, report-only, run by the routine). This skill never touches the vault.
-- **Writes only on confirmation.** Audit and report first; apply renames, merges, relation fixes, and tag edits only after the user agrees. Merging concept notes is destructive — propose, never auto-merge (see kboat-distill "Never auto-merge").
+- **Target.** The `k-boat-knowledge` project only.
+  - Every Basic Memory call passes `project="k-boat-knowledge"`; the concept notes are at `$KBOAT_KNOWLEDGE_PATH/concepts/*.md`.
+- **Not the vault.** Vault-note schema is `kboat-validate`'s job (local, report-only, run by the routine).
+  - This skill never touches the vault.
+- **Writes only on confirmation.** Audit and report first; apply renames, merges, relation fixes, and tag edits only after the user agrees.
+  - Merging concept notes is destructive — propose, never auto-merge (see kboat-distill "Never auto-merge").
 
 ## Setup
 
@@ -60,8 +63,10 @@ Read it first.
    This assumes the block-style `tags:` form every concept note uses; a note written with an inline array (`tags: [a, b]`) would not be counted, so a surprisingly low total is the cue to check for that form.
 
 2. **Drift.** Compare the census against the vocabulary note:
-   - A tag listed under the vocabulary's **Avoid** column → fold it to its canonical form. When the canonical is already on the same note, just drop the variant; otherwise replace it.
-   - A tag **not** in the canonical set and not a known alias → a candidate. Judge by the note's content: a typo or near-duplicate of an existing tag is folded (and added to the Aliases table in `meta/Tag vocabulary`); a genuinely new facet is **adopted** — add it to the vocabulary note under the right family in the same change.
+   - A tag listed under the vocabulary's **Avoid** column → fold it to its canonical form.
+     - When the canonical is already on the same note, just drop the variant; otherwise replace it.
+   - A tag **not** in the canonical set and not a known alias → a candidate.
+     - Judge by the note's content: a typo or near-duplicate of an existing tag is folded (and added to the Aliases table in `meta/Tag vocabulary`); a genuinely new facet is **adopted** — add it to the vocabulary note under the right family in the same change.
    - Leave the "Distinct by design" tags alone (e.g. the three `distributed-*`; `latency`/`throughput` vs `performance`).
 
 3. **Coverage.** List the concept notes with no `tags:` block:
@@ -73,7 +78,8 @@ Read it first.
    For each, propose tags from the canonical set, reuse-first (prefer existing spellings; per-family guidance in the vocabulary note).
    Insert the `tags:` block as the last frontmatter key (after `permalink:`), matching how the other concept notes carry tags; keep the YAML list indentation identical so the file Basic Memory re-ingests stays valid.
 
-4. **Apply on confirmation.** Edit tag blocks (on disk or via `edit_note`). Keep the two in sync: when you **adopt** a new tag, add it to `meta/Tag vocabulary`; when you **fold** a variant, record it in that note's Aliases table so it does not return.
+4. **Apply on confirmation.** Edit tag blocks (on disk or via `edit_note`).
+   - Keep the two in sync: when you **adopt** a new tag, add it to `meta/Tag vocabulary`; when you **fold** a variant, record it in that note's Aliases table so it does not return.
 
 ## Report
 
@@ -84,4 +90,5 @@ Apply only what the user confirms; relay what changed.
 
 - **memory-curate** — the generic graph mechanics (orphans, relations, dedup, hub notes).
 - **`meta/Tag vocabulary`** (in the KB) — the canonical tags and aliases.
-- **kboat-notes** — the concept-note conventions ([Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)); **kboat-distill** — the accretion and write-time tag policy.
+- **kboat-notes** — the concept-note conventions ([Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)).
+- **kboat-distill** — the accretion and write-time tag policy.
