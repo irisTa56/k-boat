@@ -1,11 +1,12 @@
 ---
 name: kboat-feed-run
-description: Run one feed-filter pass — gather new entries from registered sites, judge each against prompts/selection.md with cheap haiku subagents, write keeps as Feeds/ notes in the Obsidian vault, and self-heal broken scrape patterns. Use for the scheduled routine or a manual run.
+description: Run one feed-filter pass — gather new entries from registered article sites (forums are the kboat-forum-run skill's), judge each against prompts/selection.md with cheap haiku subagents, write keeps as Feeds/ notes in the Obsidian vault, and self-heal broken scrape patterns. Use for the scheduled routine or a manual run.
 ---
 
 # feed-filter periodic run
 
-One pass of the filter: gather unseen entries across all registered sites, judge each against `prompts/selection.md`, write the keeps into the vault, and record everything processed as seen.
+One pass of the filter: gather unseen entries across all registered article sites, judge each against `prompts/selection.md`, write the keeps into the vault, and record everything processed as seen.
+Forums are not this run's: `new-entries` skips them, and `kboat-forum-run` is the pass that judges their topics.
 This is the periodic, cost-sensitive half of feed-filter — the judging runs on **haiku** subagents, and the per-site/global caps, not subagent cleverness, are the primary cost bound.
 
 Run every `feed-filter` command from the repo root.
