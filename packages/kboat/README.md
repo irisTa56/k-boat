@@ -6,8 +6,13 @@ Its **spec** is split by ownership: the shared vault contract (naming, the schem
 ## Console scripts
 
 - `kboat-lifecycle` — the distillation lifecycle state machine: boolean/date predicates over frontmatter, no judgement.
-- `kboat-repos` — the repo catalogue's mechanics: `gather` and `refresh` over the `gh` CLI, and `write` over the shared writer.
-- `kboat-pick` — the daily-pick mechanics (`candidates`/`set`), no LLM and no NotebookLM.
+- `kboat-repos` — the repo catalogue's mechanics:
+  - `gather` — over the `gh` CLI.
+  - `refresh` — over the `gh` CLI.
+  - `write` — over the shared writer.
+- `kboat-pick` — the daily-pick mechanics, no LLM and no NotebookLM:
+  - `candidates`;
+  - `set`.
 - `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON.
   - `--stats` adds the backlog-health counts.
 - `kboat-doctor` — checks the vault's environment preconditions before a run:

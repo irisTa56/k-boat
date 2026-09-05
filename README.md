@@ -52,8 +52,12 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
   - a Reading-list view, books not yet finished (shown by default);
   - an All catalogue;
   - a To-distill view.
-- `Repos.base` — a standalone Base over the GitHub repos: an All catalogue and an Active view.
-- `Reviews.base` — a standalone Base over the review reports: an Unread view (shown by default) and an All view, each with a `read` checkbox to tick off.
+- `Repos.base` — a standalone Base over the GitHub repos:
+  - an All catalogue;
+  - an Active view.
+- `Reviews.base` — a standalone Base over the review reports, each view carrying a `read` checkbox to tick off:
+  - an Unread view (shown by default);
+  - an All view.
 - `Feeds.base` — a standalone Base over the feed-filter items, with the triage views that member's own docs describe.
 
 Every folder above, plus `Questions.md`, must exist before a scheduled run: `kboat-doctor` checks them first and stops the run if one is absent, since a folder that has gone missing is indistinguishable from a vault that has not finished syncing. Create them once, when you set the vault up. `Daily/` and the `.base` files are outside that check — the first is optional, and a Base is Obsidian's own view, which no phase reads. `.kboat.lock` is outside it too: the first run that writes creates it.
