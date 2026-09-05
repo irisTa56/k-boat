@@ -24,7 +24,9 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 ## Prerequisites
 
-- `OBSIDIAN_VAULT_PATH` must be set (it comes from the workspace `.env`, loaded by `eval "$(mise env)"`). A keep becomes a `Feeds/<slug>.md` note there. If the variable is unset, `forum-remind` exits non-zero — stop and report rather than judging candidates you cannot deliver.
+- `OBSIDIAN_VAULT_PATH` must be set (it comes from the workspace `.env`, loaded by `eval "$(mise env)"`).
+  A keep becomes a `Feeds/<slug>.md` note there.
+  If the variable is unset, `forum-remind` exits non-zero — stop and report rather than judging candidates you cannot deliver.
 - Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent.
   This file is gitignored local config; if it is absent (a fresh checkout), stop and report that it must be created by copying `prompts/selection.example.md` to `prompts/selection.md` — do not judge with no criteria.
   Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
@@ -87,8 +89,10 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    Advancing the poll counter before everything is dispositioned can cause a loss if the run crashes after that point.
 
    The two rules write **independent** dedupe axes, so the two flags are orthogonal:
-   - `--is-op` records the **topic-grain** Rule-A interest verdict (`op_interest_kept`). A Rule-A disposition carries `--is-op` and **no** `--post-id` — Rule A reads the OP from RSS and never holds its `post_id`, so it never fetches the topic JSON.
-   - `--post-id` records the **post-grain** Rule-B seen (`forum_post_seen`). A Rule-B disposition carries `--post-id` (from the candidate's `trigger_posts`) and **no** `--is-op`, even when the trigger post is the OP — Rule B does not own the interest verdict.
+   - `--is-op` records the **topic-grain** Rule-A interest verdict (`op_interest_kept`).
+     - A Rule-A disposition carries `--is-op` and **no** `--post-id` — Rule A reads the OP from RSS and never holds its `post_id`, so it never fetches the topic JSON.
+   - `--post-id` records the **post-grain** Rule-B seen (`forum_post_seen`).
+     - A Rule-B disposition carries `--post-id` (from the candidate's `trigger_posts`) and **no** `--is-op`, even when the trigger post is the OP — Rule B does not own the interest verdict.
 
    Because the axes are independent, the OP can be dispositioned under both rules.
    The two keeps resolve to the **same** topic URL, hence the same hash-named `Feeds/` note: the second `forum-remind` upserts that one note (an idempotent update — its `summary` is last-write-wins) while recording each axis independently.
@@ -129,7 +133,8 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
        The flag is an OR over a site's failures, not a description of one, so report the `error` whole and say an unclassified failure is among them — do not try to attribute it to a part of the text.
        That is all the flag asserts: it is usually a feed-filter bug — both parsers on this path degrade a malformed payload to an empty result rather than raising — but forum data also reaches code that is not a parser, so a hostile or freak payload can look the same.
        So say it is unclassified and leave the message to speak for itself, rather than narrating it as an unreachable forum, and do not diagnose it beyond what the message says.
-     - **`false`**: a classified fetch failure. Report it as the fetch failure it is.
+     - **`false`**: a classified fetch failure.
+       Report it as the fetch failure it is.
    - **Escalation**, from `persistent`:
      - **`persistent == true`**: the site's Rule-A admission has returned no verdict for `consecutive_failures` consecutive runs.
        The CLI has already decided this crossed the threshold — do not re-judge it as "transient".
@@ -155,7 +160,9 @@ A `persistent == true` site is **always** actionable — the escalation the dura
 Whether to escalate this summary to a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
 
 - Counts: sites gathered, topics with Rule-A candidates, topics with Rule-B candidates, posts kept (written), posts dropped, posts error-fallback written, and `discourse_fetches` (total Discourse HTTP calls this run made).
-- Poll advances: topics finalized (the `polls` entries you called `forum-poll-done` for). Any due topic not among them was withheld and re-polls next run — the cap cut it, or its gather did not complete — and the output does not distinguish the two, so report the count you finalized rather than inventing a breakdown. A gather that did not complete surfaces through its site's `error` in step 5.
+- Poll advances: topics finalized (the `polls` entries you called `forum-poll-done` for).
+  - Any due topic not among them was withheld and re-polls next run — the cap cut it, or its gather did not complete — and the output does not distinguish the two, so report the count you finalized rather than inventing a breakdown.
+  - A gather that did not complete surfaces through its site's `error` in step 5.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), and any `forum-remind` or `forum-poll-done` non-zero exit.
 
 ## Cost controls (state these hold)
@@ -165,4 +172,6 @@ Whether to escalate this summary to a desktop notification is the unattended rou
   It is two-stage: judge from `op_text` first; `WebFetch` the topic page (the HTML, for content) only when the snippet is too thin, so prose topics whose RSS description is the full OP need no fetch at all.
 - Rule B uses pre-fetched `text` directly — no per-post `WebFetch`.
 - The like-count short-circuit in `forum-new` already skips deep Rule-B scanning when a topic's aggregate like count is unchanged since the last poll (after the first poll); the cost saving is already baked into the candidates you receive.
-- Rule A judges on a **Sonnet** subagent (the cross-domain call is too subtle for haiku, per the model split above); Rule B judges on **haiku** (a local per-post value call). One subagent per candidate; per-topic parallelism is fine. A steady-state run judges only a few new topics, so the Sonnet cost is small; the global cap bounds the cold-start worst case.
+- Rule A judges on a **Sonnet** subagent (the cross-domain call is too subtle for haiku, per the model split above); Rule B judges on **haiku** (a local per-post value call).
+  - One subagent per candidate; per-topic parallelism is fine.
+  - A steady-state run judges only a few new topics, so the Sonnet cost is small; the global cap bounds the cold-start worst case.
