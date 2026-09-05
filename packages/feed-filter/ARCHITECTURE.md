@@ -184,7 +184,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
     - None of them retires, because none of them completes — and the admission keeps enrolling more, so the due set grows monotonically.
       - Narrowing or pausing the admission does not drain the stuck ones; only fixing the cause does.
     - Bounding it would take a durable per-topic failure count, and retiring a topic after N failures would discard it over what is usually our own bug.
-  - The cost of that withholding is site-wide, not per topic: each run spends one topic-JSON call and one error message per due topic.
+  - What that withholding costs, and what reveals it: the cost is site-wide rather than per topic, each run spending one topic-JSON call and one error message per due topic.
     - The signal holds up as the set grows: `unexpected` is OR'd across due topics, so `unexpected_error` keeps reporting the site as long as any one topic reaches the failing code.
     - What identifies it in a run is a shape a human reads back off the summary — errors reported while `polls` came back empty.
       - The run skill is not asked to detect that conjunction; a human acting on the summary is the drain.
