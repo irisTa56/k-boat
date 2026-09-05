@@ -24,12 +24,15 @@ This is the only place the on/off status lives; there is no separate state to co
 `feed-filter disable-site --site-id <id>` → `{site_id, enabled: false}`.
 The run then skips it entirely — no fetch, no error, no notification — while its `[[site]]` config and its seen-store stay intact.
 Use this when a site is chronically failing (a recurring error named in the run's summary), temporarily noisy, or simply unwanted for now.
-Prefer it over deleting the `[[site]]` block by hand: deleting loses the seen-store and re-runs discovery on re-add, whereas pause/resume is reversible and cheap.
+Prefer it over deleting the `[[site]]` block by hand: re-adding the site means running discovery again and choosing its cluster again, whereas pause and resume are one command each.
+The seen-store is not what is at stake there — its rows key on the entry's URL independently of the registry, so they outlive a deleted block.
 
 ## Resume a site
 
 `feed-filter enable-site --site-id <id>` → `{site_id, enabled: true}`.
-Gathering resumes; because the seen-store was preserved, only entries that appear *after* re-enabling are written as notes — no back-catalog flood.
+Gathering resumes, and the preserved seen-store keeps the pre-pause back-catalog out, so there is no flood.
+What the pause did not record still arrives, though: nothing was gathered while the site was disabled, so anything published during the pause is unseen, and whatever of it the feed or index still carries is judged on the first run back.
+Say so when reporting a resume, rather than promising only post-resume entries.
 
 ## Fix a site that moved
 
