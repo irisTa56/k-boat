@@ -37,7 +37,6 @@ Say so when reporting a resume, rather than promising only post-resume entries.
 
 A moved site — a new domain, a new subdomain, a renamed feed or index path — keeps its id, its config and its seen-store; what is wrong is the URL it is registered under.
 So the fix is to change that value, and never to disable the site.
-Where a scrape site's article paths moved along with its index, its `article_url_pattern` no longer matches either; that repairs itself on the next run, and `kboat-feed-run`'s self-heal step owns it.
 No `feed-filter` subcommand edits a URL, and none is needed: `sites.toml` is the registry itself, and it is user-authored config that this skill edits by hand.
 What goes in is a URL confirmed to serve this same site, never one inferred from the error page that raised the suspicion — where the move is only suspected, report the candidate and leave the row alone.
 
@@ -47,9 +46,8 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
    - Give the user the old value when you report the change. `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
-4. **Report what the move cost.** Where it changed the URLs of what the site serves, those URLs read as new: an article is judged a second time, and a keep — an article's or a topic's — lands as a fresh `Feeds/` note instead of updating the one already there.
-   It settles on its own as the runs resume, so the report is the whole of what this step owes; nothing here is to be run by hand.
-   The move is not free, though, so do not report it as such.
+
+That is the whole of the fix — nothing else has to be run, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
 
 ## Finding the id
 
