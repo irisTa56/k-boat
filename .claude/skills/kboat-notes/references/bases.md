@@ -1,6 +1,8 @@
 # Bases
 
-Each YAML block below is the spec, not the file on disk: a live `.base` carries per-vault cosmetics besides — column widths, and the `columnSize` block `Kindles.base` has.
+Each YAML block below is the spec, not the file on disk: a live `.base` carries per-vault cosmetics besides, such as the `columnSize` block that sets each column's width.
+The files are hand-edited in Obsidian, so a live Base and what this file documents are expected to differ; a difference is not something to carry back into this file, and rewriting a Base from the block replaces those hand edits, which is accepted.
+The Repo Base section's prose and its block also name different view sets, which has read that way since the section was written and is likewise nothing to reconcile.
 
 - [Sources Base](#sources-base)
 - [Kindle Base](#kindle-base)
