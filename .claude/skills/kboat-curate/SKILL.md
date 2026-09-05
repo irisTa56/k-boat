@@ -1,6 +1,6 @@
 ---
 name: kboat-curate
-description: On-demand maintenance of the K-Boat knowledge base (the `k-boat-knowledge` Basic Memory project) — curate the concept graph and check the concept-note tags for drift and gaps. Use when the user wants to tidy or organize the knowledge base, says things like "curate the KB", "tidy the knowledge base", "check the tags", "are the tags consistent", "find orphans / duplicates", or otherwise asks for a knowledge-graph health pass. Read-mostly; it writes only on confirmation. Defers to memory-curate for the generic graph mechanics, to the KB's `meta/Tag vocabulary` note for the canonical tags, and to kboat-notes for the concept-note conventions.
+description: On-demand maintenance of the K-Boat knowledge base (the `k-boat-knowledge` Basic Memory project) — curate the concept graph and check the concept-note tags for drift and gaps. Use when the user wants to tidy or organize the knowledge base, says things like "curate the KB", "tidy the knowledge base", "check the tags", "are the tags consistent", "find orphans / duplicates", or otherwise asks for a knowledge-graph health pass. Read-mostly; it writes only on confirmation. Defers to memory-curate for the generic graph mechanics, to the KB's `meta/Tag vocabulary` note for the canonical tags, to kboat-notes for the concept-note conventions, and to kboat-distill for the accretion and write-time tag policy.
 ---
 
 # K-Boat curate
