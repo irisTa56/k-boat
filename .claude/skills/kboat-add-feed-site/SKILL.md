@@ -7,7 +7,7 @@ description: Register a new site in feed-filter from its URL alone. For an artic
 
 Add one site to the feed-filter registry so the periodic run starts watching it.
 The user supplies only a URL; deterministic discovery decides whether it is a feed or a scrape site, and you pick the right article cluster when discovery offers more than one.
-This is the infrequent, main-model half of feed-filter — the periodic keep/drop half lives in the `kboat-feed-run` skill.
+This is the infrequent, main-model half of feed-filter — the periodic keep/drop half lives in the `kboat-feed-run` skill for article sites and in the `kboat-forum-run` skill for forums.
 
 Run every `feed-filter` command from the repo root.
 The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
