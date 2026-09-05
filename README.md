@@ -79,7 +79,9 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-ingest`](.claude/skills/kboat-ingest/SKILL.md) — queue ingestion: draining the vault's `Queue/` folder (one `Queue/*.md` capture per URL, filled by the capture bookmarklet that `kboat-bookmarklet` prints) into source notes, each with its own 1:1 notebook.
   - A GitHub repo URL is routed to `kboat-repos` instead, though a blob link to a `.pdf` or `.md` file stays a source.
 - [`kboat-kindle`](.claude/skills/kboat-kindle/SKILL.md) — add a Kindle book from its `read.amazon` URL: it reads the metadata off the Amazon page through your own Chrome and writes the `Kindles/<ASIN>.md` note.
-- [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — catalogue a GitHub repository (and refresh the catalogue): it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
+- [`kboat-repos`](.claude/skills/kboat-repos/SKILL.md) — the repo catalogue's two entry points.
+  - Catalogue a GitHub repository: it fetches metadata via `gh`, a cheap subagent judges role/domain/summary, and it writes the `Repos/<slug>.md` note.
+  - Refresh the catalogue, re-fetching the GitHub metadata of every repo already in it.
 - [`kboat-distill`](.claude/skills/kboat-distill/SKILL.md) — the post-reading pass; it defers to kboat-notes for the concept note's reading-group format and to the Basic Memory skills for the generic concept-note conventions.
   - Advancing lifecycle state.
   - Distilling ripe sources into the knowledge graph.
@@ -87,8 +89,9 @@ The detailed conventions and procedures live in skills, so they are documented o
 - [`kboat-recall`](.claude/skills/kboat-recall/SKILL.md) — search and selection over your saved sources.
   - Search your "read later" shelf by a question, over each source's saved `summary`/`topics`.
   - Run the routine's **daily pick**, surfacing up to two web reads matched to your `Questions.md` open-questions backlog and recent Daily notes, or time-sensitive to act on early (a security advisory, a release, a best-practice) regardless of theme.
-- [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — check that the sources you have opened still have their content.
-  - NotebookLM occasionally drops a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing; this adds the source back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
+- [`kboat-notebook-health`](.claude/skills/kboat-notebook-health/SKILL.md) — against NotebookLM occasionally dropping a source weeks after a clean ingest, leaving a notebook that looks fine and answers nothing.
+  - Check that the sources you have opened still have their content.
+  - Add the original back into that same notebook, so the dialogue you saved into it and everything else it carries stay where they are.
 - [`kboat-rescue`](.claude/skills/kboat-rescue/SKILL.md) — clear a source out of the DLQ (a bot-protected PDF or a walled web page), by one of its two exits.
   - Finish it, by pulling it through your real browser.
   - Give it up, where the page has died or you would rather not chase it.
