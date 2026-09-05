@@ -33,7 +33,7 @@ The full module-by-module map, the CLI ↔ skills JSON contract, and the behavio
 The load-bearing rules:
 
 - Deterministic logic is plain Python behind a single `feed-filter <subcommand>` CLI emitting JSON on stdout; that CLI is the **only** contract with the Claude Code skills, which never reach into Python internals.
-- The LLM owns the genuinely fuzzy judgments, among them:
+- The LLM owns only the genuinely fuzzy judgments, among them:
   - picking what to register from discovery's candidates (at registration, and again when a scrape site self-heals);
   - query authoring for `query-new` — ad hoc, no skill drives it yet;
   - keep/drop at run time.
