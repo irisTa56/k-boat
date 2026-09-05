@@ -137,7 +137,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
   - an article site: discover → pick cluster → `add-site`;
   - a Discourse forum: confirm the instance → infer `--forum-subject` → `add-forum`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
-- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved: a hand-edit of the one URL field in `sites.toml`, followed by a `heal-site` re-snapshot where the move re-keyed the seen-store.
+- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, the skill owning what the move then costs per kind).
 - `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
