@@ -142,7 +142,7 @@ These are the rules a multi-module change must preserve, each named with where i
 The user-facing narrative of the observable behavior is README's "Failure and self-heal behavior" — keep the two in sync.
 
 - **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) writes the note *then* records seen, recording only on success; `write_feed_note` raises `VaultError` on a write the writer refused, `VaultLockedError` when the vault lock's wait expires, `VaultLockUnavailableError` when that lock cannot be operated at all, and lets an `OSError` from the atomic write propagate (`vault.py`), so a failed write is never recorded as seen.
-  - The lock refusal is the one of those that does not recur — the holder finishes — which is why the run skills leave that entry for the next run and carry on rather than stopping.
+  - `VaultLockedError` is the one of those that does not recur — the holder finishes — which is why the run skills leave that entry for the next run and carry on rather than stopping.
   - A judging error still writes the note (title or URL fallback) before recording.
   - The only duplicate window is a crash in the gap between write and record — and the hash-named upsert makes even that re-run write idempotent, so nothing duplicates.
 - **Never-lost at post grain (forum).** `cmd_forum_remind` mirrors the above for forum posts: the note write *then* the DB write, only on success.
