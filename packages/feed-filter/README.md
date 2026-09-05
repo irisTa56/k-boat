@@ -18,11 +18,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the beha
 
 ## Prerequisites
 
-- `OBSIDIAN_VAULT_PATH` set (via the workspace `.env`) to the Obsidian vault; kept entries are written as `Feeds/` notes under it.
-  - An unset vault path makes a write fail loudly rather than silently dropping kept entries.
+- `OBSIDIAN_VAULT_PATH` set (via the workspace `.env`) to the Obsidian vault; kept entries are written as `Feeds/` notes under it. An unset vault path makes a write fail loudly rather than silently dropping kept entries.
 - `mise` for the toolchain and tasks.
-- `EXA_API_KEY` (workspace `.env`) for the query gather only.
-  - The feed and forum paths need no key; without one, `query-new` reports the missing key rather than failing.
+- `EXA_API_KEY` (workspace `.env`) for the query gather only. The feed and forum paths need no key; without one, `query-new` reports the missing key rather than failing.
 
 ## Setup
 
@@ -143,8 +141,7 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 
 Use the `kboat-forum-run` skill. One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
 
-- **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason.
-  - Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
+- **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
 - **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
 
 The two rules are independent axes. An OP dropped under Rule A (e.g. on-subject, so not cross-domain) is still re-judged by Rule B if it later gains likes, and an OP that is both cross-domain interesting and popular is recorded under both axes, but resolves to a single `Feeds/` note (see below).
@@ -163,26 +160,22 @@ Guidance:
 
 - Schedule it on an **off-:00 minute** (e.g. `17 * * * *` or a few times a day) to avoid the top-of-hour congestion when many routines fire at once.
 - The task starts fresh each run with no memory of prior runs; the seen-store (`feed-filter.db`) is what carries state across runs, so the prompt only needs to point at this repo and the run skill.
-- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (loaded from the workspace `.env`).
-  - An unset vault path surfaces as a non-zero exit, not a silent drop.
-- A scheduled task runs only while the Claude app is open.
-  - If the app was closed when the task was due, it runs on next launch.
+- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (loaded from the workspace `.env`); an unset vault path surfaces as a non-zero exit, not a silent drop.
+- A scheduled task runs only while the Claude app is open; if the app was closed when the task was due, it runs on next launch.
 
 ## Failure and self-heal behavior
 
 The design favors **never-lost over never-duplicated**:
 
 - An entry that errors during judging is written as a feed note anyway (with its title or a URL fallback) and then recorded seen — never silently dropped.
-- A gather-time fetch failure records nothing seen, so the next run retries the site naturally.
-  - There is no backoff, so a permanently broken feed stays visible in run summaries by design.
+- A gather-time fetch failure records nothing seen, so the next run retries the site naturally; there is no backoff, so a permanently broken feed stays visible in run summaries by design.
 - A gather failure is contained to the smallest unit that can still emit, whether it is a fetch error or one the CLI could not classify.
   - An *article* site's fetch failure stays its own: one site cannot discard the entries the other ~80 already fetched.
     - Its seen-store filtering is not yet guarded that way, so an unclassified failure there still ends the run.
   - A *forum* site's failure normally stays with the topic that hit it, so a partially-gathered forum still emits the topics it finished; the topic that did not complete is withheld from the poll worklist and re-polls next run.
     - A failure the gather cannot place on one topic is caught a level out and costs that site's whole Rule-A or Rule-B pass for the run, still leaving every other site's candidates standing.
   - An error the CLI could not classify is flagged as such, so the run summary reports it verbatim instead of narrating it as an unreachable site.
-- The seen-store is the dedupe authority for article sources at gather time.
-  - The write-then-record pair runs in one process; a crash in the sub-millisecond gap between them re-runs the write next time, but the hash-named upsert makes that write idempotent — so even the crash window duplicates nothing.
+- The seen-store is the dedupe authority for article sources at gather time. The write-then-record pair runs in one process; a crash in the sub-millisecond gap between them re-runs the write next time, but the hash-named upsert makes that write idempotent — so even the crash window duplicates nothing.
 - Forum sources keep a second dedupe authority scoped to individual posts, independent of the article seen-store, so a topic can re-write its feed note as later posts cross the like threshold (see [ARCHITECTURE.md](ARCHITECTURE.md) for the schema).
   - The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
 

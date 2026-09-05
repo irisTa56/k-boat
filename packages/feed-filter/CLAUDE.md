@@ -8,19 +8,13 @@ Shared conventions (git workflow, markdown rules) are in the [root CLAUDE.md](..
 feed-filter is a simplified reimplementation of the sibling project `loose-feeds` (`../loose-feeds`).
 A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against `prompts/selection.md` using cheap haiku subagents, and writes survivors as `type: feed` notes in the Obsidian vault's `Feeds/` folder.
 A second routine does the same for registered Discourse forums, writing keeps as the same `Feeds/` notes (post-grain, re-writes the note as new posts cross a like threshold).
-Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault writer) lives in plain Python behind a single `feed-filter` CLI; what is left to the LLM is under Architecture below.
+Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault writer) lives in plain Python behind a single `feed-filter` CLI; the LLM is reserved for cluster-pick at registration and keep/drop at run time.
 
 ## Environment gotchas
 
-- The routine MUST run locally: the vault is the local iCloud folder, so cloud routines cannot be used.
-  - The Mac must be awake and the Claude runtime idle at fire time.
-- `OBSIDIAN_VAULT_PATH` must be set (from the workspace `.env`); kept entries become `Feeds/` notes under it.
-  - An unset vault path fails a write loudly rather than silently dropping it.
-- These are **gitignored local state** — personal config, never commit them:
-  - `feed-filter.db`, the seen-store;
-  - `sites.toml`, the personal subscription list;
-  - `prompts/selection.md`, the personal keep/drop criteria.
-    - Only `prompts/selection.example.md` (an English template, overridable via `FEED_FILTER_SELECTION`) is version-controlled.
+- The routine MUST run locally. The vault is the local iCloud folder, so cloud routines cannot be used; the Mac must be awake and the Claude runtime idle at fire time.
+- `OBSIDIAN_VAULT_PATH` must be set (from the workspace `.env`); kept entries become `Feeds/` notes under it, and an unset vault path fails a write loudly rather than silently dropping it.
+- `feed-filter.db` (seen-store), `sites.toml` (the personal subscription list), and `prompts/selection.md` (the personal keep/drop criteria) are **gitignored local state** — personal config, never commit them. Only `prompts/selection.example.md` (an English template, overridable via `FEED_FILTER_SELECTION`) is version-controlled.
 - `EXA_API_KEY` (workspace `.env`) powers the `query-new` query gather.
   - It is a secret: never write it into `sites.toml`, a skill, or emitted JSON.
   - Without it `query-new` reports the missing key per query instead of failing the run.
