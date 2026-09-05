@@ -147,7 +147,8 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 ### Run the forum filter
 
 Use the `kboat-forum-run` skill.
-One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
+One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
+Judging is split by model — **Sonnet** for Rule A, **haiku** for Rule B — for the reason the `kboat-forum-run` skill gives.
 
 - **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
 - **Rule B** — any post whose like count meets the effective threshold is judged for "worth-reading information"; the native subject is not excluded.
