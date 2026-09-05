@@ -87,7 +87,8 @@ There is **no discovery** (there is no article cluster to pick) and **no cold-st
    Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (from the workspace `.env`).
 
 A forum's per-site `selection` override is not an `add-forum` flag.
-Set it later by hand-editing the `selection = "..."` line under that forum's `[[site]]` block in `sites.toml` (the forum run honors it, replacing the Topics section for that forum only). That file is gitignored personal state, so no checkout restores a bad edit.
+Set it later by hand-editing the `selection = "..."` line under that forum's `[[site]]` block in `sites.toml` (the forum run honors it, replacing the Topics section for that forum only).
+That file is gitignored personal state, so no checkout restores a bad edit.
 
 ## Sites that need a browser (JS / anti-bot)
 
