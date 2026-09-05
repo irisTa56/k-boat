@@ -1,6 +1,6 @@
 ---
 name: kboat-forum-run
-description: Run one forum-filter pass — gather Rule-A and Rule-B candidates from registered Discourse forums, judge each with cheap haiku subagents, write keeps as Feeds/ notes in the Obsidian vault. Use for the scheduled forum routine or a manual forum run.
+description: Run one forum-filter pass — gather Rule-A and Rule-B candidates from registered Discourse forums, judge each with a subagent (Sonnet for Rule A, haiku for Rule B), write keeps as Feeds/ notes in the Obsidian vault. Use for the scheduled forum routine or a manual forum run.
 ---
 
 # feed-filter forum periodic run
