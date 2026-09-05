@@ -167,7 +167,8 @@ Source: <url> (for a Kindle book: ASIN:<asin>)
 - `merge candidates:` pairs flagged for `memory-curate`.
 ```
 
-Write the Basic Memory Report values in the **same language as the Summary** (Japanese prose), keeping concept-note names and established English terms (`recompute`, FLOP, OCS, …) in English (the backtick keys are fixed literals, never translated). Each key holds **one line**, with `; ` as the top-level item separator so a `、` inside a clause is never read as an item boundary:
+Write the Basic Memory Report values in the **same language as the Summary** (Japanese prose), keeping concept-note names and established English terms (`recompute`, FLOP, OCS, …) in English (the backtick keys are fixed literals, never translated).
+Each key holds **one line**, its top-level items separated by `; `, so a `、` inside a clause is never read as an item boundary:
 
 - `created:` — the new concept-note names as plain text, never `[[wikilinks]]` (they can't resolve from `Reviews/` in the vault root to the concept notes in the separate `KBOAT_KNOWLEDGE_PATH` root, the same reason provenance uses a URL).
 - `appended-to:` — the concept-note names that grew (same plain-text rule), each optionally followed by a `（…）` note of what was added.
