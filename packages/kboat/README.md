@@ -1,7 +1,8 @@
 # kboat — K-Boat's deterministic mechanical core
 
 The tested Python that the [K-Boat](../../README.md) skills call, so the model neither re-derives the mechanical logic nor pays tokens for it.
-Its **spec** is split by ownership: the shared vault contract (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) is the `kboat-vault-conventions` skill, and K-Boat's note-type field semantics are the `kboat-notes` skill. Change the relevant spec first, then this package and its tests.
+Its **spec** is split by ownership: the shared vault contract (naming, the schema/validate/write contract, durability and the vault lock, Base discipline) is the `kboat-vault-conventions` skill, and K-Boat's note-type field semantics are the `kboat-notes` skill.
+Change the relevant spec first, then this package and its tests.
 
 ## Console scripts
 

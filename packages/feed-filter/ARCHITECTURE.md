@@ -129,7 +129,9 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 
 ## Skills (the orchestration layer)
 
-`.claude/skills/` holds the four skills that drive the CLI. `query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it. `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
+`.claude/skills/` holds the four skills that drive the CLI.
+`query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it.
+`prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
 
 - `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.

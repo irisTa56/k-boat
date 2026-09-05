@@ -1,6 +1,8 @@
 # Selection criteria (template)
 
-This is the version-controlled **template**. Copy it to `prompts/selection.md` (gitignored, your personal criteria) — that copy is what the run routine reads, so your interests never enter version control. Override the path with `FEED_FILTER_SELECTION` if you keep it elsewhere.
+This is the version-controlled **template**.
+Copy it to `prompts/selection.md` (gitignored, your personal criteria) — that copy is what the run routine reads, so your interests never enter version control.
+Override the path with `FEED_FILTER_SELECTION` if you keep it elsewhere.
 
 This file is the keep/drop prompt the run routine hands to each judging subagent.
 A subagent sees one candidate page at a time and decides whether it is worth keeping as a feed note in the vault.
