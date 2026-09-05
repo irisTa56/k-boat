@@ -9,7 +9,7 @@ A second routine does the same for registered Discourse forums, judging topics a
 
 Responsibilities split deterministically.
 Plain Python owns everything verifiable and cheap — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer — exposed as a single `feed-filter` CLI.
-The LLM owns only the genuinely fuzzy judgments: picking what to register from discovery's candidates (at site registration, and again when a scrape site self-heals), authoring the descriptions the query gather searches on (ad hoc — no skill drives it yet), and per-page keep/drop selection.
+The LLM owns only the genuinely fuzzy judgments, among them picking what to register from discovery's candidates (at site registration, and again when a scrape site self-heals), authoring the descriptions the query gather searches on (ad hoc — no skill drives it yet), and per-page keep/drop selection.
 
 There are three ways a page reaches the filter.
 Two of them poll places you registered — article feeds and Discourse forums — so they return only what a known publisher published.

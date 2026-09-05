@@ -3,8 +3,8 @@
 Every subcommand emits one JSON object/array on stdout and returns an exit code;
 the skills never reach into the Python internals, they parse this JSON. The
 deterministic core (discover, gather, the seen-store, the vault writer) does the
-work — the skills supply only the two fuzzy judgments (cluster pick at
-registration, keep/drop at run time).
+work — the skills supply only the fuzzy judgments, among them cluster pick at
+registration and keep/drop at run time.
 
 Ordering invariants enforced here, not in the skills:
 

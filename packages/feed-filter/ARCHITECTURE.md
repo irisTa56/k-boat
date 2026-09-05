@@ -7,7 +7,7 @@ Read this when a change touches more than one module or the Python ↔ skills co
 ## The split: deterministic Python vs. LLM
 
 Everything verifiable and cheap is plain Python — fetching, feed/scrape parsing, discovery, URL canonicalization, the seen-store, and the vault writer.
-The LLM is reserved for the genuinely fuzzy judgments: picking what to register from discovery's candidates (at site registration, and again when a scrape site self-heals), authoring the descriptions `query-new` searches on (ad hoc — no skill drives it yet), and per-page keep/drop at run time.
+The LLM owns only the genuinely fuzzy judgments, among them picking what to register from discovery's candidates (at site registration, and again when a scrape site self-heals), authoring the descriptions `query-new` searches on (ad hoc — no skill drives it yet), and per-page keep/drop at run time.
 
 A single `feed-filter <subcommand>` CLI emitting JSON on stdout is the **only** contract between the Python core and the Claude Code skills.
 Skills never reach into Python internals.
@@ -133,7 +133,9 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 `query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it.
 `prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
 
-- `kboat-add-feed-site` — main-model registration: discover → pick cluster → `add-site`.
+- `kboat-add-feed-site` — main-model registration, one chain per source kind:
+  - an article site: discover → pick cluster → `add-site`;
+  - a Discourse forum: confirm the instance → infer `--forum-subject` → `add-forum`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
 - `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, plus on/off status from `list-sites`.
 - `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
