@@ -25,7 +25,8 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 
 ## Procedure
 
-1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)). Read every `Sources/*.md` frontmatter once.
+1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
+   Read every `Sources/*.md` frontmatter once.
 2. Keep the in-scope notes (default `keep`, or the `--states` union above; always drop `blocked`).
 3. Rank by lexical overlap between the query and each note's `title`, `topics`, `summary`, and `url`.
    - `topics` and `title` are the strongest signals; `summary` adds recall; a bare URL match is weak.
