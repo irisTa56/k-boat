@@ -20,9 +20,17 @@ The queue is filled by the capture bookmarklet (run `kboat-bookmarklet` to print
 
 ## Per-item procedure
 
-**Route by kind first.** If the URL is a GitHub repository URL (`https://github.com/<owner>/<repo>`, including deep links into `/tree`, `/blob`, `/issues` and a `.git` suffix — but not a bare profile `github.com/<owner>` or a reserved route like `/orgs/...`, and **except a blob/raw link to a readable `.pdf`/`.md` file**, which is a source, see the next paragraph), it is a **repo**, not a source: hand it to the `kboat-repos` skill (create-or-update a repo note via the `kboat-repos` tool's `gather` plus a cheap classifying subagent, per kboat-notes [Procedure: create or update a repo note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-repo-note)), then delete the queue file once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below). A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it. A non-repo GitHub URL (a bare profile, a gist, a reserved route) falls through to the source path below.
+**Route by kind first.**
+If the URL is a GitHub repository URL (`https://github.com/<owner>/<repo>`, including deep links into `/tree`, `/blob`, `/issues` and a `.git` suffix — but not a bare profile `github.com/<owner>` or a reserved route like `/orgs/...`, and **except a blob/raw link to a readable `.pdf`/`.md` file**, which is a source, see the next paragraph), it is a **repo**, not a source: hand it to the `kboat-repos` skill (create-or-update a repo note via the `kboat-repos` tool's `gather` plus a cheap classifying subagent, per kboat-notes [Procedure: create or update a repo note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-repo-note)), then delete the queue file once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below).
+A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it.
+A non-repo GitHub URL (a bare profile, a gist, a reserved route) falls through to the source path below.
 
-**Readable file blobs are sources, not repos.** `gather` makes the repo-vs-source call, and it carves out a GitHub blob/raw link to a readable file: a `.pdf` or a `.md`. For these it returns `status: "source-file"` with a `source_type` (`pdf` or `web_page`) and the URL to ingest — the `.pdf` rewritten to its `raw.githubusercontent.com` download URL (the blob page is HTML, not the file), the `.md` normalized to its rendered blob page (read as an article). Both URLs are canonical, so a permalink (`/blob/refs/heads/<branch>/…`) and the plain `/<branch>/` link de-dup to one source. When `gather` returns `source-file`, do not catalogue the repo: follow the source path below with that `url`, taking the type from `source_type` rather than re-deciding it (the PDF magic-byte check and the web path's step-3 verifications still apply). Any other extension (or a `/tree` directory or the repo root) stays the repo path above.
+**Readable file blobs are sources, not repos.**
+`gather` makes the repo-vs-source call, and it carves out a GitHub blob/raw link to a readable file: a `.pdf` or a `.md`.
+For these it returns `status: "source-file"` with a `source_type` (`pdf` or `web_page`) and the URL to ingest — the `.pdf` rewritten to its `raw.githubusercontent.com` download URL (the blob page is HTML, not the file), the `.md` normalized to its rendered blob page (read as an article).
+Both URLs are canonical, so a permalink (`/blob/refs/heads/<branch>/…`) and the plain `/<branch>/` link de-dup to one source.
+When `gather` returns `source-file`, do not catalogue the repo: follow the source path below with that `url`, taking the type from `source_type` rather than re-deciding it (the PDF magic-byte check and the web path's step-3 verifications still apply).
+Any other extension (or a `/tree` directory or the repo root) stays the repo path above.
 
 For every other URL, follow the source path:
 
@@ -39,7 +47,9 @@ For every other URL, follow the source path:
    - Deleting the capture strands that stub, and `Queue/` is a note directory, so a lone placeholder in it fails the next `kboat-doctor` and stops the whole routine. This summary is the only place that could say where it came from.
    - Do not delete the stub: deleting a placeholder is how a file leaves iCloud.
 
-   A DLQ note counts as written — the durable note replaces the capture, so delete it. Keep the queue file only when no note was written, the write failed, or a **transient** failure left the source without a notebook and the next run could still get it one: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`, a `source wait` `not_found`/`timeout`, a failed `source get`, or a `status: locked` refusal from the note write (another run held the vault — kboat-vault-conventions "Durability and the vault lock"). The test is whether a retry could succeed, not whether a notebook exists — a PDF whose upload NotebookLM answered with `.status: error` has no notebook either, but the verdict is durable and its file is already on disk, so the queue file goes and the outcome is reported instead of retried for good.
+   A DLQ note counts as written — the durable note replaces the capture, so delete it.
+   Keep the queue file only when no note was written, the write failed, or a **transient** failure left the source without a notebook and the next run could still get it one: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`, a `source wait` `not_found`/`timeout`, a failed `source get`, or a `status: locked` refusal from the note write (another run held the vault — kboat-vault-conventions "Durability and the vault lock").
+   The test is whether a retry could succeed, not whether a notebook exists — a PDF whose upload NotebookLM answered with `.status: error` has no notebook either, but the verdict is durable and its file is already on disk, so the queue file goes and the outcome is reported instead of retried for good.
 
 ## Backfill: retry summary/topics capture
 

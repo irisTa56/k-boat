@@ -30,7 +30,9 @@ The third state needs one more step, and is worth naming because it looks like a
 Uncheck `dismiss` as well as re-checking `distill` — re-checking alone would trade this violation for that one.
 There is nothing to dismiss in the first place: `distill` already took the source off the inbox and the knowledge is already in the graph, so `dismiss` here buys nothing and costs the note its record of what happened to it.
 
-**No rule here carries a `blocked` guard**, so an `ambiguous` on a DLQ entry is reported every run like any other: being in the DLQ does not quiet the validator, only the views and the lifecycle it is filtered out of (see [The DLQ](source-note.md#the-dlq-blocked-sources)). It is therefore the one violation whose usual repair route — find it in the Ambiguous view — does not reach it. Work from the note instead, which the DLQ Base view links, and let what the odd tick was asking for decide which repair it wants.
+**No rule here carries a `blocked` guard**, so an `ambiguous` on a DLQ entry is reported every run like any other: being in the DLQ does not quiet the validator, only the views and the lifecycle it is filtered out of (see [The DLQ](source-note.md#the-dlq-blocked-sources)).
+It is therefore the one violation whose usual repair route — find it in the Ambiguous view — does not reach it.
+Work from the note instead, which the DLQ Base view links, and let what the odd tick was asking for decide which repair it wants.
 
 - Where the entry is still meant to be **rescued**, untick whichever disposition is the odd one out, exactly as the repair would elsewhere.
 - Where the tick was a `dismiss` asking to be rid of the entry — the likeliest way this state arises at all — unticking is the wrong repair: it clears the finding and leaves the source ageing in `blocked_count`, having erased the only record of what was wanted. Take the DLQ's abandon exit instead (`kboat-rescue`, then [Procedure: abandon a blocked source](procedures.md#procedure-abandon-a-blocked-source)), which settles the dispositions and clears `blocked` in one record.
@@ -64,9 +66,11 @@ The 14-day window is a fortnight of daily ingest runs; it is deliberately not de
 **`stalled_summaries` and `summary_unrecoverable` are one gap split by whether a run can still close it** — a live notebook to re-fetch the source guide from, or none.
 The first drains by itself: even a `dismiss`ed entry leaves it as soon as the cooldown discards the notebook.
 The second mostly waits on a human, who restores `summary`/`topics` by rebuilding the notebook ([Procedure: reactivate a source's notebook](procedures.md#procedure-reactivate-a-sources-notebook)) or by writing a short description by hand — which is what accepting the loss of the original looks like, and still leaves `kboat-recall` able to find the source.
-One member of it is transient instead: a source whose notebook creation failed mid-ingest keeps its queue file, so the next run rebuilds it. The two are indistinguishable from a note alone, so read a nonzero count against the ingest pass's own report before treating it as a decision waiting.
+One member of it is transient instead: a source whose notebook creation failed mid-ingest keeps its queue file, so the next run rebuilds it.
+The two are indistinguishable from a note alone, so read a nonzero count against the ingest pass's own report before treating it as a decision waiting.
 `blocked` and `dismiss`ed sources are excluded from the second because neither lost anything — the first never ingested, the second is outside recall's reach by design.
-That exclusion leaves one hole: an **ambiguous** entry (`dismiss` beside `keep` or `distill`) is swept out of `summary_unrecoverable` even though the flag standing beside `dismiss` says the source was not being let go, and if it still has its notebook it settles in `stalled_summaries` instead of draining, because the routine never processes it. Either way the `ambiguous` violation in the same output identifies it, and is the finding to act on first.
+That exclusion leaves one hole: an **ambiguous** entry (`dismiss` beside `keep` or `distill`) is swept out of `summary_unrecoverable` even though the flag standing beside `dismiss` says the source was not being let go, and if it still has its notebook it settles in `stalled_summaries` instead of draining, because the routine never processes it.
+Either way the `ambiguous` violation in the same output identifies it, and is the finding to act on first.
 
 **`awaiting_filed_stamp` reads differently depending on when it is read.**
 Read ad hoc between runs it is the vault's normal working state — every checkbox ticked since the last run is in it, which is why the same state is not a validation rule above.

@@ -4,7 +4,8 @@ A GitHub repository read about, not read through NotebookLM: a tagged, searchabl
 Like a Kindle book it is a parallel kind with no notebook, but simpler still — it is **never distilled** into the knowledge graph (it is a catalogue, not a concept), so it has no disposition, no cooldown, and nothing destructive to gate.
 Its only lifecycle is: created when its link is ingested from the `Queue/` folder, then its GitHub metadata refreshed periodically.
 
-A repo note is frontmatter plus a single `## Notes` body section — the one part a human edits (free-form thoughts), preserved across every refresh. The deterministic mechanics (URL parsing, the slug, `status`, the `gh` fetch, the full-catalogue refresh) live in the `kboat-repos` tool; the judgement (role, domain, summary) is done at ingest by a cheap subagent driven by the `kboat-repos` skill.
+A repo note is frontmatter plus a single `## Notes` body section — the one part a human edits (free-form thoughts), preserved across every refresh.
+The deterministic mechanics (URL parsing, the slug, `status`, the `gh` fetch, the full-catalogue refresh) live in the `kboat-repos` tool; the judgement (role, domain, summary) is done at ingest by a cheap subagent driven by the `kboat-repos` skill.
 
 Fields are ordered for reading — the links you open and the `reading` checkbox first, then the GitHub metadata, then the judged classification and derived `status`, then the routine-managed dates.
 
@@ -36,14 +37,24 @@ Lists (`language`, `topics`, `domain`) are written **inline** (flow style, `topi
 
 ## Naming and de-dup
 
-A repo's identity is its `owner/repo`, which GitHub keeps unique. Queued links vary (a `.git` suffix, a trailing slash, a deep link into `/tree`, `/blob`, `/issues`), and GitHub 301-redirects renamed/transferred/wrong-case URLs — so the **authoritative** identity is the one `gh` resolves, not the queued text. `gather`/`refresh` re-key off `gh`'s `owner.login`/`name`. Then:
+A repo's identity is its `owner/repo`, which GitHub keeps unique.
+Queued links vary (a `.git` suffix, a trailing slash, a deep link into `/tree`, `/blob`, `/issues`), and GitHub 301-redirects renamed/transferred/wrong-case URLs — so the **authoritative** identity is the one `gh` resolves, not the queued text.
+`gather`/`refresh` re-key off `gh`'s `owner.login`/`name`.
+Then:
 
-One carve-out before the repo path: a `blob`/`raw` link to a readable file — a `.pdf` or a `.md` — is a **source**, not the repo. `gather` (via `kboat.repos.identity.github_file_source`) detects it and returns `status: "source-file"` with a `source_type` and the URL to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, since the blob page is HTML; a `.md` normalized to its rendered blob page, read as an article — both canonical, so a `refs/heads/…` permalink and the plain link de-dup to one source), and `kboat-ingest` routes it to the source path instead. Every other deep link (`/tree`, `/issues`, another file extension) still collapses to the repo below.
+One carve-out before the repo path: a `blob`/`raw` link to a readable file — a `.pdf` or a `.md` — is a **source**, not the repo.
+`gather` (via `kboat.repos.identity.github_file_source`) detects it and returns `status: "source-file"` with a `source_type` and the URL to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, since the blob page is HTML; a `.md` normalized to its rendered blob page, read as an article — both canonical, so a `refs/heads/…` permalink and the plain link de-dup to one source), and `kboat-ingest` routes it to the source path instead.
+Every other deep link (`/tree`, `/issues`, another file extension) still collapses to the repo below.
 
 1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
 2. Slug = `kboat-note slug "<canonical-url>"`, the same oracle as a source. The file is `Repos/<slug>.md`.
 
-Step 1 is **routing** and step 2 is naming, and they must not be confused: routing answers which repo a link is about — which is why it collapses a `/blob/<ref>/README.md` link onto its repository, right here and wrong for a file that is ingested as a source of its own — while the slug then follows from the note's stored `url` by the one recipe every note type shares. The note always stores that constructed canonical URL rather than the queued link, which is what lets the writer re-derive the name and refuse a note filed anywhere else. Step 1 is `kboat.repos.identity` plus `gather`'s resolution step and step 2 is `kboat.naming.note_slug` (the package is the implementation, this is the spec); `kboat.repos.identity.canonical_slug` is the two composed, and it asks the oracle rather than re-deriving the hash, so the name it hands out is the one the writer recomputes to verify the write. Resolving via `gh` makes de-dup case-insensitive (two casings of one repo resolve to one slug) and lets refresh follow renames. De-dup like a source: if `Repos/<slug>.md` exists, read its `url`; a match means the same repo (update in place, preserving the body), a mismatch is a slug collision (stop and report), and a `url` held in a shape the reader cannot compare is the same refusal for a different reason — nothing shows the note to be this repo, so it is reported for a human to repair rather than overwritten. Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and avoids the join ambiguity of replacing `/` with `-` (`a-b/c` vs `a/b-c`).
+Step 1 is **routing** and step 2 is naming, and they must not be confused: routing answers which repo a link is about — which is why it collapses a `/blob/<ref>/README.md` link onto its repository, right here and wrong for a file that is ingested as a source of its own — while the slug then follows from the note's stored `url` by the one recipe every note type shares.
+The note always stores that constructed canonical URL rather than the queued link, which is what lets the writer re-derive the name and refuse a note filed anywhere else.
+Step 1 is `kboat.repos.identity` plus `gather`'s resolution step and step 2 is `kboat.naming.note_slug` (the package is the implementation, this is the spec); `kboat.repos.identity.canonical_slug` is the two composed, and it asks the oracle rather than re-deriving the hash, so the name it hands out is the one the writer recomputes to verify the write.
+Resolving via `gh` makes de-dup case-insensitive (two casings of one repo resolve to one slug) and lets refresh follow renames.
+De-dup like a source: if `Repos/<slug>.md` exists, read its `url`; a match means the same repo (update in place, preserving the body), a mismatch is a slug collision (stop and report), and a `url` held in a shape the reader cannot compare is the same refusal for a different reason — nothing shows the note to be this repo, so it is reported for a human to repair rather than overwritten.
+Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and avoids the join ambiguity of replacing `/` with `-` (`a-b/c` vs `a/b-c`).
 
 ## Classification vocabulary
 
@@ -58,7 +69,9 @@ The subagent judges three fields; prefer existing values and keep the vocabulary
   embedded-iot, geospatial, media, general
   ```
 
-  `general` is the fallback when nothing else fits. `embedded-iot` and `media` are umbrellas (embedded/iot/home-automation; graphics/audio/game-dev). Fold the obvious neighbours rather than inventing: storage/search → `data`; messaging/networking/blockchain → `distributed-systems`; cloud/observability → `infrastructure`; api/api-gateway/microservices → `web-development`; code-intelligence → `devtools`; osint → `security`; transportation → `geospatial`.
+  `general` is the fallback when nothing else fits.
+  `embedded-iot` and `media` are umbrellas (embedded/iot/home-automation; graphics/audio/game-dev).
+  Fold the obvious neighbours rather than inventing: storage/search → `data`; messaging/networking/blockchain → `distributed-systems`; cloud/observability → `infrastructure`; api/api-gateway/microservices → `web-development`; code-intelligence → `devtools`; osint → `security`; transportation → `geospatial`.
 - `summary` — one or two plain Japanese sentences saying what the project is and who it is for. No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is.
 
 ## Repo lifecycle and state

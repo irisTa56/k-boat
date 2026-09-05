@@ -107,7 +107,10 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 
 ## Writing conventions
 
-- In markdown prose (docs and skills), do not break a line mid-sentence; line breaks go only at sentence boundaries.
+- In markdown prose (docs and skills), a paragraph runs one sentence to a line, and no line break falls inside a sentence.
+  - Sentences share a line only where they fit together inside 100 half-width columns.
+  - Text indented under a list item is prose too, blank line before it or not, and runs the same way.
+  - A list item is not prose in this sense: a long one is a reason to look again at the list's shape, never a reason to break the line its marker is on.
 - A key this project emits — in a script's stdout JSON, in `sites.toml` — is `snake_case`, as a note's frontmatter is; `kboat-vault-conventions` owns the frontmatter half.
 - Source, repo, and feed notes are named by a URL hash and Kindle notes by their ASIN, with the readable title always in `title`.
   - `kboat-vault-conventions` has the hash recipe, the rule for every other name, and the frontmatter conventions.

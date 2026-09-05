@@ -6,9 +6,12 @@ description: Find shelved "read later" sources by a natural-language question, a
 # K-Boat recall
 
 Answer "do I have something saved to read about X?" by searching the source notes.
-A K-Boat source marked `keep` is the **read-later shelf** — kept as a searchable archive entry whose notebook is retained for re-reading and dialogue (see kboat-notes lifecycle). Its `summary` and `topics`, captured at ingest, are the durable signal this skill searches.
+A K-Boat source marked `keep` is the **read-later shelf** — kept as a searchable archive entry whose notebook is retained for re-reading and dialogue (see kboat-notes lifecycle).
+Its `summary` and `topics`, captured at ingest, are the durable signal this skill searches.
 
-Follow the kboat-notes skill for the source-note schema and the lifecycle. The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag, through `kboat-pick`. The search touches no NotebookLM; the pick reaches it only to read the shortlisted candidates' bodies.
+Follow the kboat-notes skill for the source-note schema and the lifecycle.
+The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag, through `kboat-pick`.
+The search touches no NotebookLM; the pick reaches it only to read the shortlisted candidates' bodies.
 
 ## Scope
 
@@ -31,7 +34,10 @@ Follow the kboat-notes skill for the source-note schema and the lifecycle. The s
 
 ## Daily pick mode
 
-A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question. It surfaces at most two web sources for today by inferring what the reader is currently interested in from two signals — their open-questions backlog and their recent Daily notes — plus any act-early read (time-sensitive and worth surfacing regardless of theme), and choosing in two stages: a cheap local pre-filter that shortlists candidates, then a body-read final judgment that fetches the shortlist's NotebookLM fulltext. It is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool. The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick).
+A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question.
+It surfaces at most two web sources for today by inferring what the reader is currently interested in from two signals — their open-questions backlog and their recent Daily notes — plus any act-early read (time-sensitive and worth surfacing regardless of theme), and choosing in two stages: a cheap local pre-filter that shortlists candidates, then a body-read final judgment that fetches the shortlist's NotebookLM fulltext.
+It is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool.
+The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick).
 
 1. `eval "$(mise env)"`, then run `kboat-pick candidates` once — one JSON with both interest signals and the candidate pool:
    - `daily_notes` — the recent Daily-note bodies, newest-first, within the look-back window (the last two weeks by default; the window used is echoed as `lookback_days`).
@@ -44,7 +50,9 @@ A second, write-capable mode, run by the `kboat-routine` after distillation — 
 6. `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices. Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
 7. Report the picks — each with what it matched (the open question, the dated note, or the act-early reason: a security advisory, a release, a best-practice worth adopting now), so the inference is visible and checkable — and that they are read in the Today view of the Sources Base (kboat-notes [Sources Base](../kboat-notes/references/bases.md#sources-base)). Report separately every candidate step 5 found with a notebook that no longer holds its original, and every one whose `notebooklm_id` named no notebook, by slug and by which it was, whether or not it was picked: that report is the whole of this mode's part in the loss, `kboat-notebook-health` has nothing to act on without the first, and nothing but this reaches the second.
 
-This mode never writes the Daily note. It reads NotebookLM (the shortlist's fulltext) but never writes to it. The picks are a spotlight, replaced each run.
+This mode never writes the Daily note.
+It reads NotebookLM (the shortlist's fulltext) but never writes to it.
+The picks are a spotlight, replaced each run.
 
 ## Limitations
 
