@@ -29,7 +29,8 @@ This member's Python gate is `mise run qa:py:feed-filter`; the browser ingestion
 
 ## Architecture
 
-The full module-by-module map, the CLI ↔ skills JSON contract, and the behavioral invariants live in [ARCHITECTURE.md](ARCHITECTURE.md) — read it before any change spanning more than one module. The load-bearing rules:
+The full module-by-module map, the CLI ↔ skills JSON contract, and the behavioral invariants live in [ARCHITECTURE.md](ARCHITECTURE.md) — read it before any change spanning more than one module.
+The load-bearing rules:
 
 - Deterministic logic is plain Python behind a single `feed-filter <subcommand>` CLI emitting JSON on stdout; that CLI is the **only** contract with the Claude Code skills, which never reach into Python internals.
 - The LLM is reserved for the genuinely fuzzy judgments:
