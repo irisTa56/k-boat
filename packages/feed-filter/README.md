@@ -107,7 +107,7 @@ A body behind the same gate the browser gather passed is therefore unreadable to
 ### Run the filter
 
 Use the `kboat-feed-run` skill.
-One pass gathers new entries across all non-forum sites, judges each against `prompts/selection.md` with a cheap **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and records everything processed as seen.
+One pass gathers new entries across every enabled non-forum site, judges each against `prompts/selection.md` with a cheap **haiku** subagent, writes the keeps as `Feeds/` notes in the vault, and records everything processed as seen.
 A run is bounded by a per-site cap (20) and a global cap (80) on entries judged.
 
 ### Search for pages by description
@@ -147,7 +147,7 @@ Unlike article sites (where a snapshot on registration prevents flooding the bac
 ### Run the forum filter
 
 Use the `kboat-forum-run` skill.
-One pass gathers Rule-A and Rule-B candidates from all registered Discourse forum sites, judges each with a subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
+One pass gathers Rule-A and Rule-B candidates from every enabled Discourse forum site, judges each with a subagent, writes the keeps as `Feeds/` notes in the vault, and advances each topic's poll counter.
 Judging is split by model — **Sonnet** for Rule A, **haiku** for Rule B — for the reason the `kboat-forum-run` skill gives.
 
 - **Rule A** — the topic OP (first post) is judged once for cross-domain interest, with the forum's own subject (`--forum-subject`) excluded as a match reason. Judged from the RSS snippet; fetches the topic page only when the snippet is too thin to decide.
