@@ -85,6 +85,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
    - `failed` — a note this run did not refresh.
    - A top-level `error` key in place of the counts means the pass never started: `Repos/` is absent, or its name is taken by something that is not a directory.
      - Report it and stop — a `Repos/` that is *there* and unreadable is an anomaly instead.
+
    Each `rename_collisions` entry carries a `reason` for why the slug was spoken for — one of four, decided by the pass rather than inferred here.
    Branch on it; never on whether a file happens to be at the `conflict` path, which is empty in two of the four — and in three under `--dry-run`, where nothing has been written yet:
    - `taken` — a note is there, and a human merges the two.
@@ -92,6 +93,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
        - If the `conflict` path appears in `adopted` as a `from` **whose `to` differs**, this run renamed that note away after the collision was decided, each note's plan being made as its turn comes.
        - On an applying run the slug is free by now, so the next run adopts it cleanly and nobody is needed.
        - Under `--dry-run` that entry is a prediction and the slug is still held: it means an apply would free it, not that anything has.
+
      An `adopted` entry whose `from` and `to` are equal moved nothing: it is a note that adopted a new identity under the name it already had, and the collision it sits beside is a real one.
    - `evicted` — iCloud holds the note behind a placeholder.
      - The merge waits on the download, not on the human.
@@ -100,6 +102,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once):
      - The apply writes that one and leaves the second to a human, whose merge is with a note that will exist by then.
    - `held_by_non_note` — the name is held by something that is not a note at all; a broken symlink is the one that occurs.
      - No run clears it, so report it as needing a human, even though the read error it files among the `anomalies` reads as transient there.
+
    Relay the `anomalies` entries by name too, not just their count, each with its `error` as it stands: every one is something the pass could not read as a repo note at all, so none of them entered `total`.
    Do not sort them for the reader; branch on what the entry looks like.
    - **The note's own shape** — mangled frontmatter, a `type` that is not `repo`, a `url` that will not parse, bytes that are not UTF-8.
