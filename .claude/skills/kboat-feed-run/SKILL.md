@@ -88,12 +88,12 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
    Repair it:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
-     - Where discovery comes back with a `rejection`, or exits non-zero because the index is gated, there is no pattern to heal with, and the only route left is that skill's "Writing the scrape pattern by hand", which needs the user's own article URLs.
-       - A `requires_browser` site usually ends here, because `discover` reads the index over plain HTTP — the fetch that site was registered to bypass.
-         - Run it anyway rather than skipping it: the flag is set once at registration and never re-checked, so an index that has gone back to server rendering heals for the cost of one request.
-       - Where nobody is there to supply those URLs, leave `sites.toml` alone and report the site as one that yields nothing until someone hand-writes a pattern.
-       - Never guess a pattern into `heal-site`, which snapshots everything the guess matched as seen with no note.
-         - An over-broad guess is the dangerous one: it burns the whole live index into the seen-store, and none of those articles is ever written.
+   - **Heal only with a pattern discovery produced.** Where it hands back no article cluster — a `rejection`, feed candidates instead, or a non-zero exit — this step is done for that site: leave `sites.toml` alone and report it with what discovery returned.
+     - Never write a pattern of your own here.
+       - `heal-site` snapshots everything the pattern matched as seen with no note, so an over-broad guess burns the whole live index and none of those articles is ever written.
+     - The repairs from here are registration work rather than the run's, which is why the run reports rather than attempts them.
+       - A site not already flagged whose index has gone JS-rendered needs `requires_browser`, and no CLI writes that flag — it is a hand-edit of `sites.toml`.
+       - A site already flagged needs a pattern hand-written from the user's own article URLs, per `kboat-add-feed-site`'s "Writing the scrape pattern by hand".
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
@@ -130,7 +130,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
-- Unhealed: each flagged site left as it was for want of a hand-written pattern, which no counter escalates — it keeps yielding nothing, and reporting it here is the only thing that reaches a human.
+- Unhealed: each flagged site discovery could not supply a pattern for, with what it returned instead, which no counter escalates — the site keeps yielding nothing, and reporting it here is the only thing that reaches a human.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)

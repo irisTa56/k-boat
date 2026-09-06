@@ -123,11 +123,12 @@ The anti-bot handling covers Cloudflare's first-line bot check only (it normaliz
 That path is canonicalized first: scheme, host, query and fragment are stripped, duplicate slashes collapse, and the trailing slash is dropped from everything but the root.
 So a pattern written against the whole URL matches nothing, and neither does one that requires a trailing slash — however the site writes its permalinks, the regex never sees one.
 Discovery's own patterns are the shape to copy: article links at `/blog/<slug>` give `^/blog/[^/]+/?$`, with the per-article segment generalized to `[^/]+` rather than taken from any one URL.
-The plain fetch that would have shown you those paths is the one that just failed, so ask the user for two or three of the site's article URLs and write a pattern of that form.
+Its fetch returned the page but not the article links, so it cannot show you their paths — ask the user for two or three of the site's article URLs and write a pattern of that form.
 Keep the segments that are the same for every article, and generalize each one that varies — a slug to `[^/]+`, a date to `\d{4}/\d{2}/\d{2}`.
-A prefix the samples happen to share is not the same thing: two posts from one month share `/2024/03`, and a pattern anchored there registers cleanly and then stops matching when the month rolls.
+Anchor both ends, since the pattern is `re.search`ed rather than matched against the whole path: unanchored, `/blog/[^/]+` also takes `/blog/tags/python`, `/blog/page/2` and `/category/blog/roundup`.
+A prefix the samples happen to share is not the same thing as a fixed segment: two posts from one month share `/2024/03`, and a pattern anchored there registers cleanly and then stops matching when the month rolls.
 
-Check those URLs sit on the host the index URL **lands on** after redirects, which is what the same-host filter compares against.
+Check those URLs sit on the host the index URL **lands on** after redirects, which is what the same-host filter compares against — step 1's rejection message names that host, so you already have it.
 A link off it is dropped before the regex ever sees it, so where the articles live on another host — `blog.example.com` under an `example.com` index — no pattern reaches them; register that host's own listing page as `index_url` instead, and tell the user where it has none.
 
 Nothing then checks the pattern against the site.
@@ -138,6 +139,9 @@ The run's self-heal re-derives a pattern by re-running discovery, which reads th
 Neither signal says why.
 The pattern is one cause among several — a link the same-host filter dropped is another, and so is a list rendered after the browser's load-event capture — and nothing bounds that set, so it is not a diagnosis to work through.
 Report to the user what you registered, what came back, and the article URLs you worked from, rather than rewriting the regex against a cause you cannot see.
+
+A pattern that matches too much is silent in both signals: `snapshotted` is non-zero and `zero_links` never fires, so every later run judges the tag and pagination pages it took and can write them as notes.
+The one moment it shows is that same `snapshotted` count — weigh it against the number of articles the index actually lists, and read a count well above that as a pattern that lost an anchor.
 
 Repair a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, never by re-running `add-site`.
 `add-site` snapshots the back-catalog before it rejects the duplicate id, so re-running it marks that site's articles seen and still leaves the broken pattern in place.
