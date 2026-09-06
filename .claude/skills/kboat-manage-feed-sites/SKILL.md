@@ -42,8 +42,9 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
 2. **For a scrape site, settle with the user whether the move changed the article URLs**, before touching the row.
-   The seen-store keys an article on its canonical URL, so where the move changed those URLs every article the new index carries is unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
-   Both ways of being wrong cost and neither is recoverable: skipping the re-snapshot floods the vault, and running it where the URLs did not change buries whatever the site published while it was failing, unjudged.
+   The host is part of that URL — the scraper keys an article on scheme, host and path together — so a new domain or subdomain changes every one of them however familiar the paths look; only a same-host rename, or an old URL that had been redirecting to the new host while the runs still succeeded, leaves the question open.
+   Where they changed, every article the new index carries is unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
+   Where the answer will not settle, skip the re-snapshot rather than splitting the difference: it can still be run later and what arrives meanwhile is notes in the user's own queue, while running it wrongly buries whatever the site published while it was failing, unjudged and past reach.
    Ask before the edit rather than at step 5, because from step 3 the site is enabled on the new URL with no snapshot under it, and the next scheduled run does not wait for an answer.
    A feed site has no re-snapshot to leave pending and a forum keys on ids rather than URLs, so neither has anything to settle here.
 3. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
