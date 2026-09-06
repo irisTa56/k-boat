@@ -41,17 +41,20 @@ No `feed-filter` subcommand edits a URL, so that value is a hand-edit: `sites.to
 What goes in is a URL confirmed to serve this same site, never one inferred from the error page that raised the suspicion — where the move is only suspected, report the candidate and leave the row alone.
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
-2. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
+2. **Settle with the user whether the move changed the article URLs**, before touching the row.
+   The seen-store keys an article on its canonical URL, so where the move changed those URLs every article the new feed or index carries is unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
+   Whether it changed them is not something you can read off the tool: a gather resolves article links against the URL the index **lands on**, so a row that had been redirecting to the new host may have been keying its articles there for as long as the redirect has been up, and neither that date nor the last successful gather's is reported anywhere.
+   Put it to the user rather than settling it yourself, because both ways of being wrong cost — skipping the re-snapshot floods the vault, and running it where the URLs did not change buries whatever the site published while it was failing, unjudged and with no way back.
+   Ask it here rather than at step 5, because from step 3 the site is enabled on the new URL with no snapshot under it, and the next scheduled run does not wait for an answer.
+3. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
    - Change the value only, and leave the row's other fields where they are.
      A row's kind comes from which of `feed_url`, `article_url_pattern` and `forum_url` it sets — the loader takes exactly one and rejects anything else — while `index_url` is not one of those three and is instead required alongside `article_url_pattern`.
    - Give the user the old value when you report the change.
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
-3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
+4. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
-4. **Say what the move costs, and re-snapshot where that is the answer.** The seen-store keys an article on its canonical URL, so where the move changed those URLs every article the new feed or index carries is unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
-   Whether it changed them is not something you can read off the tool: a gather resolves article links against the URL the index **lands on**, so a row that had been redirecting to the new host may have been keying its articles there for as long as the redirect has been up, and neither that date nor the last successful gather's is reported anywhere.
-   Put it to the user rather than settling it yourself, because both ways of being wrong cost — skipping the re-snapshot floods the vault, and running it where the URLs did not change buries whatever the site published while it was failing, unjudged and with no way back.
-   - A **scrape** site: `feed-filter heal-site --site-id <id>` re-scrapes it as step 2 now registers it and marks the matches seen, writing no config.
+5. **Carry out step 2's answer.**
+   - A **scrape** site: `feed-filter heal-site --site-id <id>` re-scrapes it as step 3 now registers it and marks the matches seen, writing no config.
      Read the `snapshotted` count it reports rather than its exit status: a non-zero exit means the re-scrape failed before anything was written, so retry it, and a zero says nothing about what matched.
      That count is what the re-scrape matched rather than what it newly buried — a row already seen is left as it was — so it bounds the loss from above, and a 0 means nothing matched at all.
      Report the count rather than a cause either way, since nothing bounds the set of causes (`kboat-add-feed-site`, "Writing the scrape pattern by hand").

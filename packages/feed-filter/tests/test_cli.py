@@ -978,6 +978,29 @@ def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
     assert rows == {"https://new.example.com/posts/2024/a"}
 
 
+def test_heal_site_without_pattern_rejects_an_uncompilable_stored_pattern(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # With no --pattern there is no update_pattern to reject the regex later, so the
+    # validate call before the fetch is the only guard on the stored one — and the row
+    # can carry an uncompilable pattern, since load_sites checks shape and not syntax
+    # and sites.toml is hand-edited. Without the guard this reaches scrape.py's
+    # re.compile and raises a bare re.error, which main does not catch.
+    _no_client(monkeypatch)
+    sites_path().write_text(
+        "[[site]]\n"
+        'id = "s1"\n'
+        'name = "Scrape"\n'
+        'index_url = "https://e.example.com/blog"\n'
+        "article_url_pattern = '/a('\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
+
+    assert cli.main(["heal-site", "--site-id", "s1"]) == 1
+    assert "not a valid regex" in capsys.readouterr().err
+
+
 def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
