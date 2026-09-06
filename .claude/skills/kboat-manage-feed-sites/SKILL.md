@@ -51,12 +51,13 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
 4. **Where the move changed the article URLs too, re-snapshot the site.** The seen-store keys an article on its canonical URL, so every article the new feed or index carries is then unseen, and the next runs judge them a capful at a time and write the keeps as notes.
    - A **scrape** site's articles always sit on the index's own host, since the scraper drops a link to any other, so a changed host is itself the signal.
      Run `feed-filter heal-site --site-id <id> --pattern <the pattern the row already carries>`: it re-scrapes the site as step 2 now registers it and marks the matches seen, and rewriting the stored pattern to its own value changes nothing.
-     Pass that pattern unescaped — both `list-sites` and `sites.toml` show it with every backslash doubled — because `heal-site` writes whatever you pass into the row, matching or not.
+     Pass that pattern single-quoted and unescaped — the shell eats an unquoted backslash, and both `list-sites` and `sites.toml` show it with every backslash doubled — because `heal-site` writes whatever you pass into the row, matching or not.
      Read the `snapshotted` count it reports rather than its exit status, which is 0 either way.
      What a non-zero count covers is what the runs will now never judge or write, and a 0 means nothing was marked seen — so report the count and the pattern you passed rather than a cause, since nothing bounds the set of causes (`kboat-add-feed-site`, "Writing the scrape pattern by hand").
    - A **feed** site names its articles' URLs independently of where the feed is served, so read them off the new feed rather than off its host.
      There is no command for it — `heal-site` takes scrape sites only — so say when reporting the change that the next runs will work through what the feed carries.
-   - A **forum** site needs nothing: its dedupe keys on the forum's own topic and post ids rather than on a URL, so a move does not disturb it.
+   - A **forum** site needs no re-snapshot: its dedupe keys on the forum's own topic and post ids rather than on a URL, so nothing is re-judged.
+     Report one consequence of the move, though: a `Feeds/` note is named by a hash of the topic URL, which is built from the `forum_url` you just changed, so a topic already filed is written as a second note rather than resurfaced when a later post re-triggers it.
 
 That is the whole of the fix, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
 
