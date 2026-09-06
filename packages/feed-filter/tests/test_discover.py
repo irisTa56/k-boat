@@ -208,9 +208,8 @@ def test_rejection_no_article_clusters() -> None:
 
 
 def test_rejection_needs_js_sparse_html() -> None:
-    # An HTML body clustering did read, and found nothing article-shaped in. This is
-    # the only shape `needs_js` stands for, so it must not widen to the two bodies
-    # below, which clustering never saw.
+    # An HTML body clustering did read, and found nothing article-shaped in. `needs_js`
+    # must not widen to the two bodies below, which clustering never saw.
     page = b"<html><body><p>loading...</p></body></html>"
     client = _client({"/": (200, page, "text/html")})
     with client:

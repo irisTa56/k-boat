@@ -86,8 +86,9 @@ class DiscoveryRejection:
     - ``no_article_clusters``: the index page has dense link clusters but all of
       them look like navigation relative to the supplied URL — point at the
       article-listing page instead.
-    - ``needs_js``: an HTML body with no qualifying link cluster at all, so the
-      page likely renders its articles with JavaScript and is unsupported.
+    - ``needs_js``: clustering ran over a non-empty HTML body and came back with no
+      qualifying link cluster, so the page most likely renders its articles with
+      JavaScript and is unsupported.
     - ``no_html_body``: the body was empty or its content type did not label it
       HTML, so clustering never ran and nothing was established about the page's
       article links.
