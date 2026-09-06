@@ -22,9 +22,9 @@ shape:
   alike and ``SiteConfig.kind`` is binary, so the rss/atom distinction
   loose-feeds tracked is intentionally discarded — every feed candidate is
   ``feed_type="feed"``, every scrape candidate ``"scrape"``.
-- **Rejection is data, not an exception.** A soft failure (no article cluster /
-  likely-JS page) is returned as ``DiscoveryResult.rejection`` rather than
-  raised, so the sync CLI emits ``{candidates, rejection}`` directly.
+- **Rejection is data, not an exception.** A soft failure is returned as
+  ``DiscoveryResult.rejection``, carrying one of the ``RejectionReason`` cases,
+  rather than raised, so the sync CLI emits ``{candidates, rejection}`` directly.
   Only a transport failure of the *initial* URL raises — ``fetch`` raises the
   typed ``FetchError``, which propagates for the CLI to map to a non-zero exit.
   Candidate-probe fetch failures are absorbed (a 404 typical-path is not a feed).
@@ -71,18 +71,25 @@ _TYPICAL_PATH_CAP = 12
 _SLUG_TOKEN = "<slug>"
 _CLUSTER_MIN_SIZE = 5
 
-RejectionReason = Literal["needs_js", "no_article_clusters"]
+RejectionReason = Literal["needs_js", "no_article_clusters", "no_html_body"]
 
 
 @dataclass(frozen=True)
 class DiscoveryRejection:
     """Why discovery produced no candidate, when the cause is actionable.
 
-    ``no_article_clusters``: the index page has dense link clusters but all of
-    them look like navigation relative to the supplied URL — point at the
-    article-listing page instead. ``needs_js``: no qualifying link cluster at all
-    (or a non-HTML body), so the page likely renders its articles with
-    JavaScript and is unsupported.
+    Each reason is the caller's whole basis for deciding what to do next, so the
+    three stay disjoint and ``message`` carries no discriminating load — it names
+    the URL and the counts, never the case.
+
+    - ``no_article_clusters``: the index page has dense link clusters but all of
+      them look like navigation relative to the supplied URL — point at the
+      article-listing page instead.
+    - ``needs_js``: an HTML body with no qualifying link cluster at all, so the
+      page likely renders its articles with JavaScript and is unsupported.
+    - ``no_html_body``: the body was empty or its content type did not label it
+      HTML, so clustering never ran and nothing was established about the page's
+      article links.
     """
 
     reason: RejectionReason
@@ -296,7 +303,8 @@ def _scrape_candidates(
     Article clusters → candidates with descendants of the supplied URL first
     (most likely the section the operator named), then the rest preserving the
     size-desc order. Qualifying-but-all-navigation → ``no_article_clusters``. No
-    qualifying cluster at all → ``needs_js``.
+    qualifying cluster at all → ``needs_js``, which the caller has already earned
+    by establishing that ``html`` is a non-empty HTML body.
     """
     clusters = _cluster_link_patterns(html, final_url)
     article_clusters = _drop_navigation_clusters(clusters, source_url) if clusters else []
@@ -397,9 +405,10 @@ def discover(url: str, *, client: httpx.Client) -> DiscoveryResult:
         )
         return DiscoveryResult(candidates=feed_candidates, rejection=None)
 
-    # Layer (d): index-page clustering — only on an HTML body. A non-HTML,
-    # non-feed body falls through to ``needs_js`` (the cluster algorithm is
-    # meaningful only on HTML).
+    # Layer (d): index-page clustering — only on a non-empty HTML body, the sole
+    # input the cluster algorithm is meaningful on. Anything else falls through to
+    # ``no_html_body``, which is a claim about the response and not about the
+    # page's links: clustering never ran, so ``needs_js`` would be unearned here.
     if text and is_html:
         candidates, rejection = _scrape_candidates(text, final_url, url)
         return DiscoveryResult(candidates=candidates, rejection=rejection)
@@ -407,7 +416,7 @@ def discover(url: str, *, client: httpx.Client) -> DiscoveryResult:
     return DiscoveryResult(
         candidates=(),
         rejection=DiscoveryRejection(
-            reason="needs_js",
-            message=f"no feed found and {final_url} is not an HTML page to scrape",
+            reason="no_html_body",
+            message=f"no feed found and {final_url} returned no HTML body to scrape",
         ),
     )

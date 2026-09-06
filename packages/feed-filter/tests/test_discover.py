@@ -208,6 +208,9 @@ def test_rejection_no_article_clusters() -> None:
 
 
 def test_rejection_needs_js_sparse_html() -> None:
+    # An HTML body clustering did read, and found nothing article-shaped in. This is
+    # the only shape `needs_js` stands for, so it must not widen to the two bodies
+    # below, which clustering never saw.
     page = b"<html><body><p>loading...</p></body></html>"
     client = _client({"/": (200, page, "text/html")})
     with client:
@@ -218,14 +221,26 @@ def test_rejection_needs_js_sparse_html() -> None:
     assert result.rejection.reason == "needs_js"
 
 
-def test_rejection_needs_js_non_html() -> None:
+def test_rejection_no_html_body_non_html() -> None:
     client = _client({"/": (200, b'{"items": []}', "application/json")})
     with client:
         result = discover("https://example.com/", client=client)
 
     assert result.candidates == ()
     assert result.rejection is not None
-    assert result.rejection.reason == "needs_js"
+    assert result.rejection.reason == "no_html_body"
+
+
+def test_rejection_no_html_body_empty_html() -> None:
+    # An empty body labelled HTML lands here too: the content type alone does not
+    # earn `needs_js`, because there was nothing for clustering to read.
+    client = _client({"/": (200, b"", "text/html")})
+    with client:
+        result = discover("https://example.com/", client=client)
+
+    assert result.candidates == ()
+    assert result.rejection is not None
+    assert result.rejection.reason == "no_html_body"
 
 
 def test_multiple_feed_candidates_dedup_on_redirect() -> None:
@@ -394,10 +409,11 @@ def test_unparseable_body_rejects_instead_of_raising(
     # exercised because the guard's whole claim is that it does not enumerate types — a
     # `RuntimeError`-only case would pass against a narrowed `except` and pin nothing.
     #
-    # Which `reason` such a page lands on is deliberately not asserted. Today it is
-    # `needs_js`, which names the wrong cause for a body that was never read; that is
-    # pre-existing and a question for whoever gives the case its own reason. Pinning it
-    # here would make the misattribution a contract.
+    # Which `reason` such a page lands on is deliberately not asserted. The body is
+    # HTML and non-empty, so it reaches clustering and comes back `needs_js` — which
+    # names the wrong cause for a body the parser refused, and is not `no_html_body`
+    # either. The case wants a reason of its own; until it has one, pinning what it
+    # gets today would make the misattribution a contract.
     def boom(_html: str) -> object:
         raise raised("could not parse")
 
