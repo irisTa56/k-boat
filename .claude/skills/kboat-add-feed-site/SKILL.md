@@ -39,6 +39,9 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
      - `no_html_body` → a body with nothing in it, or one the server did not label as HTML, so discovery stopped before the clustering step and has established nothing about the page's article links.
        - Ask the user for a URL that serves the site's articles as HTML — its article-listing page, or a feed — and re-run discovery on that.
        - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
+     - `unparseable_body` → the body had content and was labelled HTML, but the parser refused it, so discovery established nothing about the page's article links.
+       - Ask the user for a different URL that serves the site's articles — its article-listing page, or a feed — and re-run discovery on that.
+       - Do not offer `--requires-browser` here: the browser path hands its HTML to the same parser that just refused this body, with no guard around the call, so it fails at gather time instead of returning a rejection.
    - Otherwise you have one or more `candidates`.
 
 2. **Pick the candidate.**
