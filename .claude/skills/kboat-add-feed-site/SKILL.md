@@ -64,7 +64,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
    That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever written as notes.
    A non-zero exit *before* that snapshot — the back-catalog fetch failing — leaves nothing written, so report it and retry.
-   One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen, and [Writing the scrape pattern by hand](#writing-the-scrape-pattern-by-hand) has what to do instead.
+   One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen.
 
 5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
    Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
@@ -123,6 +123,9 @@ The anti-bot handling covers Cloudflare's first-line bot check only (it normaliz
 `article_url_pattern` is a Python regex, `re.search`ed against the **path** of each same-host link on the index page.
 That path is canonicalized first: scheme, host, query and fragment are stripped, duplicate slashes collapse, percent-escapes are upper-cased, and the trailing slash is dropped from everything but the root.
 So a pattern written against the whole URL matches nothing, and neither does one that requires a trailing slash — however the site writes its permalinks, the regex never sees one.
+Where the article's identity is in the query rather than the path — `?p=123`, `index.php?post=<slug>` — no pattern reaches it: the query is stripped, so every article canonicalizes to the same path and one entry stands for all of them.
+That site cannot be scraped by pattern at all, so report it back rather than registering it; `snapshotted` comes back non-zero and `zero_links` never fires, so nothing later would tell you.
+
 A non-ASCII segment is the other way to miss: the regex sees what the `href` holds, usually percent-encoded and now upper-cased, while the URL a user reads off their address bar is decoded.
 Neither spelling is safe on its own, so write both — `^/(記事|%E8%A8%98%E4%BA%8B)/[^/]+$` matches under either — rather than generalizing the segment to `[^/]+`, which drops the one literal telling articles from navigation.
 Discovery's own patterns are the shape to copy: article links at `/blog/<slug>` give `^/blog/[^/]+/?$`, with the per-article segment generalized to `[^/]+` rather than taken from any one URL.
@@ -152,8 +155,8 @@ The flood guard hides the rest — everything the pattern took at registration i
 Report the pattern you registered and the count it snapshotted along with the rest, and leave the reading of that count to the user, who can see the page.
 
 Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
-A wrong `index_url` is not a pattern and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, and it would rewrite the pattern regardless and report `snapshotted: 0`.
-That field is `kboat-manage-feed-sites`' "Fix a site that moved", which hand-edits it by design.
+A wrong `index_url` is not a pattern, and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, so no correction it accepts fixes that site.
+Report that case rather than reaching for a command.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
 Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
 That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` marks everything the new pattern matched as seen with no note, so an over-broad correction burns the whole live index and those articles are never written.
