@@ -1211,6 +1211,30 @@ def test_resnapshot_site_rejects_feed_site(
     assert "resnapshot-site" in err
 
 
+def test_resnapshot_site_requires_a_site_id(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The sibling of test_heal_site_requires_a_pattern, and the silent half of the
+    # pair: _select_sites(None) returns the whole registry, so a lapsed
+    # required=True would take rows[0] and re-snapshot an arbitrary site at exit 0,
+    # marking its live index seen with kept=NULL that nothing un-sees.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("re-scraped"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["resnapshot-site"])
+    assert excinfo.value.code == 2
+
+
 def test_resnapshot_site_unknown_id_exits_nonzero(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
