@@ -1,6 +1,6 @@
 ---
 name: kboat-add-feed-site
-description: Register a new site in feed-filter from its URL alone. For an article feed/scrape site, run discovery, pick the article cluster, and snapshot the back-catalog; for a Discourse forum, register it with add-forum (no discovery, no snapshot). Use when the user wants to add/register a site or a Discourse forum to feed-filter, whether by URL or by name.
+description: Register a new site in feed-filter from its URL alone. For an article feed/scrape site, run discovery, pick the article cluster, and snapshot the back-catalog; for a Discourse forum, register it with add-forum (no discovery, no snapshot). Use when the user wants to add/register a site or a Discourse forum to feed-filter, whether by URL or by name, and when a registered scrape site's `article_url_pattern` has to be corrected — a run reporting a site it could not heal ends here.
 ---
 
 # Register a site in feed-filter
@@ -133,7 +133,8 @@ A prefix the samples happen to share is not the same thing as a fixed segment: t
 Check those URLs sit on the host the index URL **lands on** after redirects, which is what the same-host filter compares against — step 1's rejection message names that host, so you already have it.
 A link off it is dropped before the regex ever sees it, and the hostnames are compared for exact equality — so `www.example.com` is off an `example.com` index as surely as `blog.example.com` is.
 The `www` split is the one to look for, because it is the one you answer yes to: an index reached at the apex whose page writes absolute `www` permalinks matches nothing, and reads as a bad regex.
-Where the articles really do live on another host, no pattern reaches them at all — register the host the links use as `index_url` instead, and tell the user where it has no listing page.
+For the `www` split the repair is the same page under the right host: register the listing page as the links spell it, path and all, rather than the bare host — a homepage as `index_url` matches whatever few posts it happens to feature and reports a clean site.
+Where the articles really do live on another site, no pattern reaches them at all: find that site's own listing page and register that, and tell the user where it has none.
 
 Nothing then checks the pattern against the site.
 `add-site` and `heal-site` both check only that it compiles, so `https://example.com/blog/.*` — a valid regex that no path can match — is accepted at exit 0 and the site then yields nothing.
