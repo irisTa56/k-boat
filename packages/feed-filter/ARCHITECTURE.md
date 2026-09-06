@@ -60,7 +60,7 @@ Side effects and orchestration:
 - `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
   - `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
-  - Each browser-using command (`new-entries`, `add-site`, `heal-site`) gates on the Playwright install and tears the browser down in a `finally`.
+  - Each browser-using command (`new-entries`, `add-site`, `heal-site`, `resnapshot-site`) gates on the Playwright install and tears the browser down in a `finally`.
 
 ## Discourse forum adapter (`src/feed_filter/`)
 
@@ -115,7 +115,8 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `entry-body` | print one gathered entry's full cached body (`{url, body}` with `url` canonicalized; `body` is `null` on a cache miss) for the judge |
 | `remind` | write a kept entry as a `Feeds/` note and record it seen (`--wall` flags a login/paywall page, `--summary` optional) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
-| `heal-site` | re-snapshot a scrape site, rewriting its pattern when `--pattern` is given |
+| `heal-site` | rewrite a scrape pattern and re-snapshot |
+| `resnapshot-site` | re-scrape a scrape site under its stored pattern and mark the matches seen, writing no config |
 | `disable-site` / `enable-site` | pause / resume a site without losing it |
 | `add-forum` | register a Discourse forum (writes config only, no snapshot) |
 | `forum-new` | gather Rule-A and Rule-B candidates across forum sites |
@@ -138,7 +139,7 @@ Both filter on `enabled` as well, so a paused site reaches no gather at all and 
   - an article site: discover → pick cluster → `add-site`;
   - a Discourse forum: confirm the instance → infer `--forum-subject` → `add-forum`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
-- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, plus a `heal-site` re-snapshot for a **scrape** site whose article URLs changed — the feed path has no such command).
+- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, plus a `resnapshot-site` for a **scrape** site whose article URLs changed — the feed path has no such command).
 - `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
@@ -184,7 +185,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - The absorbed exception is flagged `sites[].unexpected_error`, the same typed classification the article path emits, and `discourse_fetches` is a rough figure rather than an exact total: it counts attempts, and only those a returned result carried home, so a site whose admission the per-site boundary caught reports none of the calls it made.
   - One forum failure still has no signal of any kind: a moved domain whose old host answers the feeds 200 with a non-feed page admits nothing while reporting a wholly clean status (`AdmitResult.all_feeds_failed` keys on the fetch, not on what parsed). The article path catches the analogue with `zero_links`; the forum path needs a typed zero-admission signal, and until it has one the case is unflagged rather than compensated in skill prose — deriving it from the error text is exactly what the counter's typed-signal rule refuses.
 - **Operational notices never become notes.** The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's summary, not as feed notes.
-- **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index. `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it). Omitting `--pattern` re-scrapes under the **stored** pattern and writes no config at all — the re-snapshot a repointed site needs, which `kboat-manage-feed-sites` depends on leaving the row byte-identical.
+- **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index. `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it). `resnapshot-site` re-scrapes under the **stored** pattern and writes no config at all, which is the re-baseline a repointed site needs (`kboat-manage-feed-sites`) and the reason it is a separate spelling: both mark every match seen with `kept=NULL` and nothing un-sees a row, so which one runs must never turn on an argument the caller left off.
   - The run heals only where discovery read the page the gather reads and an article cluster can be named in what came back (`kboat-feed-run` step 4), so `cmd_discover`'s plain-HTTP fetch is part of this contract rather than an implementation detail.
   - Giving that command the browser transport would make a `requires_browser` site heal-able and falsify the condition wherever it is stated — in `kboat-feed-run`, in `kboat-add-feed-site`'s browser section, and in README's "Failure and self-heal behavior".
 - **Run bounds.** Per-site cap 20 and global cap 80 on entries/candidates judged (`DEFAULT_PER_SITE_CAP` / `DEFAULT_GLOBAL_CAP` in `config.py`).

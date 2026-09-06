@@ -939,7 +939,7 @@ def test_heal_site_snapshots_exactly_the_new_pattern_matches(
     assert rows == {"https://e.example.com/posts/a", "https://e.example.com/posts/b"}
 
 
-def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
+def test_resnapshot_site_uses_the_stored_pattern_and_writes_no_config(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The re-snapshot case a repointed site needs: the stored pattern is re-scraped
@@ -969,7 +969,7 @@ def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
 
     monkeypatch.setattr(cli, "fetch_entries", fake_fetch_entries)
 
-    assert cli.main(["heal-site", "--site-id", "s1"]) == 0
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 0
     assert captured["pattern"] == stored
     assert _out(capsys) == {"site_id": "s1", "pattern": stored, "snapshotted": 1}
     assert sites_path().read_bytes() == before
@@ -978,7 +978,7 @@ def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
     assert rows == {"https://new.example.com/posts/2024/a"}
 
 
-def test_heal_site_snapshotted_counts_matches_not_new_rows(
+def test_resnapshot_site_snapshotted_counts_matches_not_new_rows(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `snapshotted` is the re-scrape's match count, not the rows it inserted, and
@@ -1007,21 +1007,17 @@ def test_heal_site_snapshotted_counts_matches_not_new_rows(
         ],
     )
 
-    assert cli.main(["heal-site", "--site-id", "s1"]) == 0
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 0
     assert _out(capsys)["snapshotted"] == 2
     # Second run: both URLs are already in the store, so no row is inserted.
-    assert cli.main(["heal-site", "--site-id", "s1"]) == 0
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 0
     assert _out(capsys)["snapshotted"] == 2
 
 
-def test_heal_site_empty_pattern_is_given_not_omitted(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Optional --pattern splits omitted (re-snapshot, no config write) from empty, and
-    # only ``is not None`` keeps them apart: "" compiles, so validate_article_url_pattern
-    # passes it, and update_pattern would write article_url_pattern = "" — after which
-    # load_sites rejects the whole registry and every subcommand is dead until the
-    # gitignored file is hand-repaired. Falling back on falsiness instead reaches that.
+def test_heal_site_requires_a_pattern(state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # heal-site rewrites config and resnapshot-site does not, and both mark every match
+    # seen with kept=NULL that nothing un-sees. Which one runs must never be decided by
+    # an argument left off, so omitting --pattern is argparse's exit 2, not a re-snapshot.
     _no_client(monkeypatch)
     add_site(
         sites_path(),
@@ -1032,14 +1028,14 @@ def test_heal_site_empty_pattern_is_given_not_omitted(
             article_url_pattern=r"^/posts/[^/]+/?$",
         ),
     )
-    before = sites_path().read_bytes()
-    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched"))
 
-    assert cli.main(["heal-site", "--site-id", "s1", "--pattern", ""]) == 1
-    assert sites_path().read_bytes() == before
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["heal-site", "--site-id", "s1"])
+    assert excinfo.value.code == 2
 
 
-def test_heal_site_without_pattern_rejects_an_uncompilable_stored_pattern(
+def test_resnapshot_site_rejects_an_uncompilable_stored_pattern(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # With no --pattern there is no update_pattern to reject the regex later, so the
@@ -1058,7 +1054,7 @@ def test_heal_site_without_pattern_rejects_an_uncompilable_stored_pattern(
     )
     monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
 
-    assert cli.main(["heal-site", "--site-id", "s1"]) == 1
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
     assert "not a valid regex" in capsys.readouterr().err
 
 
