@@ -131,7 +131,9 @@ Anchor both ends, since the pattern is `re.search`ed rather than matched against
 A prefix the samples happen to share is not the same thing as a fixed segment: two posts from one month share `/2024/03`, and a pattern anchored there registers cleanly and then stops matching when the month rolls.
 
 Check those URLs sit on the host the index URL **lands on** after redirects, which is what the same-host filter compares against — step 1's rejection message names that host, so you already have it.
-A link off it is dropped before the regex ever sees it, so where the articles live on another host — `blog.example.com` under an `example.com` index — no pattern reaches them; register that host's own listing page as `index_url` instead, and tell the user where it has none.
+A link off it is dropped before the regex ever sees it, and the hostnames are compared for exact equality — so `www.example.com` is off an `example.com` index as surely as `blog.example.com` is.
+The `www` split is the one to look for, because it is the one you answer yes to: an index reached at the apex whose page writes absolute `www` permalinks matches nothing, and reads as a bad regex.
+Where the articles really do live on another host, no pattern reaches them at all — register the host the links use as `index_url` instead, and tell the user where it has no listing page.
 
 Nothing then checks the pattern against the site.
 `add-site` and `heal-site` both check only that it compiles, so `https://example.com/blog/.*` — a valid regex that no path can match — is accepted at exit 0 and the site then yields nothing.
@@ -142,9 +144,9 @@ Neither signal says why.
 The pattern is one cause among several — a link the same-host filter dropped is another, and so is a list rendered after the browser's load-event capture — and nothing bounds that set, so it is not a diagnosis to work through.
 Report to the user what you registered, what came back, and the article URLs you worked from, rather than rewriting the regex against a cause you cannot see.
 
-A pattern that matches too much is silent in both signals: `snapshotted` is non-zero and `zero_links` never fires.
-The flood guard hides most of the damage as well — everything the pattern took at registration is snapshotted seen, so the junk that ever reaches a judge is what appears afterwards, a new tag page or the next pagination link.
-The one moment it shows is that same `snapshotted` count, so ask the user how many articles their index lists — you cannot read the page yourself, which is why you are here — and read a count well above that as a pattern that lost an anchor.
+A pattern that matches too much has no signal at all: `snapshotted` is non-zero, `zero_links` never fires, and the count itself reads nothing, since it takes every matching link on the page and a "recent posts" or "popular" sidebar carries real article links too.
+The flood guard hides the rest — everything the pattern took at registration is snapshotted seen, so the junk that ever reaches a judge is what appears afterwards, a new tag page or the next pagination link.
+Report the pattern you registered and the count it snapshotted along with the rest, and leave the reading of that count to the user, who can see the page.
 
 Repair a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.

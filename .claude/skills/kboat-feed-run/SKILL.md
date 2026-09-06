@@ -87,7 +87,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
    Heal it where the condition below holds, and report it where it does not:
-   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
+   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
    - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned.
      - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
      - Naming the cluster is your judgement and not a check on the output: a tag or pagination cluster comes back as a candidate like any other and discovery does not tell them apart, and a feed candidate carries no `article_url_pattern` at all.
