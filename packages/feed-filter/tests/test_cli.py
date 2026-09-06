@@ -978,6 +978,42 @@ def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
     assert rows == {"https://new.example.com/posts/2024/a"}
 
 
+def test_heal_site_snapshotted_counts_matches_not_new_rows(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `snapshotted` is the re-scrape's match count, not the rows it inserted, and
+    # kboat-manage-feed-sites reads it that way: it bounds the loss from above, and a 0
+    # means nothing *matched*. The re-snapshot case is where the two diverge, since a
+    # repeat run matches only already-seen URLs — so heal twice and require the count
+    # to hold. Reporting inserted rows instead would make 0 mean "all already seen",
+    # inverting what the skill tells the reader to conclude.
+    _no_client(monkeypatch)
+    stored = r"^/posts/[^/]+/?$"
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=stored,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "fetch_entries",
+        lambda *a, **k: [
+            _entry("https://e.example.com/posts/a", kind="scrape"),
+            _entry("https://e.example.com/posts/b", kind="scrape"),
+        ],
+    )
+
+    assert cli.main(["heal-site", "--site-id", "s1"]) == 0
+    assert _out(capsys)["snapshotted"] == 2
+    # Second run: both URLs are already in the store, so no row is inserted.
+    assert cli.main(["heal-site", "--site-id", "s1"]) == 0
+    assert _out(capsys)["snapshotted"] == 2
+
+
 def test_heal_site_empty_pattern_is_given_not_omitted(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
