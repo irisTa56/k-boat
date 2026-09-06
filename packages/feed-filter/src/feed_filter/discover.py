@@ -78,9 +78,10 @@ RejectionReason = Literal["needs_js", "no_article_clusters", "no_html_body"]
 class DiscoveryRejection:
     """Why discovery produced no candidate, when the cause is actionable.
 
-    Each reason is the caller's whole basis for deciding what to do next, so the
-    three stay disjoint and ``message`` carries no discriminating load — it names
-    the URL and the counts, never the case.
+    ``reason`` is the caller's whole basis for deciding what to do next: the three
+    are disjoint, and a caller must never parse ``message`` to tell them apart.
+    ``message`` is the human-facing line — free to name the case and whatever
+    counts it has, and free to be reworded without breaking a caller.
 
     - ``no_article_clusters``: the index page has dense link clusters but all of
       them look like navigation relative to the supplied URL — point at the
