@@ -29,9 +29,8 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
-   - **Non-zero exit** → the initial URL did not yield a body. The error line ends in `transport error` or in `HTTP <status>`, and the two mean different things.
-     - `transport error` means no HTTP status came back, so the line does not say what went wrong — a timeout or a refused connection is the usual cause, but so is a redirect loop or a body the client could not decode. Relay it as it stands and stop, rather than naming a cause.
-     - `HTTP <status>` means the site answered and refused. Report that rather than calling the site unreachable, and where the status is one an anti-bot gate serves, ask the user whether they have the site's feed URL — with it in hand this becomes the known-gated-feed case under "Sites that need a browser" below.
+   - **Non-zero exit** → the initial URL did not yield a body.
+     - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
    - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
      - `needs_js` → an HTML page whose links did not cluster into articles.
        - A JavaScript-rendered index is the common cause, and an anti-bot interstitial served as an ordinary page reaches it too, so do not relay JavaScript to the user as the established cause.
@@ -116,8 +115,7 @@ There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
   - Discovery looks for exactly what you already have, so running it here adds nothing.
-    - Where the user does not have the feed URL, it is still worth running: a gate on the index does not always cover the typical feed paths discovery probes, so it can come back with a feed candidate rather than a rejection.
-    - Where the gate does cover them, what discovery reports turns on how the gate answers, and a `needs_js` among those is not on its own evidence that the site renders with JavaScript.
+    - Where the user does not have the feed URL, run it anyway: the feed layers run before clustering, so a gate that lets the index fetch through can still turn up a feed candidate at a path it left open.
 - **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
