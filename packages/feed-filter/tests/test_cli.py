@@ -981,12 +981,12 @@ def test_resnapshot_site_uses_the_stored_pattern_and_writes_no_config(
 def test_resnapshot_site_snapshotted_counts_matches_not_new_rows(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `snapshotted` is the re-scrape's match count, not the rows it inserted, and
-    # kboat-manage-feed-sites reads it that way: it bounds the loss from above, and a 0
-    # means nothing *matched*. The re-snapshot case is where the two diverge, since a
-    # repeat run matches only already-seen URLs — so heal twice and require the count
-    # to hold. Reporting inserted rows instead would make 0 mean "all already seen",
-    # inverting what the skill tells the reader to conclude.
+    # `snapshotted` is the re-scrape's match count, not the rows it inserted — the
+    # emitted contract heal-site shares, which kboat-feed-run reports as "how many URLs
+    # were re-snapshotted". The re-snapshot case is where the two diverge, since a repeat
+    # run matches only already-seen URLs — so heal twice and require the count to hold.
+    # Reporting inserted rows instead would make a 0 mean "all already seen" where the
+    # reader is told it means nothing matched.
     _no_client(monkeypatch)
     stored = r"^/posts/[^/]+/?$"
     add_site(

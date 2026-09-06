@@ -612,11 +612,12 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     seen with ``kept=NULL`` and nothing un-sees a row, so which one runs must never be
     decided by an argument the caller left off.
 
-    Its caller is the run routine (``kboat-feed-run``'s self-heal), which reports the
-    heal in the run summary — the reporting half ``_rescrape_and_snapshot`` leaves to
-    each caller, since ``resnapshot-site`` has no run-path caller at all.
+    Reporting is the caller's, which is the half ``_rescrape_and_snapshot`` leaves out.
+    Its run-path caller (``kboat-feed-run``'s self-heal) reports the heal in the run
+    summary; its hand caller (``kboat-add-feed-site``'s pattern repair) reports to the
+    user. ``resnapshot-site`` has no run-path caller at all.
     """
-    site = _scrape_site_for(args.site_id, "heal-site")
+    site = _scrape_site_for(args.site_id, args.command)
     # ``update_pattern`` rejects an uncompilable pattern too, but that is the last step:
     # checking here turns the re-scrape's raw ``re.error`` into the same ``error: …`` exit
     # as any other bad argument, before any fetch.
@@ -639,7 +640,7 @@ def cmd_resnapshot_site(args: argparse.Namespace) -> int:
     regex that ``heal-site`` would then commit. Nothing is written to ``sites.toml``, which
     is what ``kboat-manage-feed-sites`` relies on to leave the hand-edited row untouched.
     """
-    site = _scrape_site_for(args.site_id, "resnapshot-site")
+    site = _scrape_site_for(args.site_id, args.command)
     # SiteConfig's exactly-one invariant: the kind check above makes the pattern present.
     assert site.article_url_pattern is not None
     # Nothing else compiles the stored pattern — ``load_sites`` checks a row's shape and
