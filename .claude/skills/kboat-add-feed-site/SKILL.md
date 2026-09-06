@@ -41,7 +41,8 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
        - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
      - `unparseable_body` → the body had content and was labelled HTML, but the parser refused it, so discovery established nothing about the page's article links.
        - Ask the user for a different URL that serves the site's articles — its article-listing page, or a feed — and re-run discovery on that.
-       - Do not offer `--requires-browser` here: the browser path hands its HTML to the same parser that just refused this body, with no guard around the call, so it fails at gather time instead of returning a rejection.
+       - Where they have none, `--requires-browser` is still worth trying, since it registers against Chromium's own serialization of the page rather than the body discovery failed on.
+       - Report and stop if that registration ends in a parser traceback rather than the CLI's `error:` line — `scrape_index` does not guard its parse and the parser's error is not one the CLI turns into an `error:` exit, so step 4's retry cannot succeed.
    - Otherwise you have one or more `candidates`.
 
 2. **Pick the candidate.**

@@ -94,8 +94,7 @@ class DiscoveryRejection:
       never ran and nothing was established about the page's article links.
     - ``unparseable_body``: the body had content and was labelled HTML, but the
       parser refused it, so nothing was established about the page's article links
-      either. A browser retry does not answer it — ``scrape_index`` hands its
-      browser-fetched HTML to the same parser and does not guard the call.
+      either.
     """
 
     reason: RejectionReason
