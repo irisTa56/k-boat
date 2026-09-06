@@ -42,7 +42,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
      - `unparseable_body` → the body had content and was labelled HTML, but the parser refused it, so discovery established nothing about the page's article links.
        - Ask the user for a different URL that serves the site's articles — its article-listing page, or a feed — and re-run discovery on that.
        - Where they have none, report that this URL cannot be registered from what discovery has, and stop: the rejection carries no candidate, so there is no `article_url_pattern` to register with, and `add-site` rejects a scrape site that has none.
-       - Never write a pattern of your own here — the parser refused the body, so nothing is known about the page's links, and a guessed one registers cleanly, snapshots nothing, and leaves a site that never produces a note.
+       - Never write a pattern of your own here: the parser refused the body, so nothing is known about the page's links to write one from.
    - Otherwise you have one or more `candidates`.
 
 2. **Pick the candidate.**
