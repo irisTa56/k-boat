@@ -208,6 +208,8 @@ def test_rejection_no_article_clusters() -> None:
 
 
 def test_rejection_needs_js_sparse_html() -> None:
+    # An HTML body clustering did read, and found nothing article-shaped in. `needs_js`
+    # must not widen to the bodies `no_html_body` covers, which clustering never saw.
     page = b"<html><body><p>loading...</p></body></html>"
     client = _client({"/": (200, page, "text/html")})
     with client:
@@ -218,14 +220,30 @@ def test_rejection_needs_js_sparse_html() -> None:
     assert result.rejection.reason == "needs_js"
 
 
-def test_rejection_needs_js_non_html() -> None:
+def test_rejection_no_html_body_non_html() -> None:
     client = _client({"/": (200, b'{"items": []}', "application/json")})
     with client:
         result = discover("https://example.com/", client=client)
 
     assert result.candidates == ()
     assert result.rejection is not None
-    assert result.rejection.reason == "needs_js"
+    assert result.rejection.reason == "no_html_body"
+
+
+@pytest.mark.parametrize("body", [b"", b"   \n\t ", b"\xef\xbb\xbf", b"\xef\xbb\xbf  \n"])
+def test_rejection_no_html_body_blank_html(body: bytes) -> None:
+    # A blank body labelled HTML lands here too: the content type alone does not earn
+    # `needs_js`, because there was nothing for clustering to read. Whitespace and a
+    # byte-order mark establish exactly what an empty body does, so they must not
+    # split across the two reasons — the mark needs naming because `str.strip` does
+    # not count it as space.
+    client = _client({"/": (200, body, "text/html")})
+    with client:
+        result = discover("https://example.com/", client=client)
+
+    assert result.candidates == ()
+    assert result.rejection is not None
+    assert result.rejection.reason == "no_html_body"
 
 
 def test_multiple_feed_candidates_dedup_on_redirect() -> None:
@@ -394,10 +412,10 @@ def test_unparseable_body_rejects_instead_of_raising(
     # exercised because the guard's whole claim is that it does not enumerate types — a
     # `RuntimeError`-only case would pass against a narrowed `except` and pin nothing.
     #
-    # Which `reason` such a page lands on is deliberately not asserted. Today it is
-    # `needs_js`, which names the wrong cause for a body that was never read; that is
-    # pre-existing and a question for whoever gives the case its own reason. Pinning it
-    # here would make the misattribution a contract.
+    # The body is HTML and non-blank, so it reaches clustering; `unparseable_body` is
+    # the reason of its own that case now has. The six links below are what makes the
+    # assertion worth pinning — the page carries a perfectly good article cluster, so
+    # anything naming the page's links (`needs_js`) would be false of it.
     def boom(_html: str) -> object:
         raise raised("could not parse")
 
@@ -408,3 +426,4 @@ def test_unparseable_body_rejects_instead_of_raising(
 
     assert result.candidates == ()
     assert result.rejection is not None
+    assert result.rejection.reason == "unparseable_body"

@@ -29,17 +29,21 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
-   - **Non-zero exit** → the initial URL could not be fetched (a transport failure).
-     - Report the error to the user and stop; do not register a site you could not reach.
-   - **`rejection` is set** (exit 0, no usable candidate) → relay its actionable message instead of proceeding:
-     - `needs_js` → two different failures share this reason, told apart by the message, and they take different next steps.
-       - An HTML page whose links did not cluster into articles → likely a JavaScript-rendered index, which the default httpx path cannot follow.
-         - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
-       - An empty body, or one the server did not label as HTML → discovery stopped before the clustering step, so it has established nothing about the page's article links.
-         - Ask the user for a URL that serves the site's articles as HTML — its article-listing page, or a feed — and re-run discovery on that.
-         - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
+   - **Non-zero exit** → discovery did not complete.
+     - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
+   - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
+     - `needs_js` → an HTML page whose links did not cluster into articles.
+       - A JavaScript-rendered index is the common cause, and an anti-bot interstitial served as an ordinary page reaches it too, so do not relay JavaScript to the user as the established cause.
+       - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
      - `no_article_clusters` → no feed and no article-shaped link cluster was found.
        - Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
+     - `no_html_body` → a body with nothing in it, or one the server did not label as HTML, so discovery stopped before the clustering step and has established nothing about the page's article links.
+       - Ask the user for a URL that serves the site's articles as HTML — its article-listing page, or a feed — and re-run discovery on that.
+       - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
+     - `unparseable_body` → the body had content and was labelled HTML, but the parser refused it, so discovery established nothing about the page's article links.
+       - Ask the user for a different URL that serves the site's articles — its article-listing page, or a feed — and re-run discovery on that.
+       - Where they have none, report that this URL cannot be registered from what discovery has, and stop: the rejection carries no candidate, so there is no `article_url_pattern` to register with, and `add-site` rejects a scrape site that has none.
+       - Never write a pattern of your own here: the parser refused the body, so nothing is known about the page's links to write one from.
    - Otherwise you have one or more `candidates`.
 
 2. **Pick the candidate.**
@@ -111,8 +115,8 @@ The flag needs the optional Playwright extra (`uv sync --extra browser && uv run
 There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
-  - Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
-- **A JS-rendered scrape index.** Step 1's first `needs_js` case — an HTML page whose links did not cluster into articles — is the hint to retry a scrape site through the browser: register the page's own URL as `index_url`, add `--requires-browser`, and write the `article_url_pattern` yourself.
+  - Discovery looks for exactly what you already have, so running it here adds nothing.
+- **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: register the page's own URL as `index_url`, add `--requires-browser`, and write the `article_url_pattern` yourself.
   - Discovery rejected, so there are no `sample_urls` and no synthesized pattern to choose between — step 2 does not apply, and [Writing the scrape pattern by hand](#writing-the-scrape-pattern-by-hand) has the shape yours must take.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
