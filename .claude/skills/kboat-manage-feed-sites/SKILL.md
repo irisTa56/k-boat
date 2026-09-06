@@ -48,8 +48,12 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
+4. **Where the move changed the host, re-snapshot the site.** The seen-store keys an article on its canonical URL, so a new host leaves every article the new feed or index carries unseen, and the next runs judge them a capful at a time and write the keeps as notes.
+   For a **scrape** site, run `feed-filter heal-site --site-id <id> --pattern <the pattern the row already carries>`: it re-scrapes the site as step 2 now registers it and marks the matches seen, and rewriting the stored pattern to its own value changes nothing.
+   A **feed** site has no such command — `heal-site` takes scrape sites only — so say when reporting the change that the next runs will work through what the feed carries.
+   A **forum** site needs nothing: its dedupe keys on the forum's own topic and post ids rather than on a URL, so a move does not disturb it.
 
-That is the whole of the fix — nothing else has to be run, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
+That is the whole of the fix, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
 
 ## Finding the id
 
