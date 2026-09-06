@@ -122,7 +122,8 @@ The anti-bot handling covers Cloudflare's first-line bot check only (it normaliz
 `article_url_pattern` is a Python regex, `re.search`ed against the **path** of each same-host link on the index page.
 That path is canonicalized first: scheme, host, query and fragment are stripped, duplicate slashes collapse, percent-escapes are upper-cased, and the trailing slash is dropped from everything but the root.
 So a pattern written against the whole URL matches nothing, and neither does one that requires a trailing slash — however the site writes its permalinks, the regex never sees one.
-A non-ASCII segment is the other way to miss: the regex sees what the `href` holds, usually percent-encoded and now upper-cased, while the URL a user reads off their address bar is decoded — write such a segment as `[^/]+` rather than spelling it either way.
+A non-ASCII segment is the other way to miss: the regex sees what the `href` holds, usually percent-encoded and now upper-cased, while the URL a user reads off their address bar is decoded.
+Neither spelling is safe on its own, so write both — `^/(記事|%E8%A8%98%E4%BA%8B)/[^/]+$` matches under either — rather than generalizing the segment to `[^/]+`, which drops the one literal telling articles from navigation.
 Discovery's own patterns are the shape to copy: article links at `/blog/<slug>` give `^/blog/[^/]+/?$`, with the per-article segment generalized to `[^/]+` rather than taken from any one URL.
 Its fetch returned the page but not the article links, so it cannot show you their paths — ask the user for two or three of the site's article URLs and write a pattern of that form.
 Keep the segments that are the same for every article, and generalize each one that varies — a slug to `[^/]+`, a date to `\d{4}/\d{2}/\d{2}`.
@@ -135,7 +136,7 @@ A link off it is dropped before the regex ever sees it, so where the articles li
 Nothing then checks the pattern against the site.
 `add-site` and `heal-site` both check only that it compiles, so `https://example.com/blog/.*` — a valid regex that no path can match — is accepted at exit 0 and the site then yields nothing.
 A site yielding nothing shows as `snapshotted: 0` on the command you just ran, and as `zero_links` on every later run.
-The run's self-heal re-derives a pattern by re-running discovery, which reads the index over plain HTTP — the fetch this site was registered to bypass — so for a `requires_browser` site it usually comes back empty-handed and the site waits on a hand-written pattern.
+The run's self-heal will not clear either signal for a `requires_browser` site: it re-derives the pattern by re-running discovery, which reads over plain HTTP and so is not reading the page the gather reads, and the run reports such a site rather than healing it.
 
 Neither signal says why.
 The pattern is one cause among several — a link the same-host filter dropped is another, and so is a list rendered after the browser's load-event capture — and nothing bounds that set, so it is not a diagnosis to work through.

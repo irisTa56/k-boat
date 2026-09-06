@@ -88,9 +88,10 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
    Repair it:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
-   - **Heal only with a pattern you can identify as the article cluster's.** Where you cannot — discovery rejected, or returned candidates none of which are articles, or did not complete — this step is done for that site: leave `sites.toml` alone and report it with what discovery returned.
-     - Never write a pattern of your own here, and never take one from a cluster you are not sure of; a tag or pagination cluster is a candidate like any other, and discovery does not tell them apart.
-       - `heal-site` snapshots everything the pattern matched as seen with no note, so an over-broad pattern burns the whole live index and none of those articles is ever written.
+   - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned.
+     - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
+     - Naming the cluster is your judgement and not a check on the output: a tag or pagination cluster comes back as a candidate like any other and discovery does not tell them apart, and a feed candidate carries no `article_url_pattern` at all.
+       - `heal-site` snapshots everything the pattern matched as seen with no note, so a pattern you were unsure of burns the whole live index and none of those articles is ever written.
      - The repair from there is not the run's, so report and stop rather than picking one.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
