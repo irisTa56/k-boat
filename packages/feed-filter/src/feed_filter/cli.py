@@ -583,8 +583,8 @@ def _rescrape_and_snapshot(site: SiteConfig, pattern: str) -> int:
     committing it first — which is what lets ``heal-site`` keep its snapshot-first /
     config-last order. The count is the re-scrape's *matches*: ``snapshot`` is
     ``ON CONFLICT DO NOTHING``, so an already-seen URL is left as it was and is still
-    counted. Writes NO feed note — this is an operational notice, not a page; the run
-    routine reports it in the run summary instead (feed notes are pages only).
+    counted. Writes NO feed note either way — a re-scrape is an operational notice, not
+    a page, and feed notes are pages only. Who reports it differs by caller.
     """
     # The site is already on disk, so the on-disk gate sees it: fail fast if it is
     # browser-flagged but the extra is missing, before the re-scrape.
@@ -611,6 +611,10 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     ``resnapshot-site``, a separate spelling on purpose: both commands mark every match
     seen with ``kept=NULL`` and nothing un-sees a row, so which one runs must never be
     decided by an argument the caller left off.
+
+    Its caller is the run routine (``kboat-feed-run``'s self-heal), which reports the
+    heal in the run summary — the reporting half ``_rescrape_and_snapshot`` leaves to
+    each caller, since ``resnapshot-site`` has no run-path caller at all.
     """
     site = _scrape_site_for(args.site_id, "heal-site")
     # ``update_pattern`` rejects an uncompilable pattern too, but that is the last step:

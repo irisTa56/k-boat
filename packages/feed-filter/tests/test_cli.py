@@ -1235,6 +1235,29 @@ def test_resnapshot_site_requires_a_site_id(
     assert excinfo.value.code == 2
 
 
+def test_resnapshot_site_gate_fires_before_any_fetch(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate lives in the shared _rescrape_and_snapshot, so this covers heal-site too.
+    # Without it, browser.get_browser's bare import raises ModuleNotFoundError, which
+    # main does not catch — the operator gets a traceback instead of the install command.
+    monkeypatch.setattr(browser, "_playwright_installed", lambda: False)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="JS",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+            requires_browser=True,
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    assert "uv sync --extra browser" in capsys.readouterr().err
+
+
 def test_resnapshot_site_unknown_id_exits_nonzero(
     state_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
