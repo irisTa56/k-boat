@@ -37,17 +37,24 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 
 A feed note has no destructive routine action and no cooldown, so its lifecycle is entirely manual triage over four always-present booleans.
 
-- `read`, `shelved`, and `dismissed` are the **human's** three dispositions — three sibling exits from the Inbox, one tick each. `read` and `dismissed` retire the card from both working views; `shelved` moves it between them.
-  - `read` retires a card the reader opened and finished on the spot. It leaves the Inbox and the Shelf and stays in the Read view, so a mis-tick can be undone.
-  - `shelved` moves the card to the Shelf view — a "read later" holding shelf — without removing it from anywhere destructive. feed-filter preserves it across a re-write.
-  - `dismissed` hides the card from both the Inbox and the Shelf — a dismissed card leaves the working views whether or not it is shelved — and marks it a future auto-cleanup target. Cleanup is **manual for now**: no note is auto-deleted; the Base only hides dismissed cards from the working views and keeps them in the Dismissed view so a dismissal can be undone.
+- `read`, `shelved`, and `dismissed` are the **human's** three dispositions — three sibling exits from the Inbox, one tick each.
+  `read` and `dismissed` retire the card from both working views; `shelved` moves it between them.
+  - `read` retires a card the reader opened and finished on the spot.
+    - It leaves the Inbox and the Shelf and stays in the Read view, so a mis-tick can be undone.
+  - `shelved` moves the card to the Shelf view — a "read later" holding shelf — without removing it from anywhere destructive.
+    - feed-filter preserves it across a re-write.
+  - `dismissed` hides the card from both the Inbox and the Shelf — a dismissed card leaves the working views whether or not it is shelved — and marks it a future auto-cleanup target.
+    - Cleanup is **manual for now**: no note is auto-deleted; the Base only hides dismissed cards from the working views and keeps them in the Dismissed view so a dismissal can be undone.
 - **Each exit stays a distinct tick.** The tick is the only record of what the reader wanted to read, so a disposition that cannot be told apart afterwards is lost rather than merely untidy.
-  - **One box per meaning.** `read` and `shelved` both say the page was worth reading — now, or later; `dismissed` says it was not. Sharing a box between "I read it here" and "not worth reading" would give that box two opposite meanings at once, leaving its whole population unreadable.
+  - **One box per meaning.** `read` and `shelved` both say the page was worth reading — now, or later; `dismissed` says it was not.
+    - Sharing a box between "I read it here" and "not worth reading" would give that box two opposite meanings at once, leaving its whole population unreadable.
   - **One tick per transition.** Every exit is reached by ticking exactly one box, so the disposition that hid a card is never something to infer from a combination.
 - `wall` is **feed-filter's** flag, re-evaluated on each write, not a human disposition.
-- **Promotion is manual.** To read a feed card as a full K-Boat source, capture its `url` into the `Queue/` folder that `kboat-ingest` drains (via the capture bookmarklet, or by hand); there is no auto-promotion from a feed note to a source note. The two are separate inboxes.
+- **Promotion is manual.** To read a feed card as a full K-Boat source, capture its `url` into the `Queue/` folder that `kboat-ingest` drains (via the capture bookmarklet, or by hand); there is no auto-promotion from a feed note to a source note.
+  - The two are separate inboxes.
 - **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again, refreshing `wall`, `summary`, and the metadata.
-  - The two retiring flags reset to `false`, so a topic the reader had finished with reappears in the working views when it gains new activity. `shelved` is preserved: a relocated card is still somewhere the new activity can show up.
+  - The two retiring flags reset to `false`, so a topic the reader had finished with reappears in the working views when it gains new activity.
+    - `shelved` is preserved: a relocated card is still somewhere the new activity can show up.
   - A tick cleared this way is recorded nowhere else, so the three booleans are the reader's *current* disposition rather than a history of it — a re-reminded topic loses whatever the reader had decided about its earlier posts.
 
 `kboat-validate` checks every `Feeds/*.md` against the `FEED` schema (the generic per-field checks — presence, emptiness, kind/enum/date); the feed type carries no cross-field rules.
@@ -70,7 +77,8 @@ The other three columns are the human's triage checkboxes, ordered by when the c
 The two working views run oldest first, because a queue is worked from its old end and newest-first buries the card that has waited longest under every arrival since.
 The two retired views keep filing order, newest first: `added_date` is stamped when the note is created and never refreshed, so no property on the note records when a card was ticked.
 
-- **Inbox** (`read != true && shelved != true && dismissed != true`) — the working view, listed first so it is the default: the fresh, untriaged rows. A `wall` row appears here like any other (it is an untriaged keep); the 🔒 prefix flags it, and judging whether the wall is worth clearing is part of triaging the card.
+- **Inbox** (`read != true && shelved != true && dismissed != true`) — the working view, listed first so it is the default: the fresh, untriaged rows.
+  - A `wall` row appears here like any other (it is an untriaged keep); the 🔒 prefix flags it, and judging whether the wall is worth clearing is part of triaging the card.
 - **Shelf** (`shelved && read != true && dismissed != true`) — the read-later shelf; a shelved card the reader later reads or dismisses drops out of here too, since both retiring flags hide from either working view.
 - **Read** (`read`) — the finished rows, kept visible for the same reason the Dismissed view is: a tick that retires a card must be undoable.
 - **Dismissed** (`dismissed`) — the cleanable rows, kept visible here so a dismissal can be undone before any future cleanup.

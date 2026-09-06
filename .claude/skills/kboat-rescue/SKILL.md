@@ -21,12 +21,17 @@ Do not run it from the unattended routine.
 
 Both `source_type`s are handled — whatever sent the source to the DLQ, the note's `source_type` selects the branch — and they differ only in how the content is obtained and where the reading copy lives.
 
-- **PDF** (`source_type: pdf`): a blocked PDF has a `url` and, where ingest recorded it, no local file yet; rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it. Check first — a re-captured entry may already hold the file from its earlier ingest, and there is nothing to fetch through the browser if it does.
-- **Web page** (`source_type: web_page`): a member-only or otherwise walled article. Rescue captures the rendered article text from the logged-in browser and ingests it as a NotebookLM text source; there is no local file — the reading copy stays the live `url`.
+- **PDF** (`source_type: pdf`): a blocked PDF has a `url` and, where ingest recorded it, no local file yet.
+  - Rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it.
+  - Check first — a re-captured entry may already hold the file from its earlier ingest, and there is nothing to fetch through the browser if it does.
+- **Web page** (`source_type: web_page`): a member-only or otherwise walled article.
+  - Rescue captures the rendered article text from the logged-in browser and ingests it as a NotebookLM text source.
+  - There is no local file — the reading copy stays the live `url`.
 
 ## Procedure
 
-1. **Pick the source.** With a slug or `url` argument, load `Sources/<slug>.md` (or the note whose `url` matches) and confirm `blocked: true`; its `source_type` selects the PDF or web-page branch below. With no argument, read every `Sources/*.md` frontmatter, list those with `blocked: true` (their slug, title, `url`, `source_type`, and `notebooklm_id`), and ask the user which to rescue.
+1. **Pick the source.** With a slug or `url` argument, load `Sources/<slug>.md` (or the note whose `url` matches) and confirm `blocked: true`; its `source_type` selects the PDF or web-page branch below.
+   With no argument, read every `Sources/*.md` frontmatter, list those with `blocked: true` (their slug, title, `url`, `source_type`, and `notebooklm_id`), and ask the user which to rescue.
 
    **A third invocation is not a rescue at all**, and it is the one case where a source that is *not* `blocked` belongs here: a web source whose notebook lost its original, whose `url` has since gone walled, and which the routine's notebook-health step therefore reported it could not restore.
    What it needs is the browser this skill drives, not the DLQ.
@@ -44,34 +49,75 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
    **Invoked to give one up** ("that URL is dead", "drop the blocked one"): kboat-notes' triggers are of two kinds, and what the source needs first depends on which the user is naming.
    A dead `url` or a page that is gone is the first; deciding not to pursue it is the second.
 
-   - **A claim about the page** ("the URL is dead") is a finding to check, not an instruction to take on trust — a walled page reads like a dead link, which is the mistake the look is for. Say you are looking, then run steps 2 and 3 for the look alone: no capture, no notebook. Three ways it can land:
+   - **A claim about the page** ("the URL is dead") is a finding to check, not an instruction to take on trust — a walled page reads like a dead link, which is the mistake the look is for.
+     Say you are looking, then run steps 2 and 3 for the look alone: no capture, no notebook.
+     Three ways it can land:
      - **The look confirms it** → go to step 6.
-     - **The look disconfirms it** (the page loads, or a wall stands where the user expected nothing) → say what you actually found and offer to finish the rescue from step 3 instead, the browser being already there and a wall being what this skill exists to clear. Abandon it only if they still want that.
+     - **The look disconfirms it** (the page loads, or a wall stands where the user expected nothing) → say what you actually found and offer to finish the rescue from step 3 instead, the browser being already there and a wall being what this skill exists to clear.
+       - Abandon it only if they still want that.
      - **No browser to look with** (step 2 found none) → say so, and let the user's own account of the page stand in for the look.
-   - **A decision about effort** ("I'm not chasing it") needs no look at all. It is not a claim the page is gone, so there is nothing to verify, and requiring a browser the machine may not have would leave the entry ageing in the DLQ — which is the state this ending exists to end. Confirm the decision and go to step 6.
-2. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser. If none, fall back to the manual path (step 4), or — on a give-up invocation — to the user's own account of the `url` per step 1.
-3. **Fetch through the real browser.** Navigate the user's Chrome to the note's `url`. If a CAPTCHA / "Human Verification" / sign-in page appears, ask the user to clear it in their browser, then continue once the real content loads. If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
-   - **PDF**: save it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`. **Preferred capture — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host (for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`), then run in-page JavaScript that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob. Chrome writes it to `~/Downloads`; move it into the vault. Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable. Two things to expect, both needing the present user: Chrome may raise a **"download multiple files" permission popup** the user must approve (the JS download counts as an automatic download), and the file may take a moment to appear — poll `~/Downloads` briefly rather than concluding failure on the first miss. After moving it, **verify the saved file starts with `%PDF-`** and is non-trivial in size. If it is not a real PDF (still a challenge), report and stop — leave `blocked: true`.
-   - **Web page**: capture the rendered article text (`get_page_text` / `read_page`) once the real article is on screen, and write it to a temp file. **Read it back to confirm it is the article, not the wall** (a login form or paywall stub is short and generic); if it is still the wall, report and stop — leave `blocked: true`. No file is saved under the vault — the reading copy stays the `url`.
+   - **A decision about effort** ("I'm not chasing it") needs no look at all.
+     - It is not a claim the page is gone, so there is nothing to verify, and requiring a browser the machine may not have would leave the entry ageing in the DLQ — which is the state this ending exists to end.
+     - Confirm the decision and go to step 6.
+2. **Confirm the browser.** Use Claude in Chrome: check `list_connected_browsers` returns a local browser.
+   - If none, fall back to the manual path (step 4), or — on a give-up invocation — to the user's own account of the `url` per step 1.
+3. **Fetch through the real browser.** Navigate the user's Chrome to the note's `url`.
+   If a CAPTCHA / "Human Verification" / sign-in page appears, ask the user to clear it in their browser, then continue once the real content loads.
+   If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
+   - **PDF**: save it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`.
+     - **Preferred capture — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host (for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`), then run in-page JavaScript that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob.
+       - Chrome writes it to `~/Downloads`; move it into the vault.
+       - Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable.
+       - Two things to expect, both needing the present user: Chrome may raise a **"download multiple files" permission popup** the user must approve (the JS download counts as an automatic download), and the file may take a moment to appear — poll `~/Downloads` briefly rather than concluding failure on the first miss.
+     - After moving it, **verify the saved file starts with `%PDF-`** and is non-trivial in size.
+     - If it is not a real PDF (still a challenge), report and stop — leave `blocked: true`.
+   - **Web page**: capture the rendered article text (`get_page_text` / `read_page`) once the real article is on screen, and write it to a temp file.
+     - **Read it back to confirm it is the article, not the wall** (a login form or paywall stub is short and generic); if it is still the wall, report and stop — leave `blocked: true`.
+     - No file is saved under the vault — the reading copy stays the `url`.
 4. **Manual fallback.** If Claude in Chrome is unavailable or cannot get past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
-5. **Finish ingestion** per kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source): `create` (read `.notebook.id`) → set chat persona → add the source, reading the returned source id from the `--json` output → `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`, branching on `.status` and **not** the exit code (which merges `not_found` and `error`, whose handling is opposite) → verify extraction (`fulltext <source_id> --notebook <id> -o <tmpfile>`) → capture `summary`/`topics` (kboat-notes [capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics)). A `not_found` or `timeout` is a non-verdict, so re-run the wait once — in a fresh Bash call, or two 90s waits blow the 120s budget — rather than discard a human-assisted capture. Any status but `ready` surviving that is the notebook-not-built ending in step 6. kboat-notes owns the full status policy. The add differs by branch:
-   - **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`. No `--title`: NotebookLM resets a file source's title to the filename, and a PDF resolves by `type: pdf`.
-   - **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting). A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.
+5. **Finish ingestion** per kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source): `create` (read `.notebook.id`) → set chat persona → add the source, reading the returned source id from the `--json` output → `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`, branching on `.status` and **not** the exit code (which merges `not_found` and `error`, whose handling is opposite) → verify extraction (`fulltext <source_id> --notebook <id> -o <tmpfile>`) → capture `summary`/`topics` (kboat-notes [capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics)).
+   A `not_found` or `timeout` is a non-verdict, so re-run the wait once — in a fresh Bash call, or two 90s waits blow the 120s budget — rather than discard a human-assisted capture.
+   Any status but `ready` surviving that is the notebook-not-built ending in step 6.
+   kboat-notes owns the full status policy.
+   The add differs by branch:
+   - **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`.
+     - No `--title`: NotebookLM resets a file source's title to the filename, and a PDF resolves by `type: pdf`.
+   - **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
+     - A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.
+
    Then set `blocked: false`, write `notebooklm_id`/`gemini_url`/`notebooklm_url` and the captured `summary`/`topics`, and set `reading_link` = `[[<slug>.pdf]]` for a PDF (leave it as the `url` for a web page).
-6. **Report.** State that the source left the DLQ and is now a normal source (in the inbox). Four non-clean endings:
-   - **Wall not cleared** (no real PDF saved at step 3/4, or the captured text was still the wall): leave `blocked: true` — it stays in the DLQ, and re-running with the user present is the way back. Say so rather than proposing the abandoned ending in the same breath; that ending is the user's to raise.
+6. **Report.** State that the source left the DLQ and is now a normal source (in the inbox).
+   Four non-clean endings:
+   - **Wall not cleared** (no real PDF saved at step 3/4, or the captured text was still the wall): leave `blocked: true` — it stays in the DLQ, and re-running with the user present is the way back.
+     - Say so rather than proposing the abandoned ending in the same breath; that ending is the user's to raise.
    - **Abandoned**: the page is gone at step 3, the user decides not to chase the wall, or they invoked to give it up per step 1 and no look contradicted them.
-     - **Confirm with the user first**, and record which trigger it was — what was seen at the `url` where the page was looked at, or their decision not to chase it where it was not. Never write it on your own judgement.
-     - **The write belongs to kboat-notes** ([Procedure: abandon a blocked source](../kboat-notes/references/procedures.md#procedure-abandon-a-blocked-source)). Read it rather than assembling a record here: it puts the note through three gates before choosing between two writes, and one of them can call for discarding a notebook the entry still holds.
-     - **Report which end state that procedure produced** — the dismissed tombstone that unticking `dismiss` re-arms, or the distilled source resting in Holding. Either way the source left the DLQ rather than becoming a normal inbox source.
-     - **For a PDF**, add that the way back turns on whether `PDFs/<slug>.pdf` is on disk, and read that procedure's closing paragraph for which route applies. Do not name one from memory: the entry ingest recorded has no file and the one a re-capture re-blocked does, and they go opposite ways.
-   - **Notebook not built** (step 5's `source wait` ended on any status but `ready`): discard the notebook, passing the id `create` returned — the DLQ note's `notebooklm_id` is empty, so a discard reading the note would leak it. Then follow kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source), which splits the rest on two axes.
-     - **The note** follows what each path requires. A **PDF** has its file, so `blocked: false` — a readable PDF with no notebook, reachable again through reactivation, not another rescue. A **web page** has nothing (no file, no article, the `url` still walled), so it keeps `blocked: true` in the DLQ.
-     - **The report** follows the status. After an `error` the same bytes fail again, so a PDF needs a different or re-exported copy — not a text-bearing one, that being the empty-extraction remedy below — and a web page a different capture. A `not_found` or `timeout` says nothing is wrong: report only that NotebookLM did not finish, and that re-running is the fix.
-   - **Empty extraction** (PDF only): a real PDF that extracts to nothing (an image-only scan) keeps `blocked: false` (the fetch succeeded) — this is the ingest garbled-extraction case, not a DLQ state, so rescue does not re-fetch it. Keep the notebook and report as step 5 of kboat-notes [Procedure: ingest a PDF source](../kboat-notes/references/procedures.md#procedure-ingest-a-pdf-source) prescribes; that step owns why the notebook is kept and what to tell the human about a text-bearing copy. A web-page capture has no such case, since the text is supplied directly.
+     - **Confirm with the user first**, and record which trigger it was — what was seen at the `url` where the page was looked at, or their decision not to chase it where it was not.
+       - Never write it on your own judgement.
+     - **The write belongs to kboat-notes** ([Procedure: abandon a blocked source](../kboat-notes/references/procedures.md#procedure-abandon-a-blocked-source)).
+       - Read it rather than assembling a record here: it puts the note through three gates before choosing between two writes, and one of them can call for discarding a notebook the entry still holds.
+     - **Report which end state that procedure produced** — the dismissed tombstone that unticking `dismiss` re-arms, or the distilled source resting in Holding.
+       - Either way the source left the DLQ rather than becoming a normal inbox source.
+     - **For a PDF**, add that the way back turns on whether `PDFs/<slug>.pdf` is on disk, and read that procedure's closing paragraph for which route applies.
+       - Do not name one from memory: the entry ingest recorded has no file and the one a re-capture re-blocked does, and they go opposite ways.
+   - **Notebook not built** (step 5's `source wait` ended on any status but `ready`): discard the notebook, passing the id `create` returned — the DLQ note's `notebooklm_id` is empty, so a discard reading the note would leak it.
+     Then follow kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source), which splits the rest on two axes.
+     - **The note** follows what each path requires.
+       - A **PDF** has its file, so `blocked: false` — a readable PDF with no notebook, reachable again through reactivation, not another rescue.
+       - A **web page** has nothing (no file, no article, the `url` still walled), so it keeps `blocked: true` in the DLQ.
+     - **The report** follows the status.
+       - After an `error` the same bytes fail again, so a PDF needs a different or re-exported copy — not a text-bearing one, that being the empty-extraction remedy below — and a web page a different capture.
+       - A `not_found` or `timeout` says nothing is wrong: report only that NotebookLM did not finish, and that re-running is the fix.
+   - **Empty extraction** (PDF only): a real PDF that extracts to nothing (an image-only scan) keeps `blocked: false` (the fetch succeeded) — this is the ingest garbled-extraction case, not a DLQ state, so rescue does not re-fetch it.
+     - Keep the notebook and report as step 5 of kboat-notes [Procedure: ingest a PDF source](../kboat-notes/references/procedures.md#procedure-ingest-a-pdf-source) prescribes; that step owns why the notebook is kept and what to tell the human about a text-bearing copy.
+     - A web-page capture has no such case, since the text is supplied directly.
 
 ## Notes
 
-- Identity is the `url` throughout; the slug (url-hash) never changes, so the rescued source reuses its existing note — no duplicate, provenance intact. `source_type` is unchanged by the rescue.
-- A rescued web page has no durable local copy (unlike a PDF's `PDFs/<slug>.pdf`), so once its notebook is later discarded only the still-walled `url` remains, and its text can come only from another rescue capture. Reactivating it is still the route to one, not a detour around it: this skill takes only a `blocked` source, and the plain re-fetch is what fetches the wall, records the source blocked again, and so puts it back within reach. See kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook).
-- This skill mutates: it creates a NotebookLM notebook and edits the source note, and for a PDF writes `PDFs/<slug>.pdf` (a web-page rescue writes no vault file). The abandoned ending usually touches nothing but the note — no notebook, no file — the exception being an entry that arrived carrying a `notebooklm_id`, where that procedure's third gate puts a notebook decision in front of the write. It never deletes the note.
+- Identity is the `url` throughout; the slug (url-hash) never changes, so the rescued source reuses its existing note — no duplicate, provenance intact.
+- `source_type` is unchanged by the rescue.
+- A rescued web page has no durable local copy (unlike a PDF's `PDFs/<slug>.pdf`), so once its notebook is later discarded only the still-walled `url` remains, and its text can come only from another rescue capture.
+  - Reactivating it is still the route to one, not a detour around it: this skill takes only a `blocked` source, and the plain re-fetch is what fetches the wall, records the source blocked again, and so puts it back within reach.
+  - See kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook).
+- This skill mutates: it creates a NotebookLM notebook and edits the source note, and for a PDF writes `PDFs/<slug>.pdf` (a web-page rescue writes no vault file).
+  - The abandoned ending usually touches nothing but the note — no notebook, no file — the exception being an entry that arrived carrying a `notebooklm_id`, where that procedure's third gate puts a notebook decision in front of the write.
+  - It never deletes the note.
