@@ -63,7 +63,8 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
    That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever written as notes.
-   A non-zero exit means the back-catalog fetch failed before anything was written — report it and retry; the site was not registered.
+   A non-zero exit *before* that snapshot — the back-catalog fetch failing — leaves nothing written, so report it and retry.
+   One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen, and [Writing the scrape pattern by hand](#writing-the-scrape-pattern-by-hand) has what to do instead.
 
 5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
    Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
@@ -151,7 +152,8 @@ The flood guard hides the rest — everything the pattern took at registration i
 Report the pattern you registered and the count it snapshotted along with the rest, and leave the reading of that count to the user, who can see the page.
 
 Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
-A wrong `index_url` is not a pattern and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, and it would rewrite the pattern regardless and report `snapshotted: 0`. That field is `kboat-manage-feed-sites`' "Fix a site that moved", which hand-edits it by design.
+A wrong `index_url` is not a pattern and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, and it would rewrite the pattern regardless and report `snapshotted: 0`.
+That field is `kboat-manage-feed-sites`' "Fix a site that moved", which hand-edits it by design.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
 Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
 That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` marks everything the new pattern matched as seen with no note, so an over-broad correction burns the whole live index and those articles are never written.
