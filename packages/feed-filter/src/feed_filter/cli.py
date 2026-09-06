@@ -560,7 +560,7 @@ def cmd_mark_seen(args: argparse.Namespace) -> int:
 
 
 def cmd_heal_site(args: argparse.Namespace) -> int:
-    """Re-scrape under a new pattern, snapshot the back-catalog, THEN rewrite config.
+    """Re-scrape a scrape site and snapshot its matches; rewrite config LAST, if at all.
 
     Snapshot-first / config-last, mirroring ``cmd_add_site``: the config write
     (``update_pattern``) is the *last* durable side
@@ -1091,7 +1091,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_mark.add_argument("--title", required=True)
     p_mark.set_defaults(handler=cmd_mark_seen)
 
-    p_heal = sub.add_parser("heal-site", help="rewrite a scrape pattern and re-snapshot")
+    p_heal = sub.add_parser(
+        "heal-site", help="re-snapshot a scrape site, rewriting its pattern when given one"
+    )
     p_heal.add_argument("--site-id", dest="site_id", required=True)
     p_heal.add_argument(
         "--pattern", help="omit to re-snapshot under the stored pattern, writing no config"

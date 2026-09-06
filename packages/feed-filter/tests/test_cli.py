@@ -947,14 +947,18 @@ def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
     # never reads the pattern out and hands it back through JSON and a shell.
     _no_client(monkeypatch)
     stored = r"^/posts/\d{4}/[^/]+/?$"
-    add_site(
-        sites_path(),
-        SiteConfig(
-            id="s1",
-            name="Scrape",
-            index_url="https://new.example.com/blog",
-            article_url_pattern=stored,
-        ),
+    # Hand-authored, not written through add_site: sites.toml is user-authored config
+    # this path edits by hand. The pattern is a TOML *literal* string, which
+    # update_pattern would rewrite as a basic string with doubled backslashes even
+    # when handed back the same value — so byte-identity here can actually fail.
+    sites_path().write_text(
+        "# my blog\n"
+        "[[site]]\n"
+        'id = "s1"\n'
+        'name = "Scrape"\n'
+        'index_url = "https://new.example.com/blog"\n'
+        rf"article_url_pattern = '{stored}'" + "\n",
+        encoding="utf-8",
     )
     before = sites_path().read_bytes()
     captured: dict[str, object] = {}
