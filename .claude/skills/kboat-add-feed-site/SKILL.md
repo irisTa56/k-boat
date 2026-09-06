@@ -1,6 +1,6 @@
 ---
 name: kboat-add-feed-site
-description: Register a new site in feed-filter from its URL alone. For an article feed/scrape site, run discovery, pick the article cluster, and snapshot the back-catalog; for a Discourse forum, register it with add-forum (no discovery, no snapshot). Use when the user wants to add/register a site or a Discourse forum to feed-filter, whether by URL or by name, and when a registered scrape site's `article_url_pattern` has to be corrected — a run reporting a site it could not heal ends here.
+description: Register a new site in feed-filter from its URL alone. For an article feed/scrape site, run discovery, pick the article cluster, and snapshot the back-catalog; for a Discourse forum, register it with add-forum (no discovery, no snapshot). Use when the user wants to add/register a site or a Discourse forum to feed-filter, whether by URL or by name.
 ---
 
 # Register a site in feed-filter

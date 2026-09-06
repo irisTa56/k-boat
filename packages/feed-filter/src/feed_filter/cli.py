@@ -356,7 +356,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     this run (``gathered.error is not None``) and resets otherwise, so a stateless
     run can escalate a persistent outage at the threshold instead of re-deriving
     "transient" every run. A ``zero_links`` scrape does not increment
-    — it is a broken pattern, not an outage, and where no new pattern can be derived
+    — it is a broken pattern, not an outage, and where the run cannot heal it
     the run summary rather than this counter is what surfaces it. The CLI never
     auto-disables — escalation is surfaced in the run summary.
     """

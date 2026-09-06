@@ -39,7 +39,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
      `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
      `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
-     A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when no new pattern can be derived to heal it.
+     A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when the run cannot heal it.
    - Keep `sites` aside for steps 3–5.
 
 2. **Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry.

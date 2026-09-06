@@ -568,8 +568,7 @@ def test_new_entries_zero_links_does_not_increment_failure_counter(
 ) -> None:
     """A zero_links scrape is a broken pattern, not an outage, so it must leave the
     site-health counter at 0 — persistence tracks unreachability, not broken
-    patterns, and that holds whether or not a new pattern can be derived to heal
-    this one. Only a non-None gather error increments.
+    patterns, and that holds whether or not the run can heal this one. Only a non-None gather error increments.
     """
     _no_client(monkeypatch)
     add_site(
