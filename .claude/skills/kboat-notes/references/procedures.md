@@ -326,6 +326,7 @@ A PDF and a web page differ only in how the content is obtained and where the re
 3. Build the notebook from the supplied content: `create` (read `.notebook.id`) → set chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)) → add the one source, and read the returned source id from the `--json` output. Neither branch's source has a `url`; the web-page branch resolves by the note's `title`, which it is given as `--title`, and the PDF by its type:
    - **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`.
    - **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
+
    Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`.
    Branch on `.status`, **not** the exit code — it merges `not_found` and `error` into `1`, and here too they want opposite handling.
    Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report its own timeout.
