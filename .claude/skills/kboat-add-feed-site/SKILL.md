@@ -120,8 +120,9 @@ The anti-bot handling covers Cloudflare's first-line bot check only (it normaliz
 ### Writing the scrape pattern by hand
 
 `article_url_pattern` is a Python regex, `re.search`ed against the **path** of each same-host link on the index page.
-That path is canonicalized first: scheme, host, query and fragment are stripped, duplicate slashes collapse, and the trailing slash is dropped from everything but the root.
+That path is canonicalized first: scheme, host, query and fragment are stripped, duplicate slashes collapse, percent-escapes are upper-cased, and the trailing slash is dropped from everything but the root.
 So a pattern written against the whole URL matches nothing, and neither does one that requires a trailing slash — however the site writes its permalinks, the regex never sees one.
+A non-ASCII segment is the other way to miss: the regex sees what the `href` holds, usually percent-encoded and now upper-cased, while the URL a user reads off their address bar is decoded — write such a segment as `[^/]+` rather than spelling it either way.
 Discovery's own patterns are the shape to copy: article links at `/blog/<slug>` give `^/blog/[^/]+/?$`, with the per-article segment generalized to `[^/]+` rather than taken from any one URL.
 Its fetch returned the page but not the article links, so it cannot show you their paths — ask the user for two or three of the site's article URLs and write a pattern of that form.
 Keep the segments that are the same for every article, and generalize each one that varies — a slug to `[^/]+`, a date to `\d{4}/\d{2}/\d{2}`.
@@ -143,8 +144,9 @@ Report to the user what you registered, what came back, and the article URLs you
 A pattern that matches too much is silent in both signals: `snapshotted` is non-zero and `zero_links` never fires, so every later run judges the tag and pagination pages it took and can write them as notes.
 The one moment it shows is that same `snapshotted` count — weigh it against the number of articles the index actually lists, and read a count well above that as a pattern that lost an anchor.
 
-Repair a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, never by re-running `add-site`.
-`add-site` snapshots the back-catalog before it rejects the duplicate id, so re-running it marks that site's articles seen and still leaves the broken pattern in place.
+Repair a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
+`heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
+Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
 
 ## Optional per-site selection override
 

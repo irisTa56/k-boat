@@ -88,10 +88,10 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
    Repair it:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
-   - **Heal only with a pattern discovery produced.** Where it hands back no article cluster — a `rejection`, feed candidates instead, or a non-zero exit — this step is done for that site: leave `sites.toml` alone and report it with what discovery returned.
-     - Never write a pattern of your own here.
-       - `heal-site` snapshots everything the pattern matched as seen with no note, so an over-broad guess burns the whole live index and none of those articles is ever written.
-     - The repair from there is registration work rather than the run's, whatever discovery returned, so report and stop rather than picking one.
+   - **Heal only with a pattern you can identify as the article cluster's.** Where you cannot — discovery rejected, or returned candidates none of which are articles, or did not complete — this step is done for that site: leave `sites.toml` alone and report it with what discovery returned.
+     - Never write a pattern of your own here, and never take one from a cluster you are not sure of; a tag or pagination cluster is a candidate like any other, and discovery does not tell them apart.
+       - `heal-site` snapshots everything the pattern matched as seen with no note, so an over-broad pattern burns the whole live index and none of those articles is ever written.
+     - The repair from there is not the run's, so report and stop rather than picking one.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
@@ -128,7 +128,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
-- Unhealed: each flagged site discovery could not supply a pattern for, with what it returned instead, which no counter escalates — the site keeps yielding nothing, and reporting it here is the only thing that reaches a human.
+- Unhealed: each flagged site discovery could not supply a pattern for, with what it returned instead — a `zero_links` site with no gather error takes the counter's success branch, so nothing escalates it and it keeps yielding nothing under a clean status.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)
