@@ -29,10 +29,11 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
-   - **Non-zero exit** → the initial URL could not be fetched (a transport failure).
-     - Report the error to the user and stop; do not register a site you could not reach.
+   - **Non-zero exit** → discovery did not complete.
+     - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
    - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
-     - `needs_js` → an HTML page whose links did not cluster into articles, so it is likely a JavaScript-rendered index, which the default httpx path cannot follow.
+     - `needs_js` → an HTML page whose links did not cluster into articles.
+       - A JavaScript-rendered index is the common cause, and an anti-bot interstitial served as an ordinary page reaches it too, so do not relay JavaScript to the user as the established cause.
        - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
      - `no_article_clusters` → no feed and no article-shaped link cluster was found.
        - Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
@@ -113,7 +114,7 @@ The flag needs the optional Playwright extra (`uv sync --extra browser && uv run
 There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
-  - Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
+  - Discovery looks for exactly what you already have, so running it here adds nothing.
 - **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
