@@ -39,7 +39,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
      `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
      `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
-     A `zero_links` scrape does not count as a failure — it is a broken pattern healed in step 4, not an outage.
+     A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when no new pattern can be derived to heal it.
    - Keep `sites` aside for steps 3–5.
 
 2. **Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry.
@@ -88,10 +88,12 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
    Repair it:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
-     - Where discovery comes back with a `rejection` instead of candidates there is no pattern to heal with, and the only route left is that skill's "Writing the scrape pattern by hand", which needs the user's own article URLs.
-       - A `requires_browser` site always lands here, because `discover` fetches over plain HTTP and so rejects for the same reason the site needed the browser — skip the fetch and take the hand-written route directly.
+     - Where discovery comes back with a `rejection`, or exits non-zero because the index is gated, there is no pattern to heal with, and the only route left is that skill's "Writing the scrape pattern by hand", which needs the user's own article URLs.
+       - A `requires_browser` site usually ends here, because `discover` reads the index over plain HTTP — the fetch that site was registered to bypass.
+         - Run it anyway rather than skipping it: the flag is set once at registration and never re-checked, so an index that has gone back to server rendering heals for the cost of one request.
        - Where nobody is there to supply those URLs, leave `sites.toml` alone and report the site as one that yields nothing until someone hand-writes a pattern.
-       - Never guess a pattern into `heal-site`, which writes the guess durably and snapshots whatever it matched as seen, so the articles it missed are never gathered again.
+       - Never guess a pattern into `heal-site`, which snapshots everything the guess matched as seen with no note.
+         - An over-broad guess is the dangerous one: it burns the whole live index into the seen-store, and none of those articles is ever written.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.

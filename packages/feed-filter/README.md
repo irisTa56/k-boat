@@ -190,5 +190,5 @@ The design favors **never-lost over never-duplicated**:
 - The `forum-poll-done` step advances a topic's poll counter and must run **last**, after every candidate post is dispositioned — a crash before it costs at most one re-poll, never a lost post.
 
 When a **scrape** site's index page yields zero pattern matches — the stored `article_url_pattern` no longer matches the live page, not merely a quiet day — the run self-heals: it re-runs discovery, re-picks the cluster, rewrites the pattern in `sites.toml`, snapshots the newly-matched URLs as seen (the same flood guard as registration), and reports the change in the run's summary.
-Where discovery rejects instead of re-picking a cluster — always so for a `requires_browser` site, whose index the plain-HTTP discovery fetch cannot read — there is no pattern to heal with, and the site waits on a hand-written one.
+Where discovery cannot supply a new pattern — it reads the index over plain HTTP, which is the fetch a `requires_browser` site was registered to bypass — there is nothing to heal with, and the site waits on a hand-written pattern.
 The heal writes no feed note; the feed notes are pages only, and operational notices go there too.
