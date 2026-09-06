@@ -111,10 +111,31 @@ There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
   - Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
-- **A JS-rendered scrape index.** Step 1's first `needs_js` case — an HTML page whose links did not cluster into articles — is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
+- **A JS-rendered scrape index.** Step 1's first `needs_js` case — an HTML page whose links did not cluster into articles — is the hint to retry a scrape site through the browser: register the page's own URL as `index_url`, add `--requires-browser`, and write the `article_url_pattern` yourself.
+  - Discovery rejected, so there are no `sample_urls` and no synthesized pattern to choose between — step 2 does not apply, and [Writing the scrape pattern by hand](#writing-the-scrape-pattern-by-hand) has the shape yours must take.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
 The anti-bot handling covers Cloudflare's first-line bot check only (it normalizes the headless User-Agent); a site that still serves an interactive challenge is unsupported and surfaces as a recurring per-site error at run time, not at registration.
+
+### Writing the scrape pattern by hand
+
+`article_url_pattern` is a Python regex, `re.search`ed against the **path** of each same-host link on the index page.
+Scheme, host, query and fragment are all stripped before the match, so a pattern written against the whole URL matches nothing.
+Discovery's own patterns are the shape to copy: article links at `/blog/<slug>` give `^/blog/[^/]+/?$`.
+The plain fetch that would have shown you those paths is the one that just failed, so ask the user for two or three of the site's article URLs and anchor a pattern of that form on the prefix they share.
+
+Check those URLs sit on the host the index URL **lands on** after redirects, which is what the same-host filter compares against.
+A link off it is dropped before the regex ever sees it, so where the articles live on another host — `blog.example.com` under an `example.com` index — no pattern reaches them; register that host's own listing page as `index_url` instead, and tell the user where it has none.
+
+Nothing then checks the pattern against the site.
+`add-site` and `heal-site` both check only that it compiles, so `https://example.com/blog/.*` — a valid regex that no path can match — is accepted at exit 0 and the site then yields nothing.
+A site yielding nothing shows as `snapshotted: 0` on the command you just ran, and as `zero_links` on every later run — and for a `requires_browser` site the run's self-heal cannot clear it, because self-heal re-derives the pattern by re-running discovery over plain HTTP, the same fetch that produced no pattern here.
+
+Neither signal says why, and the causes are several: the pattern itself, a link the same-host filter dropped, or a list the browser missed because it captures the DOM at the load event and waits for no later render.
+Report to the user what you registered, what came back, and the article URLs you worked from, rather than rewriting the regex against a cause you cannot see.
+
+Repair a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, never by re-running `add-site`.
+`add-site` snapshots the back-catalog before it rejects the duplicate id, so re-running it marks that site's articles seen and still leaves the broken pattern in place.
 
 ## Optional per-site selection override
 
