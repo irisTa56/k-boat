@@ -41,31 +41,19 @@ No `feed-filter` subcommand edits a URL, so that value is a hand-edit: `sites.to
 What goes in is a URL confirmed to serve this same site, never one inferred from the error page that raised the suspicion — where the move is only suspected, report the candidate and leave the row alone.
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
-2. **For a scrape site, settle with the user whether the move changed the article URLs**, before touching the row.
-   The host is part of that URL — the scraper keys an article on scheme, host and path together — so a new domain or subdomain changes every one of them however familiar the paths look; only a same-host rename, or an old URL that had been redirecting to the new host while the runs still succeeded, leaves the question open.
-   Where they changed, every article the new index carries is unseen, and the next runs judge them a capful at a time and write the keeps as notes.
-   Most of those are second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one — but not all of them: the site went on publishing through the three-plus failed runs it takes to raise the escalation that sent you here, and none of that was ever gathered under any URL.
-   The re-snapshot buries that part whichever way you run it, rightly or wrongly: it marks every match seen with no note, nothing un-sees a row, and the count it reports does not say which articles they were.
-   So the trade is a bounded pile of duplicates the user can dismiss against an unbounded loss they cannot see, and this package's stated bias is never-lost over never-duplicated (`packages/feed-filter/README.md`) — put both sides to them rather than the question alone, and run the re-snapshot only where they ask for it — not merely where the URLs turn out to have changed.
-   Ask before the edit rather than at step 5, because from step 3 the site is enabled on the new URL with no snapshot under it, and the next scheduled run does not wait for an answer.
-   A feed site has no re-snapshot to leave pending and a forum keys on ids rather than URLs, so neither has anything to settle here.
-3. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
+2. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
    - Change the value only, and leave the row's other fields where they are.
      A row's kind comes from which of `feed_url`, `article_url_pattern` and `forum_url` it sets — the loader takes exactly one and rejects anything else — while `index_url` is not one of those three and is instead required alongside `article_url_pattern`.
    - Give the user the old value when you report the change.
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
-4. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
+3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
-5. **Carry out step 2's decision, and report what the move costs this site.**
-   - A **scrape** site whose URLs changed and whose user asked for the re-snapshot: `feed-filter resnapshot-site --site-id <id>` re-scrapes it as step 3 now registers it and marks the matches seen, writing no config.
-     Read the `snapshotted` count it reports rather than its exit status: a non-zero exit means the re-scrape failed before anything was written, so retry it.
-     That count is what the re-scrape matched rather than what it newly buried — a row already seen is left as it was — so it bounds the loss from above, and a count of 0 means nothing matched at all.
-     Report the count rather than a cause either way, since nothing bounds the set of causes (`kboat-add-feed-site`, "Writing the scrape pattern by hand").
-   - A **scrape** site whose article URLs did not change needs nothing run: the seen-store still covers its back-catalog, so only what the index carries from the failure onward is judged, a capful a run.
-   - A **scrape** site the user did not ask a re-snapshot for — because the answer did not settle, or because they chose the duplicates over the loss: say it is outstanding and that nothing was run, since it can be run at any later point.
-   - A **feed** site has no such command — `resnapshot-site` takes scrape sites only — so ask the user here whether the move changed the article URLs, and where it did, say the next runs will work through what the feed carries.
-   - A **forum** site takes no command: its dedupe keys on the forum's own topic and post ids rather than on a URL, so nothing is re-judged.
-     Report one thing anyway, since it holds however the move went: a topic already filed had its note named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
+4. **Report what the move leaves for the next runs**, which is not nothing wherever it changed the article URLs — and a new domain or subdomain always does, since an article is keyed on its host as well as its path.
+   - On a **scrape** or **feed** site every article the new URL carries is then unseen, so the next runs judge them a capful at a time and file the keeps as notes, largely second copies of ones already filed under the old URLs.
+     `feed-filter resnapshot-site --site-id <id>` marks a scrape site's matches seen instead, writing no config — but it also buries whatever the site published while it was failing, which was filed nowhere, so put that trade to the user rather than settling it yourself.
+     A feed site has no such command.
+   - A **forum** site keeps its seen-state, since its dedupe keys on the forum's own topic and post ids rather than on a URL.
+     Its notes still split, though: one already filed was named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
 
 That is the whole of the fix.
 
