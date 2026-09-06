@@ -88,6 +88,10 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
    Repair it:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
+     - Where discovery comes back with a `rejection` instead of candidates there is no pattern to heal with, and the only route left is that skill's "Writing the scrape pattern by hand", which needs the user's own article URLs.
+       - A `requires_browser` site always lands here, because `discover` fetches over plain HTTP and so rejects for the same reason the site needed the browser — skip the fetch and take the hand-written route directly.
+       - Where nobody is there to supply those URLs, leave `sites.toml` alone and report the site as one that yields nothing until someone hand-writes a pattern.
+       - Never guess a pattern into `heal-site`, which writes the guess durably and snapshots whatever it matched as seen, so the articles it missed are never gathered again.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
@@ -116,7 +120,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Run summary
 
 Emit a run summary as the run's text output — the pass's durable record, and the only channel for operational notices (none become feed notes, which are pages only).
-Lead with what is **actionable** — a gather `error` or an operational failure (a `remind` / `heal-site` non-zero exit, a missing-Playwright gate) — and name the offending sites so they can be fixed or paused.
+Lead with what is **actionable** — a gather `error`, an operational failure (a `remind` / `heal-site` non-zero exit, a missing-Playwright gate), or a flagged site the run could not heal — and name the offending sites so they can be fixed or paused.
 A self-heal is worth surfacing too, but as an informational record (the run repaired the scrape pattern itself), not an action.
 Routine keeps and walls need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
 A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and whichever of step 5's two branches you took, noting the `error` verbatim when it is an `unexpected_error`.
@@ -124,6 +128,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
+- Unhealed: each flagged site left as it was for want of a hand-written pattern, which no counter escalates — it keeps yielding nothing, and reporting it here is the only thing that reaches a human.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)
