@@ -36,7 +36,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
        - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
      - `no_article_clusters` → no feed and no article-shaped link cluster was found.
        - Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
-     - `no_html_body` → an empty body, or one the server did not label as HTML, so discovery stopped before the clustering step and has established nothing about the page's article links.
+     - `no_html_body` → a body with nothing in it, or one the server did not label as HTML, so discovery stopped before the clustering step and has established nothing about the page's article links.
        - Ask the user for a URL that serves the site's articles as HTML — its article-listing page, or a feed — and re-run discovery on that.
        - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
    - Otherwise you have one or more `candidates`.

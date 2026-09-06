@@ -209,7 +209,7 @@ def test_rejection_no_article_clusters() -> None:
 
 def test_rejection_needs_js_sparse_html() -> None:
     # An HTML body clustering did read, and found nothing article-shaped in. `needs_js`
-    # must not widen to the two bodies below, which clustering never saw.
+    # must not widen to the bodies `no_html_body` covers, which clustering never saw.
     page = b"<html><body><p>loading...</p></body></html>"
     client = _client({"/": (200, page, "text/html")})
     with client:
@@ -230,10 +230,14 @@ def test_rejection_no_html_body_non_html() -> None:
     assert result.rejection.reason == "no_html_body"
 
 
-def test_rejection_no_html_body_empty_html() -> None:
-    # An empty body labelled HTML lands here too: the content type alone does not
-    # earn `needs_js`, because there was nothing for clustering to read.
-    client = _client({"/": (200, b"", "text/html")})
+@pytest.mark.parametrize("body", [b"", b"   \n\t ", b"\xef\xbb\xbf", b"\xef\xbb\xbf  \n"])
+def test_rejection_no_html_body_blank_html(body: bytes) -> None:
+    # A blank body labelled HTML lands here too: the content type alone does not earn
+    # `needs_js`, because there was nothing for clustering to read. Whitespace and a
+    # byte-order mark establish exactly what an empty body does, so they must not
+    # split across the two reasons — the mark needs naming because `str.strip` does
+    # not count it as space.
+    client = _client({"/": (200, body, "text/html")})
     with client:
         result = discover("https://example.com/", client=client)
 

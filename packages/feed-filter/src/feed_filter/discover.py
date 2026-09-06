@@ -86,12 +86,12 @@ class DiscoveryRejection:
     - ``no_article_clusters``: the index page has dense link clusters but all of
       them look like navigation relative to the supplied URL — point at the
       article-listing page instead.
-    - ``needs_js``: clustering ran over a non-empty HTML body and came back with no
-      qualifying link cluster, so the page most likely renders its articles with
-      JavaScript and is unsupported.
-    - ``no_html_body``: the body was empty or its content type did not label it
-      HTML, so clustering never ran and nothing was established about the page's
-      article links.
+    - ``needs_js``: clustering ran over an HTML body with something in it and came
+      back with no qualifying link cluster, so the page most likely renders its
+      articles with JavaScript and is unsupported.
+    - ``no_html_body``: the body was blank — empty, or nothing but whitespace and a
+      byte-order mark — or its content type did not label it HTML, so clustering
+      never ran and nothing was established about the page's article links.
     """
 
     reason: RejectionReason
@@ -306,7 +306,7 @@ def _scrape_candidates(
     (most likely the section the operator named), then the rest preserving the
     size-desc order. Qualifying-but-all-navigation → ``no_article_clusters``. No
     qualifying cluster at all → ``needs_js``, which the caller has already earned
-    by establishing that ``html`` is a non-empty HTML body.
+    by establishing that ``html`` is an HTML body with something in it.
     """
     clusters = _cluster_link_patterns(html, final_url)
     article_clusters = _drop_navigation_clusters(clusters, source_url) if clusters else []
@@ -407,11 +407,13 @@ def discover(url: str, *, client: httpx.Client) -> DiscoveryResult:
         )
         return DiscoveryResult(candidates=feed_candidates, rejection=None)
 
-    # Layer (d): index-page clustering — only on a non-empty HTML body, the sole
-    # input the cluster algorithm is meaningful on. Anything else falls through to
-    # ``no_html_body``, which is a claim about the response and not about the
-    # page's links: clustering never ran, so ``needs_js`` would be unearned here.
-    if text and is_html:
+    # Layer (d): index-page clustering — only on an HTML body with something in it,
+    # the sole input the cluster algorithm is meaningful on. Anything else falls
+    # through to ``no_html_body``, which is a claim about the response and not about
+    # the page's links: clustering never ran, so ``needs_js`` would be unearned here.
+    # A byte-order mark is dropped before the blank test because it is a decoding
+    # artifact rather than content, and ``str.strip`` does not count it as space.
+    if text.lstrip("\ufeff").strip() and is_html:
         candidates, rejection = _scrape_candidates(text, final_url, url)
         return DiscoveryResult(candidates=candidates, rejection=rejection)
 
