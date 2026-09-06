@@ -39,7 +39,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
      `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
      `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
-     A `zero_links` scrape does not count as a failure — it is a broken pattern healed in step 4, not an outage.
+     A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when the run cannot heal it.
    - Keep `sites` aside for steps 3–5.
 
 2. **Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry.
@@ -86,8 +86,12 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      This deliberately favors never-lost over never-duplicated.
 
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
-   Repair it:
-   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
+   Heal it where the condition below holds, and report it where it does not:
+   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
+   - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned and which of the two conditions failed.
+     - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
+     - Naming the cluster is your judgement and not a check on the output: a tag or pagination cluster comes back as a candidate like any other and discovery does not tell them apart, and a feed candidate carries no `article_url_pattern` at all.
+       - `heal-site` snapshots everything the pattern matched as seen with no note, so a pattern you were unsure of burns the whole live index and none of those articles is ever written.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
@@ -116,7 +120,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Run summary
 
 Emit a run summary as the run's text output — the pass's durable record, and the only channel for operational notices (none become feed notes, which are pages only).
-Lead with what is **actionable** — a gather `error` or an operational failure (a `remind` / `heal-site` non-zero exit, a missing-Playwright gate) — and name the offending sites so they can be fixed or paused.
+Lead with what is **actionable** — a gather `error`, an operational failure (a `remind` / `heal-site` non-zero exit, a missing-Playwright gate), or a flagged site the run could not heal — and name the offending sites so they can be fixed or paused.
 A self-heal is worth surfacing too, but as an informational record (the run repaired the scrape pattern itself), not an action.
 Routine keeps and walls need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
 A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and whichever of step 5's two branches you took, noting the `error` verbatim when it is an `unexpected_error`.
@@ -124,6 +128,9 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
+- Unhealed: each flagged site the run did not heal, with what discovery returned and which of step 4's two conditions failed.
+  - Where the transport was the one that failed, say the pattern is not one to apply — nothing else marks it, and it is the only thing between the reader and a `heal-site` that overwrites the stored pattern with it.
+  - A `zero_links` site with no gather error takes the counter's success branch, so nothing escalates it and it keeps yielding nothing under a clean status.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)

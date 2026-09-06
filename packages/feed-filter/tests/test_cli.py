@@ -566,9 +566,10 @@ def test_new_entries_does_not_cache_capped_entries(
 def test_new_entries_zero_links_does_not_increment_failure_counter(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A zero_links scrape is a broken pattern (healed by heal-site), not an outage,
-    so it must leave the site-health counter at 0 — persistence tracks
-    unreachability, not broken patterns. Only a non-None gather error increments.
+    """A zero_links scrape is a broken pattern, not an outage, so it must leave the
+    site-health counter at 0 — persistence tracks unreachability, not broken
+    patterns, and that holds whether or not the run can heal this one. Only a
+    non-None gather error increments.
     """
     _no_client(monkeypatch)
     add_site(

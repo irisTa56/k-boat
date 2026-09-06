@@ -211,7 +211,12 @@ def _round_robin(groups: list[list[Any]]) -> list[Any]:
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
-    """Emit ``{candidates, rejection}``; a transport failure exits non-zero."""
+    """Emit ``{candidates, rejection}``; a transport failure exits non-zero.
+
+    The plain-HTTP fetch is load-bearing rather than incidental: the run path
+    heals a scrape site only where discovery read the page the gather reads.
+    Before changing this transport, read ARCHITECTURE's scrape self-heal invariant.
+    """
     with build_client() as client:
         result = discover(args.url, client=client)  # FetchError propagates → exit 1
     _emit(
@@ -356,7 +361,8 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     this run (``gathered.error is not None``) and resets otherwise, so a stateless
     run can escalate a persistent outage at the threshold instead of re-deriving
     "transient" every run. A ``zero_links`` scrape does not increment
-    — it is a broken pattern healed by ``heal-site``, not an outage. The CLI never
+    — it is a broken pattern, not an outage, and where the run cannot heal it
+    the run summary rather than this counter is what surfaces it. The CLI never
     auto-disables — escalation is surfaced in the run summary.
     """
     # Skip disabled sites entirely (no fetch, no error, no notification) — they stay in the
@@ -391,8 +397,8 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                 # Site-health escalation, the article-path mirror of
                 # cmd_forum_new. An article site fetches a single feed/index, so
                 # "unreachable this run" is simply a non-None gather error; a
-                # ``zero_links`` scrape (a broken pattern healed by heal-site, not an
-                # outage) is a distinct condition and does NOT increment. Same store,
+                # ``zero_links`` scrape (a broken pattern, not an outage) is a
+                # distinct condition and does NOT increment. Same store,
                 # keyed by site_id.
                 if gathered.error is not None:
                     failure_count = site_health.record_failure(conn, site.id)

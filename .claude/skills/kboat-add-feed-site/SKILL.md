@@ -67,7 +67,8 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
    That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever written as notes.
-   A non-zero exit means the back-catalog fetch failed before anything was written — report it and retry; the site was not registered.
+   A non-zero exit *before* that snapshot — the back-catalog fetch failing — leaves nothing written, so report it and retry.
+   One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen.
 
 5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
    Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
@@ -115,10 +116,54 @@ There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
   - Discovery looks for exactly what you already have, so running it here adds nothing.
-- **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
+- **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: register the page's own URL as `index_url`, add `--requires-browser`, and write the `article_url_pattern` yourself.
+  - Discovery rejected, so there are no `sample_urls` and no synthesized pattern to choose between — step 2 does not apply, and [Writing the scrape pattern by hand](#writing-the-scrape-pattern-by-hand) has the shape yours must take.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
 The anti-bot handling covers Cloudflare's first-line bot check only (it normalizes the headless User-Agent); a site that still serves an interactive challenge is unsupported and surfaces as a recurring per-site error at run time, not at registration.
+
+### Writing the scrape pattern by hand
+
+`article_url_pattern` is a Python regex, `re.search`ed against the **path** of each same-host link on the index page.
+That path is canonicalized first: scheme, host, query and fragment are stripped, duplicate slashes collapse, percent-escapes are upper-cased, and the trailing slash is dropped from everything but the root.
+So a pattern written against the whole URL matches nothing, and neither does one that requires a trailing slash — however the site writes its permalinks, the regex never sees one.
+Where the article's identity is in the query rather than the path — `?p=123`, `index.php?post=<slug>` — no pattern reaches it: the query is stripped, so every article canonicalizes to the same path and one entry stands for all of them.
+That site cannot be scraped by pattern at all, so report it back rather than registering it; `snapshotted` comes back non-zero and `zero_links` never fires, so nothing later would tell you.
+
+A non-ASCII segment is the other way to miss: the regex sees what the `href` holds, usually percent-encoded and now upper-cased, while the URL a user reads off their address bar is decoded.
+Neither spelling is safe on its own, so write both — `^/(記事|%E8%A8%98%E4%BA%8B)/[^/]+$` matches under either — rather than generalizing the segment to `[^/]+`, which drops the one literal telling articles from navigation.
+Discovery's own patterns are the shape to copy: article links at `/blog/<slug>` give `^/blog/[^/]+/?$`, with the per-article segment generalized to `[^/]+` rather than taken from any one URL.
+Its fetch returned the page but not the article links, so it cannot show you their paths — ask the user for two or three of the site's article URLs and write a pattern of that form.
+Keep the segments that are the same for every article, and generalize each one that varies — a slug to `[^/]+`, a date to `\d{4}/\d{2}/\d{2}`.
+Anchor both ends, since the pattern is `re.search`ed rather than matched against the whole path: unanchored, `/blog/[^/]+` also takes `/blog/tags/python`, `/blog/page/2` and `/category/blog/roundup`.
+A prefix the samples happen to share is not the same thing as a fixed segment: two posts from one month share `/2024/03`, and a pattern anchored there registers cleanly and then stops matching when the month rolls.
+
+Check those URLs sit on the host the index URL **lands on** after redirects, which is what the same-host filter compares against — step 1's rejection message names that host, so you already have it.
+What the filter actually reads is the host in each `href` the page carries, which a URL the user copied from their address bar need not match, and on this path you cannot see the page to settle it — so ask the user which host their article links are written under rather than inferring it from the URLs they gave.
+A link off it is dropped before the regex ever sees it, and the hostnames are compared for exact equality — so `www.example.com` is off an `example.com` index as surely as `blog.example.com` is.
+The `www` split is the one to look for, because it is the one you answer yes to: an index reached at the apex whose page writes absolute `www` permalinks matches nothing, and reads as a bad regex.
+For the `www` split the repair is the same page under the right host: register the listing page as the links spell it, path and all, rather than the bare host — a homepage as `index_url` matches whatever few posts it happens to feature and reports a clean site.
+Where the articles really do live on another site, no pattern reaches them at all: find that site's own listing page and register that, and tell the user where it has none.
+
+Nothing then checks the pattern against the site.
+`add-site` and `heal-site` both check only that it compiles, so `https://example.com/blog/.*` — a valid regex that no path can match — is accepted at exit 0 and the site then yields nothing.
+A site yielding nothing shows as `snapshotted: 0` on the command you just ran, and as `zero_links` on every later run.
+The run's self-heal will not clear either signal for a `requires_browser` site: it re-derives the pattern by re-running discovery, which reads over plain HTTP and so is not reading the page the gather reads, and the run reports such a site rather than healing it.
+
+Neither signal says why.
+The pattern is one cause among several — a link the same-host filter dropped is another, and so is a list rendered after the browser's load-event capture — and nothing bounds that set, so it is not a diagnosis to work through.
+Report to the user what you registered, what came back, and the article URLs you worked from, rather than rewriting the regex against a cause you cannot see.
+
+A pattern that matches too much has no signal at all: `snapshotted` is non-zero, `zero_links` never fires, and the count itself reads nothing, since it takes every matching link on the page and a "recent posts" or "popular" sidebar carries real article links too.
+The flood guard hides the rest — everything the pattern took at registration is snapshotted seen, so the junk that ever reaches a judge is what appears afterwards, a new tag page or the next pagination link.
+Report the pattern you registered and the count it snapshotted along with the rest, and leave the reading of that count to the user, who can see the page.
+
+Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
+A wrong `index_url` is not a pattern, and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, so no correction it accepts fixes that site.
+Report that case rather than reaching for a command.
+`heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
+Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
+That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` marks everything the new pattern matched as seen with no note, so an over-broad correction burns the whole live index and those articles are never written.
 
 ## Optional per-site selection override
 
