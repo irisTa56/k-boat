@@ -91,9 +91,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - **Heal only with a pattern discovery produced.** Where it hands back no article cluster — a `rejection`, feed candidates instead, or a non-zero exit — this step is done for that site: leave `sites.toml` alone and report it with what discovery returned.
      - Never write a pattern of your own here.
        - `heal-site` snapshots everything the pattern matched as seen with no note, so an over-broad guess burns the whole live index and none of those articles is ever written.
-     - The repairs from here are registration work rather than the run's, which is why the run reports rather than attempts them.
-       - A site not already flagged whose index has gone JS-rendered needs `requires_browser`, and no CLI writes that flag — it is a hand-edit of `sites.toml`.
-       - A site already flagged needs a pattern hand-written from the user's own article URLs, per `kboat-add-feed-site`'s "Writing the scrape pattern by hand".
+     - The repair from there is registration work rather than the run's, whatever discovery returned, so report and stop rather than picking one.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
