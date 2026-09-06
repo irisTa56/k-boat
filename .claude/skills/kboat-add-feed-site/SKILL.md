@@ -142,12 +142,14 @@ Neither signal says why.
 The pattern is one cause among several — a link the same-host filter dropped is another, and so is a list rendered after the browser's load-event capture — and nothing bounds that set, so it is not a diagnosis to work through.
 Report to the user what you registered, what came back, and the article URLs you worked from, rather than rewriting the regex against a cause you cannot see.
 
-A pattern that matches too much is silent in both signals: `snapshotted` is non-zero and `zero_links` never fires, so every later run judges the tag and pagination pages it took and can write them as notes.
-The one moment it shows is that same `snapshotted` count — weigh it against the number of articles the index actually lists, and read a count well above that as a pattern that lost an anchor.
+A pattern that matches too much is silent in both signals: `snapshotted` is non-zero and `zero_links` never fires.
+The flood guard hides most of the damage as well — everything the pattern took at registration is snapshotted seen, so the junk that ever reaches a judge is what appears afterwards, a new tag page or the next pagination link.
+The one moment it shows is that same `snapshotted` count, so ask the user how many articles their index lists — you cannot read the page yourself, which is why you are here — and read a count well above that as a pattern that lost an anchor.
 
 Repair a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
 Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
+That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` marks everything the new pattern matched as seen with no note, so an over-broad correction burns the whole live index and those articles are never written.
 
 ## Optional per-site selection override
 

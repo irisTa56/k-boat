@@ -86,7 +86,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      This deliberately favors never-lost over never-duplicated.
 
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
-   Repair it:
+   Heal it where the condition below holds, and report it where it does not:
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
    - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned.
      - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
@@ -129,7 +129,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
-- Unhealed: each flagged site discovery could not supply a pattern for, with what it returned instead — a `zero_links` site with no gather error takes the counter's success branch, so nothing escalates it and it keeps yielding nothing under a clean status.
+- Unhealed: each flagged site the run did not heal, with what discovery returned — a `zero_links` site with no gather error takes the counter's success branch, so nothing escalates it and it keeps yielding nothing under a clean status.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
 
 ## Cost controls (state these hold)
