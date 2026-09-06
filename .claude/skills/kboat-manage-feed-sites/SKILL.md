@@ -37,7 +37,7 @@ Say so when reporting a resume, rather than promising only post-resume entries.
 
 A moved site — a new domain, a new subdomain, a renamed feed or index path — keeps its id and its config; what is wrong is the URL it is registered under.
 So the fix is to change that value, and never to disable the site.
-No `feed-filter` subcommand edits a URL, and none is needed: `sites.toml` is the registry itself, and it is user-authored config that this skill edits by hand.
+No `feed-filter` subcommand edits a URL, so that value is a hand-edit: `sites.toml` is the registry itself, and it is user-authored config this skill writes directly.
 What goes in is a URL confirmed to serve this same site, never one inferred from the error page that raised the suspicion — where the move is only suspected, report the candidate and leave the row alone.
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.

@@ -588,12 +588,13 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
         )
     if site.kind != "scrape":
         raise ValueError(f"heal-site targets scrape sites only (site {site.id!r})")
-    # ``update_pattern`` rejects an uncompilable pattern too, but that is the last
-    # step: checking here turns the re-scrape's raw ``re.error`` into the same
-    # ``error: …`` exit as any other bad argument, before any fetch.
     # SiteConfig's exactly-one invariant: the kind check above makes the pattern present.
     assert site.article_url_pattern is not None
     pattern = args.pattern if args.pattern is not None else site.article_url_pattern
+    # Where ``--pattern`` was given, ``update_pattern`` would reject an uncompilable one
+    # too, but that is the last step: checking here turns the re-scrape's raw ``re.error``
+    # into the same ``error: …`` exit as any other bad argument, before any fetch. Where it
+    # was omitted nothing else compiles the stored pattern, so this is the only guard.
     validate_article_url_pattern(pattern, site.id)
     # The healed site is already on disk, so the on-disk gate sees it: fail fast if
     # it is browser-flagged but the extra is missing before the re-scrape.
@@ -602,7 +603,9 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     healed_site = replace(site, article_url_pattern=pattern)
     try:
         with build_client() as client:
-            entries = fetch_entries(healed_site, client=client)  # re-scraped under the NEW pattern
+            # Re-scraped under the effective pattern: the caller's when one was given,
+            # the stored one otherwise — which is the re-snapshot case, writing no config.
+            entries = fetch_entries(healed_site, client=client)
         with contextlib.closing(open_db(db_path())) as conn:
             snapshot(
                 conn, site.id, [e.canonical_url for e in entries]
