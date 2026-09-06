@@ -1211,6 +1211,24 @@ def test_resnapshot_site_rejects_feed_site(
     assert "resnapshot-site" in err
 
 
+def test_resnapshot_site_rejects_forum_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A forum row is what separates a correct kind guard from a narrowed one: a feed row
+    # trips the `article_url_pattern is not None` assert behind the guard either way, so
+    # it cannot tell `!= "scrape"` from `== "feed"`. Under the narrowed form a forum id
+    # reaches that assert and exits with a bare AssertionError traceback, which main does
+    # not catch -- the one failure the refusal block exists to prevent.
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="d1", name="Forum", forum_url="https://d.example.com"))
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a forum site"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "d1"]) == 1
+    err = capsys.readouterr().err
+    assert "scrape sites only" in err
+    assert "resnapshot-site" in err
+
+
 def test_resnapshot_site_requires_a_site_id(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
