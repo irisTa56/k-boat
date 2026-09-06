@@ -939,6 +939,41 @@ def test_heal_site_snapshots_exactly_the_new_pattern_matches(
     assert rows == {"https://e.example.com/posts/a", "https://e.example.com/posts/b"}
 
 
+def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The re-snapshot case a repointed site needs: the stored pattern is re-scraped
+    # and its matches marked seen, with sites.toml left byte-identical — so the caller
+    # never reads the pattern out and hands it back through JSON and a shell.
+    _no_client(monkeypatch)
+    stored = r"^/posts/\d{4}/[^/]+/?$"
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://new.example.com/blog",
+            article_url_pattern=stored,
+        ),
+    )
+    before = sites_path().read_bytes()
+    captured: dict[str, object] = {}
+
+    def fake_fetch_entries(site: SiteConfig, *, client: object) -> list[Entry]:
+        captured["pattern"] = site.article_url_pattern
+        return [_entry("https://new.example.com/posts/2024/a", kind="scrape")]
+
+    monkeypatch.setattr(cli, "fetch_entries", fake_fetch_entries)
+
+    assert cli.main(["heal-site", "--site-id", "s1"]) == 0
+    assert captured["pattern"] == stored
+    assert _out(capsys) == {"site_id": "s1", "pattern": stored, "snapshotted": 1}
+    assert sites_path().read_bytes() == before
+    with contextlib.closing(open_db(db_path())) as conn:
+        rows = {r[0] for r in conn.execute("SELECT canonical_url FROM seen")}
+    assert rows == {"https://new.example.com/posts/2024/a"}
+
+
 def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

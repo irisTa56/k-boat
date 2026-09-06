@@ -115,7 +115,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `entry-body` | print one gathered entry's full cached body (`{url, body}` with `url` canonicalized; `body` is `null` on a cache miss) for the judge |
 | `remind` | write a kept entry as a `Feeds/` note and record it seen (`--wall` flags a login/paywall page, `--summary` optional) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
-| `heal-site` | rewrite a scrape pattern and re-snapshot |
+| `heal-site` | re-snapshot a scrape site, rewriting its pattern when `--pattern` is given |
 | `disable-site` / `enable-site` | pause / resume a site without losing it |
 | `add-forum` | register a Discourse forum (writes config only, no snapshot) |
 | `forum-new` | gather Rule-A and Rule-B candidates across forum sites |
@@ -138,7 +138,7 @@ Both filter on `enabled` as well, so a paused site reaches no gather at all and 
   - an article site: discover → pick cluster → `add-site`;
   - a Discourse forum: confirm the instance → infer `--forum-subject` → `add-forum`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
-- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, plus a `heal-site` re-snapshot where the move changed the article URLs).
+- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, plus a `heal-site` re-snapshot for a **scrape** site whose article URLs changed — the feed path has no such command).
 - `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants

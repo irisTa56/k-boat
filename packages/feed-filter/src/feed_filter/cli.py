@@ -570,6 +570,13 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     re-scrape uses it without committing it first. The heal writes NO
     feed note — it is an operational notice, not a page; the run routine reports
     the heal in the run summary instead (feed notes are pages only).
+
+    ``--pattern`` is optional, and omitting it is the *re-snapshot* case: the
+    site's stored pattern is re-scraped and its matches snapshotted, with no
+    config write at all. That is what a repointed site needs after a move, and
+    it exists so the caller never has to read the stored pattern out and hand it
+    back — a round trip through JSON and a shell that silently mangles a regex
+    and commits the result.
     """
     site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
     if not site.enabled:
@@ -584,12 +591,15 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
     # ``update_pattern`` rejects an uncompilable pattern too, but that is the last
     # step: checking here turns the re-scrape's raw ``re.error`` into the same
     # ``error: …`` exit as any other bad argument, before any fetch.
-    validate_article_url_pattern(args.pattern, site.id)
+    # SiteConfig's exactly-one invariant: the kind check above makes the pattern present.
+    assert site.article_url_pattern is not None
+    pattern = args.pattern if args.pattern is not None else site.article_url_pattern
+    validate_article_url_pattern(pattern, site.id)
     # The healed site is already on disk, so the on-disk gate sees it: fail fast if
     # it is browser-flagged but the extra is missing before the re-scrape.
     require_playwright_if_needed(sites_path())
 
-    healed_site = replace(site, article_url_pattern=args.pattern)
+    healed_site = replace(site, article_url_pattern=pattern)
     try:
         with build_client() as client:
             entries = fetch_entries(healed_site, client=client)  # re-scraped under the NEW pattern
@@ -597,10 +607,11 @@ def cmd_heal_site(args: argparse.Namespace) -> int:
             snapshot(
                 conn, site.id, [e.canonical_url for e in entries]
             )  # flood guard, before config
-        update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
+        if args.pattern is not None:
+            update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
     finally:
         close_browser()  # tear down a lazily-launched browser (F2: heal-site re-scrapes too)
-    _emit({"site_id": site.id, "pattern": args.pattern, "snapshotted": len(entries)})
+    _emit({"site_id": site.id, "pattern": pattern, "snapshotted": len(entries)})
     return 0
 
 
@@ -1082,7 +1093,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_heal = sub.add_parser("heal-site", help="rewrite a scrape pattern and re-snapshot")
     p_heal.add_argument("--site-id", dest="site_id", required=True)
-    p_heal.add_argument("--pattern", required=True)
+    p_heal.add_argument(
+        "--pattern", help="omit to re-snapshot under the stored pattern, writing no config"
+    )
     p_heal.set_defaults(handler=cmd_heal_site)
 
     p_disable = sub.add_parser(
