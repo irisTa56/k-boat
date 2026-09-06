@@ -1163,6 +1163,58 @@ def test_heal_site_refuses_disabled_site(
     assert "enabled sites only" in capsys.readouterr().err
 
 
+# resnapshot-site is the second caller of ``_scrape_site_for``, so it needs its own
+# refusal cases: pinning them only through heal-site leaves the guard droppable here,
+# where the disabled arm would burn a site the user deliberately paused and the kind arm
+# would reach a bare AssertionError that ``main`` does not catch.
+
+
+def test_resnapshot_site_refuses_disabled_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="S",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    assert cli.main(["disable-site", "--site-id", "s1"]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(
+        cli, "fetch_entries", lambda *a, **k: pytest.fail("re-scraped a paused site")
+    )
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    err = capsys.readouterr().err
+    assert "enabled sites only" in err
+    assert "resnapshot-site" in err  # the message names the command that refused
+
+
+def test_resnapshot_site_rejects_feed_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="f1", name="Feed", feed_url="https://e.example.com/f.xml"))
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a feed site"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "f1"]) == 1
+    err = capsys.readouterr().err
+    assert "scrape sites only" in err
+    assert "resnapshot-site" in err
+
+
+def test_resnapshot_site_unknown_id_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_site(sites_path(), SiteConfig(id="s1", name="S", feed_url="https://e.example.com/f.xml"))
+    assert cli.main(["resnapshot-site", "--site-id", "nope"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
 # --- browser opt-in path (gate + teardown) --------------------------------
 
 
