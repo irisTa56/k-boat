@@ -211,7 +211,15 @@ def _round_robin(groups: list[list[Any]]) -> list[Any]:
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
-    """Emit ``{candidates, rejection}``; a transport failure exits non-zero."""
+    """Emit ``{candidates, rejection}``; a transport failure exits non-zero.
+
+    The plain-HTTP fetch is load-bearing rather than incidental. The run path
+    heals a scrape site only where discovery read the page the gather reads, so a
+    ``requires_browser`` site is never healed from this command's output however
+    clean that output looks. Giving this command the browser transport moves that
+    gate and owes a sweep of the prose stating it — both run skills, README's
+    "Failure and self-heal behavior", and ARCHITECTURE's scrape self-heal invariant.
+    """
     with build_client() as client:
         result = discover(args.url, client=client)  # FetchError propagates → exit 1
     _emit(
