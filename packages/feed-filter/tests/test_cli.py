@@ -1235,6 +1235,28 @@ def test_resnapshot_site_requires_a_site_id(
     assert excinfo.value.code == 2
 
 
+def test_resnapshot_site_takes_no_pattern(state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The other side of test_heal_site_requires_a_pattern. Giving this command a
+    # --pattern would put the destructive scope back on an argument the caller may
+    # omit -- worse than the form that was rejected, since it writes no config and so
+    # leaves no record of which pattern burned what.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("re-scraped"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["resnapshot-site", "--site-id", "s1", "--pattern", "^/x/"])
+    assert excinfo.value.code == 2
+
+
 def test_resnapshot_site_gate_fires_before_any_fetch(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

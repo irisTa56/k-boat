@@ -48,8 +48,10 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
-4. **Report what the move leaves for the next runs**, which is not nothing wherever it changed the article URLs — and a new domain or subdomain always does, since an article is keyed on its host as well as its path.
-   - On a **scrape** or **feed** site every article the new URL carries is then unseen, so the next runs judge them a capful at a time and file the keeps as notes, largely second copies of ones already filed under the old URLs.
+4. **Report what the move leaves for the next runs**, which is not nothing wherever it changed the article URLs.
+   - A **scrape** site's articles move with its index, since they are keyed on the host the index landed on as well as on the path, so a new domain or subdomain always changes them.
+     A **feed** site's are whatever the feed itself carries, and an entry link is normally absolute — so a feed served from a new host need not have moved a single one.
+   - Where they did move, every article the new URL carries is then unseen, so the next runs judge them a capful at a time and file the keeps as notes, largely second copies of ones already filed under the old URLs.
      `feed-filter resnapshot-site --site-id <id>` marks a scrape site's matches seen instead, writing no config — but it also buries whatever the site published while it was failing, which was filed nowhere, so put that trade to the user rather than settling it yourself.
      A feed site has no such command.
    - A **forum** site keeps its seen-state, since its dedupe keys on the forum's own topic and post ids rather than on a URL.
