@@ -978,6 +978,31 @@ def test_heal_site_without_pattern_resnapshots_and_writes_no_config(
     assert rows == {"https://new.example.com/posts/2024/a"}
 
 
+def test_heal_site_empty_pattern_is_given_not_omitted(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Optional --pattern splits omitted (re-snapshot, no config write) from empty, and
+    # only ``is not None`` keeps them apart: "" compiles, so validate_article_url_pattern
+    # passes it, and update_pattern would write article_url_pattern = "" — after which
+    # load_sites rejects the whole registry and every subcommand is dead until the
+    # gitignored file is hand-repaired. Falling back on falsiness instead reaches that.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    before = sites_path().read_bytes()
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
+
+    assert cli.main(["heal-site", "--site-id", "s1", "--pattern", ""]) == 1
+    assert sites_path().read_bytes() == before
+
+
 def test_heal_site_without_pattern_rejects_an_uncompilable_stored_pattern(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
