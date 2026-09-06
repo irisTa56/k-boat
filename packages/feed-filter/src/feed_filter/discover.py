@@ -71,14 +71,14 @@ _TYPICAL_PATH_CAP = 12
 _SLUG_TOKEN = "<slug>"
 _CLUSTER_MIN_SIZE = 5
 
-RejectionReason = Literal["needs_js", "no_article_clusters", "no_html_body"]
+RejectionReason = Literal["needs_js", "no_article_clusters", "no_html_body", "unparseable_body"]
 
 
 @dataclass(frozen=True)
 class DiscoveryRejection:
     """Why discovery produced no candidate, when the cause is actionable.
 
-    ``reason`` is the caller's whole basis for deciding what to do next: the three
+    ``reason`` is the caller's whole basis for deciding what to do next: the four
     are disjoint, and a caller must never parse ``message`` to tell them apart.
     ``message`` is the human-facing line — free to name the case and whatever
     counts it has, and free to be reworded without breaking a caller.
@@ -92,6 +92,9 @@ class DiscoveryRejection:
     - ``no_html_body``: the body was blank — empty, or nothing but whitespace and a
       byte-order mark — or its content type did not label it HTML, so clustering
       never ran and nothing was established about the page's article links.
+    - ``unparseable_body``: the body had content and was labelled HTML, but the
+      parser refused it, so nothing was established about the page's article links
+      either.
     """
 
     reason: RejectionReason
@@ -220,17 +223,26 @@ def _probe_feed(url: str, *, client: httpx.Client) -> _ValidatedFeed | None:
     return _validated_feed(result.final_url, entries)
 
 
-def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str]]]:
+def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str]]] | None:
     """Cluster in-host ``<a href>`` paths by replacing the final path segment with
     ``<slug>``. Returns clusters ``(key, urls)`` sorted by ``(size desc, key asc)``,
     dropping any below ``_CLUSTER_MIN_SIZE``. Query/fragment are stripped before
     clustering so tracking params don't fork a cluster; URLs keep DOM order and
     are deduplicated. Navigation-shape filtering is the caller's concern.
+
+    ``None`` where the parser refused the body, which is not the same fact as the
+    empty list: one says nothing could be read, the other that nothing was there.
+    Collapsing them is what made a page with a perfectly good cluster report that
+    it likely renders its articles with JavaScript.
     """
     try:
         tree = HTMLParser(html)
-    except Exception:  # noqa: BLE001 — same parser guard as _extract_alternate_links
-        return []
+    # Blind for the reason ``_extract_alternate_links`` gives; that one returns its
+    # empty result because a page it cannot read has nothing to declare, while this
+    # one reports the failure, because what it would otherwise be taken to have
+    # established is a claim about the page's links.
+    except Exception:  # noqa: BLE001
+        return None
     clusters: dict[str, list[str]] = {}
     seen_urls: set[CanonicalUrl] = set()
     for link in tree.css("a"):
@@ -304,11 +316,18 @@ def _scrape_candidates(
 
     Article clusters → candidates with descendants of the supplied URL first
     (most likely the section the operator named), then the rest preserving the
-    size-desc order. Qualifying-but-all-navigation → ``no_article_clusters``. No
-    qualifying cluster at all → ``needs_js``, which the caller has already earned
-    by establishing that ``html`` is an HTML body with something in it.
+    size-desc order. A body the parser refused → ``unparseable_body``.
+    Qualifying-but-all-navigation → ``no_article_clusters``. No qualifying cluster
+    at all → ``needs_js``, which the caller has already earned by establishing that
+    ``html`` is an HTML body with something in it, and this function by establishing
+    that the parser read it.
     """
     clusters = _cluster_link_patterns(html, final_url)
+    if clusters is None:
+        return (), DiscoveryRejection(
+            reason="unparseable_body",
+            message=f"{final_url} returned an HTML body the parser could not read",
+        )
     article_clusters = _drop_navigation_clusters(clusters, source_url) if clusters else []
     if not article_clusters:
         if clusters:

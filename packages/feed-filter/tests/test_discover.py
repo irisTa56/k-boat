@@ -412,11 +412,10 @@ def test_unparseable_body_rejects_instead_of_raising(
     # exercised because the guard's whole claim is that it does not enumerate types — a
     # `RuntimeError`-only case would pass against a narrowed `except` and pin nothing.
     #
-    # Which `reason` such a page lands on is deliberately not asserted. The body is
-    # HTML and non-empty, so it reaches clustering and comes back `needs_js` — which
-    # names the wrong cause for a body the parser refused, and is not `no_html_body`
-    # either. The case wants a reason of its own; until it has one, pinning what it
-    # gets today would make the misattribution a contract.
+    # The body is HTML and non-blank, so it reaches clustering; `unparseable_body` is
+    # the reason of its own that case now has. The six links below are what makes the
+    # assertion worth pinning — the page carries a perfectly good article cluster, so
+    # anything naming the page's links (`needs_js`) would be false of it.
     def boom(_html: str) -> object:
         raise raised("could not parse")
 
@@ -427,3 +426,4 @@ def test_unparseable_body_rejects_instead_of_raising(
 
     assert result.candidates == ()
     assert result.rejection is not None
+    assert result.rejection.reason == "unparseable_body"
