@@ -1128,7 +1128,9 @@ def test_heal_site_rejects_feed_site(
     monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a feed site"))
 
     assert cli.main(["heal-site", "--site-id", "f1", "--pattern", "^/x/"]) == 1
-    assert "scrape sites only" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "scrape sites only" in err
+    assert "heal-site" in err  # the message names the command that refused
 
 
 def test_heal_site_unknown_id_exits_nonzero(
@@ -1160,7 +1162,9 @@ def test_heal_site_refuses_disabled_site(
     monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("healed a disabled site"))
 
     assert cli.main(["heal-site", "--site-id", "s1", "--pattern", r"^/posts/[^/]+/?$"]) == 1
-    assert "enabled sites only" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "enabled sites only" in err
+    assert "heal-site" in err  # the message names the command that refused
 
 
 # resnapshot-site is the second caller of ``_scrape_site_for``, so it needs its own

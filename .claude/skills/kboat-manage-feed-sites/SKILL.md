@@ -60,6 +60,7 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      That count is what the re-scrape matched rather than what it newly buried — a row already seen is left as it was — so it bounds the loss from above, and a count of 0 means nothing matched at all.
      Report the count rather than a cause either way, since nothing bounds the set of causes (`kboat-add-feed-site`, "Writing the scrape pattern by hand").
    - A **scrape** site whose article URLs did not change needs nothing run: the seen-store still covers its back-catalog, so only what the index carries from the failure onward is judged, a capful a run.
+   - A **scrape** site whose answer did not settle: say that the re-snapshot is outstanding and that nothing was run for it, since it stays the user's to decide and can be run at any later point.
    - A **feed** site has no such command — `resnapshot-site` takes scrape sites only — so ask the user here whether the move changed the article URLs, and where it did, say the next runs will work through what the feed carries.
    - A **forum** site takes no command: its dedupe keys on the forum's own topic and post ids rather than on a URL, so nothing is re-judged.
      Report one thing anyway, since it holds however the move went: a topic already filed had its note named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
