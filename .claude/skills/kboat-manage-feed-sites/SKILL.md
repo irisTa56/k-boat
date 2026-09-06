@@ -48,16 +48,16 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
-4. **Where the move changed the article URLs too, re-snapshot the site.** The seen-store keys an article on its canonical URL, so every article the new feed or index carries is then unseen, and the next runs judge them a capful at a time and write the keeps as notes.
+4. **Where the move changed the article URLs too, re-snapshot the site.** The seen-store keys an article on its canonical URL, so every article the new feed or index carries is then unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
    - A **scrape** site's articles always sit on the index's own host, since the scraper drops a link to any other, so a changed host is itself the signal.
-     Run `feed-filter heal-site --site-id <id> --pattern <the pattern the row already carries>`: it re-scrapes the site as step 2 now registers it and marks the matches seen, and rewriting the stored pattern to its own value changes nothing.
-     Pass that pattern single-quoted and unescaped — the shell eats an unquoted backslash, and both `list-sites` and `sites.toml` show it with every backslash doubled — because `heal-site` writes whatever you pass into the row, matching or not.
-     Read the `snapshotted` count it reports rather than its exit status, which is 0 either way.
+     Run `feed-filter heal-site --site-id <id> --pattern '<the pattern the row already carries>'`: it re-scrapes the site as step 2 now registers it and marks the matches seen, and rewriting the stored pattern to its own value changes nothing.
+     Unescape it first — both `list-sites` and `sites.toml` show every backslash doubled, and the shell eats an unquoted one — because `heal-site` writes whatever you pass into the row, matching or not.
+     Read the `snapshotted` count it reports rather than its exit status: a non-zero exit means the re-scrape failed before anything was written, so retry it, and a zero says nothing about what matched.
      What a non-zero count covers is what the runs will now never judge or write, and a 0 means nothing was marked seen — so report the count and the pattern you passed rather than a cause, since nothing bounds the set of causes (`kboat-add-feed-site`, "Writing the scrape pattern by hand").
    - A **feed** site names its articles' URLs independently of where the feed is served, so read them off the new feed rather than off its host.
      There is no command for it — `heal-site` takes scrape sites only — so say when reporting the change that the next runs will work through what the feed carries.
    - A **forum** site needs no re-snapshot: its dedupe keys on the forum's own topic and post ids rather than on a URL, so nothing is re-judged.
-     Report one consequence of the move, though: a `Feeds/` note is named by a hash of the topic URL, which is built from the `forum_url` you just changed, so a topic already filed is written as a second note rather than resurfaced when a later post re-triggers it.
+     A topic already filed still splits the same way, though: its note was named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
 
 That is the whole of the fix, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
 
