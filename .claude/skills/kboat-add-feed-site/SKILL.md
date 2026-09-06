@@ -30,10 +30,10 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
    - **Non-zero exit** → the initial URL did not yield a body. The error line ends in `transport error` or in `HTTP <status>`, and the two mean different things.
-     - `transport error` is a timeout, a refused connection, or DNS — the site was not reached. Report it and stop; do not register a site you could not reach.
+     - `transport error` means no HTTP status came back, so the line does not say what went wrong — a timeout or a refused connection is the usual cause, but so is a redirect loop or a body the client could not decode. Relay it as it stands and stop, rather than naming a cause.
      - `HTTP <status>` means the site answered and refused. Report that rather than calling the site unreachable, and where the status is one an anti-bot gate serves, ask the user whether they have the site's feed URL — with it in hand this becomes the known-gated-feed case under "Sites that need a browser" below.
    - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
-     - `needs_js` → an HTML page whose links did not cluster into articles, which the default httpx path cannot follow.
+     - `needs_js` → an HTML page whose links did not cluster into articles.
        - A JavaScript-rendered index is the common cause, and an anti-bot interstitial served as an ordinary page reaches it too, so do not relay JavaScript to the user as the established cause.
        - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
      - `no_article_clusters` → no feed and no article-shaped link cluster was found.
@@ -115,11 +115,9 @@ The flag needs the optional Playwright extra (`uv sync --extra browser && uv run
 There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
-  - Discovery fetches over plain HTTP, so what it makes of the gate is decided by how the gate answers, and the answers seen so far land on three different outcomes.
-    - A challenge served as an error status exits non-zero, with `HTTP <status>` on the error line.
-    - One served as an ordinary HTML page is discovered like any page, finds no article cluster, and comes back `needs_js`.
-    - One served as a non-HTML or empty body comes back `no_html_body`.
-    - Whichever it is, discovery does not hand you the feed URL, which is why the operator supplies it — and a `needs_js` rejection is not on its own evidence that a site renders with JavaScript.
+  - Discovery looks for exactly what you already have, so running it here adds nothing.
+    - Where the user does not have the feed URL, it is still worth running: a gate on the index does not always cover the typical feed paths discovery probes, so it can come back with a feed candidate rather than a rejection.
+    - Where the gate does cover them, what discovery reports turns on how the gate answers, and a `needs_js` among those is not on its own evidence that the site renders with JavaScript.
 - **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
