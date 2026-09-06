@@ -164,9 +164,10 @@ Repair a **pattern** on a site that is already registered with `feed-filter heal
 A wrong `index_url` is not a pattern, and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, so no correction it accepts fixes that site.
 Report that case rather than reaching for a command.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
-Where such a hand-edit has already happened, `feed-filter resnapshot-site --site-id <id>` staunches it: it marks what the stored pattern matches seen and touches no config (`kboat-manage-feed-sites`).
+Where such a hand-edit has already happened, `feed-filter resnapshot-site --site-id <id>` staunches it: it marks what the stored pattern matches seen and touches no config.
+Buries them, rather — see below — so it is the user's call and never yours; `kboat-manage-feed-sites` states the trade.
 Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
-That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` marks everything the new pattern matched as seen with no note, so an over-broad correction burns the whole live index and those articles are never written.
+That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` and `resnapshot-site` alike mark everything the pattern matched as seen with no note, so an over-broad one burns the whole live index and those articles are never written.
 
 ## Optional per-site selection override
 
