@@ -90,10 +90,8 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
    - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned and which of the two conditions failed.
      - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
-       - Say that in the report and not only here, because the pattern reads as applicable and the obvious next act is to apply it: `heal-site` accepts it, re-scrapes the browser page, snapshots nothing, replaces the stored pattern anyway and exits 0 — and `sites.toml` is gitignored, so the value it overwrote is gone.
      - Naming the cluster is your judgement and not a check on the output: a tag or pagination cluster comes back as a candidate like any other and discovery does not tell them apart, and a feed candidate carries no `article_url_pattern` at all.
        - `heal-site` snapshots everything the pattern matched as seen with no note, so a pattern you were unsure of burns the whole live index and none of those articles is ever written.
-     - The repair from there is not the run's, so report and stop rather than picking one.
    - Run `feed-filter heal-site --site-id <id> --pattern <new_pattern>`.
      This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
      It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
