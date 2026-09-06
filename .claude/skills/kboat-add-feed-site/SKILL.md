@@ -62,7 +62,8 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 4. **Register.** Run the matching form:
    - **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
-   - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern <article_url_pattern>`
+   - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern '<article_url_pattern>'`
+     Single-quote the pattern here and wherever else you pass one: the shell eats an unquoted backslash, and the mangled regex still compiles, so it registers and matches nothing.
    - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
@@ -158,7 +159,7 @@ A pattern that matches too much has no signal at all: `snapshotted` is non-zero,
 The flood guard hides the rest — everything the pattern took at registration is snapshotted seen, so the junk that ever reaches a judge is what appears afterwards, a new tag page or the next pagination link.
 Report the pattern you registered and the count it snapshotted along with the rest, and leave the reading of that count to the user, who can see the page.
 
-Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
+Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern '<corrected>'`, and with nothing else.
 A wrong `index_url` is not a pattern, and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, so no correction it accepts fixes that site.
 Report that case rather than reaching for a command.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
