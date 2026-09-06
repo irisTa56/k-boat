@@ -29,7 +29,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
-   - **Non-zero exit** → the initial URL did not yield a body.
+   - **Non-zero exit** → discovery did not complete.
      - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
    - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
      - `needs_js` → an HTML page whose links did not cluster into articles.
@@ -111,11 +111,11 @@ That file is gitignored personal state (see `packages/feed-filter/CLAUDE.md`), s
 A site that renders its feed/index with JavaScript, or gates it behind an anti-bot challenge such as Cloudflare, is registered through the opt-in browser path by adding `--requires-browser` to `add-site`.
 The flag needs the optional Playwright extra (`uv sync --extra browser && uv run playwright install chromium`); without it the command fails fast with that exact install command, so register such a site only once it is installed.
 
-There are two ways you arrive here:
+There are three ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
   - Discovery looks for exactly what you already have, so running it here adds nothing.
-    - Where the user does not have the feed URL, run it anyway: the feed layers run before clustering, so a gate that lets the index fetch through can still turn up a feed candidate at a path it left open.
+- **A gated site with no feed URL.** Run discovery before giving up on one: the feed layers run before clustering, so a gate that lets the index fetch through can still turn up a feed candidate at a path it left open.
 - **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
