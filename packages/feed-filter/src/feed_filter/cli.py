@@ -217,8 +217,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
     heals a scrape site only where discovery read the page the gather reads, so a
     ``requires_browser`` site is never healed from this command's output however
     clean that output looks. Giving this command the browser transport moves that
-    gate and owes a sweep of the prose stating it — both run skills, README's
-    "Failure and self-heal behavior", and ARCHITECTURE's scrape self-heal invariant.
+    gate; ARCHITECTURE's scrape self-heal invariant carries the list of prose the
+    move would falsify, and is the one place that list is kept.
     """
     with build_client() as client:
         result = discover(args.url, client=client)  # FetchError propagates → exit 1
