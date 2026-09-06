@@ -63,7 +63,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 4. **Register.** Run the matching form:
    - **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
    - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern '<article_url_pattern>'`
-     Single-quote the pattern here and wherever else you pass one: the shell eats an unquoted backslash, and the mangled regex still compiles, so it registers and matches nothing.
+     The pattern reaches you as JSON, which doubles every backslash: undo that, and keep the quotes so the shell does not take them out again — either mangling still compiles, so the site registers and matches nothing.
    - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
