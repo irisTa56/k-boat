@@ -109,7 +109,8 @@ The flag needs the optional Playwright extra (`uv sync --extra browser && uv run
 There are two ways you arrive here:
 
 - **A known gated feed.** When the user already has the feed URL of a JS / anti-bot site, register it directly — `feed-filter add-site --id <id> --name <name> --feed-url <feed_url> --requires-browser` — and skip discovery.
-  - Discovery fetches over plain HTTP and would itself be blocked by the gate, so it never runs for such a site and never produces a `needs_js` hint; the operator supplies the feed URL.
+  - Discovery fetches over plain HTTP, so what the gate does to it depends on how the gate answers: a challenge served as an error status raises and exits non-zero, while one served as an ordinary HTML page is discovered as a page whose links do not cluster and comes back `needs_js`.
+    - Neither outcome hands you the feed URL, which is why the operator supplies it — and why a `needs_js` rejection is not on its own evidence that a site renders with JavaScript.
 - **A JS-rendered scrape index.** Step 1's `needs_js` rejection is the hint to retry a scrape site through the browser: pick its `index_url` and `article_url_pattern` as usual, then add `--requires-browser`.
 
 The cold-start snapshot of a `requires_browser` site runs through the browser too, so the flood guard holds exactly as on the httpx path.
