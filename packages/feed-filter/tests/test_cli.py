@@ -1367,6 +1367,37 @@ def test_heal_site_closes_browser_even_on_error(
     assert "error:" in capsys.readouterr().err
 
 
+def test_resnapshot_site_closes_browser_even_on_error(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The other half of ARCHITECTURE's browser-command invariant, and the sibling of
+    # the gate test above. The teardown lives in the shared _rescrape_and_snapshot, so
+    # moving it into cmd_heal_site's own finally would leave heal-site's test green and
+    # leak a lazily-launched Chromium out of every failed re-snapshot.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="S",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+            requires_browser=True,
+        ),
+    )
+
+    def boom(site: SiteConfig, *, client: object) -> list[Entry]:
+        raise BrowserFetchError("render failed")
+
+    closed: list[bool] = []
+    monkeypatch.setattr(cli, "fetch_entries", boom)
+    monkeypatch.setattr(cli, "close_browser", lambda: closed.append(True))
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    assert closed == [True]
+    assert "error:" in capsys.readouterr().err
+
+
 def test_new_entries_closes_browser_in_finally(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
