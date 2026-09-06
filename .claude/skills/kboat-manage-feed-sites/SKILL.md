@@ -48,18 +48,17 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
-4. **Where the move changed the article URLs too, re-snapshot the site.** The seen-store keys an article on its canonical URL, so every article the new feed or index carries is then unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
-   Establish that the URLs did change before running anything, since a re-snapshot cannot be undone and what it marks seen is never judged or written.
-   The old URL settles that rather than the old row: a gather resolves article links against the URL the index **lands on**, so a row that had been redirecting to the new host has been keying its articles there all along and needs nothing.
+4. **Say what the move costs, and re-snapshot where that is the answer.** The seen-store keys an article on its canonical URL, so where the move changed those URLs every article the new feed or index carries is unseen, and the next runs judge them a capful at a time and write the keeps as notes — second copies, since a note is named by a hash of that same URL and the ones already filed were named under the old one.
+   Whether it changed them is not something you can read off the tool: a gather resolves article links against the URL the index **lands on**, so a row that had been redirecting to the new host may have been keying its articles there for as long as the redirect has been up, and neither that date nor the last successful gather's is reported anywhere.
+   Put it to the user rather than settling it yourself, because both ways of being wrong cost — skipping the re-snapshot floods the vault, and running it where nothing was unseen marks the whole live index seen, unjudged and with no way back.
    - A **scrape** site: `feed-filter heal-site --site-id <id>` re-scrapes it as step 2 now registers it and marks the matches seen, writing no config.
      Read the `snapshotted` count it reports rather than its exit status: a non-zero exit means the re-scrape failed before anything was written, so retry it, and a zero says nothing about what matched.
      What a non-zero count covers is what the runs will now never judge or write, and a 0 means nothing was marked seen — so report the count rather than a cause, since nothing bounds the set of causes (`kboat-add-feed-site`, "Writing the scrape pattern by hand").
-   - A **feed** site names its articles' URLs independently of where the feed is served, so read them off the new feed rather than off its host.
-     There is no command for it — `heal-site` takes scrape sites only — so say when reporting the change that the next runs will work through what the feed carries.
-   - A **forum** site needs no re-snapshot: its dedupe keys on the forum's own topic and post ids rather than on a URL, so nothing is re-judged.
+   - A **feed** site has no such command — `heal-site` takes scrape sites only — so say when reporting the change that the next runs will work through what the feed carries.
+   - A **forum** site keeps its seen-state either way: its dedupe keys on the forum's own topic and post ids rather than on a URL, so nothing is re-judged.
      A topic already filed still splits the same way, though: its note was named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
 
-That is the whole of the fix, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
+That is the whole of the fix.
 
 ## Finding the id
 
