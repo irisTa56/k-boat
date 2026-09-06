@@ -1258,15 +1258,16 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
-    - ``ValueError`` — shape/validation (bad site config, non-scrape heal, an
-      unset ``OBSIDIAN_VAULT_PATH``);
+    - ``ValueError`` — shape/validation (bad site config, a non-scrape or disabled
+      site given to heal-site / resnapshot-site, an unset ``OBSIDIAN_VAULT_PATH``);
     - ``KeyError`` — unknown site id;
     - ``OSError`` — filesystem failures from the config writes / db open
       (disk full, permission, atomic-rename failure). Caught for the same reason
       a ``VaultError`` is: a write that can't complete is an operational failure
       to report, not a stack trace to dump.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
-      directly (add-site / heal-site snapshot), the browser analog of ``FetchError``;
+      directly (the add-site / heal-site / resnapshot-site snapshot), the browser
+      analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
     - ``sqlite3.Error`` — the seen-store could not be opened or written; the case
