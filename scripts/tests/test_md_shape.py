@@ -209,6 +209,36 @@ def test_a_fence_of_equal_length_does_close(tmp_path: Path) -> None:
     assert _found(reports) == [(md_shape.FOLD, 7, 2, 4)]
 
 
+def test_an_html_comments_interior_is_not_scanned(tmp_path: Path) -> None:
+    # The block runs to the line holding `-->`, and that line does not open with
+    # `<`. Read line by line, the bullet inside opens an item and the closing
+    # delimiter falls out of it -- a fold reported on a document pandoc renders
+    # as one raw HTML block, with no list in it at all.
+    assert (
+        _scan(
+            tmp_path,
+            "# T\n\n<!--\nTODO\n- a bullet in the comment\n-->\n\nOrdinary prose.\n",
+        )
+        == []
+    )
+
+
+def test_the_scan_resumes_past_a_comments_closing_line(tmp_path: Path) -> None:
+    # The other half of the same rule, as for a fence: `-->` ends the skip.
+    reports = _scan(
+        tmp_path,
+        "<!--\n- not a marker\n-->\n\n- outer item\n  - deeper child\n  stray line\n",
+    )
+    assert _found(reports) == [(md_shape.FOLD, 7, 2, 4)]
+
+
+def test_a_comment_closed_on_its_opening_line_opens_no_skip(tmp_path: Path) -> None:
+    # `<!-- ... -->` on one line is one block and ends there. Entering the skip
+    # on every `<!--` would swallow the rest of the file.
+    reports = _scan(tmp_path, "<!-- a note -->\n\n- outer item\n  - deeper child\n  stray line\n")
+    assert _found(reports) == [(md_shape.FOLD, 5, 2, 4)]
+
+
 def test_a_deeply_indented_line_continues_an_open_paragraph(tmp_path: Path) -> None:
     # An indented code block starts only where no paragraph is open. Treating
     # this one as code would close the child's paragraph and hide the fold on
@@ -250,6 +280,71 @@ def test_unterminated_frontmatter_is_scanned_from_the_top(tmp_path: Path) -> Non
 def test_ordered_markers_open_items_too(tmp_path: Path) -> None:
     reports = _scan(tmp_path, "1. outer step\n   1. deeper step\n   meant for the outer step\n")
     assert _found(reports) == [(md_shape.FOLD, 3, 3, 6)]
+
+
+def test_a_year_at_the_start_of_a_line_opens_no_list(tmp_path: Path) -> None:
+    # An ordered list may interrupt a paragraph only where it starts at 1, which
+    # is what keeps a sentence wrapped onto `2024.` one paragraph. Opening an
+    # item here folds the third line into an item pandoc never renders.
+    assert (
+        _scan(
+            tmp_path,
+            "Some prose ending with the year\n"
+            "2024. That was the year it happened.\n"
+            "And a third line of the same paragraph.\n",
+        )
+        == []
+    )
+
+
+def test_an_ordered_list_starting_at_one_does_interrupt(tmp_path: Path) -> None:
+    # The other half of the rule: a paragraph above the list is no reason to
+    # stop reading the list under it.
+    reports = _scan(
+        tmp_path,
+        "A paragraph line.\n1. outer step\n   1. deeper step\n   meant for the outer step\n",
+    )
+    assert _found(reports) == [(md_shape.FOLD, 4, 3, 6)]
+
+
+def test_a_sibling_item_is_not_bound_by_the_interrupt_rules(tmp_path: Path) -> None:
+    # `2.` outdents an item already open, so it joins that list rather than
+    # starting one, and the rules for interrupting a paragraph do not reach it.
+    # Applying them would read the marker line as the first item's prose and
+    # call it a fold; pandoc renders two `<li>`s.
+    reports = _scan(tmp_path, "1. step one\n   text continues\n2. step two\n   text under two\n")
+    assert _found(reports) == [(md_shape.PROSE, 2, 3, 3), (md_shape.PROSE, 4, 3, 3)]
+
+
+def test_an_empty_sibling_item_opens_an_item(tmp_path: Path) -> None:
+    # A marker alone on its line is CommonMark's empty item. An empty item may
+    # not interrupt a paragraph, but this one joins the outer list instead of
+    # starting one: pandoc renders line 3 as `<li></li>`, not as the child's
+    # prose, so a fold on it would be reported on a document that has none.
+    assert _scan(tmp_path, "- outer item\n  - deeper child\n-\n") == []
+
+
+def test_an_empty_item_under_a_paragraph_is_a_setext_underline(tmp_path: Path) -> None:
+    # The case the rule is for: `-` under an open paragraph makes that paragraph
+    # a heading rather than opening an item -- pandoc renders `<h2>`. Either
+    # reading ends the paragraph, so the line back at the margin is a paragraph
+    # of its own and not folded into anything.
+    reports = _scan(tmp_path, "- outer item\n  text in the item\n  -\nback at the margin\n")
+    assert _found(reports) == [(md_shape.PROSE, 2, 2, 2)]
+
+
+def test_an_empty_items_content_column_is_one_past_its_marker(tmp_path: Path) -> None:
+    # An item with nothing on its line has no gap after the marker to measure,
+    # so CommonMark puts its content column immediately past it -- which is what
+    # makes `x` at column 2 this item's content rather than a shallower item's.
+    reports = _scan(tmp_path, "- a\n-\n  x\n")
+    assert _found(reports) == [(md_shape.PROSE, 3, 2, 2)]
+
+
+def test_nothing_is_folded_into_an_empty_item(tmp_path: Path) -> None:
+    # An empty item opens no paragraph, so there is nothing to continue lazily:
+    # pandoc puts `x` outside the list entirely.
+    assert _scan(tmp_path, "- a\n-\n x\n") == []
 
 
 def test_several_folds_are_all_reported(tmp_path: Path) -> None:

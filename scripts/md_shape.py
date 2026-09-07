@@ -50,6 +50,15 @@ them, and the remedy the second fault names -- fold the line onto the marker's
 settles a code block's verdict by what it is rather than by how it is spelt,
 since a fenced one is already unscanned.
 
+Two of CommonMark's rules are stateful, and a classifier reading each line on
+its own gets both wrong in the reporting direction. An HTML comment block runs
+to the line holding `-->`, so its interior is not markdown at all and is skipped
+the way a fenced block is. And a list marker opens an item only where CommonMark
+lets one interrupt the open paragraph: a *new* list needs a non-empty first item
+and, if ordered, has to start at 1. A marker outdenting an item already open
+joins that item's list rather than starting one, and is bound by neither rule,
+so an empty or non-1 sibling item still opens.
+
 The scan is otherwise narrow, and where it cannot decide it does not report: it
 gates commits, so a false positive costs more than a miss. Two consequences
 worth naming. A fenced block is never scanned and so never reported, whatever it
@@ -67,8 +76,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # A list marker plus the whitespace after it. The match end is the item's
-# content column, which is what decides whether a later line is inside it.
-_MARKER = re.compile(r"^(\s*)(?:[-*+]|\d{1,9}[.)])(\s+)")
+# content column, which is what decides whether a later line is inside it. The
+# marker alone on its line is a marker too -- CommonMark's empty list item --
+# and `number` is what the interrupt rule below has to read.
+_MARKER = re.compile(r"^\s*(?:[-*+]|(?P<number>\d{1,9})[.)])(?P<space>\s+|$)")
 _FENCE = re.compile(r"^(\s*)(```+|~~~+)")
 _HEADING = re.compile(r"^(\s*)#{1,6}(\s|$)")
 # The other block starts that interrupt an open paragraph rather than continuing
@@ -81,6 +92,12 @@ _BLOCKQUOTE = re.compile(r"^(\s*)>")
 # list. The cost is missing a fold on a line that opens with an autolink; the
 # alternative is reporting a comment or a block tag that is not one at all.
 _HTML = re.compile(r"^(\s*)<")
+# The one HTML block whose interior has to be skipped rather than scanned: it is
+# the kind this repo's files actually contain, and the only one whose contents
+# are routinely markdown-shaped -- a bulleted TODO commented out for later. The
+# block runs to the line holding `-->`, which need not be the opening one.
+_COMMENT_START = re.compile(r"^\s*<!--")
+_COMMENT_END = "-->"
 # Four columns past the enclosing block's content column, with no paragraph open,
 # starts an indented code block. Nothing continues one lazily.
 _CODE_INDENT = 4
@@ -140,11 +157,25 @@ def _indent_of(line: str) -> int:
 
 
 def _content_column(marker: re.Match[str]) -> int:
-    """The column an item's content starts at, capped as CommonMark caps it."""
-    spaces = len(marker.group(2))
-    if spaces > _MAX_MARKER_SPACES:
+    """The column an item's content starts at, capped as CommonMark caps it.
+
+    Both the capped case and the empty item put the column one past the marker
+    itself: an over-wide gap is an indented code block inside the item, and an
+    item with nothing on its line has no gap to measure.
+    """
+    spaces = len(marker["space"])
+    if spaces == 0 or spaces > _MAX_MARKER_SPACES:
         return marker.end() - spaces + 1
     return marker.end()
+
+
+def _can_interrupt(content: str, marker: re.Match[str]) -> bool:
+    """Whether this marker may open a list where a paragraph is already open.
+
+    CommonMark's two conditions on the first item of an interrupting list: it
+    must not be empty, and an ordered one must start at 1.
+    """
+    return bool(content) and (marker["number"] is None or int(marker["number"]) == 1)
 
 
 def _frontmatter_end(lines: list[str]) -> int:
@@ -179,12 +210,22 @@ def scan(path: Path) -> list[Report]:
     # Whether a paragraph is open, which is what lazy continuation needs.
     para_open = False
     fence: str | None = None
+    in_comment = False
 
     # A skill file opens with YAML frontmatter, whose `-` lines would otherwise
     # read as list markers.
     start = _frontmatter_end(lines)
 
     for line_no, line in enumerate(lines[start:], start + 1):
+        if in_comment:
+            # Nothing between the delimiters is markdown, so nothing in here is
+            # measured. A comment is only ever entered with no fence open, so
+            # the two skip states cannot disagree about a line.
+            if _COMMENT_END in line:
+                in_comment = False
+                para_open = False
+            continue
+
         fence_match = _FENCE.match(line)
         if fence is not None:
             closer = fence_match.group(2) if fence_match else ""
@@ -216,17 +257,38 @@ def scan(path: Path) -> list[Report]:
 
         if _BLOCKQUOTE.match(line) or _THEMATIC_BREAK.match(line) or _HTML.match(line):
             # None of these is a paragraph, so neither fault is about it.
+            comment = _COMMENT_START.match(line)
+            if comment and _COMMENT_END not in line[comment.end() :]:
+                in_comment = True
             para_open = False
             _close_items(stack, indent)
             continue
 
         marker = _MARKER.match(line)
         if marker:
-            while stack and stack[-1] > indent:
-                stack.pop()
-            stack.append(_content_column(marker))
-            para_open = True
-            continue
+            # A marker outdenting an open item joins the list that item belongs
+            # to, and only a marker starting a new list has to satisfy the
+            # interrupt rules. Whether the joined list is really the same one --
+            # a changed bullet character starts another -- is left unasked: the
+            # answer only ever opens an item, which is the silent direction.
+            content = line[marker.end() :].strip()
+            joins_an_open_list = bool(stack) and stack[-1] > indent
+            if not para_open or joins_an_open_list or _can_interrupt(content, marker):
+                _close_items(stack, indent)
+                stack.append(_content_column(marker))
+                # An item with nothing on its line opens no paragraph, so
+                # nothing can be folded into it lazily either.
+                para_open = bool(content)
+                continue
+            if not content and line.lstrip().startswith("-"):
+                # A lone `-` under an open paragraph is that paragraph's setext
+                # underline, not an item: the paragraph ends on this line, and
+                # the heading it makes is a block like the ones above.
+                para_open = False
+                _close_items(stack, indent)
+                continue
+            # Otherwise the line is the paragraph's own text, and falls through
+            # to be measured as the prose it is.
 
         if para_open and stack and indent < stack[-1]:
             reports.append(Report(FOLD, str(path), line_no, indent, stack[-1], line))
