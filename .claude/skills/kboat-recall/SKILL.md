@@ -26,7 +26,7 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 ## Procedure
 
 1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
-   Read every `Sources/*.md` frontmatter once.
+   - Read every `Sources/*.md` frontmatter once.
 2. Keep the in-scope notes (default `keep`, or the `--states` union above; always drop `blocked`).
 3. Rank by lexical overlap between the query and each note's `title`, `topics`, `summary`, and `url`.
    - `topics` and `title` are the strongest signals; `summary` adds recall; a bare URL match is weak.
@@ -40,9 +40,10 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 - **Just read it:** open `reading_link` — a web URL, or for a PDF the Obsidian/PDF++ link to `PDFs/<slug>.pdf`.
   - No notebook is needed to read.
 - **Chat with it or distil it:** decide by the result's `notebooklm_id`, not its disposition.
-  If it is empty the source has no notebook — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) is the way back, and its opener says which sources it takes and which are already on their way to one.
-  If it is present, open `gemini_url` to chat or check `distill` to have the routine distil it.
-  A present id is not proof the notebook can answer, though, and no property marks the difference — a notebook whose text some check condemned is kept deliberately, one deleted out of band leaves its id behind, and one can survive intact having lost the source inside it — so the chat is where you find out.
+  - If it is empty the source has no notebook — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) is the way back, and its opener says which sources it takes and which are already on their way to one.
+  - If it is present, open `gemini_url` to chat or check `distill` to have the routine distil it.
+    - A present id is not proof the notebook can answer, though, and no property marks the difference — a notebook whose text some check condemned is kept deliberately, one deleted out of band leaves its id behind, and one can survive intact having lost the source inside it — so the chat is where you find out.
+
   What to do then is that same opener's business; `distill` is not the answer either way, since it would go ripe and abort every run.
 
 ## Daily pick mode
@@ -59,6 +60,7 @@ The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#dai
      - An empty or missing file comes back as `[]`, meaning no backlog signal this run — the pick then proceeds on the Daily notes alone, or yields zero picks per step 2 if there are none either.
    - `candidates` — the active web inbox (undispositioned web pages you have not started, the Web view minus its in-progress (`reading`) reads), each with `summary`/`topics` for the pre-filter, `added_date` for diversification, and `notebooklm_id` for the Stage 2 fulltext fetch.
 2. If there are no `candidates`, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.
+
    If there are candidates but neither `daily_notes` nor `questions`, there is no interest signal — still run Stage 1 for act-early candidates only (step 3 infers no interests; a Tier 0 pick can fire on its own), and if Stage 1 finds none, clear `picked` and report zero picks.
 3. **Infer the interests.** Read the `questions` (by `rank`) and the `daily_notes` bodies (newest first) and infer what the reader wants to read or learn about now: an open question is the strongest, most deliberate signal, and its `rank` orders that signal (a smaller `rank` is a stronger interest); the notes add the topics, problems, and themes they are currently engaging with; ignore logbook noise (done tasks, schedules, unrelated journaling).
 4. **Stage 1 — local pre-filter (no NotebookLM).** Rank the candidates from their `summary`/`topics` alone into the three tiers of kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick) — Tier 0 act-early above Tier 1 direct-interest above Tier 2 same-field learning; read it for what each tier admits and how it orders within — and keep a **shortlist** of the top handful (about three to five — wider than the cap so Stage 2 has room to choose two).
@@ -73,6 +75,7 @@ The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#dai
      - The first is a candidate whose notebook no longer holds its original source — the listing came back with `count` 0, or with nothing in it that the [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11) rule identifies as the original.
      - The second is a candidate whose `notebooklm_id` names **no notebook at all**: `kboat-pick`'s candidate predicate does not check the id, so a stale one reaches here, and the listing then fails with a message reporting a `Not found` RPC and going on to suggest a signed-in-account mismatch.
        - That message is not evidence about auth and one candidate is not "NotebookLM cannot be reached at all", so it must not trigger the whole-run fallback above — confirm the id against `notebooklm --quiet list --json 2>/dev/null` — reading that listing as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to, against the vault's other stored ids rather than this one alone, since a listing fetched under the wrong signed-in account makes every id read as absent — and report a source whose notebook is gone, which only a human-run reactivation clears (kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook)).
+
      This mode is the only place in the run that meets such a source: the health sweep needs `reading`, the backfill needs an empty `summary`, and distillation needs a disposition.
      That is content lost after a clean ingest (kboat-notebook-health opens with what is known about it), not a call that failed, and the degraded judgment reads identically to a healthy one, so it would otherwise leave no trace.
      Judge either candidate on its `summary`/`topics` like any other unreadable one, and **record it separately** for step 7, saying which of the two it was.
@@ -80,7 +83,7 @@ The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#dai
 6. `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices.
    - Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
 7. Report the picks — each with what it matched (the open question, the dated note, or the act-early reason: a security advisory, a release, a best-practice worth adopting now), so the inference is visible and checkable — and that they are read in the Today view of the Sources Base (kboat-notes [Sources Base](../kboat-notes/references/bases.md#sources-base)).
-   Report separately every candidate step 5 found with a notebook that no longer holds its original, and every one whose `notebooklm_id` named no notebook, by slug and by which it was, whether or not it was picked: that report is the whole of this mode's part in the loss, `kboat-notebook-health` has nothing to act on without the first, and nothing but this reaches the second.
+   - Report separately every candidate step 5 found with a notebook that no longer holds its original, and every one whose `notebooklm_id` named no notebook, by slug and by which it was, whether or not it was picked: that report is the whole of this mode's part in the loss, `kboat-notebook-health` has nothing to act on without the first, and nothing but this reaches the second.
 
 This mode never writes the Daily note.
 It reads NotebookLM (the shortlist's fulltext) but never writes to it.
