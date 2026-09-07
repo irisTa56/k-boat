@@ -34,7 +34,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap.
      - Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
    - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text, and is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
-     - The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url <url>` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
+     - The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url '<url>'` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
    - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
      `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
      `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
@@ -47,7 +47,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    Judging the entries in parallel is fine.
    - **`kind == "feed"`** — staged to save cost: give the subagent the `title` and the preview `summary` first.
      - If those already place the entry **outside the Topics**, drop it from the preview alone — no body fetch (prompts/selection.md "Walls and unreadable pages").
-     - Otherwise the entry is plausibly in scope, so have the subagent run `feed-filter entry-body --url <url>` to load the **full** feed body into its own context and judge depth from that.
+     - Otherwise the entry is plausibly in scope, so have the subagent run `feed-filter entry-body --url '<url>'` to load the **full** feed body into its own context and judge depth from that.
        - Only when `entry-body` returns `body: null` (a cache miss) does it fall back to a `WebFetch` of the page for the full text.
    - **`kind == "scrape"`** — there is no feed metadata (and no cached body), so the subagent goes straight to a full `WebFetch` of the `url`.
      - The `title` it returns is authoritative — it is the **only** title source for the note.
@@ -63,14 +63,14 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 3. **Act on each judged entry** (one `feed-filter` process per entry — the write/record pair is atomic inside it).
    `remind` requires `--title` (and `mark-seen` requires `--title`); `--summary` is optional.
-   Pass `--title ""` to invoke the URL fallback when there is no real title, and pass `--summary "<gist>"` when the judge returned one.
+   Pass `--title ""` to invoke the URL fallback when there is no real title, and pass `--summary '<gist>'` when the judge returned one.
    Omitting `--title` is an argparse error (exit 2), not a fallback, and would lose the entry.
    - **Wall** (`wall == true`) → take this branch **before** the keep/drop check: the page was a login/paywall, not the article, so defer to the user instead of dropping it (prompts/selection.md "Walls and unreadable pages").
-     Call `feed-filter remind --site-id <id> --url <url> --title "<title>" --summary "<gist>" --wall`.
+     Call `feed-filter remind --site-id <id> --url '<url>' --title '<title>' --summary '<gist>' --wall`.
      The `--wall` flag sets the note's `wall` boolean, which the Feeds Base surfaces as a 🔒 prefix on the card.
      **Prefer `--title ""`** (the URL fallback) unless the subagent extracted a genuine article title (e.g. from `og:title` left on the gate) — the visible page title on a wall is usually the gate's ("Sign in — …"), which is worse for manual review than the bare URL.
      This writes the note and records seen (kept=1) like any keep, so the walled page is handed off once and not judged again.
-   - **Keep** → `feed-filter remind --site-id <id> --url <url> --title <title> --summary <gist>`.
+   - **Keep** → `feed-filter remind --site-id <id> --url '<url>' --title '<title>' --summary '<gist>'`.
      This writes the `Feeds/` note **and** records the entry seen (kept=1) in one process.
      Do **not** also call `mark-seen` — that would double-record.
      A non-zero exit means the vault write failed and the entry was **not** recorded seen.
@@ -79,10 +79,10 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
        This does **not** recur, because the holder finishes: leave this entry for the next run and **carry on** with the remaining keeps.
        Report how many were deferred this way.
      - No `locked` record (a slug collision, an unset vault, a disk error) — surface it and stop reminding, since the failure will recur.
-   - **Drop** → `feed-filter mark-seen --site-id <id> --url <url> --title <title>`.
+   - **Drop** → `feed-filter mark-seen --site-id <id> --url '<url>' --title '<title>'`.
      Records the entry seen (kept=0) with no note, so it is not judged again.
    - **Subagent or fetch error** on an entry → do not silently lose it.
-     Call `feed-filter remind` anyway with the entry's `title` when it has one, otherwise `--title ""` so the CLI falls back to the URL, plus a `--summary` line saying judging failed: `feed-filter remind --site-id <id> --url <url> --title "<entry title or empty>" --summary "judging failed: <cause>"`.
+     Call `feed-filter remind` anyway with the entry's `title` when it has one, otherwise `--title ""` so the CLI falls back to the URL, plus a `--summary` line saying judging failed: `feed-filter remind --site-id <id> --url '<url>' --title '<entry title or empty>' --summary 'judging failed: <cause>'`.
      This deliberately favors never-lost over never-duplicated.
 
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
