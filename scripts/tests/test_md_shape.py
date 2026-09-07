@@ -393,6 +393,24 @@ def test_main_exits_one_and_names_the_line_and_its_remedy(tmp_path: Path, capsys
     assert "a paragraph under it" in out
 
 
+def test_main_names_every_faulty_line_in_every_file_it_is_given(tmp_path: Path, capsys) -> None:
+    # The whole reason the gate takes a set of files rather than one: an author
+    # told about a single line, who fixed it and then met a fresh failure from a
+    # file that was already faulty, would read the gate as flaky. Both halves of
+    # that are pinned here -- one file's reports replacing the file's before it,
+    # and only the run's first report reaching stdout, each leave every other
+    # test in this module green, since none of them drives more than one report.
+    first = tmp_path / "first.md"
+    first.write_text("- outer item\n\n  a paragraph under it\n", encoding="utf-8")
+    second = tmp_path / "second.md"
+    second.write_text("- another item\n\n  a second paragraph\n", encoding="utf-8")
+    assert md_shape.main([str(first), str(second)]) == md_shape._EXIT_FAULT
+    out = capsys.readouterr().out
+    assert f"{first}:3" in out
+    assert f"{second}:3" in out
+    assert "2 misshapen line(s) in 2 file(s)" in out
+
+
 def test_main_exits_two_on_a_file_that_is_not_utf8(tmp_path: Path, capsys) -> None:
     # A `ValueError`, so it escapes the `OSError` catch and would otherwise
     # exit 1 -- the code reserved for "a fault is there".
