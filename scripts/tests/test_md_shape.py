@@ -304,6 +304,70 @@ def test_a_document_with_no_list_at_all_is_not_reported(tmp_path: Path) -> None:
     assert _scan(tmp_path, "# T\n\nOne paragraph.\n\nAnd a second.\n") == []
 
 
+def _nested_then_a_fault(levels: int) -> str:
+    """A bullet list `levels` deep, then a plain fault in a later section.
+
+    The fault is at nesting depth 1 and belongs to nothing above it, so
+    reporting it is only ever a question of whether the parser got that far.
+    """
+    bullets = "".join(f"{'  ' * i}- level {i + 1}\n" for i in range(levels))
+    return f"{bullets}\n## Later section\n\n- a\n  a plain prose fault\n"
+
+
+def test_a_list_just_under_the_nesting_cap_leaves_the_rest_of_the_file_read(
+    tmp_path: Path,
+) -> None:
+    # Two nesting units to a list level, so 49 levels is the deepest the cap
+    # admits. The fault after it is reported like any other, which is what says
+    # the cap is not reached by a document a person could write -- the deepest
+    # list in this repository is seven levels.
+    assert _scan(tmp_path, _nested_then_a_fault(49)) == [54]
+
+
+def test_a_list_past_the_nesting_cap_stops_the_scan_rather_than_passing_it(
+    tmp_path: Path,
+) -> None:
+    # One level deeper. The parser does not stop at the deepest item it can
+    # reach: it abandons the document there, so the later section and its fault
+    # are never tokenised at all. Every finite cap fails this way, which is why
+    # what is pinned here is that no cap can make this file print clean.
+    path = tmp_path / "deep.md"
+    path.write_text(_nested_then_a_fault(50), encoding="utf-8")
+    with pytest.raises(md_shape.StoppedShortError):
+        md_shape.scan(path)
+
+
+def test_main_exits_two_where_the_parser_stopped_short(tmp_path: Path, capsys) -> None:
+    # Exit 2 -- "the input isn't what this script expects" -- where this used to
+    # print the file clean and exit 0.
+    path = tmp_path / "deep.md"
+    path.write_text(_nested_then_a_fault(50), encoding="utf-8")
+    assert md_shape.main([str(path)]) == md_shape._EXIT_MALFORMED
+    err = capsys.readouterr().err
+    assert "stopped short of the end of this file" in err
+    assert "Flatten the deepest nesting" in err
+
+
+def test_a_file_ending_in_an_unterminated_block_is_not_read_as_stopped_short(
+    tmp_path: Path,
+) -> None:
+    # The parser reaches the end of each of these; it just never closes the
+    # block. The end probe is matched by its text rather than by where its token
+    # sits, so a block that swallows it still counts as reached -- reading these
+    # as a truncated parse would exit 2 on a file that was fully checked.
+    for text in ("```text\ncode\n", "# T\n\n<!-- never closed\nstuff\n", "<pre>\nx\n"):
+        assert _scan(tmp_path, text) == [], text
+
+
+def test_a_reference_definition_at_the_end_is_not_read_as_stopped_short(
+    tmp_path: Path,
+) -> None:
+    # A link reference definition produces no token at all, so in a file that
+    # was read whole the parser's line ranges still stop above it. Asking the
+    # parser to place one more line is what tells that apart from giving up.
+    assert _scan(tmp_path, "Some [link][foo].\n\n[foo]: /url\n") == []
+
+
 def test_the_two_exit_codes_are_the_ones_the_gate_reads() -> None:
     # Every other test here names them by constant, so their values are pinned
     # once: 1 is "a fault is there" and 2 is "the input isn't what this script

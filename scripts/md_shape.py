@@ -46,6 +46,16 @@ not open to them -- which also settles a code block's verdict by what it is
 rather than by whether the author fenced or indented it. Inside a blockquote
 nothing is scanned at all: the rule is about this repository's own prose, not
 about text it quotes.
+
+A verdict is given only for a document the parser read to the end. Every
+markdown parser caps how deep it will nest, and `markdown-it-py` does not merely
+stop descending at the cap: it abandons the input there and tokenises none of
+the rest, so a single over-deep list would otherwise silence this check for
+everything below it in that file and print the file clean. The cap is raised
+below to a depth no document written by hand reaches, and every parse is asked
+where it stopped, because raising a cap only moves the cliff while asking
+removes it -- exit 2 says the file got no verdict, and nothing this script
+prints can then be a clean file that was never read.
 """
 
 from __future__ import annotations
@@ -59,10 +69,39 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
+# Nesting units, two to a list level. Passed rather than inherited so the number
+# is a decision here: the `commonmark` preset's own 20 is spent by a bullet list
+# ten levels deep, and the house rule this script enforces -- an item that would
+# take prose becomes a nested bullet or a section -- pushes authors the one
+# direction that approaches a cap. 100 is `markdown-it-py`'s `default` preset
+# value, so it is the library's own number rather than an invented one; it
+# admits 49 list levels against a deepest 7 in this repository, and stays well
+# below the depth at which CPython's recursion limit would turn the parse into a
+# crash instead of the exit 2 below (measured: 494 levels at a cap of 1000).
+_MAX_NESTING = 100
+
 # CommonMark, plus the one GFM addition that can move a line into a different
 # block. Every other GFM extension is inline-level, so none of them changes the
 # answer this script reads off the token stream.
-_PARSER = MarkdownIt("commonmark").enable("table")
+_PARSER = MarkdownIt("commonmark", {"maxNesting": _MAX_NESTING}).enable("table")
+
+# Appended to a copy of the document to ask the parser where it stopped. Reading
+# the token stream's own line ranges cannot answer that: on exhausting the cap
+# the parser sets its line to the end of the input, so the abandoning list's
+# `map` runs to the end of the file exactly as a list that really did. A line
+# the parser has to account for does answer it. Any token holding this one --
+# its own HTML block in an ordinary document, or the content of an unterminated
+# fence or comment that swallowed it -- means the parse reached the end of the
+# file; a document holding no token with it was cut short. Matching on the text
+# rather than on where the token sits is what keeps an unterminated block from
+# reading as a cut-short parse, and it costs only the case of a file that spells
+# this string out itself above an over-deep list.
+#
+# One abandonment does not reach this probe: a blockquote tokenises its own line
+# range, so exhausting the cap inside one discards the rest of that quote and
+# leaves the document after it parsed. Nothing reportable is lost there -- the
+# lines discarded are quoted lines, which this script never reports.
+_END_PROBE = "<!-- md_shape end probe -->"
 
 _FRONTMATTER = "---"
 
@@ -75,6 +114,15 @@ _REMEDY = (
     "is prose inside a list item -- a list item is the line its marker is on, "
     "so fold this onto that line or give the item a heading of its own"
 )
+
+
+class StoppedShortError(Exception):
+    """The parser abandoned a document before its end, so it has no verdict.
+
+    Malformed input in this script's sense: what came back describes a prefix
+    of the file, and reporting no fault from it would assert the whole file is
+    clean.
+    """
 
 
 @dataclass(frozen=True)
@@ -143,12 +191,34 @@ def _prose_in_list_items(text: str) -> list[int]:
     return sorted(reported)
 
 
+def _reaches_the_end(text: str) -> bool:
+    """Whether the parser tokenised this document through to its end.
+
+    The probe goes after a blank line, where it can only be a block of its own
+    or part of one the document left open -- either way the parser accounts for
+    it, unless it stopped before reaching it. The document is parsed separately
+    for the verdict, so the appended lines cannot move a line in it.
+    """
+    return any(_END_PROBE in token.content for token in _PARSER.parse(f"{text}\n\n{_END_PROBE}\n"))
+
+
 def scan(path: Path) -> list[Report]:
-    """Return every misshapen line in one markdown file."""
+    """Return every misshapen line in one markdown file.
+
+    Raises `StoppedShortError` where the parser did not read the file to its end,
+    since the lines it never saw cannot be reported clean.
+    """
     lines = path.read_text(encoding="utf-8").split("\n")
+    text = _without_frontmatter(lines)
+    if not _reaches_the_end(text):
+        raise StoppedShortError(
+            f"the parser stopped short of the end of this file: nesting past its limit of "
+            f"{_MAX_NESTING} blocks -- two to a list level -- makes it abandon the rest of "
+            f"the document, so the lines below that point were never checked. Flatten the "
+            f"deepest nesting here; a pass on this file would not have been a clean file"
+        )
     return [
-        Report(str(path), line_no, lines[line_no - 1])
-        for line_no in _prose_in_list_items(_without_frontmatter(lines))
+        Report(str(path), line_no, lines[line_no - 1]) for line_no in _prose_in_list_items(text)
     ]
 
 
@@ -182,6 +252,9 @@ def main(argv: list[str] | None = None) -> int:
     for path in paths:
         try:
             reports += scan(path)
+        except StoppedShortError as exc:
+            print(f"md_shape: {path}: {exc}", file=sys.stderr)
+            return _EXIT_MALFORMED
         except UnicodeDecodeError as exc:
             print(f"md_shape: {path} is not UTF-8 text: {exc}", file=sys.stderr)
             return _EXIT_MALFORMED
