@@ -208,6 +208,27 @@ def test_a_list_after_a_blockquote_is_still_scanned(tmp_path: Path) -> None:
     assert _scan(tmp_path, "> quoted\n\n- outer item\n  prose in it\n") == [4]
 
 
+def test_a_quote_nested_in_a_quote_does_not_end_the_exemption(tmp_path: Path) -> None:
+    # The pair above pins the exemption's existence at one level, where a
+    # depth and a flag agree. Here they part: the inner quote's close is not
+    # the outer one's, so a flag leaves the quote at line 4 and reports line 6
+    # -- quoted prose named as this repository's own misshapen line, which is
+    # the false positive this gate can least afford. Only the depth is right.
+    text = "> outer quote\n>\n> > inner quote\n>\n> - item\n>   prose in it\n"
+    assert _scan(tmp_path, text) == []
+
+
+def test_a_quote_nested_in_a_quote_inside_an_item_is_exempt_too(tmp_path: Path) -> None:
+    # The same shape indented into a list item, so the enclosing item is open
+    # around the whole quote and every paragraph in it is a candidate. Nothing
+    # but the depth keeps line 8 unreported.
+    text = (
+        "- outer item\n\n  > outer quote\n  >\n  > > inner quote\n"
+        "  >\n  > - item\n  >   prose in it\n"
+    )
+    assert _scan(tmp_path, text) == []
+
+
 def test_prose_after_an_html_block_in_an_item_is_reported(tmp_path: Path) -> None:
     assert _scan(tmp_path, "- outer item\n\n  <!-- a note -->\n\n  after it\n") == [5]
 
