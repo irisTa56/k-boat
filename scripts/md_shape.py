@@ -223,14 +223,24 @@ def scan(path: Path) -> list[Report]:
 
 
 def tracked_markdown() -> list[Path]:
-    """Every markdown file the repository tracks."""
+    """Every markdown file the repository tracks and still has on disk.
+
+    `git ls-files` reads the index, so a path stays listed between deleting the
+    file and staging that deletion -- delete a doc in the editor, commit
+    something else before running `git add -A`, and the index still names it.
+    Every other input `scan` refuses was handed to it by a caller; this one the
+    script would be choosing for itself, and it would fail the gate over a file
+    the author already meant to be gone. So the set handed on is the one this
+    script can actually read.
+    """
     out = subprocess.run(
         ["git", "ls-files", "-z", "--", "*.md", "*.markdown"],
         capture_output=True,
         text=True,
         check=True,
     ).stdout
-    return [Path(p) for p in out.split("\0") if p]
+    listed = (Path(p) for p in out.split("\0") if p)
+    return [path for path in listed if path.is_file()]
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -19,10 +19,36 @@ itself.
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import md_shape
 import pytest
+
+
+def _scratch_repo(tmp_path: Path, monkeypatch, *names: str) -> Path:
+    """A git repository holding one commit of `names`, entered as the cwd.
+
+    The `GIT_*` variables are cleared first, before any git runs at all: a hook
+    invokes this gate with `GIT_DIR` naming the repository being committed to,
+    and `git init` obeys that variable over its own `-C`, so under one this
+    would re-initialise the outer repository instead of building a scratch one.
+    Clearing them is also what leaves `md_shape`'s own `git ls-files` reading
+    the repository this chdirs into. The committer is passed per invocation, so
+    nothing here depends on the `git config --global` of the machine it runs on.
+    """
+    for name in [name for name in os.environ if name.startswith("GIT_")]:
+        monkeypatch.delenv(name)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for name in names:
+        (repo / name).write_text(f"# {name}\n", encoding="utf-8")
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.test"]
+    for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"]):
+        subprocess.run([*git, *args], check=True, capture_output=True)
+    monkeypatch.chdir(repo)
+    return repo
 
 
 def _scan(tmp_path: Path, text: str) -> list[int]:
@@ -447,6 +473,20 @@ def test_tracked_markdown_finds_this_repositorys_own_files() -> None:
     assert paths
     assert all(path.suffix in {".md", ".markdown"} for path in paths)
     assert Path("CLAUDE.md") in paths
+
+
+def test_tracked_markdown_drops_a_file_the_worktree_no_longer_has(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # `git ls-files` reads the index, so a deleted file stays listed until the
+    # deletion is staged -- delete a doc in the editor, commit something else
+    # before `git add -A`, and the gate refused that commit over a file the
+    # author already meant to be gone. A scratch repository rather than this
+    # one, since what is pinned is a worktree with an unstaged deletion in it.
+    repo = _scratch_repo(tmp_path, monkeypatch, "kept.md", "gone.md")
+    (repo / "gone.md").unlink()
+    assert md_shape.tracked_markdown() == [Path("kept.md")]
+    assert md_shape.main([]) == 0
 
 
 def test_scan_rejects_a_directory(tmp_path: Path) -> None:
