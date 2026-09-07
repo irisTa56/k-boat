@@ -64,10 +64,10 @@ run = "notebooklm auth check --test --json"
 description = "Run all pre-commit checks"
 depends = ["qa:**"]
 
-# Two checks, because `rumdl` cannot make the second: a lazily-continued line and
-# a paragraph under a list item are both well-formed markdown line by line, and
-# what is wrong about either is only which block it belongs to.
-# `scripts/md_shape.py` has both mechanisms and their remedies.
+# Two commands, because `rumdl` cannot make the second check: a paragraph inside
+# a list item is well-formed markdown line by line, and what is wrong about it is
+# only which block it belongs to. `scripts/md_shape.py` asks a real CommonMark
+# parser that question, so it runs under `uv run` for the workspace venv.
 [tasks."qa:md"]
 description = "Lint markdown files"
 run = """

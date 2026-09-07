@@ -1,115 +1,69 @@
-"""Fail if a markdown file's list shape and the prose in it disagree.
+"""Fail where a markdown file puts prose inside a list item.
 
-Stdlib-only by design, for the same reason `coverage_floor.py` is: it runs from
-the `qa:md` gate and from CI's `markdown-lint` job, neither of which installs
-anything to run it.
-
-`rumdl` catches neither fault below: every line involved is well-formed markdown
-line by line, and what is wrong about it is only which block it belongs to.
-Hence a check of its own.
-
-A **fold**. CommonMark's
-[lazy continuation](https://spec.commonmark.org/0.31.2/#lazy-continuation-line)
-lets a paragraph carry on across a line indented less than the block it began
-in. Inside a nested list that turns an author's indentation into a lie:
-
-    - outer item
-      - deeper child
-      text meant to continue the outer item
-
-The last line sits at the outer item's content column, so it reads as the outer
-item's prose. The deeper child's paragraph is still open and no blank line
-closed it, so CommonMark appends the line to *that* paragraph instead, and the
-rendered document says something the source does not. A blank line before it
-closes the paragraph and the same line then lands where its indentation puts it.
-
-That fault includes a line sitting at an item's own marker column rather than
-under a deeper child: short of the content column, it too would land outside the
-list if a blank line closed the paragraph, and laziness keeps it in the item. It
-also includes a line back at the margin, which no item's content column can
-account for -- which is why the fold is reported even where the second fault
-below cannot see it.
-
-**Prose inside a list item**. A paragraph and a list are exclusive: a list item
-is the line its marker is on, and an item that needs prose under it is a section
-with a heading instead. So a non-blank line sitting at or past an open item's
-content column is prose that item swallowed, blank line before it or not:
+A paragraph and a list are exclusive: a list item is the line its marker is on,
+and an item that needs prose under it is a section with a heading instead. So
+the whole check is one question, asked of every paragraph in the document --
+is it inside a list item, past that item's own marker line?
 
     - outer item
 
       a second paragraph belonging to that item
 
-Where both faults describe the same line, it is reported as a fold, the more
-specific reading of the two.
+`rumdl` cannot ask it. Every line above is well-formed markdown line by line,
+and what is wrong about it is only which block it belongs to. Hence a check of
+its own.
 
-Only a paragraph is ever reported, under either fault. A blockquote, an HTML
-block, a thematic break and an indented code block are exempt from both: the
-fold is a claim about where CommonMark puts a line and would be false for any of
-them, and the remedy the second fault names -- fold the line onto the marker's
--- is not open to a block that cannot live on that line. Exempting them also
-settles a code block's verdict by what it is rather than by how it is spelt,
-since a fenced one is already unscanned.
+Which block a line belongs to is CommonMark's question, and this script asks
+CommonMark. Answering it by hand needs a classifier that knows when a marker
+may interrupt a paragraph, where an indented code block starts and how far an
+HTML comment runs -- and every disagreement with the real answer is a false
+positive blocking a correct commit, which a commit gate can afford far less
+than a miss. `markdown-it-py` answers instead: a faithful port of markdown-it,
+100% CommonMark, and the successor the deprecated `commonmark.py` names.
+Tables are enabled on top of it, because GitHub renders GFM and `rumdl` lints
+GFM, and a table is the one thing GFM adds that changes block structure.
 
-Two of CommonMark's rules are stateful, and a classifier reading each line on
-its own gets both wrong in the reporting direction. An HTML comment block runs
-to the line holding `-->`, so its interior is not markdown at all and is skipped
-the way a fenced block is. And a list marker opens an item only where CommonMark
-lets one interrupt the open paragraph: a *new* list needs a non-empty first item
-and, if ordered, has to start at 1. A marker outdenting an item already open
-joins that item's list rather than starting one, and is bound by neither rule,
-so an empty or non-1 sibling item still opens.
+A lazily continued line needs no rule of its own here. CommonMark's
+[lazy continuation](https://spec.commonmark.org/0.31.2/#lazy-continuation-line)
+carries a paragraph across a line indented less than the block it began in:
 
-The scan is otherwise narrow, and where it cannot decide it does not report: it
-gates commits, so a false positive costs more than a miss. Two consequences
-worth naming. A fenced block is never scanned and so never reported, whatever it
-is nested in. And a heading closes every open item, so prose under a heading
-that is itself indented inside an item goes unreported.
+    - outer item
+      - deeper child
+      text meant to continue the outer item
+
+so the last line renders inside the deeper child rather than the outer item the
+author indented it for. That is a paragraph line inside a list item past the
+item's marker line, which is the fault above; the parser places the line and
+this script reports it, without having to know that laziness is why. The
+message does not draw the distinction either, because the two readings do not
+differ in what the author has to do. A blank line before the line un-folds it
+and leaves it prose inside the outer item, still failing this check, so the fix
+either way is to fold the line onto the marker's or give the item a heading.
+
+Only a paragraph is ever reported. A code block, a table, an HTML block and a
+thematic break cannot live on a marker's line, so the remedy the rule names is
+not open to them -- which also settles a code block's verdict by what it is
+rather than by whether the author fenced or indented it. Inside a blockquote
+nothing is scanned at all: the rule is about this repository's own prose, not
+about text it quotes.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# A list marker plus the whitespace after it. The match end is the item's
-# content column, which is what decides whether a later line is inside it. The
-# marker alone on its line is a marker too -- CommonMark's empty list item --
-# and `number` is what the interrupt rule below has to read.
-_MARKER = re.compile(r"^\s*(?:[-*+]|(?P<number>\d{1,9})[.)])(?P<space>\s+|$)")
-_FENCE = re.compile(r"^(\s*)(```+|~~~+)")
-_HEADING = re.compile(r"^(\s*)#{1,6}(\s|$)")
-# The other block starts that interrupt an open paragraph rather than continuing
-# it, so a line beginning with one is never folded whatever its indentation.
-# Scanning inside a blockquote is out of scope -- this repo has none under a list
-# item, and reporting the wrong line inside one would block a correct commit.
-_BLOCKQUOTE = re.compile(r"^(\s*)>")
-# Deliberately every `<`, not the six HTML block kinds that really interrupt a
-# paragraph: telling those from the seventh, which does not, needs the tag-name
-# list. The cost is missing a fold on a line that opens with an autolink; the
-# alternative is reporting a comment or a block tag that is not one at all.
-_HTML = re.compile(r"^(\s*)<")
-# The one HTML block whose interior has to be skipped rather than scanned: it is
-# the kind this repo's files actually contain, and the only one whose contents
-# are routinely markdown-shaped -- a bulleted TODO commented out for later. The
-# block runs to the line holding `-->`, which need not be the opening one.
-_COMMENT_START = re.compile(r"^\s*<!--")
-_COMMENT_END = "-->"
-# Four columns past the enclosing block's content column, with no paragraph open,
-# starts an indented code block. Nothing continues one lazily.
-_CODE_INDENT = 4
-# CommonMark caps an item's content column: more than this many spaces after the
-# marker and the content column is the marker's end plus one, the rest being an
-# indented code block inside the item.
-_MAX_MARKER_SPACES = 4
-# All three spellings CommonMark gives a thematic break. `---` is also a setext
-# underline where a paragraph is open above it, and both readings end that
-# paragraph, so either way nothing is folded past this line. Matched before the
-# marker, the precedence CommonMark gives it: `- - -` is a break, not an item.
-_THEMATIC_BREAK = re.compile(r"^\s*(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
+
+# CommonMark, plus the one GFM addition that can move a line into a different
+# block. Every other GFM extension is inline-level, so none of them changes the
+# answer this script reads off the token stream.
+_PARSER = MarkdownIt("commonmark").enable("table")
+
 _FRONTMATTER = "---"
 
 # Exit 2, "the input isn't what this script expects", never exit 1, "a fault is
@@ -117,199 +71,85 @@ _FRONTMATTER = "---"
 _EXIT_FAULT = 1
 _EXIT_MALFORMED = 2
 
-FOLD = "fold"
-PROSE = "prose"
-
-_REMEDY = {
-    FOLD: (
-        "is folded into the item at column {item_column} -- put a blank line "
-        "before it or indent it to that item"
-    ),
-    PROSE: (
-        "is prose inside the item at column {item_column} -- a list item is the "
-        "line its marker is on, so fold this onto that line or give the item a "
-        "heading of its own"
-    ),
-}
+_REMEDY = (
+    "is prose inside a list item -- a list item is the line its marker is on, "
+    "so fold this onto that line or give the item a heading of its own"
+)
 
 
 @dataclass(frozen=True)
 class Report:
-    """One reported line: which fault, where it is, and which item claims it."""
+    """One reported line: where it is, and the text sitting there."""
 
-    kind: str
     path: str
     line_no: int
-    indent: int
-    item_column: int
     text: str
 
     def __str__(self) -> str:
-        remedy = _REMEDY[self.kind].format(item_column=self.item_column)
-        return (
-            f"{self.path}:{self.line_no}: line at column {self.indent} {remedy}"
-            f"\n    {self.text.strip()}"
-        )
+        return f"{self.path}:{self.line_no}: line {_REMEDY}\n    {self.text.strip()}"
 
 
-def _indent_of(line: str) -> int:
-    return len(line) - len(line.lstrip())
+def _without_frontmatter(lines: list[str]) -> str:
+    """The document with any YAML frontmatter blanked out, line numbering kept.
 
-
-def _content_column(marker: re.Match[str]) -> int:
-    """The column an item's content starts at, capped as CommonMark caps it.
-
-    Both the capped case and the empty item put the column one past the marker
-    itself: an over-wide gap is an indented code block inside the item, and an
-    item with nothing on its line has no gap to measure.
+    A skill file opens with frontmatter, and a block scalar's value there can
+    be shaped exactly like a list with a line folded into it. Blanking rather
+    than dropping the lines keeps every reported line number the file's own.
     """
-    spaces = len(marker["space"])
-    if spaces == 0 or spaces > _MAX_MARKER_SPACES:
-        return marker.end() - spaces + 1
-    return marker.end()
+    if lines and lines[0].strip() == _FRONTMATTER:
+        for i, line in enumerate(lines[1:], 1):
+            if line.strip() == _FRONTMATTER:
+                return "\n" * (i + 1) + "\n".join(lines[i + 1 :])
+    return "\n".join(lines)
 
 
-def _can_interrupt(content: str, marker: re.Match[str]) -> bool:
-    """Whether this marker may open a list where a paragraph is already open.
+def _paragraph_lines(token: Token, item_start: int) -> range:
+    """The 1-based lines of one paragraph that this rule can report.
 
-    CommonMark's two conditions on the first item of an interrupting list: it
-    must not be empty, and an ordered one must start at 1.
+    `map` is a 0-based half-open line range, so adding one to each end makes it
+    1-based and inclusive. A paragraph beginning on the item's own first line
+    begins on the marker line, which is the item rather than prose inside it,
+    so that one line is dropped and the rest of the paragraph -- lazily
+    continued or not -- stands.
     """
-    return bool(content) and (marker["number"] is None or int(marker["number"]) == 1)
+    if token.map is None:  # pragma: no cover - the parser maps every block
+        return range(0)
+    first, past_last = token.map
+    return range(first + 2 if first == item_start else first + 1, past_last + 1)
 
 
-def _frontmatter_end(lines: list[str]) -> int:
-    """How many opening lines to skip, so YAML `-` lines are not list markers."""
-    if not lines or lines[0].strip() != _FRONTMATTER:
-        return 0
-    for i, line in enumerate(lines[1:], 2):
-        if line.strip() == _FRONTMATTER:
-            return i
-    return 0
+def _prose_in_list_items(text: str) -> list[int]:
+    """Every 1-based line the parser puts in a paragraph inside a list item."""
+    reported: set[int] = set()
+    # The first line of each open item, innermost last. Comparing a paragraph's
+    # own first line against it is what tells the marker line from prose under
+    # it, and it is the parser's number for both, never a column re-measured
+    # off the source.
+    item_starts: list[int] = []
+    quoted = 0
 
+    for token in _PARSER.parse(text):
+        if token.type == "blockquote_open":
+            quoted += 1
+        elif token.type == "blockquote_close":
+            quoted -= 1
+        elif token.type == "list_item_open":
+            item_starts.append(token.map[0] if token.map else -1)
+        elif token.type == "list_item_close":
+            item_starts.pop()
+        elif token.type == "paragraph_open" and item_starts and not quoted:
+            reported.update(_paragraph_lines(token, item_starts[-1]))
 
-def _close_items(stack: list[int], indent: int) -> None:
-    """Drop the open items this line outdents past. Mutates `stack`.
-
-    Every line does this, reported or not: what a later line is measured
-    against has to be the items still open at that point, not the ones a line
-    the scan stayed silent about had already closed.
-    """
-    while stack and stack[-1] > indent:
-        stack.pop()
+    return sorted(reported)
 
 
 def scan(path: Path) -> list[Report]:
     """Return every misshapen line in one markdown file."""
-    text = path.read_text(encoding="utf-8")
-    lines = text.split("\n")
-    reports: list[Report] = []
-
-    # Content columns of the list items currently open, shallowest first.
-    stack: list[int] = []
-    # Whether a paragraph is open, which is what lazy continuation needs.
-    para_open = False
-    fence: str | None = None
-    in_comment = False
-
-    # A skill file opens with YAML frontmatter, whose `-` lines would otherwise
-    # read as list markers.
-    start = _frontmatter_end(lines)
-
-    for line_no, line in enumerate(lines[start:], start + 1):
-        if in_comment:
-            # Nothing between the delimiters is markdown, so nothing in here is
-            # measured. A comment is only ever entered with no fence open, so
-            # the two skip states cannot disagree about a line.
-            if _COMMENT_END in line:
-                in_comment = False
-                para_open = False
-            continue
-
-        fence_match = _FENCE.match(line)
-        if fence is not None:
-            closer = fence_match.group(2) if fence_match else ""
-            # A closing fence is the same character and at least as long, so a
-            # three-backtick fence inside a wrapping four-backtick one does not
-            # end it -- which is how a skill file shows a fenced example.
-            if closer and closer[0] == fence[0] and len(closer) >= len(fence):
-                fence = None
-                para_open = False
-            continue
-        if fence_match:
-            fence = fence_match.group(2)
-            para_open = False
-            continue
-
-        if not line.strip():
-            para_open = False
-            continue
-
-        indent = _indent_of(line)
-
-        if _HEADING.match(line):
-            # A heading ends the list outright rather than merely outdenting it:
-            # a section is what an item with prose under it is supposed to
-            # become, so a heading is where a list stops, not something in one.
-            stack.clear()
-            para_open = False
-            continue
-
-        if _BLOCKQUOTE.match(line) or _THEMATIC_BREAK.match(line) or _HTML.match(line):
-            # None of these is a paragraph, so neither fault is about it.
-            comment = _COMMENT_START.match(line)
-            if comment and _COMMENT_END not in line[comment.end() :]:
-                in_comment = True
-            para_open = False
-            _close_items(stack, indent)
-            continue
-
-        marker = _MARKER.match(line)
-        if marker:
-            # A marker outdenting an open item joins the list that item belongs
-            # to, and only a marker starting a new list has to satisfy the
-            # interrupt rules. Whether the joined list is really the same one --
-            # a changed bullet character starts another -- is left unasked: the
-            # answer only ever opens an item, which is the silent direction.
-            content = line[marker.end() :].strip()
-            joins_an_open_list = bool(stack) and stack[-1] > indent
-            if not para_open or joins_an_open_list or _can_interrupt(content, marker):
-                _close_items(stack, indent)
-                stack.append(_content_column(marker))
-                # An item with nothing on its line opens no paragraph, so
-                # nothing can be folded into it lazily either.
-                para_open = bool(content)
-                continue
-            if not content and line.lstrip().startswith("-"):
-                # A lone `-` under an open paragraph is that paragraph's setext
-                # underline, not an item: the paragraph ends on this line, and
-                # the heading it makes is a block like the ones above.
-                para_open = False
-                _close_items(stack, indent)
-                continue
-            # Otherwise the line is the paragraph's own text, and falls through
-            # to be measured as the prose it is.
-
-        if para_open and stack and indent < stack[-1]:
-            reports.append(Report(FOLD, str(path), line_no, indent, stack[-1], line))
-            # CommonMark keeps the line in the deeper item, so the stack stands.
-            continue
-
-        # What survives the unwinding has a content column no deeper than this
-        # line's indentation, so an innermost survivor is an item the line sits
-        # at or past the content column of -- the whole of the second fault.
-        _close_items(stack, indent)
-        enclosing = stack[-1] if stack else 0
-        if not para_open and indent >= enclosing + _CODE_INDENT:
-            # An indented code block, which starts only where no paragraph is
-            # open -- where one is, a deeply indented line goes on continuing
-            # it. Nothing continues a code block lazily, so nothing reopens.
-            continue
-        para_open = True
-        if stack:
-            reports.append(Report(PROSE, str(path), line_no, indent, enclosing, line))
-
-    return reports
+    lines = path.read_text(encoding="utf-8").split("\n")
+    return [
+        Report(str(path), line_no, lines[line_no - 1])
+        for line_no in _prose_in_list_items(_without_frontmatter(lines))
+    ]
 
 
 def tracked_markdown() -> list[Path]:

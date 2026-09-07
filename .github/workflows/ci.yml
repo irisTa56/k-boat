@@ -3,9 +3,9 @@ name: CI
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
 # to main), but without mise: CI needs neither the notebooklm tool nor a browser.
 # It runs the same ruff / ty / pytest / coverage-floor / rumdl / md-shape /
-# gitleaks / offline-link-check checks -- uv for the Python gates, official
-# actions for rumdl, gitleaks, and lychee, and the runner's own interpreter for
-# md-shape. Keep the checks here in sync with mise.toml's `qa:**` tasks.
+# gitleaks / offline-link-check checks -- uv for the Python gates, md-shape
+# among them, and official actions for rumdl, gitleaks, and lychee. Keep the
+# checks here in sync with mise.toml's `qa:**` tasks.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -98,10 +98,18 @@ jobs:
       # pins the action's own code, not the `rumdl` binary version it installs
       # (see the header comment). It auto-detects .rumdl.toml at the root.
       - uses: rvben/rumdl@v0.2.62
-      # The two markdown faults rumdl cannot see, mirroring mise's `qa:md`. The
-      # script is stdlib-only, so the runner's own interpreter runs it with no
-      # setup step -- `qa:md` reaches the same script through `uv run python`.
-      - run: python3 scripts/md_shape.py
+      # Pinned to the same full version as the `python-qa` job's, for the same
+      # reason: setup-uv publishes no floating major tag.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - name: Sync the workspace venv
+        run: uv sync
+      # The markdown fault rumdl cannot see, mirroring mise's `qa:md`. The
+      # script parses with `markdown-it-py` rather than answering CommonMark
+      # itself, so it needs the workspace venv the two steps above install --
+      # `qa:md` reaches the same script through the same `uv run python`.
+      - run: uv run python scripts/md_shape.py
 
   secret-scan:
     runs-on: ubuntu-latest
