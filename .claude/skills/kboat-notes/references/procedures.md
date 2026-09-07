@@ -570,10 +570,8 @@ Re-queueing the URL while it still stands builds a notebook that the next routin
 - A **web page** goes on to [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook), which re-fetches the `url`.
   - For a genuinely dead one that re-fetch records the source blocked again.
 - A **PDF** takes one of three routes, and `PDFs/<slug>.pdf` picks between them — check for the file first, since reactivation rebuilds from it and step 5 of [Procedure: ingest a PDF source](#procedure-ingest-a-pdf-source) builds nothing when it is missing.
-  - **The file is there** — the entry a re-capture re-blocked after a successful ingest.
-    - Set `reading_link` = `[[<slug>.pdf]]` in the record that unticks `dismiss` (recording the DLQ entry overwrote it with the `url`, and nothing on this route writes it back), then reactivate.
-  - **No file, live `url`** — the entry ingest recorded.
-    - Re-queue the URL: ingest downloads and files the PDF where the wall has dropped, and where it still stands records the DLQ entry again, putting the source back within `kboat-rescue`'s reach.
+  - **The file is there** — the entry a re-capture re-blocked after a successful ingest. Set `reading_link` = `[[<slug>.pdf]]` in the record that unticks `dismiss` (recording the DLQ entry overwrote it with the `url`, and nothing on this route writes it back), then reactivate.
+  - **No file, live `url`** — the entry ingest recorded. Re-queue the URL: ingest downloads and files the PDF where the wall has dropped, and where it still stands records the DLQ entry again, putting the source back within `kboat-rescue`'s reach.
   - **No file, dead `url`** — put the file at `PDFs/<slug>.pdf` by hand, set `reading_link` = `[[<slug>.pdf]]` in the same record that unticks `dismiss`, then reactivate.
 
 ## Procedure: discard a source's notebook
