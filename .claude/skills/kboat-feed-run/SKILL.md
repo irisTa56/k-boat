@@ -65,7 +65,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    `remind` requires `--title` (and `mark-seen` requires `--title`); `--summary` is optional.
    Pass `--title ""` to invoke the URL fallback when there is no real title, and pass `--summary '<gist>'` when the judge returned one.
    Omitting `--title` is an argparse error (exit 2), not a fallback, and would lose the entry.
-   Every value below comes off the page or the judge, so shell-escape it rather than only wrapping it in the quotes shown — close and reopen around each embedded `'` (`'\''`).
+   The URL, the title and the summary come off the page or the judge, so shell-escape each rather than only wrapping it in the quotes shown — close and reopen around each embedded `'` (`'\''`).
    An apostrophe is ordinary in a title, and one left unescaped ends the quoting mid-value.
    - **Wall** (`wall == true`) → take this branch **before** the keep/drop check: the page was a login/paywall, not the article, so defer to the user instead of dropping it (prompts/selection.md "Walls and unreadable pages").
      Call `feed-filter remind --site-id <id> --url '<url>' --title '<title>' --summary '<gist>' --wall`.
