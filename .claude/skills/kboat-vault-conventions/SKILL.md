@@ -201,16 +201,15 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - It is checked before the file is even located, since a wrong slug names the wrong file and the collision check below would then run against a note the record was never about.
   - A record that carries no `url` — a later write filling in a summary, or an upload source that has none — makes no claim to check and passes.
 - **Collision check.** When the schema declares an `identity` field (e.g. `url`), an existing note at the same slug that cannot be shown to be the same note is a collision — returned as `{status: "collision", reason, …}` and written nowhere.
-  This is the de-dup-by-identity rule the naming section relies on.
-  Two identity URLs are compared the way the slug is made, by their canonical forms: a page reached by a second link lands on the note it already has, so a verbatim comparison would report that as a hash clash and refuse an update that is the same page.
-  A stored URL no parser can take is compared exactly instead, which fails closed.
-  Two reasons, because the check exists to refuse and so has to fail closed either way:
-
-  - `identity_differs` — the note's identity value is plainly a different one.
-  - `unreadable_identity` — the record names an identity but the note holds its own in a shape the reader cannot decode, so nothing can be compared.
-    - Repairing the note by hand is the only way forward; the writer will not guess.
-  The identity a note was created with is the one it keeps: where the record names the same page by another link, the stored value is preserved rather than overwritten.
-  It is the note's provenance, and for a normally-fetched web source the string the NotebookLM source id is resolved by matching, so a second link's spelling must not replace it.
+  - This is the de-dup-by-identity rule the naming section relies on.
+  - Two identity URLs are compared the way the slug is made, by their canonical forms: a page reached by a second link lands on the note it already has, so a verbatim comparison would report that as a hash clash and refuse an update that is the same page.
+  - A stored URL no parser can take is compared exactly instead, which fails closed.
+  - Two reasons, because the check exists to refuse and so has to fail closed either way:
+    - `identity_differs` — the note's identity value is plainly a different one.
+    - `unreadable_identity` — the record names an identity but the note holds its own in a shape the reader cannot decode, so nothing can be compared.
+      - Repairing the note by hand is the only way forward; the writer will not guess.
+  - The identity a note was created with is the one it keeps: where the record names the same page by another link, the stored value is preserved rather than overwritten.
+    - It is the note's provenance, and for a normally-fetched web source the string the NotebookLM source id is resolved by matching, so a second link's spelling must not replace it.
 - **Body.** The body *mode* is a fixed schema attribute (`NoteSchema.body`), not a record field: for a `verbatim` schema the record's `body` content is appended after the frontmatter, `notes` wraps it in a `## Notes` section, and `none` means the writer never authors one.
   - An `upsert` always preserves the body already in the note, under every mode — `none` says K-Boat writes no body of its own, not that it may delete one a human added below the fence, and `notes` owns its `## Notes` section rather than the whole body.
 - **Only what changes is re-rendered.** Every frontmatter entry the record does not write is put back exactly as the note held it, including one the reader can represent only approximately (an inline list, a quoted string) and one it cannot represent at all (a hyphenated or quoted key, a nested mapping, a block scalar).
