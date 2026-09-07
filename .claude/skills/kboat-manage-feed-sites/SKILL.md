@@ -37,7 +37,7 @@ Say so when reporting a resume, rather than promising only post-resume entries.
 
 A moved site — a new domain, a new subdomain, a renamed feed or index path — keeps its id and its config; what is wrong is the URL it is registered under.
 So the fix is to change that value, and never to disable the site.
-No `feed-filter` subcommand edits a URL, and none is needed: `sites.toml` is the registry itself, and it is user-authored config that this skill edits by hand.
+No `feed-filter` subcommand edits a URL, so that value is a hand-edit: `sites.toml` is the registry itself, and it is user-authored config this skill writes directly.
 What goes in is a URL confirmed to serve this same site, never one inferred from the error page that raised the suspicion — where the move is only suspected, report the candidate and leave the row alone.
 
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
@@ -48,8 +48,16 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
+4. **Report what the move leaves for the next runs**, which is not nothing wherever it changed the article URLs.
+   - A **scrape** site's articles move with its index, since they are keyed on the host the index landed on as well as on the path, so a new domain or subdomain always changes them.
+     A **feed** site's are whatever the feed itself carries, and an entry link is normally absolute — so a feed served from a new host need not have moved a single one.
+   - Where they did move, every article the new URL carries is then unseen, so the next runs judge them a capful at a time and file the keeps as notes, largely second copies of ones already filed under the old URLs.
+     `feed-filter resnapshot-site --site-id <id>` marks a scrape site's matches seen instead, writing no config — but it also buries whatever the site published while it was failing, which was filed nowhere, so put that trade to the user rather than settling it yourself.
+     A feed site has no such command.
+   - A **forum** site keeps its seen-state, since its dedupe keys on the forum's own topic and post ids rather than on a URL.
+     Its notes still split, though: one already filed was named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
 
-That is the whole of the fix — nothing else has to be run, and what the next runs then do with the site is `kboat-feed-run`'s and `kboat-forum-run`'s to say, not this skill's.
+That is the whole of the fix.
 
 ## Finding the id
 

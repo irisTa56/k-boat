@@ -559,48 +559,102 @@ def cmd_mark_seen(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_heal_site(args: argparse.Namespace) -> int:
-    """Re-scrape under a new pattern, snapshot the back-catalog, THEN rewrite config.
+def _scrape_site_for(site_id: str, verb: str) -> SiteConfig:
+    """The enabled scrape site ``site_id`` names, or a ``ValueError`` naming ``verb``.
 
-    Snapshot-first / config-last, mirroring ``cmd_add_site``: the config write
-    (``update_pattern``) is the *last* durable side
-    effect, so a fetch failure can never leave ``sites.toml`` carrying the new
-    pattern with no snapshot under it — that gap would flood the back-catalog on
-    the next run. The new pattern is applied via an in-memory ``replace`` so the
-    re-scrape uses it without committing it first. The heal writes NO
-    feed note — it is an operational notice, not a page; the run routine reports
-    the heal in the run summary instead (feed notes are pages only).
+    Shared by ``heal-site`` and ``resnapshot-site``, which re-scrape the same way and
+    differ only in where the pattern comes from and whether config is written.
     """
-    site = _select_sites(args.site_id)[0]  # KeyError if id absent — before any side effect
+    site = _select_sites(site_id)[0]  # KeyError if id absent — before any side effect
     if not site.enabled:
-        # A disabled site is inert (new-entries skips it). Healing would run a gather
+        # A disabled site is inert (new-entries skips it). Re-scraping would run a gather
         # it should not, and would slip past the on-disk Playwright gate (which now
         # ignores disabled sites) into a raw ModuleNotFoundError. Refuse — enable first.
-        raise ValueError(
-            f"heal-site targets enabled sites only (site {site.id!r}); enable it first"
-        )
+        raise ValueError(f"{verb} targets enabled sites only (site {site.id!r}); enable it first")
     if site.kind != "scrape":
-        raise ValueError(f"heal-site targets scrape sites only (site {site.id!r})")
-    # ``update_pattern`` rejects an uncompilable pattern too, but that is the last
-    # step: checking here turns the re-scrape's raw ``re.error`` into the same
-    # ``error: …`` exit as any other bad argument, before any fetch.
-    validate_article_url_pattern(args.pattern, site.id)
-    # The healed site is already on disk, so the on-disk gate sees it: fail fast if
-    # it is browser-flagged but the extra is missing before the re-scrape.
-    require_playwright_if_needed(sites_path())
+        raise ValueError(f"{verb} targets scrape sites only (site {site.id!r})")
+    return site
 
-    healed_site = replace(site, article_url_pattern=args.pattern)
+
+def _rescrape_and_snapshot(site: SiteConfig, pattern: str) -> int:
+    """Re-scrape ``site`` under ``pattern`` and mark every match seen; return the count.
+
+    The pattern is applied via an in-memory ``replace`` so the re-scrape uses it without
+    committing it first — which is what lets ``heal-site`` keep its snapshot-first /
+    config-last order. The count is the re-scrape's *matches*: ``snapshot`` is
+    ``ON CONFLICT DO NOTHING``, so an already-seen URL is left as it was and is still
+    counted. Writes NO feed note either way — a re-scrape is an operational notice, not
+    a page, and feed notes are pages only. Who reports it differs by caller.
+    """
+    # The site is already on disk, so the on-disk gate sees it: fail fast if it is
+    # browser-flagged but the extra is missing, before the re-scrape.
+    require_playwright_if_needed(sites_path())
     try:
         with build_client() as client:
-            entries = fetch_entries(healed_site, client=client)  # re-scraped under the NEW pattern
+            entries = fetch_entries(replace(site, article_url_pattern=pattern), client=client)
         with contextlib.closing(open_db(db_path())) as conn:
-            snapshot(
-                conn, site.id, [e.canonical_url for e in entries]
-            )  # flood guard, before config
-        update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
+            snapshot(conn, site.id, [e.canonical_url for e in entries])
     finally:
-        close_browser()  # tear down a lazily-launched browser (F2: heal-site re-scrapes too)
-    _emit({"site_id": site.id, "pattern": args.pattern, "snapshotted": len(entries)})
+        close_browser()  # tear down a lazily-launched browser (F2: this re-scrapes too)
+    return len(entries)
+
+
+def cmd_heal_site(args: argparse.Namespace) -> int:
+    """Re-scrape under a new pattern, snapshot the matches, THEN rewrite config.
+
+    Snapshot-first / config-last, mirroring ``cmd_add_site``: the config write
+    (``update_pattern``) is the *last* durable side effect, so a fetch failure can never
+    leave ``sites.toml`` carrying the new pattern with no snapshot under it — that gap
+    would flood the back-catalog on the next run.
+
+    ``--pattern`` is required. Re-baselining a site under the pattern it already has is
+    ``resnapshot-site``, a separate spelling on purpose: both commands mark every match
+    seen with ``kept=NULL`` and nothing un-sees a row, so which one runs must never be
+    decided by an argument the caller left off.
+
+    Reporting is the caller's, which is the half ``_rescrape_and_snapshot`` leaves out.
+    Its run-path caller (``kboat-feed-run``'s self-heal) reports the heal in the run
+    summary; its hand caller (``kboat-add-feed-site``'s pattern repair) reports to the
+    user. ``resnapshot-site`` has no run-path caller at all.
+    """
+    site = _scrape_site_for(args.site_id, args.command)
+    # ``update_pattern`` rejects an uncompilable pattern too, but that is the last step:
+    # checking here turns the re-scrape's raw ``re.error`` into the same ``error: …`` exit
+    # as any other bad argument, before any fetch.
+    validate_article_url_pattern(args.pattern, site.id)
+    snapshotted = _rescrape_and_snapshot(site, args.pattern)
+    update_pattern(sites_path(), site.id, args.pattern)  # config last (durable commit)
+    _emit({"site_id": site.id, "pattern": args.pattern, "snapshotted": snapshotted})
+    return 0
+
+
+def cmd_resnapshot_site(args: argparse.Namespace) -> int:
+    """Re-scrape under the site's STORED pattern and snapshot the matches; write no config.
+
+    What a repointed site needs after a move: ``kboat-manage-feed-sites`` hand-edits the
+    moved URL, and where that changed the article URLs the whole new index is unseen, so
+    the next runs would judge it a capful at a time and file the keeps as second notes.
+
+    It takes no pattern, so the caller never reads the stored one out and hands it back — a
+    round trip through this CLI's JSON and a shell, either of which silently mangles a
+    regex that ``heal-site`` would then commit. Nothing is written to ``sites.toml``, which
+    is what ``kboat-manage-feed-sites`` relies on to leave the hand-edited row untouched.
+    """
+    site = _scrape_site_for(args.site_id, args.command)
+    # SiteConfig's exactly-one invariant: the kind check above makes the pattern present.
+    assert site.article_url_pattern is not None
+    # Nothing else compiles the stored pattern — ``load_sites`` checks a row's shape and
+    # not its regex, and ``sites.toml`` is hand-edited — and there is no ``update_pattern``
+    # here to reject it later, so this is the only guard against a bare ``re.error``.
+    validate_article_url_pattern(site.article_url_pattern, site.id)
+    snapshotted = _rescrape_and_snapshot(site, site.article_url_pattern)
+    _emit(
+        {
+            "site_id": site.id,
+            "pattern": site.article_url_pattern,
+            "snapshotted": snapshotted,
+        }
+    )
     return 0
 
 
@@ -1085,6 +1139,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_heal.add_argument("--pattern", required=True)
     p_heal.set_defaults(handler=cmd_heal_site)
 
+    p_resnap = sub.add_parser(
+        "resnapshot-site",
+        help="re-scrape a scrape site under its stored pattern and mark the matches seen",
+    )
+    p_resnap.add_argument("--site-id", dest="site_id", required=True)
+    p_resnap.set_defaults(handler=cmd_resnapshot_site)
+
     p_disable = sub.add_parser(
         "disable-site", help="stop gathering a site (keeps its config + seen-store)"
     )
@@ -1202,15 +1263,16 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
-    - ``ValueError`` — shape/validation (bad site config, non-scrape heal, an
-      unset ``OBSIDIAN_VAULT_PATH``);
+    - ``ValueError`` — shape/validation (bad site config, a non-scrape or disabled
+      site given to heal-site / resnapshot-site, an unset ``OBSIDIAN_VAULT_PATH``);
     - ``KeyError`` — unknown site id;
     - ``OSError`` — filesystem failures from the config writes / db open
       (disk full, permission, atomic-rename failure). Caught for the same reason
       a ``VaultError`` is: a write that can't complete is an operational failure
       to report, not a stack trace to dump.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
-      directly (add-site / heal-site snapshot), the browser analog of ``FetchError``;
+      directly (the add-site / heal-site / resnapshot-site snapshot), the browser
+      analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
     - ``sqlite3.Error`` — the seen-store could not be opened or written; the case

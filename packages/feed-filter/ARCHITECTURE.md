@@ -60,7 +60,7 @@ Side effects and orchestration:
 - `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
   - `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
-  - Each browser-using command (`new-entries`, `add-site`, `heal-site`) gates on the Playwright install and tears the browser down in a `finally`.
+  - Each browser-using command (`new-entries`, `add-site`, `heal-site`, `resnapshot-site`) gates on the Playwright install and tears the browser down in a `finally`.
 
 ## Discourse forum adapter (`src/feed_filter/`)
 
@@ -116,6 +116,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `remind` | write a kept entry as a `Feeds/` note and record it seen (`--wall` flags a login/paywall page, `--summary` optional) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
 | `heal-site` | rewrite a scrape pattern and re-snapshot |
+| `resnapshot-site` | re-scrape a scrape site under its stored pattern and mark the matches seen, writing no config |
 | `disable-site` / `enable-site` | pause / resume a site without losing it |
 | `add-forum` | register a Discourse forum (writes config only, no snapshot) |
 | `forum-new` | gather Rule-A and Rule-B candidates across forum sites |
@@ -138,7 +139,7 @@ Both filter on `enabled` as well, so a paused site reaches no gather at all and 
   - an article site: discover → pick cluster → `add-site`;
   - a Discourse forum: confirm the instance → infer `--forum-subject` → `add-forum`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
-- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`).
+- `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, plus a `resnapshot-site` for a **scrape** site whose article URLs changed — the feed path has no such command).
 - `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
@@ -187,6 +188,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
 - **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index. `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it).
   - The run heals only where discovery read the page the gather reads and an article cluster can be named in what came back (`kboat-feed-run` step 4), so `cmd_discover`'s plain-HTTP fetch is part of this contract rather than an implementation detail.
   - Giving that command the browser transport would make a `requires_browser` site heal-able and falsify the condition wherever it is stated — in `kboat-feed-run`, in `kboat-add-feed-site`'s browser section, and in README's "Failure and self-heal behavior".
+- **A destructive scope is never selected by omission.** `heal-site` rewrites a scrape pattern; `resnapshot-site` re-scrapes under the **stored** one and writes no config, which is the re-baseline a repointed site needs (`kboat-manage-feed-sites`). They are separate spellings rather than one command with an optional argument because both mark every match seen with `kept=NULL` and nothing un-sees a row: which one runs must never turn on an argument the caller left off.
 - **Run bounds.** Per-site cap 20 and global cap 80 on entries/candidates judged (`DEFAULT_PER_SITE_CAP` / `DEFAULT_GLOBAL_CAP` in `config.py`).
 - **Bounded per-host gather concurrency (article path).** `cmd_new_entries` fetches sites in two phases: the network-only `fetch_site` runs concurrently across hosts in a thread pool bounded at `DEFAULT_GATHER_CONCURRENCY` (16), then the DB-touching `filter_gathered` runs serially on the main thread in registry order.
   - It exists because the gather was a slow sequential sum over ~80 sites (each up to `fetch.DEFAULT_TIMEOUT`), which pushed a run past the foreground timeout and forced backgrounding.

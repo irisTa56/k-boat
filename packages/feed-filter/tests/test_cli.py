@@ -939,6 +939,125 @@ def test_heal_site_snapshots_exactly_the_new_pattern_matches(
     assert rows == {"https://e.example.com/posts/a", "https://e.example.com/posts/b"}
 
 
+def test_resnapshot_site_uses_the_stored_pattern_and_writes_no_config(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The re-snapshot case a repointed site needs: the stored pattern is re-scraped
+    # and its matches marked seen, with sites.toml left byte-identical — so the caller
+    # never reads the pattern out and hands it back through JSON and a shell.
+    _no_client(monkeypatch)
+    stored = r"^/posts/\d{4}/[^/]+/?$"
+    # Hand-authored, not written through add_site: sites.toml is user-authored config
+    # this path edits by hand. The pattern is a TOML *literal* string, which
+    # update_pattern would rewrite as a basic string with doubled backslashes even
+    # when handed back the same value — so byte-identity here can actually fail.
+    sites_path().write_text(
+        "# my blog\n"
+        "[[site]]\n"
+        'id = "s1"\n'
+        'name = "Scrape"\n'
+        'index_url = "https://new.example.com/blog"\n'
+        rf"article_url_pattern = '{stored}'" + "\n",
+        encoding="utf-8",
+    )
+    before = sites_path().read_bytes()
+    captured: dict[str, object] = {}
+
+    def fake_fetch_entries(site: SiteConfig, *, client: object) -> list[Entry]:
+        captured["pattern"] = site.article_url_pattern
+        return [_entry("https://new.example.com/posts/2024/a", kind="scrape")]
+
+    monkeypatch.setattr(cli, "fetch_entries", fake_fetch_entries)
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 0
+    assert captured["pattern"] == stored
+    assert _out(capsys) == {"site_id": "s1", "pattern": stored, "snapshotted": 1}
+    assert sites_path().read_bytes() == before
+    with contextlib.closing(open_db(db_path())) as conn:
+        rows = {r[0] for r in conn.execute("SELECT canonical_url FROM seen")}
+    assert rows == {"https://new.example.com/posts/2024/a"}
+
+
+def test_resnapshot_site_snapshotted_counts_matches_not_new_rows(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `snapshotted` is the re-scrape's match count, not the rows it inserted — the
+    # emitted contract heal-site shares, which kboat-feed-run reports as "how many URLs
+    # were re-snapshotted". The re-snapshot case is where the two diverge, since a repeat
+    # run matches only already-seen URLs — so heal twice and require the count to hold.
+    # Reporting inserted rows instead would make a 0 mean "all already seen" where the
+    # reader is told it means nothing matched.
+    _no_client(monkeypatch)
+    stored = r"^/posts/[^/]+/?$"
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=stored,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "fetch_entries",
+        lambda *a, **k: [
+            _entry("https://e.example.com/posts/a", kind="scrape"),
+            _entry("https://e.example.com/posts/b", kind="scrape"),
+        ],
+    )
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 0
+    assert _out(capsys)["snapshotted"] == 2
+    # Second run: both URLs are already in the store, so no row is inserted.
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 0
+    assert _out(capsys)["snapshotted"] == 2
+
+
+def test_heal_site_requires_a_pattern(state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # heal-site rewrites config and resnapshot-site does not, and both mark every match
+    # seen with kept=NULL that nothing un-sees. Which one runs must never be decided by
+    # an argument left off, so omitting --pattern is argparse's exit 2, not a re-snapshot.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["heal-site", "--site-id", "s1"])
+    assert excinfo.value.code == 2
+
+
+def test_resnapshot_site_rejects_an_uncompilable_stored_pattern(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # With no --pattern there is no update_pattern to reject the regex later, so the
+    # validate call before the fetch is the only guard on the stored one — and the row
+    # can carry an uncompilable pattern, since load_sites checks shape and not syntax
+    # and sites.toml is hand-edited. Without the guard this reaches scrape.py's
+    # re.compile and raises a bare re.error, which main does not catch.
+    _no_client(monkeypatch)
+    sites_path().write_text(
+        "[[site]]\n"
+        'id = "s1"\n'
+        'name = "Scrape"\n'
+        'index_url = "https://e.example.com/blog"\n'
+        "article_url_pattern = '/a('\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched before check"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    assert "not a valid regex" in capsys.readouterr().err
+
+
 def test_heal_site_fetch_failure_leaves_config_and_seen_untouched(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1009,7 +1128,9 @@ def test_heal_site_rejects_feed_site(
     monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a feed site"))
 
     assert cli.main(["heal-site", "--site-id", "f1", "--pattern", "^/x/"]) == 1
-    assert "scrape sites only" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "scrape sites only" in err
+    assert "heal-site" in err  # the message names the command that refused
 
 
 def test_heal_site_unknown_id_exits_nonzero(
@@ -1041,7 +1162,148 @@ def test_heal_site_refuses_disabled_site(
     monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("healed a disabled site"))
 
     assert cli.main(["heal-site", "--site-id", "s1", "--pattern", r"^/posts/[^/]+/?$"]) == 1
-    assert "enabled sites only" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "enabled sites only" in err
+    assert "heal-site" in err  # the message names the command that refused
+
+
+# resnapshot-site is the second caller of ``_scrape_site_for``, so it needs its own
+# refusal cases: pinning them only through heal-site leaves the guard droppable here,
+# where the disabled arm would burn a site the user deliberately paused and the kind arm
+# would reach a bare AssertionError that ``main`` does not catch.
+
+
+def test_resnapshot_site_refuses_disabled_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="S",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    assert cli.main(["disable-site", "--site-id", "s1"]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(
+        cli, "fetch_entries", lambda *a, **k: pytest.fail("re-scraped a paused site")
+    )
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    err = capsys.readouterr().err
+    assert "enabled sites only" in err
+    assert "resnapshot-site" in err  # the message names the command that refused
+
+
+def test_resnapshot_site_rejects_feed_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="f1", name="Feed", feed_url="https://e.example.com/f.xml"))
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a feed site"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "f1"]) == 1
+    err = capsys.readouterr().err
+    assert "scrape sites only" in err
+    assert "resnapshot-site" in err
+
+
+def test_resnapshot_site_rejects_forum_site(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A forum row is what separates a correct kind guard from a narrowed one: a feed row
+    # trips the `article_url_pattern is not None` assert behind the guard either way, so
+    # it cannot tell `!= "scrape"` from `== "feed"`. Under the narrowed form a forum id
+    # reaches that assert and exits with a bare AssertionError traceback, which main does
+    # not catch -- the one failure the refusal block exists to prevent.
+    _no_client(monkeypatch)
+    add_site(sites_path(), SiteConfig(id="d1", name="Forum", forum_url="https://d.example.com"))
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched a forum site"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "d1"]) == 1
+    err = capsys.readouterr().err
+    assert "scrape sites only" in err
+    assert "resnapshot-site" in err
+
+
+def test_resnapshot_site_requires_a_site_id(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The sibling of test_heal_site_requires_a_pattern, and the silent half of the
+    # pair: _select_sites(None) returns the whole registry, so a lapsed
+    # required=True would take rows[0] and re-snapshot an arbitrary site at exit 0,
+    # marking its live index seen with kept=NULL that nothing un-sees.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("re-scraped"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["resnapshot-site"])
+    assert excinfo.value.code == 2
+
+
+def test_resnapshot_site_takes_no_pattern(state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The other side of test_heal_site_requires_a_pattern. Giving this command a
+    # --pattern would put the destructive scope back on an argument the caller may
+    # omit -- worse than the form that was rejected, since it writes no config and so
+    # leaves no record of which pattern burned what.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="Scrape",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("re-scraped"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["resnapshot-site", "--site-id", "s1", "--pattern", "^/x/"])
+    assert excinfo.value.code == 2
+
+
+def test_resnapshot_site_gate_fires_before_any_fetch(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate lives in the shared _rescrape_and_snapshot, so this covers heal-site too.
+    # Without it, browser.get_browser's bare import raises ModuleNotFoundError, which
+    # main does not catch — the operator gets a traceback instead of the install command.
+    monkeypatch.setattr(browser, "_playwright_installed", lambda: False)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="JS",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+            requires_browser=True,
+        ),
+    )
+    monkeypatch.setattr(cli, "fetch_entries", lambda *a, **k: pytest.fail("fetched"))
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    assert "uv sync --extra browser" in capsys.readouterr().err
+
+
+def test_resnapshot_site_unknown_id_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_site(sites_path(), SiteConfig(id="s1", name="S", feed_url="https://e.example.com/f.xml"))
+    assert cli.main(["resnapshot-site", "--site-id", "nope"]) == 1
+    assert "error:" in capsys.readouterr().err
 
 
 # --- browser opt-in path (gate + teardown) --------------------------------
@@ -1120,6 +1382,37 @@ def test_heal_site_closes_browser_even_on_error(
     rc = cli.main(["heal-site", "--site-id", "s1", "--pattern", r"^/posts/[^/]+/?$"])
     assert rc == 1
     assert closed == [True]  # torn down despite the BrowserFetchError
+    assert "error:" in capsys.readouterr().err
+
+
+def test_resnapshot_site_closes_browser_even_on_error(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The other half of ARCHITECTURE's browser-command invariant, and the sibling of
+    # the gate test above. The teardown lives in the shared _rescrape_and_snapshot, so
+    # moving it into cmd_heal_site's own finally would leave heal-site's test green and
+    # leak a lazily-launched Chromium out of every failed re-snapshot.
+    _no_client(monkeypatch)
+    add_site(
+        sites_path(),
+        SiteConfig(
+            id="s1",
+            name="S",
+            index_url="https://e.example.com/blog",
+            article_url_pattern=r"^/posts/[^/]+/?$",
+            requires_browser=True,
+        ),
+    )
+
+    def boom(site: SiteConfig, *, client: object) -> list[Entry]:
+        raise BrowserFetchError("render failed")
+
+    closed: list[bool] = []
+    monkeypatch.setattr(cli, "fetch_entries", boom)
+    monkeypatch.setattr(cli, "close_browser", lambda: closed.append(True))
+
+    assert cli.main(["resnapshot-site", "--site-id", "s1"]) == 1
+    assert closed == [True]
     assert "error:" in capsys.readouterr().err
 
 

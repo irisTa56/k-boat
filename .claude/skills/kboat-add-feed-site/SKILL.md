@@ -62,7 +62,9 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 4. **Register.** Run the matching form:
    - **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
-   - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern <article_url_pattern>`
+   - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern '<article_url_pattern>'`
+     Quote the pattern, so the shell does not take its backslashes out — the mangled regex still compiles, so the site registers and matches nothing.
+     A pattern taken from discovery's output arrives JSON-doubled and has to be unescaped as well; one you wrote yourself is already the value to pass.
    - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
@@ -158,12 +160,14 @@ A pattern that matches too much has no signal at all: `snapshotted` is non-zero,
 The flood guard hides the rest — everything the pattern took at registration is snapshotted seen, so the junk that ever reaches a judge is what appears afterwards, a new tag page or the next pagination link.
 Report the pattern you registered and the count it snapshotted along with the rest, and leave the reading of that count to the user, who can see the page.
 
-Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern <corrected>`, and with nothing else.
+Repair a **pattern** on a site that is already registered with `feed-filter heal-site --site-id <id> --pattern '<corrected>'`, and with nothing else.
 A wrong `index_url` is not a pattern, and `heal-site` cannot reach it — its parser takes only `--site-id` and `--pattern`, so no correction it accepts fixes that site.
 Report that case rather than reaching for a command.
 `heal-site` is the only path that snapshots the newly-matched URLs before it rewrites the config, so hand-editing `article_url_pattern` in `sites.toml` — which the registry otherwise invites, and which nothing stops you doing — leaves the whole live index unseen, and the next runs judge it a capful at a time and write the keeps as notes.
+Where such a hand-edit has already happened, `feed-filter resnapshot-site --site-id <id>` staunches it: it marks what the stored pattern matches seen and touches no config.
+Buries them, rather — see below — so it is the user's call and never yours; `kboat-manage-feed-sites` states the trade.
 Re-running `add-site` is the other trap: it snapshots the back-catalog before it rejects the duplicate id, so it marks that site's articles seen and still leaves the broken pattern in place.
-That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` marks everything the new pattern matched as seen with no note, so an over-broad correction burns the whole live index and those articles are never written.
+That snapshot cuts both ways, which is why the correction has to be one you can defend rather than the next guess: `heal-site` and `resnapshot-site` alike mark everything the pattern matched as seen with no note, so an over-broad one burns the whole live index and those articles are never written.
 
 ## Optional per-site selection override
 

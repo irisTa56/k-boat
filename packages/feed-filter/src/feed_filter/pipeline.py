@@ -177,8 +177,10 @@ def gather_new(conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Clie
     nothing is recorded seen regardless. ``cmd_new_entries`` calls the two halves
     separately so it can fetch hosts concurrently while keeping the seen-filter on
     the main thread; this composed form is retained as the tested single-site
-    contract. Registration's snapshot paths (``cmd_add_site`` / ``cmd_heal_site``)
-    do not use it — they call ``fetch_entries`` directly for the full uncapped
-    back-catalog, without the seen-filter or per-site cap ``gather_new`` applies.
+    contract. The snapshot paths (``cmd_add_site``, ``cmd_heal_site`` and
+    ``cmd_resnapshot_site``) do not use it — they call ``fetch_entries`` directly
+    for the full uncapped index, without the seen-filter or per-site cap
+    ``gather_new`` applies. Capping there would leave the rest of the index unseen,
+    which is the flood each of those snapshots exists to prevent.
     """
     return filter_gathered(conn, site, fetch_site(site, client=client))
