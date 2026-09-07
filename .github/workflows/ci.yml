@@ -80,7 +80,7 @@ jobs:
           uv run python ../../scripts/coverage_floor.py coverage.json
       # No coverage-floor check for this one: `scripts/` is flat tooling, not a
       # workspace member with a `--cov-fail-under` of its own.
-      - name: coverage-floor script — ruff, ty, pytest
+      - name: scripts/ tooling — ruff, ty, pytest
         run: |
           uv run ruff check scripts
           uv run ruff format --check scripts
