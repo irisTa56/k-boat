@@ -38,21 +38,21 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 A feed note has no destructive routine action and no cooldown, so its lifecycle is entirely manual triage over four always-present booleans.
 
 - `read`, `shelved`, and `dismissed` are the **human's** three dispositions — three sibling exits from the Inbox, one tick each.
-
-  `read` and `dismissed` retire the card from both working views; `shelved` moves it between them.
-
+  - `read` and `dismissed` retire the card from both working views; `shelved` moves it between them.
   - `read` retires a card the reader opened and finished on the spot.
     - It leaves the Inbox and the Shelf and stays in the Read view, so a mis-tick can be undone.
   - `shelved` moves the card to the Shelf view — a "read later" holding shelf — without removing it from anywhere destructive.
     - feed-filter preserves it across a re-write.
   - `dismissed` hides the card from both the Inbox and the Shelf — a dismissed card leaves the working views whether or not it is shelved — and marks it a future auto-cleanup target.
     - Cleanup is **manual for now**: no note is auto-deleted; the Base only hides dismissed cards from the working views and keeps them in the Dismissed view so a dismissal can be undone.
-- **Each exit stays a distinct tick.** The tick is the only record of what the reader wanted to read, so a disposition that cannot be told apart afterwards is lost rather than merely untidy.
+- **Each exit stays a distinct tick.**
+  - The tick is the only record of what the reader wanted to read, so a disposition that cannot be told apart afterwards is lost rather than merely untidy.
   - **One box per meaning.** `read` and `shelved` both say the page was worth reading — now, or later; `dismissed` says it was not.
     - Sharing a box between "I read it here" and "not worth reading" would give that box two opposite meanings at once, leaving its whole population unreadable.
   - **One tick per transition.** Every exit is reached by ticking exactly one box, so the disposition that hid a card is never something to infer from a combination.
 - `wall` is **feed-filter's** flag, re-evaluated on each write, not a human disposition.
-- **Promotion is manual.** To read a feed card as a full K-Boat source, capture its `url` into the `Queue/` folder that `kboat-ingest` drains (via the capture bookmarklet, or by hand); there is no auto-promotion from a feed note to a source note.
+- **Promotion is manual.**
+  - To read a feed card as a full K-Boat source, capture its `url` into the `Queue/` folder that `kboat-ingest` drains (via the capture bookmarklet, or by hand); there is no auto-promotion from a feed note to a source note.
   - The two are separate inboxes.
 - **A re-write resurfaces the topic.** feed-filter writes an article item once (its seen-store de-dups), but a re-reminded forum topic — a new post crossing the like threshold — upserts the same note again, refreshing `wall`, `summary`, and the metadata.
   - The two retiring flags reset to `false`, so a topic the reader had finished with reappears in the working views when it gains new activity.
