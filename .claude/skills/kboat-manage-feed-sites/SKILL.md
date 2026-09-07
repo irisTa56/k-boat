@@ -46,7 +46,8 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
      - A row's kind comes from which of `feed_url`, `article_url_pattern` and `forum_url` it sets — the loader takes exactly one and rejects anything else — while `index_url` is not one of those three and is instead required alongside `article_url_pattern`.
    - Give the user the old value when you report the change.
      - `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
-3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
+3. **Confirm the registry still loads, and that the site is enabled.**
+   - Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
    - Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
 4. **Report what the move leaves for the next runs**, which is not nothing wherever it changed the article URLs.
    - A **scrape** site's articles move with its index, since they are keyed on the host the index landed on as well as on the path, so a new domain or subdomain always changes them.

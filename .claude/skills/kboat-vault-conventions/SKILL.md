@@ -185,13 +185,15 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - On *update* a field the note has lost is left lost, not backfilled — a write re-renders only what it changes (below), and a writer that filled in blanks it was not asked about would be re-rendering the whole note.
   - Drift of that kind is `kboat-validate`'s to report and a human's to repair.
 - **Date stamps.** A `created`-stamp field (e.g. `added_date`) is set to `today` on create and preserved after; a `refreshed`-stamp field is set on every write.
-- **A value is never erased to fit its field.** A list field given something with no items to lay out keeps it as the scalar it is rather than writing `[]`, so a wrong type reaches `kboat-validate` as a `not_list` for a human to see instead of vanishing under a successful write.
+- **A value is never erased to fit its field.**
+  - A list field given something with no items to lay out keeps it as the scalar it is rather than writing `[]`, so a wrong type reaches `kboat-validate` as a `not_list` for a human to see instead of vanishing under a successful write.
   - That works for an inline list too, whose valid form is itself a string: what the check accepts is a string the writer would read back as a sequence, not any string at all.
     - A string that holds an inline sequence (`"[a, b]"` — what the reader hands back for one) is read into its items and written in the field's own style.
   - What the writer will not do is put a value into the note bare when doing so could break the frontmatter block: a value it cannot render as its field's type is quoted, so a wrong one costs its own field and never the whole note.
   - A null item inside a list is written as an explicit empty item, in either style.
     - It is the one value with no shape of its own to keep — nothing is lost by writing the empty string it reads back as, and a bare `-` (or the word `None` inline) would be a value the record never carried.
-- **What the writer emits, it reads back as itself — and so does every other reader.** Re-writing a note the writer already wrote changes nothing but a refresh stamp, down to a value the field could not hold: kept as a quoted scalar, that scalar is what the next write is handed and what it emits again.
+- **What the writer emits, it reads back as itself — and so does every other reader.**
+  - Re-writing a note the writer already wrote changes nothing but a refresh stamp, down to a value the field could not hold: kept as a quoted scalar, that scalar is what the next write is handed and what it emits again.
   - A rendering that read back as something else would move the note once per unattended run with no edit behind it, and the drift would look like the vault's own.
   - The other readers are the point of the second half.
     - A value stays inside its own property for Obsidian and for any YAML reader too, which is why a character that one of them would treat as the end of a line is escaped rather than written raw.
@@ -212,7 +214,8 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
     - It is the note's provenance, and for a normally-fetched web source the string the NotebookLM source id is resolved by matching, so a second link's spelling must not replace it.
 - **Body.** The body *mode* is a fixed schema attribute (`NoteSchema.body`), not a record field: for a `verbatim` schema the record's `body` content is appended after the frontmatter, `notes` wraps it in a `## Notes` section, and `none` means the writer never authors one.
   - An `upsert` always preserves the body already in the note, under every mode — `none` says K-Boat writes no body of its own, not that it may delete one a human added below the fence, and `notes` owns its `## Notes` section rather than the whole body.
-- **Only what changes is re-rendered.** Every frontmatter entry the record does not write is put back exactly as the note held it, including one the reader can represent only approximately (an inline list, a quoted string) and one it cannot represent at all (a hyphenated or quoted key, a nested mapping, a block scalar).
+- **Only what changes is re-rendered.**
+  - Every frontmatter entry the record does not write is put back exactly as the note held it, including one the reader can represent only approximately (an inline list, a quoted string) and one it cannot represent at all (a hyphenated or quoted key, a nested mapping, a block scalar).
   - A note is rewritten *around* what the write is not about, so a property outside the schema — Obsidian's own, or a plugin's — survives a routine that rewrites the note daily.
   - Every schema field keeps its canonical position, written or carried; anything else follows in the order the note already had.
   - The exception is a line that owns no key of its own and would attach to the line above it — that goes first, where there is nothing for it to attach to, since anywhere else would hand it to a key that never had it.
@@ -291,13 +294,15 @@ A vault on a genuine network filesystem would need that re-checked, since `flock
   - A person does not perceive the wait, and an expired one hands back the same holder record an immediate refusal would have.
   - What rules out refusing immediately is that holds are not all short.
     - `kboat-repos refresh` keeps the lock across the `gh` fetch of every note in the catalogue, because its read, fetch and rewrite are one read-modify-write — so "just retry" is not advice a refused caller can act on, and a few seconds of patience covers the ordinary case of overlapping a single note write.
-- **A refused caller reports and ends that step.** It prints `{"status": "locked", "holder": {pid, started, path}}` on stdout **in place of** its usual output, names the holding process on stderr, and exits non-zero without writing anything.
+- **A refused caller reports and ends that step.**
+  - It prints `{"status": "locked", "holder": {pid, started, path}}` on stdout **in place of** its usual output, names the holding process on stderr, and exits non-zero without writing anything.
   - Every `holder` key is always present and any may be null: the record is written just after the lock is taken, so a refusal landing in that window reads the previous holder's, and a crash mid-write leaves one that does not parse at all.
   - A caller reads that record instead of the keys it came for, so it reports the refusal and ends that step rather than parsing on — that step, not a routine around it, whose later phases make their own attempts.
   - A refusal belongs in the run summary rather than a notification, since the next run recovers on its own.
   - For feed-filter the entry is simply not written, and its never-lost contract carries it: nothing is recorded seen, so the next gather rediscovers it.
     - That is why the wait matters more to it than to a K-Boat phase, whose work survives being deferred — the dispositions, the cooldown clock and the queue are all still on disk and every phase is idempotent.
-- **A lock that cannot be taken at all is not a refusal.** A missing vault root, a denied iCloud tree, a filesystem that will not take an `flock`, or — only on the run that first creates the lock file — a vault root that cannot be written to, is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
+- **A lock that cannot be taken at all is not a refusal.**
+  - A missing vault root, a denied iCloud tree, a filesystem that will not take an `flock`, or — only on the run that first creates the lock file — a vault root that cannot be written to, is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
   - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
     - What is common to all of them is the shape, not the wording.
   - Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
@@ -326,14 +331,18 @@ Closing the agent-level ones would mean exposing acquire and release as a tool o
 
 A [Base](https://help.obsidian.md/bases) is a saved view over the vault's notes; how its filters are written decides whether it stays complete.
 
-- **Filter only on always-present values.** Every filter must be a plain boolean, or an `==` / `!=` over an always-present property — never a `!=` over a property that might be missing, and never a date-emptiness test.
+- **Filter only on always-present values.**
+  - Every filter must be a plain boolean, or an `==` / `!=` over an always-present property — never a `!=` over a property that might be missing, and never a date-emptiness test.
 - **Why.** Obsidian Bases excludes a note missing the property from a `!=` filter, so a `!=` over a sometimes-missing property silently drops those notes.
   - A view stays complete only because the filter booleans are written on every note at creation (the write contract's always-present defaults) — the create-time invariant, not booleanness alone, is what guarantees it.
-- **Signal a date state with a column, not a filter.** To tell a date-set state from a date-empty one (e.g. "distilled" vs "still ripe"), carry the date as a column the human reads rather than filtering on its emptiness.
-- **Show the title through a formula for hash- or ASIN-named notes.** The filename is an opaque hash or ASIN, so render the readable title with a formula (`title_link`, or whatever the view's lead column is called) rather than the filename.
+- **Signal a date state with a column, not a filter.**
+  - To tell a date-set state from a date-empty one (e.g. "distilled" vs "still ripe"), carry the date as a column the human reads rather than filtering on its emptiness.
+- **Show the title through a formula for hash- or ASIN-named notes.**
+  - The filename is an opaque hash or ASIN, so render the readable title with a formula (`title_link`, or whatever the view's lead column is called) rather than the filename.
   - A date-named note needs no formula: `file.name` is already legible.
   - Where that formula links is the Base's own call.
     - `file.asLink(note.title)` shows `title` as text but opens the hash-named file — the default, and the right one whenever the note itself is worth opening: it has a body, or fields the reader wants in full.
     - Point somewhere else when nothing behind the row is worth opening: a body-less note whose hidden fields are only provenance is better served by `link(url, …)` onto the page itself.
-- **First view is the default.** A Base shows [its first view on open](https://help.obsidian.md/bases/views), so order the day-to-day working view first.
+- **First view is the default.**
+  - A Base shows [its first view on open](https://help.obsidian.md/bases/views), so order the day-to-day working view first.
 - Column widths and other cosmetics are per-vault tweaks, not part of the authored Base.
