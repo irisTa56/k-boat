@@ -143,79 +143,105 @@ Step 2 imports the ingest verification whole, so every ending that step has arri
 - **The ending says the note and the `url` no longer agree** — NotebookLM typing the fetch `pdf` against a `web_page` note, say.
   - There is no way on to name: report what the check returned and leave the source, since which of the two is now wrong is the reader's to settle and neither route fixes it.
 
-1. **Confirm the original is really missing.** Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per [One notebook per source (1:1)](source-note.md#one-notebook-per-source-11); redirect stderr per [Environment](../SKILL.md#environment), the warning it hides firing loudest on the notebooks this procedure exists for. If the original is there, stop — whether its text is any good is a different question with its own checks. Two answers are not a missing original:
-   - A call that **fails** (rate limit, auth, network) yields no listing rather than an empty one, so stop and report.
-   - A `notebooklm_id` naming **no notebook** fails this call too, with a message reporting a `Not found` RPC and then suggesting a signed-in-account mismatch.
-     - It therefore reads like an auth failure.
-     - Confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null` before concluding anything.
-     - **Read that listing against the vault's other stored `notebooklm_id`s, not against this one alone.** A listing fetched under the wrong signed-in account returns that account's notebooks, so every id reads as absent, and one id absent out of one satisfies "absent" as readily as a genuinely deleted notebook does.
-     - Where the vault's ids are absent wholesale, that is the account or auth problem: decide nothing about this source and report it.
-     - Where the rest resolve and this one does not, the notebook is gone and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way on.
+### Step 1: confirm the original is really missing
 
-   **What decides whether to act is not that no match was found, but that nothing present could be the match.**
-   No match also comes back when the rule was given something it cannot classify, and acting then adds a second copy of a source the notebook already holds — after which distillation grounds on one and accretes the other's article text as `#dialogue`, which nothing downstream catches.
+Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per [One notebook per source (1:1)](source-note.md#one-notebook-per-source-11); redirect stderr per [Environment](../SKILL.md#environment), the warning it hides firing loudest on the notebooks this procedure exists for.
+If the original is there, stop — whether its text is any good is a different question with its own checks.
 
-   **The source's `type` settles it**, not its `url` and not its title: an original is always a page ingest fetched or a file it uploaded, and everything else is a NotebookLM note the reader saved, which no K-Boat procedure adds.
-   `url` cannot do this job — a PDF original carries `url: null` exactly as a saved note does.
-   So **act on a listing in which nothing could be a source ingest added** (an empty one, or one holding only saved notes), and **stop on anything that could be**, whatever its type, reporting what the listing holds.
+Two answers are not a missing original:
 
-   Read the type names as version-local.
-   With notebooklm-py 0.7.3 a fetched page is `web_page`, an uploaded file `pdf`, a pasted-text upload (a rescued page) `pasted_text`, a page NotebookLM classified its own way something outside this schema's two values (`youtube`, `epub`, …) — and a saved note is `unknown`, not as NotebookLM's answer but because the CLI does not recognise the kind and says so, printing `UnknownTypeWarning: Unknown source type code 18`.
-   A later version will name that kind something else, so keep the test and not the literal string; a `notebooklm` bump is where to re-read this.
+- A call that **fails** (rate limit, auth, network) yields no listing rather than an empty one, so stop and report.
+- A `notebooklm_id` naming **no notebook** fails this call too, with a message reporting a `Not found` RPC and then suggesting a signed-in-account mismatch.
+  - It therefore reads like an auth failure.
+  - Confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null` before concluding anything.
+  - **Read that listing against the vault's other stored `notebooklm_id`s, not against this one alone.**
+    - A listing fetched under the wrong signed-in account returns that account's notebooks, so every id reads as absent, and one id absent out of one satisfies "absent" as readily as a genuinely deleted notebook does.
+  - Where the vault's ids are absent wholesale, that is the account or auth problem: decide nothing about this source and report it.
+  - Where the rest resolve and this one does not, the notebook is gone and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way on.
 
-   **Say what ends the stop report, because repeating it tomorrow does not.**
-   A human looking at the listing beside the note finds one of two things:
-   - **A leftover** an earlier undo could not delete (step 3), which `notebooklm --quiet source delete <source_id> --notebook <notebooklm_id> -y --json 2>/dev/null` removes so the next check reads the true state.
-   - **The original** under an identity the rule can no longer match, most likely a rescued page whose note `title` has moved.
-     - The mismatch has two sides and either can be aligned: `notebooklm --quiet source rename <source_id> "<title>" --notebook <notebooklm_id> --json 2>/dev/null` moves the notebook's name to the note's, or a note write moves the note's `title` back to the notebook's, which is what [One notebook per source](source-note.md#one-notebook-per-source-11) resolves a text upload by.
-     - Prefer the rename unless the reader wants the older title back: the note's `title` is what the Sources Base shows and what `kboat-recall` searches, so rewriting it discards whatever they deliberately changed it to, with nothing recording that it happened.
-2. **Add the original back**, by the source's kind, and verify it exactly as the ingest path does.
-   - **Web page**: `notebooklm --quiet source add "<url>" --notebook <notebooklm_id> --json 2>/dev/null`, with the note's own `url`.
-   - **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <notebooklm_id> --json 2>/dev/null`.
-     - Run step 5's own file verify first — there, starts with `%PDF-`, non-trivial in size — since a truncated file passes a bare magic-byte check and fails an add and a delete later.
-     - **A file that is not there is two situations, and only one wants a replacement copy:** look for `PDFs/.<slug>.pdf.icloud` beside it, since an evicted file is simply gone under its own name (step 5 says so).
-     - Report an eviction as an eviction and stop, rather than as a missing file — naming reactivation there would have the reader discard a working notebook over a file a Finder download restores.
+**What decides whether to act is not that no match was found, but that nothing present could be the match.**
+No match also comes back when the rule was given something it cannot classify, and acting then adds a second copy of a source the notebook already holds — after which distillation grounds on one and accretes the other's article text as `#dialogue`, which nothing downstream catches.
 
-   Read the returned source id, then run the same verification the matching ingest step runs after its own add.
-   Both begin with `source wait` branched on `.status` — never the exit code, and never skipped, since `fulltext` before `ready` makes a sound upload read as an empty extraction.
-   For a **web page** that is step 3 of [create or update a source note](#procedure-create-or-update-a-source-note) (wait, type check, article check); for a **PDF**, step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source) (wait, extraction check).
-   Only what happens at a bad ending differs here, and step 3 owns that.
-3. **On any ending but a verified original, undo the add and change nothing else** — naming which ending it was, a transient failure above all, since that one asks nothing of the reader. Delete the source just added (`notebooklm --quiet source delete <source_id> --notebook <notebooklm_id> -y --json 2>/dev/null`) so the notebook is left as it was found. `--json` is not optional: without it a failure prints to stderr, which the redirect drops, and the CLI's own fallback line is suppressed by `--quiet` — leaving an exit code and nothing to tell a `NOT_FOUND` (nothing was added, the notebook is clean) from a delete that genuinely failed and left a leftover behind.
+**The source's `type` settles it**, not its `url` and not its title: an original is always a page ingest fetched or a file it uploaded, and everything else is a NotebookLM note the reader saved, which no K-Boat procedure adds.
+`url` cannot do this job — a PDF original carries `url: null` exactly as a saved note does.
+So **act on a listing in which nothing could be a source ingest added** (an empty one, or one holding only saved notes), and **stop on anything that could be**, whatever its type, reporting what the listing holds.
 
-   **Where the add returned no id, find what to delete by difference.**
-   `source add` can log a server error and still add the source, so a missing id is not proof nothing was added: re-list and compare **by source id** against step 1's listing.
-   **An empty difference is not proof either**, and for the same reason the rest of this block settles before deciding: a source that was added can be missing from the listing altogether, not merely unsettled within it — `source wait`'s `not_found` is exactly that state, filtering this same listing, which is why the ingest steps call it a first-poll race rather than a verdict.
-   So re-list a few times, seconds apart, before concluding anything from an empty difference, and treat a difference that stays empty as *could not confirm* rather than as a clean notebook.
+Read the type names as version-local.
+With notebooklm-py 0.7.3 a fetched page is `web_page`, an uploaded file `pdf`, a pasted-text upload (a rescued page) `pasted_text`, a page NotebookLM classified its own way something outside this schema's two values (`youtube`, `epub`, …) — and a saved note is `unknown`, not as NotebookLM's answer but because the CLI does not recognise the kind and says so, printing `UnknownTypeWarning: Unknown source type code 18`.
+A later version will name that kind something else, so keep the test and not the literal string; a `notebooklm` bump is where to re-read this.
 
-   A new id is either your add or a note the reader saved in the seconds between the two listings, and **you cannot tell them apart while the row is still settling**.
-   A source list row carries its type and its `url` in the same metadata block, the `url` at a later position, so a row whose block has not landed reports `type: unknown` *and* `url: null` — the same shape a saved note reports, that type being what an unmapped code and an absent one both serialize to.
-   - **Settle before attributing**: re-list until each new row carries a type, a few seconds apart.
-   - Then attribute by what you handed the add — the note's `url` for the web restore, the note's `title` for the browser capture below, `type: pdf` for the file. A settled saved note is `unknown`, which none of the three adds ever is.
-   - Delete only what you attributed that way, so a note saved in the window is never in the delete set: it is the reader's own writing, and nothing regenerates it.
-   - **A row that will not settle is not "nothing was added".** Report it as a source you could not attribute, naming the notebook. Reporting it as nothing added is what leaves it there — and if it was your add it will settle later into something every check identifies as the original, hiding the loss for good and inviting a second copy from the browser capture. Never delete "whatever is there" — step 1 only lets this procedure act on a listing holding nothing but the reader's saved notes, so that is exactly what would go. A web-page leftover is worse than an untidy notebook: typed as a fetched page and carrying the note's `url`, it matches the identification rule next run and reports the source **healthy**, so the loss stops being detected and the daily pick judges relevance on the wall's text. Where a delete cannot be made to succeed, say plainly that the source is now hidden from detection.
+**Say what ends the stop report, because repeating it tomorrow does not.**
+A human looking at the listing beside the note finds one of two things:
 
-   **Do not take the ending the ingest step prescribes.**
-   Most discard the notebook or write `blocked: true`, and both are wrong for a notebook that survived; the PDF empty-or-garbled extraction does neither and is refused for its own reason — it keeps the added source, which would then be the only `type: pdf` in the listing and read as the original ever after.
-   - Discarding destroys the saved dialogue this procedure exists to keep — the reader's own writing, which nothing regenerates, while the original is recoverable from the `url` or the file at any time.
-   - `blocked: true` says the source is missing the content its path requires, which a source with a working notebook is not.
-     - Rescue bounces it back — its step 1 stops on a note that still carries a `notebooklm_id` — so the write buys nothing and costs a round through the DLQ.
-     - That gate is also all that stands between this write and a leak: without it, rescue's `create` would overwrite `notebooklm_id` and leave the notebook holding the dialogue referenced by nothing.
+- **A leftover** an earlier undo could not delete (step 3), which `notebooklm --quiet source delete <source_id> --notebook <notebooklm_id> -y --json 2>/dev/null` removes so the next check reads the true state.
+- **The original** under an identity the rule can no longer match, most likely a rescued page whose note `title` has moved.
+  - The mismatch has two sides and either can be aligned: `notebooklm --quiet source rename <source_id> "<title>" --notebook <notebooklm_id> --json 2>/dev/null` moves the notebook's name to the note's, or a note write moves the note's `title` back to the notebook's, which is what [One notebook per source](source-note.md#one-notebook-per-source-11) resolves a text upload by.
+  - Prefer the rename unless the reader wants the older title back: the note's `title` is what the Sources Base shows and what `kboat-recall` searches, so rewriting it discards whatever they deliberately changed it to, with nothing recording that it happened.
 
-   A `url` gone walled since the ingest is the ending to expect, and a rescued web source reaches it whenever the wall still stands, its note keeping the walled `url` the capture came from.
-   Report it and leave the source.
-   The wall is why this ending is not the unattended run's to clear: only a browser a human is signed into gets past it.
+### Step 2: add the original back
 
-   **The way on that keeps the notebook is a browser capture added in place**, and it is `kboat-rescue`'s to drive because that is where the browser is.
-   - Capture the rendered article through the real browser exactly as [Procedure: rescue a blocked source](#procedure-rescue-a-blocked-source) step 2 does for a web page, judging by reading that what you have is the article and not the wall again.
-   - Add it into the notebook the note already names — `notebooklm --quiet source add - --type text --title "<title>" --notebook <notebooklm_id> --json 2>/dev/null < <tmpfile>` — which is rescue's own step 3 command with the `create` left out and `--notebook` pointed at the stored id.
-   - Pass the note's `title` verbatim: the result is a `url: null` text upload, and [One notebook per source](source-note.md#one-notebook-per-source-11) resolves one of those by that title, so a mismatch here is what leaves the next sweep unable to identify it.
-   - Verify as rescue's step 3 verifies — `source wait` branched on `.status`, then the extraction check — and on any status but `ready`, delete what you added by step 3's own rule and report.
-   - Nothing is written to the note on success: the coordinates never changed, and `summary`/`topics` are already there.
+Add it back by the source's kind, and verify it exactly as the ingest path does.
 
-   Where the human cannot get past the wall either, or declines the trip, the source stays as it is with its notebook and dialogue intact and its article unreturned.
-   **[Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook)** is the other way on and the one that spends the notebook: it discards by the stored id, re-runs the ingest step, and records the DLQ entry in that order, so nothing leaks and the DLQ entry arrives without a notebook, which is what rescue is for.
-   Take it only where the article matters more than the dialogue.
-   Setting `blocked` by hand reaches no rescue at all.
+- **Web page**: `notebooklm --quiet source add "<url>" --notebook <notebooklm_id> --json 2>/dev/null`, with the note's own `url`.
+- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <notebooklm_id> --json 2>/dev/null`.
+  - Run step 5's own file verify first — there, starts with `%PDF-`, non-trivial in size — since a truncated file passes a bare magic-byte check and fails an add and a delete later.
+  - **A file that is not there is two situations, and only one wants a replacement copy:** look for `PDFs/.<slug>.pdf.icloud` beside it, since an evicted file is simply gone under its own name (step 5 says so).
+  - Report an eviction as an eviction and stop, rather than as a missing file — naming reactivation there would have the reader discard a working notebook over a file a Finder download restores.
+
+Read the returned source id, then run the same verification the matching ingest step runs after its own add.
+Both begin with `source wait` branched on `.status` — never the exit code, and never skipped, since `fulltext` before `ready` makes a sound upload read as an empty extraction.
+For a **web page** that is step 3 of [create or update a source note](#procedure-create-or-update-a-source-note) (wait, type check, article check); for a **PDF**, step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source) (wait, extraction check).
+Only what happens at a bad ending differs here, and step 3 owns that.
+
+### Step 3: undo the add on any ending but a verified original
+
+**On any ending but a verified original, undo the add and change nothing else** — naming which ending it was, a transient failure above all, since that one asks nothing of the reader.
+Delete the source just added (`notebooklm --quiet source delete <source_id> --notebook <notebooklm_id> -y --json 2>/dev/null`) so the notebook is left as it was found.
+`--json` is not optional: without it a failure prints to stderr, which the redirect drops, and the CLI's own fallback line is suppressed by `--quiet` — leaving an exit code and nothing to tell a `NOT_FOUND` (nothing was added, the notebook is clean) from a delete that genuinely failed and left a leftover behind.
+
+**Where the add returned no id, find what to delete by difference.**
+`source add` can log a server error and still add the source, so a missing id is not proof nothing was added: re-list and compare **by source id** against step 1's listing.
+**An empty difference is not proof either**, and for the same reason the rest of this block settles before deciding: a source that was added can be missing from the listing altogether, not merely unsettled within it — `source wait`'s `not_found` is exactly that state, filtering this same listing, which is why the ingest steps call it a first-poll race rather than a verdict.
+So re-list a few times, seconds apart, before concluding anything from an empty difference, and treat a difference that stays empty as *could not confirm* rather than as a clean notebook.
+
+A new id is either your add or a note the reader saved in the seconds between the two listings, and **you cannot tell them apart while the row is still settling**.
+A source list row carries its type and its `url` in the same metadata block, the `url` at a later position, so a row whose block has not landed reports `type: unknown` *and* `url: null` — the same shape a saved note reports, that type being what an unmapped code and an absent one both serialize to.
+
+- **Settle before attributing**: re-list until each new row carries a type, a few seconds apart.
+- Then attribute by what you handed the add — the note's `url` for the web restore, the note's `title` for the browser capture below, `type: pdf` for the file.
+  - A settled saved note is `unknown`, which none of the three adds ever is.
+- Delete only what you attributed that way, so a note saved in the window is never in the delete set: it is the reader's own writing, and nothing regenerates it.
+- **A row that will not settle is not "nothing was added".**
+  - Report it as a source you could not attribute, naming the notebook.
+  - Reporting it as nothing added is what leaves it there — and if it was your add it will settle later into something every check identifies as the original, hiding the loss for good and inviting a second copy from the browser capture.
+  - Never delete "whatever is there" — step 1 only lets this procedure act on a listing holding nothing but the reader's saved notes, so that is exactly what would go.
+  - A web-page leftover is worse than an untidy notebook: typed as a fetched page and carrying the note's `url`, it matches the identification rule next run and reports the source **healthy**, so the loss stops being detected and the daily pick judges relevance on the wall's text.
+  - Where a delete cannot be made to succeed, say plainly that the source is now hidden from detection.
+
+**Do not take the ending the ingest step prescribes.**
+Most discard the notebook or write `blocked: true`, and both are wrong for a notebook that survived; the PDF empty-or-garbled extraction does neither and is refused for its own reason — it keeps the added source, which would then be the only `type: pdf` in the listing and read as the original ever after.
+
+- Discarding destroys the saved dialogue this procedure exists to keep — the reader's own writing, which nothing regenerates, while the original is recoverable from the `url` or the file at any time.
+- `blocked: true` says the source is missing the content its path requires, which a source with a working notebook is not.
+  - Rescue bounces it back — its step 1 stops on a note that still carries a `notebooklm_id` — so the write buys nothing and costs a round through the DLQ.
+  - That gate is also all that stands between this write and a leak: without it, rescue's `create` would overwrite `notebooklm_id` and leave the notebook holding the dialogue referenced by nothing.
+
+A `url` gone walled since the ingest is the ending to expect, and a rescued web source reaches it whenever the wall still stands, its note keeping the walled `url` the capture came from.
+Report it and leave the source.
+The wall is why this ending is not the unattended run's to clear: only a browser a human is signed into gets past it.
+
+**The way on that keeps the notebook is a browser capture added in place**, and it is `kboat-rescue`'s to drive because that is where the browser is.
+
+- Capture the rendered article through the real browser exactly as [Procedure: rescue a blocked source](#procedure-rescue-a-blocked-source) step 2 does for a web page, judging by reading that what you have is the article and not the wall again.
+- Add it into the notebook the note already names — `notebooklm --quiet source add - --type text --title "<title>" --notebook <notebooklm_id> --json 2>/dev/null < <tmpfile>` — which is rescue's own step 3 command with the `create` left out and `--notebook` pointed at the stored id.
+- Pass the note's `title` verbatim: the result is a `url: null` text upload, and [One notebook per source](source-note.md#one-notebook-per-source-11) resolves one of those by that title, so a mismatch here is what leaves the next sweep unable to identify it.
+- Verify as rescue's step 3 verifies — `source wait` branched on `.status`, then the extraction check — and on any status but `ready`, delete what you added by step 3's own rule and report.
+- Nothing is written to the note on success: the coordinates never changed, and `summary`/`topics` are already there.
+
+Where the human cannot get past the wall either, or declines the trip, the source stays as it is with its notebook and dialogue intact and its article unreturned.
+**[Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook)** is the other way on and the one that spends the notebook: it discards by the stored id, re-runs the ingest step, and records the DLQ entry in that order, so nothing leaks and the DLQ entry arrives without a notebook, which is what rescue is for.
+Take it only where the article matters more than the dialogue.
+Setting `blocked` by hand reaches no rescue at all.
 
 ## Procedure: reactivate a source's notebook
 
