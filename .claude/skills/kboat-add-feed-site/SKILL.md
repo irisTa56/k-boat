@@ -28,7 +28,9 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 ## Procedure (article site)
 
 1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
+
    The output is `{candidates: [...], rejection: {reason, message} | null}`.
+
    - **Non-zero exit** → discovery did not complete.
      - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
    - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
@@ -63,8 +65,8 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 4. **Register.** Run the matching form:
    - **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
    - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern '<article_url_pattern>'`
-     Quote the pattern, so the shell does not take its backslashes out — the mangled regex still compiles, so the site registers and matches nothing.
-     A pattern taken from discovery's output arrives JSON-doubled and has to be unescaped as well; one you wrote yourself is already the value to pass.
+     - Quote the pattern, so the shell does not take its backslashes out — the mangled regex still compiles, so the site registers and matches nothing.
+     - A pattern taken from discovery's output arrives JSON-doubled and has to be unescaped as well; one you wrote yourself is already the value to pass.
    - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
 
    `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
@@ -73,7 +75,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
    One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen.
 
 5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
-   Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
+   - Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
 
 ## Registering a Discourse forum
 
@@ -81,15 +83,15 @@ A Discourse forum is registered with `add-forum`, not `add-site`.
 There is **no discovery** (there is no article cluster to pick) and **no cold-start snapshot**: forum topics are admitted at poll time, so a snapshot would silently discard every topic due for first-run Rule-A judgment — a loss, not a flood guard.
 
 1. **Confirm it is a Discourse forum.** Unless the user has already made that clear, verify the instance serves `<forum_url>/latest.rss` (a Discourse RSS feed) before registering.
-   `add-forum` validates only the config shape, so a non-Discourse URL registers cleanly but then fails every run with a per-site fetch error.
-   A quick `WebFetch` of the forum's landing page (or `/latest.rss`) both confirms Discourse and gives you the subject for the next step.
+   - `add-forum` validates only the config shape, so a non-Discourse URL registers cleanly but then fails every run with a per-site fetch error.
+   - A quick `WebFetch` of the forum's landing page (or `/latest.rss`) both confirms Discourse and gives you the subject for the next step.
 
 2. **Choose an id and name** — same rules as the article path: `--id` a short, stable, unique slug (check `feed-filter list-sites` for collisions), `--name` a human-readable label.
 
 3. **Pick the native subject (`--forum-subject`).** This is the forum's own domain — e.g. `Erlang` for `erlangforums.com`.
-   It is excluded as a Rule-A match reason so the run keeps only topics interesting *outside* this forum's community, not the on-subject ones.
-   Infer it from the forum's title/description, or ask the user.
-   Omit it for a general-interest forum with no single subject (Rule A then judges on interest alone).
+   - It is excluded as a Rule-A match reason so the run keeps only topics interesting *outside* this forum's community, not the on-subject ones.
+   - Infer it from the forum's title/description, or ask the user.
+   - Omit it for a general-interest forum with no single subject (Rule A then judges on interest alone).
 
 4. **Optional tuning** — each flag defaults to the value in `config.py`, so pass only what the user wants to change:
    - `--like-threshold N` (default 6) — Rule-B like bar when Rule A dropped the topic.
@@ -98,12 +100,12 @@ There is **no discovery** (there is no article cluster to pick) and **no cold-st
    - `--poll-offsets-days N [N …]` (default `0 1 7`) — days from first-seen at which to poll; the topic retires after the last offset.
 
 5. **Register.** `feed-filter add-forum --id <id> --name <name> --forum-url <forum_url> [--forum-subject <subject>] [tuning…]`.
-   This writes `sites.toml` only — no snapshot.
-   A non-zero exit means the arguments were rejected — a missing or malformed flag (argparse), or a config-shape error from `SiteConfig`; fix the args and retry.
+   - This writes `sites.toml` only — no snapshot.
+   - A non-zero exit means the arguments were rejected — a missing or malformed flag (argparse), or a config-shape error from `SiteConfig`; fix the args and retry.
 
 6. **Confirm.** On success the output is `{site_id, kind, forum_url}` with `kind == "forum"`.
-   Tell the user the forum was registered and that keeps will be written as `Feeds/` notes in the vault (`feed_kind: forum`).
-   Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (from the workspace `.env`).
+   - Tell the user the forum was registered and that keeps will be written as `Feeds/` notes in the vault (`feed_kind: forum`).
+   - Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (from the workspace `.env`).
 
 A forum's per-site `selection` override is not an `add-forum` flag.
 Set it later by hand-editing the `selection = "..."` line under that forum's `[[site]]` block in `sites.toml` (the forum run honors it, replacing the Topics section for that forum only).

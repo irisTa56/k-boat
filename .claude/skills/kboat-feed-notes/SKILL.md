@@ -38,7 +38,9 @@ The write is owned by `kboat.write.upsert` (schema `FEED`), which feed-filter ca
 A feed note has no destructive routine action and no cooldown, so its lifecycle is entirely manual triage over four always-present booleans.
 
 - `read`, `shelved`, and `dismissed` are the **human's** three dispositions — three sibling exits from the Inbox, one tick each.
+
   `read` and `dismissed` retire the card from both working views; `shelved` moves it between them.
+
   - `read` retires a card the reader opened and finished on the spot.
     - It leaves the Inbox and the Shelf and stays in the Read view, so a mis-tick can be undone.
   - `shelved` moves the card to the Shelf view — a "read later" holding shelf — without removing it from anywhere destructive.

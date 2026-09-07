@@ -43,19 +43,19 @@ What goes in is a URL confirmed to serve this same site, never one inferred from
 1. **Read the site's current row.** `feed-filter list-sites` reports its `id` and which of the three URL fields it carries — `feed_url`, `index_url`, or `forum_url`.
 2. **Replace that field's value** under the site's `[[site]]` block in `packages/feed-filter/sites.toml`, leaving no second copy of the key behind.
    - Change the value only, and leave the row's other fields where they are.
-     A row's kind comes from which of `feed_url`, `article_url_pattern` and `forum_url` it sets — the loader takes exactly one and rejects anything else — while `index_url` is not one of those three and is instead required alongside `article_url_pattern`.
+     - A row's kind comes from which of `feed_url`, `article_url_pattern` and `forum_url` it sets — the loader takes exactly one and rejects anything else — while `index_url` is not one of those three and is instead required alongside `article_url_pattern`.
    - Give the user the old value when you report the change.
-     `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
+     - `sites.toml` is gitignored personal state rather than version-controlled config (see `packages/feed-filter/CLAUDE.md`), so no checkout restores a bad edit and that report is the only record of what it said.
 3. **Confirm the registry still loads, and that the site is enabled.** Run `feed-filter list-sites` again — it parses every row, so it fails on a bad row anywhere in the file, and its output is where you verify the new URL took.
-   Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
+   - Where an earlier escalation read the move as a dead site and disabled it, re-enable it now: a disabled site gathers nothing, so it can never raise the error that would bring it back to anyone's attention.
 4. **Report what the move leaves for the next runs**, which is not nothing wherever it changed the article URLs.
    - A **scrape** site's articles move with its index, since they are keyed on the host the index landed on as well as on the path, so a new domain or subdomain always changes them.
-     A **feed** site's are whatever the feed itself carries, and an entry link is normally absolute — so a feed served from a new host need not have moved a single one.
+   - A **feed** site's are whatever the feed itself carries, and an entry link is normally absolute — so a feed served from a new host need not have moved a single one.
    - Where they did move, every article the new URL carries is then unseen, so the next runs judge them a capful at a time and file the keeps as notes, largely second copies of ones already filed under the old URLs.
-     `feed-filter resnapshot-site --site-id <id>` marks a scrape site's matches seen instead, writing no config — but it also buries whatever the site published while it was failing, which was filed nowhere, so put that trade to the user rather than settling it yourself.
-     A feed site has no such command.
+     - `feed-filter resnapshot-site --site-id <id>` marks a scrape site's matches seen instead, writing no config — but it also buries whatever the site published while it was failing, which was filed nowhere, so put that trade to the user rather than settling it yourself.
+       - A feed site has no such command.
    - A **forum** site keeps its seen-state, since its dedupe keys on the forum's own topic and post ids rather than on a URL.
-     Its notes still split, though: one already filed was named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
+     - Its notes still split, though: one already filed was named under the old `forum_url`, so a later post re-triggers it into a second note rather than resurfacing the first.
 
 That is the whole of the fix.
 
