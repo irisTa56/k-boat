@@ -27,7 +27,7 @@ import md_shape
 import pytest
 
 
-def _git(repo: Path, *args: str) -> None:
+def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     """One git command in `repo`, with everything it needs to commit supplied.
 
     The identity and the signing setting are the two pieces of a global git
@@ -47,7 +47,7 @@ def _git(repo: Path, *args: str) -> None:
         "-c",
         "commit.gpgsign=false",
     ]
-    subprocess.run([*git, *args], check=True, capture_output=True)
+    return subprocess.run([*git, *args], check=check, capture_output=True, text=True)
 
 
 def _scratch_repo(tmp_path: Path, monkeypatch, *names: str) -> Path:
@@ -600,6 +600,30 @@ def test_tracked_markdown_drops_a_file_the_worktree_no_longer_has(
     (repo / "gone.md").unlink()
     assert md_shape.tracked_markdown() == [Path("kept.md")]
     assert md_shape.main([]) == 0
+
+
+def test_tracked_markdown_lists_a_conflicted_file_once(tmp_path: Path, monkeypatch, capsys) -> None:
+    # `git ls-files` prints one line per index *stage*, so a path held at three
+    # stages by an unresolved merge conflict comes back as three lines naming
+    # one worktree file. Scanning it three times would print each of its faults
+    # three times under a count of three files, over a repository holding one.
+    # Reachable by running the gate by hand mid-conflict, which is exactly when
+    # the author most needs its output to be about their file.
+    repo = _scratch_repo(tmp_path, monkeypatch, "doc.md")
+    _git(repo, "checkout", "-qb", "other")
+    (repo / "doc.md").write_text("# doc.md\n\n- item\n\n  prose under it\n", encoding="utf-8")
+    _git(repo, "commit", "-qam", "other")
+    _git(repo, "checkout", "-q", "-")
+    (repo / "doc.md").write_text("# doc.md\n\nsomething else\n", encoding="utf-8")
+    _git(repo, "commit", "-qam", "mainline")
+    assert _git(repo, "merge", "--no-edit", "other", check=False).returncode != 0
+    assert _git(repo, "ls-files", "--", "*.md").stdout.count("doc.md") == 3
+
+    assert md_shape.tracked_markdown() == [Path("doc.md")]
+    assert md_shape.main([]) == md_shape._EXIT_FAULT
+    out = capsys.readouterr().out
+    assert out.count("prose under it") == 1
+    assert "1 misshapen line(s) in 1 file(s)" in out
 
 
 def test_scan_rejects_a_directory(tmp_path: Path) -> None:

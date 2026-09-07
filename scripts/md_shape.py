@@ -275,15 +275,18 @@ def scan(path: Path) -> list[Report]:
 
 
 def tracked_markdown() -> list[Path]:
-    """Every markdown file the repository tracks and still has on disk.
+    """Every markdown file the repository tracks and still has on disk, once each.
 
-    `git ls-files` reads the index, so a path stays listed between deleting the
-    file and staging that deletion -- delete a doc in the editor, commit
-    something else before running `git add -A`, and the index still names it.
-    Every other input `scan` refuses was handed to it by a caller; this one the
-    script would be choosing for itself, and it would fail the gate over a file
-    the author already meant to be gone. So the set handed on is the one this
-    script can actually read.
+    `git ls-files` reports the index, and the index diverges from the worktree
+    in two ways -- each one a bad input this script would be choosing for
+    itself, where every other input `scan` refuses was handed to it by a
+    caller. A path stays listed between deleting the file and staging that
+    deletion: delete a doc in the editor, commit something else before running
+    `git add -A`, and the gate would fail over a file the author already meant
+    to be gone. And a path in an unresolved merge conflict is held at three
+    stages, which `ls-files` prints as three lines: one worktree file, whose
+    every fault the gate would then report and count three times. So the set
+    handed on is deduplicated, and is the one this script can actually read.
     """
     out = subprocess.run(
         ["git", "ls-files", "-z", "--", "*.md", "*.markdown"],
@@ -291,7 +294,7 @@ def tracked_markdown() -> list[Path]:
         text=True,
         check=True,
     ).stdout
-    listed = (Path(p) for p in out.split("\0") if p)
+    listed = dict.fromkeys(Path(p) for p in out.split("\0") if p)
     return [path for path in listed if path.is_file()]
 
 
