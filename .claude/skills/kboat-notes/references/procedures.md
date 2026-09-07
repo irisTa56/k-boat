@@ -22,7 +22,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
 1. Get the slug for the `url`: `kboat-note slug "<url>"`, and read `.slug` (same oracle as Conventions; `.canonical_url` is what it hashed).
    - This is the de-dup key, and the only name the note write will accept.
    - If `Sources/<slug>.md` already exists, read its `url`: when it names the same page, this is the same source, so update it in place rather than creating a new note (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes), and if it already has a `notebooklm_id` it already has a notebook, so do not create a second one.
-     - Compare the two URLs canonically, never as raw strings: run `kboat-note slug` on the note's stored `url` as well and compare the two `.canonical_url` values.
+   - Compare the two URLs canonically, never as raw strings: run `kboat-note slug` on the note's stored `url` as well and compare the two `.canonical_url` values.
      - A page linked twice — with a trailing slash, or with a feed's tracking parameter — is one source, which is why both links reach this slug at all, and a raw-string comparison would read the second one as a different page and report a collision that is not there.
    - A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-fetch or create a notebook for it; treat the item as already recorded (the caller deletes the queue file and reports "already in the DLQ").
    - When the existing note's `url` names a **different** page, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
@@ -402,9 +402,7 @@ A merely transient failure is never one of them — it keeps its queue file and 
 - A **bot-blocked PDF**: detection got a bot challenge for a PDF endpoint (an HTML body for a `.pdf` URL, or a Cloudflare-style challenge for a `/pdf/` endpoint like ACM). Recorded as `pdf`.
 - A **walled web page**: NotebookLM fetched a login / paywall page instead of the article, so the notebook has no content. Recorded as `web_page`.
 - A **PDF the sniff could not see**: a walled URL carrying no PDF marker took the web path, and NotebookLM's post-add type check came back `pdf` (see step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)). Recorded as `pdf`.
-- A **web page NotebookLM could not process**: on the web path (step 3 of [create or update a source note](#procedure-create-or-update-a-source-note), the only caller that reaches this list from a `source wait`), `.status` came back `error` — durable for a typed source.
-  - Rescue is the way out because it re-adds the page as a **text** upload from a browser capture, a different path from the URL fetch that errored.
-  - Recorded as `web_page`.
+- A **web page NotebookLM could not process**: on the web path (step 3 of [create or update a source note](#procedure-create-or-update-a-source-note), the only caller that reaches this list from a `source wait`), `.status` came back `error` — durable for a typed source. Rescue is the way out because it re-adds the page as a **text** upload from a browser capture, a different path from the URL fetch that errored. Recorded as `web_page`.
 
 The PDF the sniff could not see is the case worth explaining, since its notebook reads fine — NotebookLM's fetcher is not blocked where `curl` is.
 It is a DLQ entry anyway because it is a PDF, and the PDF path needs the **file**: `PDFs/<slug>.pdf` is the durable reading copy, so correcting `source_type` without it would leave a `pdf` source with nothing to read, and only a real browser can get those bytes.
