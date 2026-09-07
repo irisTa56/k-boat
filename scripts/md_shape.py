@@ -267,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
 
     paths = args.paths or tracked_markdown()
     if not paths:
-        print("md_fold: no markdown files to check", file=sys.stderr)
+        print("md_shape: no markdown files to check", file=sys.stderr)
         return _EXIT_MALFORMED
 
     reports: list[Report] = []
@@ -275,18 +275,18 @@ def main(argv: list[str] | None = None) -> int:
         try:
             reports += scan(path)
         except UnicodeDecodeError as exc:
-            print(f"md_fold: {path} is not UTF-8 text: {exc}", file=sys.stderr)
+            print(f"md_shape: {path} is not UTF-8 text: {exc}", file=sys.stderr)
             return _EXIT_MALFORMED
         except OSError as exc:
-            print(f"md_fold: cannot read {path}: {exc}", file=sys.stderr)
+            print(f"md_shape: cannot read {path}: {exc}", file=sys.stderr)
             return _EXIT_MALFORMED
 
     for report in reports:
         print(report)
     if reports:
-        print(f"\nmd_fold: {len(reports)} misshapen line(s) in {len(paths)} file(s)")
+        print(f"\nmd_shape: {len(reports)} misshapen line(s) in {len(paths)} file(s)")
         return _EXIT_FAULT
-    print(f"md_fold: no misshapen lines in {len(paths)} file(s)")
+    print(f"md_shape: no misshapen lines in {len(paths)} file(s)")
     return 0
 
 

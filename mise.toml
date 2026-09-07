@@ -64,14 +64,15 @@ run = "notebooklm auth check --test --json"
 description = "Run all pre-commit checks"
 depends = ["qa:**"]
 
-# Two checks, because `rumdl` cannot make the second: a lazily-continued line is
-# well-formed markdown line by line, and what is wrong about it is only which
-# block it lands in. `scripts/md_fold.py` has the mechanism and the remedy.
+# Two checks, because `rumdl` cannot make the second: a lazily-continued line and
+# a paragraph under a list item are both well-formed markdown line by line, and
+# what is wrong about either is only which block it belongs to.
+# `scripts/md_shape.py` has both mechanisms and their remedies.
 [tasks."qa:md"]
 description = "Lint markdown files"
 run = """
 rumdl check
-uv run python scripts/md_fold.py
+uv run python scripts/md_shape.py
 """
 
 [tasks."qa:secrets"]
@@ -107,7 +108,7 @@ uv run python ../../scripts/coverage_floor.py coverage.json
 
 # `scripts/` is flat tooling, not a workspace member (no `pyproject.toml` of its
 # own, no `--cov-fail-under`) -- but every script in it gates something (the
-# coverage floor, the markdown fold check), so it gets the same lint/type/test
+# coverage floor, the markdown shape check), so it gets the same lint/type/test
 # commands rather than being the one ungated piece of the gate.
 [tasks."qa:py:scripts"]
 description = "Lint, type-check, and test the scripts/ tooling"
