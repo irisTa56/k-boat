@@ -41,6 +41,7 @@ Any other extension (or a `/tree` directory or the repo root) stays the repo pat
 For every other URL, follow the source path:
 
 1. Decide the path, then gather signal.
+
    GET the URL with a browser User-Agent and sniff the response (not HEAD; see kboat-notes [Procedure: ingest a PDF source](../kboat-notes/references/procedures.md#procedure-ingest-a-pdf-source) for why and the exact rule): `%PDF-` bytes ⇒ **PDF**; an HTML bot challenge for a **PDF endpoint** — the URL's last path segment ends in `.pdf`, or it has a `/pdf/` delivery segment (e.g. ACM `/doi/pdf/<doi>`) and the response is a real Cloudflare-style challenge (`403`/`503`/`429` `Just a moment…`) — ⇒ **blocked PDF** → record it in the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), to be rescued later; HTML otherwise ⇒ **web page**, provisionally (step 3 settles it).
    The extension never promotes to the PDF path — the bytes do (an arXiv `/pdf/<id>` link serves a real PDF); a bare `/pdf/` segment alone is not a blocked-PDF signal (a `200` docs page stays a web page) — only a `.pdf` suffix or an actual challenge response is.
    This sniff is the fast path, not the verdict: a URL that defeats both of its inputs falls through to the web page rule and is caught after the add instead (step 3).
@@ -56,14 +57,14 @@ For every other URL, follow the source path:
    - De-duplicate per kboat-notes — the key is the slug, which `kboat-note slug "<url>"` gives you (never hash a URL by hand: that slug is the only name the note write accepts, and it is the canonical URL's hash, so two links to one page yield one note): if `Sources/<slug>.md` already exists for this `url` and already has a `notebooklm_id`, it already has its notebook — skip step 3 and just update the note in place; if it exists with `blocked: true`, it is a DLQ entry awaiting `kboat-rescue` — do not re-fetch, just delete the queue file and report it as already in the DLQ.
    - The source-note write is the commit point: every queue item must end with a note on disk.
 3. Create the source's 1:1 notebook (see kboat-notes [create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note)): `create` → `source add` → **verify the type**, then **verify the fetch** (both per kboat-notes, in that order) → capture `summary`/`topics` from the source guide and write them plus `notebooklm_id` and the derived `gemini_url`/`notebooklm_url` back onto the source note.
-   Run the verifications in a cheap subagent, like the page fetch in step 1.
-   Three outcomes send the source to the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), which sets `blocked: true` and discards any notebook so `kboat-rescue` can supply the content later:
+   - Run the verifications in a cheap subagent, like the page fetch in step 1.
+   - Three outcomes send the source to the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), which sets `blocked: true` and discards any notebook so `kboat-rescue` can supply the content later:
 
-   - `source wait --json` says `.status` is `error` → the DLQ, keeping the sniffed type.
-     - Its `not_found` and `timeout` are **not** this case: they are transient (notebook discarded, queue file kept, add redone next run), and the exit code cannot tell them apart from `error` — read `.status`.
-   - `.source.type` is `pdf` → the DLQ as a `pdf` (step 1's sniff was fooled by a wall, and this is not a web page at all).
-     - Any other non-`web_page` type is left alone and reported instead.
-   - The fetched text is a wall, not the article → the DLQ as a `web_page`.
+     - `source wait --json` says `.status` is `error` → the DLQ, keeping the sniffed type.
+       - Its `not_found` and `timeout` are **not** this case: they are transient (notebook discarded, queue file kept, add redone next run), and the exit code cannot tell them apart from `error` — read `.status`.
+     - `.source.type` is `pdf` → the DLQ as a `pdf` (step 1's sniff was fooled by a wall, and this is not a web page at all).
+       - Any other non-`web_page` type is left alone and reported instead.
+     - The fetched text is a wall, not the article → the DLQ as a `web_page`.
 4. Delete the queue file only after the source note is written, by removing its capture file (the entry's `path` from `kboat-queue list`).
    - **Before removing any capture — here, or at any other route in this skill that deletes one — look for a `Queue/.<name>.md.icloud` beside it.**
      - If one is there, report it in the run summary and leave it.
@@ -83,8 +84,9 @@ This belongs in ingest because the gap matters before a source is ever filed: an
 1. Get the candidate set from the lifecycle tool read-only — pass `--dry-run` so it does not stamp `filed_date` here: `kboat-lifecycle --dry-run` returns a top-level `needs_summary` array of sources with a live `notebooklm_id` and an empty `summary`/`topics`, already excluding `blocked` (DLQ) sources.
    - It is normally empty; act only on what it lists.
 2. For each listed source, run kboat-notes [Procedure: capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics) against the existing notebook (resolve the original source per kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11) — `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null`, the redirect for the reason kboat-notes [Environment](../kboat-notes/SKILL.md#environment) gives, since step 3 branches on what this call returns and the notebooks it exists to catch are the ones that warn loudest — then `source guide`), and write `summary`/`topics` back with `kboat-note write --type source` (a `{slug, fields}` record merged over the note).
-   The notebook already exists — do not create or re-add anything.
+   - The notebook already exists — do not create or re-add anything.
 3. If the original source cannot be resolved, first decide which of four things happened, because only one of them is the loss and the others need different answers.
+
    Whatever it is, leave the note alone and move on — this sweep writes `summary`/`topics` and nothing else.
 
    - **The `source list` call succeeded and the notebook holds no original** — it lists nothing, or nothing carrying a content type (kboat-notes [Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook), step 1, owns that test).

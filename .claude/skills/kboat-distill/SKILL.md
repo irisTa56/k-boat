@@ -28,16 +28,16 @@ The Bash tool keeps no shell state between calls, so re-run it in each block.
    - If the project exists but the call fails (Basic Memory runtime down), run Phase A but **skip Phase B and Phase C entirely** and report it.
      - Phase B's only destructive act is discarding notebooks, and Phase C only writes concept notes (which needs Basic Memory anyway); deferring both to a healthy day loses nothing, since ingest still runs.
 3. Run the deterministic lifecycle pass: `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
-   This single tool does the whole mechanical core — what used to be hand-evaluated frontmatter logic — so the model never reads every note or does the date math:
+   - This single tool does the whole mechanical core — what used to be hand-evaluated frontmatter logic — so the model never reads every note or does the date math:
 
-   - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
-     - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
-     - (Pass `--dry-run` to compute without writing — for inspection only.)
-   - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse or are not the expected `type`).
-     - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
-     - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
-   - It **excludes `blocked` (DLQ) sources from both phases**, mechanically and whatever the note carries, so one is never stamped, flagged, or listed even if a human checked a disposition on it by mistake.
-     - Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: an entry re-captured after a successful ingest keeps its notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
+     - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
+       - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
+       - (Pass `--dry-run` to compute without writing — for inspection only.)
+     - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse or are not the expected `type`).
+       - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
+       - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
+     - It **excludes `blocked` (DLQ) sources from both phases**, mechanically and whatever the note carries, so one is never stamped, flagged, or listed even if a human checked a disposition on it by mistake.
+       - Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: an entry re-captured after a successful ingest keeps its notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
 
    Parse this JSON; it is the work list for the rest of the run.
    The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
@@ -78,11 +78,11 @@ Process each `phase_b.ripe` source in this exact order.
 The order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
 1. **Resolve the notebook.** Take `notebooklm_id` from the ripe entry (the tool read it from the source note).
-   Run `notebooklm --quiet list --json 2>/dev/null`; if the id is absent, record it as an anomaly in the run summary and skip this source without stamping or discarding.
-   **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
-   Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
-   The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
-   This is the same contract as an original-source extraction error in step 3.
+   - Run `notebooklm --quiet list --json 2>/dev/null`; if the id is absent, record it as an anomaly in the run summary and skip this source without stamping or discarding.
+     - **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
+     - Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
+     - The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
+     - This is the same contract as an original-source extraction error in step 3.
 2. **Resolve the sources.** Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment): the warning it hides fires on exactly the notebooks holding saved dialogue, which this step is about).
    - If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
    - The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, a note / "unknown" type, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
@@ -93,6 +93,7 @@ The order is what makes a crash safe: nothing the notebook holds is destroyed be
        - Do not carry step 1's pointer across — that one is for a notebook that is gone, and this notebook is not.
    - `fulltext` is keyed by source id.
 3. **Extract** (read-only, safe to repeat).
+
    Only an extraction error on the **original** source aborts this source — do not stamp, do not discard; record the error in the run summary and continue to the next source.
    Errors on the other extractions below — saved dialogue notes, `history`, `summary` — are non-fatal: record them in the run summary and continue, do not abort.
 
@@ -149,10 +150,9 @@ This pass is unattended, so the approval gate becomes an **after-the-fact review
 Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this skill).
 
 - **Append first.** Before creating a concept note, `search_notes` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
-  The project's embedding model is English (`bge-small`), so semantic recall on Japanese titles is weak — lean on these lexical variations.
-  If a hit clears the bar, add to the existing note instead of creating a duplicate.
-  See `memory-curate`.
-
+  - The project's embedding model is English (`bge-small`), so semantic recall on Japanese titles is weak — lean on these lexical variations.
+  - If a hit clears the bar, add to the existing note instead of creating a duplicate.
+    - See `memory-curate`.
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
     - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups)).
     - A heading you mint must repeat no `###` the note already carries: `edit_note` refuses a section header it finds twice, so a repeated one is an anchor nothing can add to that group by again.
@@ -182,13 +182,13 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - Tag each distilled observation by grounding: `#grounded` when the original source supports it, `#dialogue` when it is external knowledge the conversation brought in — a saved dialogue note (an extra notebook source, see Extract) or an uncited Gemini answer in `history`.
   - Never let a `#dialogue` claim read as if it came from the source.
 - **Correct dialogue-derived claims; don't just reject them.**
-  A `#dialogue` claim is not source-grounded, and it came from the reading-time dialogue's speed-first model (Gemini Flash), whereas you distil with a more capable model — so your job is to *upgrade* the claim, not merely gate it: repair what the fast model got wrong instead of discarding it, while still refusing the genuinely unverifiable.
-  Verify each claim against the source and your own knowledge, then take one of three actions:
+  - A `#dialogue` claim is not source-grounded, and it came from the reading-time dialogue's speed-first model (Gemini Flash), whereas you distil with a more capable model — so your job is to *upgrade* the claim, not merely gate it: repair what the fast model got wrong instead of discarding it, while still refusing the genuinely unverifiable.
+  - Verify each claim against the source and your own knowledge, then take one of three actions:
 
-  - **Holds as stated** — accret it, tagged by grounding: `#grounded` if the source supports it, else `#dialogue`.
-  - **Wrong but fixable** — when the fast model erred on a point you can confidently fix, from the source or from knowledge you are sure of, accret the *corrected* claim: preserve the reader's original point, change only what was wrong, tag it by grounding just as above (`#grounded` if the source now supports it, else `#dialogue`), and log it under `corrected from dialogue:` so the human can audit the intervention.
-    - Never invent a correction you cannot ground — that is the "state your limits" line, not a licence to rewrite freely.
-  - **Neither confirmable nor confidently fixable** — drop it and log it as an uncreated candidate.
+    - **Holds as stated** — accret it, tagged by grounding: `#grounded` if the source supports it, else `#dialogue`.
+    - **Wrong but fixable** — when the fast model erred on a point you can confidently fix, from the source or from knowledge you are sure of, accret the *corrected* claim: preserve the reader's original point, change only what was wrong, tag it by grounding just as above (`#grounded` if the source now supports it, else `#dialogue`), and log it under `corrected from dialogue:` so the human can audit the intervention.
+      - Never invent a correction you cannot ground — that is the "state your limits" line, not a licence to rewrite freely.
+    - **Neither confirmable nor confidently fixable** — drop it and log it as an uncreated candidate.
 - **Capture the reader's interest, not only the dialogue's facts.** The reading-time dialogue exists because the reader stopped to ask, so the questions they raised, the claims they doubted, and what they found surprising or unclear mark what mattered to *them* — a signal the source text alone does not carry, and the reason they chatted rather than read passively.
   - Read the saved dialogue notes and `history` for this signal as much as for external claims, and surface it in the report's Summary (below) so the distillation reflects the reader's line of inquiry instead of flattening it into source facts.
 - **Note the knowledge-base context, lightly.** The Append-first search already puts the related existing concepts in front of you, so as you distil, notice the material ones — a concept this source plainly connects to, or one that now draws on several sources (a recurring interest) — and record them in the report under `related in KB:`.
