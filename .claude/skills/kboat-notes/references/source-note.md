@@ -70,12 +70,18 @@ How many sources are sitting in each state below is reported by `kboat-validate 
 The routine (kboat-distill) drives the transitions:
 
 - Any disposition checked, `filed_date` empty → the routine stamps `filed_date`, starting a 7-day cooldown.
-- Every disposition unchecked, `filed_date` set → the routine clears `filed_date`, re-arming the source (back on the active list, cooldown abandoned). On an already-distilled source this is the state the validator reports, not a transition to reach on purpose: `distill` belongs checked wherever `distilled_date` stands.
-- **Ambiguous** (`dismiss` together with `keep` or `distill`) → never processed. "Keep" and "discard" contradict, so the routine never guesses: it does nothing destructive and **reports it on every run, not gated by the cooldown** (ambiguity is non-destructive to detect, so there is no reason to wait). The human resolves it; it shows in the Ambiguous Base view. This check takes precedence over the cooldown branches below.
+- Every disposition unchecked, `filed_date` set → the routine clears `filed_date`, re-arming the source (back on the active list, cooldown abandoned).
+  - On an already-distilled source this is the state the validator reports, not a transition to reach on purpose: `distill` belongs checked wherever `distilled_date` stands.
+- **Ambiguous** (`dismiss` together with `keep` or `distill`) → never processed.
+  - "Keep" and "discard" contradict, so the routine never guesses: it does nothing destructive and **reports it on every run, not gated by the cooldown** (ambiguity is non-destructive to detect, so there is no reason to wait).
+  - The human resolves it; it shows in the Ambiguous Base view.
+  - This check takes precedence over the cooldown branches below.
 - Once `filed_date` is at least 7 days old and the source is unambiguous, the routine acts, branching on the disposition:
   - `distill` (and not `dismiss`) → the source is **ripe**: distil it, stamp `distilled_date`, write the report, then discard the notebook — **unless `keep` is also set**, in which case the notebook is retained.
-  - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty. The note and any PDF stay as a de-dup tombstone, excluded from recall.
-  - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry. `keep` alone has no deferred action — it is a stable state from the moment it is checked.
+  - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty.
+    - The note and any PDF stay as a de-dup tombstone, excluded from recall.
+  - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry.
+    - `keep` alone has no deferred action — it is a stable state from the moment it is checked.
 
 The ripe predicate is `distill && !dismiss && !blocked && filed_date <= today - 7 days && distilled_date` empty.
 The dismiss predicate is `dismiss && !keep && !distill && !blocked && filed_date <= today - 7 days`.
