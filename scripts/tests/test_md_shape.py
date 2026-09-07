@@ -474,19 +474,26 @@ def test_main_exits_one_and_names_the_line_and_its_remedy(tmp_path: Path, capsys
 def test_main_names_every_faulty_line_in_every_file_it_is_given(tmp_path: Path, capsys) -> None:
     # The whole reason the gate takes a set of files rather than one: an author
     # told about a single line, who fixed it and then met a fresh failure from a
-    # file that was already faulty, would read the gate as flaky. Both halves of
-    # that are pinned here -- one file's reports replacing the file's before it,
-    # and only the run's first report reaching stdout, each leave every other
-    # test in this module green, since none of them drives more than one report.
+    # file that was already faulty, would read the gate as flaky. Two faults in
+    # the first file and one in the second is the smallest set that separates
+    # every way of losing one -- a file's reports replacing the file's before
+    # it, only the first fault of each file being kept, only the run's first
+    # report reaching stdout, and the summary counting files where it means
+    # lines all leave every other test in this module green, and the two counts
+    # differ here, so the summary cannot read either number for the other.
     first = tmp_path / "first.md"
-    first.write_text("- outer item\n\n  a paragraph under it\n", encoding="utf-8")
+    first.write_text(
+        "- outer item\n\n  a paragraph under it\n\n- a second item\n  prose under that one\n",
+        encoding="utf-8",
+    )
     second = tmp_path / "second.md"
     second.write_text("- another item\n\n  a second paragraph\n", encoding="utf-8")
     assert md_shape.main([str(first), str(second)]) == md_shape._EXIT_FAULT
     out = capsys.readouterr().out
     assert f"{first}:3" in out
+    assert f"{first}:6" in out
     assert f"{second}:3" in out
-    assert "2 misshapen line(s) in 2 file(s)" in out
+    assert "3 misshapen line(s) in 2 file(s)" in out
 
 
 def test_main_exits_two_on_a_file_that_is_not_utf8(tmp_path: Path, capsys) -> None:
