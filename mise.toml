@@ -64,10 +64,10 @@ run = "notebooklm auth check --test --json"
 description = "Run all pre-commit checks"
 depends = ["qa:**"]
 
-# Two commands, because `rumdl` cannot make the second check: a paragraph inside
-# a list item is well-formed markdown line by line, and what is wrong about it is
-# only which block it belongs to. `scripts/md_shape.py` asks a real CommonMark
-# parser that question, so it runs under `uv run` for the workspace venv.
+# Two commands, because `rumdl` cannot make the second check -- the house rule
+# and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
+# That script parses with `markdown-it-py`, so it runs under `uv run` to reach
+# the workspace venv rather than whatever `python` the PATH lands on.
 [tasks."qa:md"]
 description = "Lint markdown files"
 run = """

@@ -16,11 +16,9 @@ dev = [
     # asserting a rewritten note against it would let it grade its own homework —
     # output that is no longer YAML re-scans to the same entries.
     "pyyaml",
-    # Tooling only, never imported by a package: the block structure
-    # `scripts/md_shape.py` applies the house rule to. The rule is about which
-    # block a line belongs to, so a hand-written line classifier answering that
-    # question is a second, worse CommonMark — every disagreement with the real
-    # one is a false positive that blocks a correct commit.
+    # Tooling only, never imported by a package: the CommonMark parser
+    # `scripts/md_shape.py` reads block structure from, rather than classifying
+    # lines itself. Its module docstring says why that is not optional.
     "markdown-it-py",
 ]
 
