@@ -25,6 +25,15 @@ The scan is deliberately narrow. It reports one thing -- a paragraph line whose
 indentation is shallower than the innermost open list item's content column,
 with no blank line between -- and nothing else. A markdown file that renders as
 its indentation reads passes, whatever else may be said about it.
+
+That one thing includes a line sitting at an item's own marker column rather
+than under a deeper child: short of the content column, it too would land
+outside the list if a blank line closed the paragraph, and laziness keeps it in
+the item. The remedy is the same either way.
+
+Where the check cannot decide, it does not report. It gates commits, so a false
+positive costs more than a miss, and the block starts that interrupt a paragraph
+are treated generously for that reason.
 """
 
 from __future__ import annotations
@@ -40,11 +49,23 @@ from pathlib import Path
 _MARKER = re.compile(r"^(\s*)(?:[-*+]|\d{1,9}[.)])(\s+)")
 _FENCE = re.compile(r"^(\s*)(```+|~~~+)")
 _HEADING = re.compile(r"^(\s*)#{1,6}(\s|$)")
-# The other two block starts that interrupt an open paragraph rather than
-# continuing it, so a line beginning with one is never folded whatever its
-# indentation. Scanning inside a blockquote is out of scope -- this repo has
-# none under a list item, and reporting one wrongly would block a correct commit.
+# The other block starts that interrupt an open paragraph rather than continuing
+# it, so a line beginning with one is never folded whatever its indentation.
+# Scanning inside a blockquote is out of scope -- this repo has none under a list
+# item, and reporting one wrongly would block a correct commit.
 _BLOCKQUOTE = re.compile(r"^(\s*)>")
+# Deliberately every `<`, not the six HTML block kinds that really interrupt a
+# paragraph: telling those from the seventh, which does not, needs the tag-name
+# list. The cost is missing a fold on a line that opens with an autolink; the
+# alternative is reporting a comment or a block tag that is not one at all.
+_HTML = re.compile(r"^(\s*)<")
+# Four columns past the enclosing block's content column, with no paragraph open,
+# starts an indented code block. Nothing continues one lazily.
+_CODE_INDENT = 4
+# CommonMark caps an item's content column: more than this many spaces after the
+# marker and the content column is the marker's end plus one, the rest being an
+# indented code block inside the item.
+_MAX_MARKER_SPACES = 4
 _THEMATIC_BREAK = re.compile(r"^(\s*)(?:\*\s*){3,}$|^(\s*)(?:_\s*){3,}$")
 _FRONTMATTER = "---"
 
@@ -74,6 +95,14 @@ class Fold:
 
 def _indent_of(line: str) -> int:
     return len(line) - len(line.lstrip())
+
+
+def _content_column(marker: re.Match[str]) -> int:
+    """The column an item's content starts at, capped as CommonMark caps it."""
+    spaces = len(marker.group(2))
+    if spaces > _MAX_MARKER_SPACES:
+        return marker.end() - spaces + 1
+    return marker.end()
 
 
 def scan(path: Path) -> list[Fold]:
@@ -115,7 +144,12 @@ def scan(path: Path) -> list[Fold]:
 
         indent = _indent_of(line)
 
-        if _HEADING.match(line) or _BLOCKQUOTE.match(line) or _THEMATIC_BREAK.match(line):
+        if (
+            _HEADING.match(line)
+            or _BLOCKQUOTE.match(line)
+            or _THEMATIC_BREAK.match(line)
+            or _HTML.match(line)
+        ):
             # Each of these interrupts a paragraph, so none is folded into one.
             para_open = False
             while stack and stack[-1] > indent:
@@ -126,7 +160,7 @@ def scan(path: Path) -> list[Fold]:
         if marker:
             while stack and stack[-1] > indent:
                 stack.pop()
-            stack.append(marker.end())
+            stack.append(_content_column(marker))
             para_open = True
             continue
 
@@ -137,7 +171,8 @@ def scan(path: Path) -> list[Fold]:
 
         while stack and stack[-1] > indent:
             stack.pop()
-        para_open = True
+        enclosing = stack[-1] if stack else 0
+        para_open = indent < enclosing + _CODE_INDENT
 
     return folds
 
