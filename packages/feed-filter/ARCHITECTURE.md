@@ -23,8 +23,10 @@ Pure primitives:
 - `kboat.canonical` (in the `kboat` package, not this one) — URL canonicalization.
   - **Always dedupe on `canonical_url`, never the raw URL.**
   - It lives there because the vault's note slug is the hash of the same canonical form, so a second copy would let a `Feeds/` note and the seen-store that gates it disagree about what one page is.
-- `seen.py` — the sqlite seen-store; the sole dedupe authority. It also owns the ordered migration list every colocated table shares (one `user_version` counter); each migration's statements and its version stamp commit in one transaction, so an interrupted upgrade rolls back whole and the next open retries it.
-- `site_health.py` — the durable per-site consecutive-failure counter (`site_health` table, v4 migration in `seen.py`); source-kind-agnostic, keyed by `site_id`. Operational telemetry, **not** dedupe/never-lost state (see the site-health invariant below).
+- `seen.py` — the sqlite seen-store; the sole dedupe authority.
+  - It also owns the ordered migration list every colocated table shares (one `user_version` counter); each migration's statements and its version stamp commit in one transaction, so an interrupted upgrade rolls back whole and the next open retries it.
+- `site_health.py` — the durable per-site consecutive-failure counter (`site_health` table, v4 migration in `seen.py`); source-kind-agnostic, keyed by `site_id`.
+  - Operational telemetry, **not** dedupe/never-lost state (see the site-health invariant below).
 - `body_cache.py` — a transient per-run cache of full feed bodies (`entry_body` table, v5 migration in `seen.py`), rewritten wholesale each `new-entries`.
   - It keeps the full article off the run orchestrator's stdout/context: `new-entries` emits only a preview and the judge pulls the body via `entry-body`.
   - Operational cache, **not** dedupe/never-lost state — a miss just falls the judge back to a `WebFetch`.
@@ -56,7 +58,8 @@ Browser path (opt-in):
 
 Side effects and orchestration:
 
-- `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run. Raises `VaultError` on a write the writer refused, and `VaultLockedError` when the lock's bounded wait expires with another run still holding it — either way a failed write is never recorded seen.
+- `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run.
+  - Raises `VaultError` on a write the writer refused, and `VaultLockedError` when the lock's bounded wait expires with another run still holding it — either way a failed write is never recorded seen.
 - `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
   - `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
@@ -69,7 +72,8 @@ The forum kind extends the existing abstractions — `SiteConfig.kind == "forum"
 
 New modules:
 
-- `discourse.py` — URL derivation (`latest_feed_url`, `top_feed_url`, `topic_json_url`), topic-id extraction (`topic_id_from_url`), and JSON parsing (`parse_topic` → `ForumTopic` + `list[ForumPost]`, reading `post_stream.posts` and taking each post's like count from `actions_summary id==2`). All HTTP and RSS goes through the reused `fetch`/`parse_feed` primitives.
+- `discourse.py` — URL derivation (`latest_feed_url`, `top_feed_url`, `topic_json_url`), topic-id extraction (`topic_id_from_url`), and JSON parsing (`parse_topic` → `ForumTopic` + `list[ForumPost]`, reading `post_stream.posts` and taking each post's like count from `actions_summary id==2`).
+  - All HTTP and RSS goes through the reused `fetch`/`parse_feed` primitives.
 - `forum_store.py` — the post-grain dedupe authority in its own two tables: `admit_topic` / `set_op_verdict` / `is_post_seen` / `record_post` / `due_topics` / `finalize_poll` / `last_like_count`.
 - `forum_pipeline.py` — `admit_from_feeds` (RSS ingestion + Rule-A candidate emission) and `gather_forum` (due-topic Rule-B candidate assembly + `polled_topics` finalize worklist).
 
@@ -140,7 +144,8 @@ Both filter on `enabled` as well, so a paused site reaches no gather at all and 
   - a Discourse forum: confirm the instance → infer `--forum-subject` → `add-forum`.
 - `kboat-feed-run` — the periodic article run: `new-entries` → haiku keep/drop → `remind`/`mark-seen` → self-heal.
 - `kboat-manage-feed-sites` — ad-hoc pause/resume via `disable-site`/`enable-site`, on/off status from `list-sites`, and the fix for a site that moved (a hand-edit of the one URL field in `sites.toml`, plus a `resnapshot-site` for a **scrape** site whose article URLs changed — the feed path has no such command).
-- `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`. Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
+- `kboat-forum-run` — the periodic forum run: `forum-new` → Rule-A (Sonnet) / Rule-B (haiku) judgment → `forum-remind`/`forum-mark-seen` → `forum-poll-done`.
+  - Rule A is on the stronger model because the cross-domain call (native subject excluded, ecosystem tooling is not cross-domain) proved too subtle for haiku in practice.
 
 ## Behavioral invariants
 
@@ -155,40 +160,57 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - `cmd_forum_poll_done` must be the **last** call for a topic in a run, after every candidate is dispositioned — advancing the watch before disposition can cause a loss.
   - A crash before `forum-poll-done` costs at most one re-poll; `forum_post_seen` dedups the already-seen posts, and the hash-named upsert makes a re-written note idempotent, so no duplicate results.
 - **Two independent dedupe axes (forum).** Rule A and Rule B dedupe separately, and the OP may be taken up under both.
-  - A Rule-A disposition writes only the **topic-grain** verdict `forum_watch.op_interest_kept` (via `--is-op`); a Rule-B disposition writes only the **post-grain** `forum_post_seen` (via `--post-id`). The two flags are orthogonal in `cmd_forum_remind`/`cmd_forum_mark_seen`.
+  - A Rule-A disposition writes only the **topic-grain** verdict `forum_watch.op_interest_kept` (via `--is-op`); a Rule-B disposition writes only the **post-grain** `forum_post_seen` (via `--post-id`).
+    - The two flags are orthogonal in `cmd_forum_remind`/`cmd_forum_mark_seen`.
   - Because Rule A reads the OP from RSS and never holds its `post_id`, it never marks the OP seen at post grain — so an OP dropped for interest under Rule A is still re-judged by Rule B if it later gains likes.
   - An OP that is both interesting and popular is recorded under **both** axes, but yields **one** note: both `forum-remind` calls hash-name by the same topic URL, so the second upserts the same `Feeds/` note the first wrote — one note per topic, each disposition still recorded.
-- **Seen-store is the dedupe authority at gather time (for non-forum sources).** Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; the sink now also dedupes (a hash-named `kboat.write.upsert` is idempotent), but the seen-store remains the authority that stops an already-processed article from being re-gathered and re-judged.
+- **Seen-store is the dedupe authority at gather time (for non-forum sources).**
+  - Dedupe happens in `seen.py`/`pipeline.py` on `canonical_url`; the sink now also dedupes (a hash-named `kboat.write.upsert` is idempotent), but the seen-store remains the authority that stops an already-processed article from being re-gathered and re-judged.
   - A gather-time fetch failure records nothing, so the next run retries — there is no *cross-run* backoff (within a single fetch, `fetch.py` does retry transient `429`/`503` throttling per `Retry-After`).
   - **Forum carve-out:** the forum adapter is a second, post-grain dedupe authority in `forum_store.py` / `forum_post_seen`.
     - Post-grain re-reminding is deliberate (a later post on a watched topic crosses the like bar); this suspends the "seen is final" invariant for forum sources only, leaving `seen.py` and every non-forum path untouched.
-- **A query gather offers, never records.** `cmd_query_new` (`cli.py`) reads the seen-store and writes nothing to it, exactly like `new-entries` — the disposition commands (`remind` / `mark-seen`) are the sole recorders.
+- **A query gather offers, never records.**
+  - `cmd_query_new` (`cli.py`) reads the seen-store and writes nothing to it, exactly like `new-entries` — the disposition commands (`remind` / `mark-seen`) are the sole recorders.
   - Two dedupe layers run before the cap: the seen-store (a page already dispositioned (kept or dropped), or snapshotted at registration), then a within-run set (a page two queries both return, keeping the earlier query's copy).
   - A page truncated by the global cap stays unrecorded and reappears next run.
-- **A failed query loses only itself.** Each `--query` is independent in `cmd_query_new`: a transport, status, or malformed-payload failure is reported in that query's `queries[]` row and records nothing, so the run's other queries still emit and the failed one retries next run. A missing `EXA_API_KEY` surfaces the same way (an `ExaError` per query) rather than aborting the run — the same never-lost bias as a gather-time fetch failure.
-- **A failed forum topic loses only itself.** The forum gather is a sequential loop, not a pool drain, so isolation is placed at the grain the never-lost invariant is stated at: the per-topic loop in `gather_forum` absorbs an unclassified exception exactly where it already absorbs a `FetchError`, and a partially-gathered site emits the topics it finished.
-  - A topic that did not complete contributes only an error message. Each topic's whole contribution is assembled by `_gather_topic` and committed to the result only once it is complete, so a topic that raised cannot reach `polled_topics` and have its poll advanced past posts nobody dispositioned — it re-polls next run, having recorded nothing. This is the property the design turns on, because `polls` is what the run skill feeds to `forum-poll-done`.
+- **A failed query loses only itself.**
+  - Each `--query` is independent in `cmd_query_new`: a transport, status, or malformed-payload failure is reported in that query's `queries[]` row and records nothing, so the run's other queries still emit and the failed one retries next run.
+  - A missing `EXA_API_KEY` surfaces the same way (an `ExaError` per query) rather than aborting the run — the same never-lost bias as a gather-time fetch failure.
+- **A failed forum topic loses only itself.**
+  - The forum gather is a sequential loop, not a pool drain, so isolation is placed at the grain the never-lost invariant is stated at: the per-topic loop in `gather_forum` absorbs an unclassified exception exactly where it already absorbs a `FetchError`, and a partially-gathered site emits the topics it finished.
+  - A topic that did not complete contributes only an error message.
+    - Each topic's whole contribution is assembled by `_gather_topic` and committed to the result only once it is complete, so a topic that raised cannot reach `polled_topics` and have its poll advanced past posts nobody dispositioned — it re-polls next run, having recorded nothing.
+    - This is the property the design turns on, because `polls` is what the run skill feeds to `forum-poll-done`.
     - Withholding an incomplete topic is accepted rather than bounded, and the cost is site-wide, not per topic.
       - Bounding it would take a durable per-topic failure count, and retiring a topic after N failures would discard it over what is usually our own bug.
     - `finalize_poll` is the only writer of `completed_polls`/`retired`, so a topic that never completes stays due forever — and an unclassified failure is usually a code bug, which hits *every* due topic.
-    - None of the due topics retires, because none completes — and the admission keeps enrolling more, so the due set grows monotonically and each run spends one topic-JSON call and one error message per due topic. Narrowing or pausing the admission does not drain the stuck ones; only fixing the cause does.
+    - None of the due topics retires, because none completes — and the admission keeps enrolling more, so the due set grows monotonically and each run spends one topic-JSON call and one error message per due topic.
+      - Narrowing or pausing the admission does not drain the stuck ones; only fixing the cause does.
     - The signal holds up as the due set grows: `unexpected` is OR'd across due topics, so `unexpected_error` keeps reporting the site as long as any one topic reaches the failing code.
-    - What identifies a stuck due set in a run is a shape a human reads back off the summary — errors reported while `polls` came back empty. The run skill is not asked to detect that conjunction; a human acting on the summary is the drain.
-  - The Rule-A admission keeps a whole-path grain deliberately, not by oversight: its per-feed loop guards `FetchError` only, so an unclassified raise there forfeits all three feeds. Lowering it to the feed grain needs an `unexpected` flag on `AdmitResult` and changes what `all_feeds_failed` can mean, so it is follow-up work rather than part of this boundary; until then `unexpected_error` is what tells the run skill not to read such a site's rising counter as a plain outage.
+    - What identifies a stuck due set in a run is a shape a human reads back off the summary — errors reported while `polls` came back empty.
+      - The run skill is not asked to detect that conjunction; a human acting on the summary is the drain.
+  - The Rule-A admission keeps a whole-path grain deliberately, not by oversight: its per-feed loop guards `FetchError` only, so an unclassified raise there forfeits all three feeds.
+    - Lowering it to the feed grain needs an `unexpected` flag on `AdmitResult` and changes what `all_feeds_failed` can mean, so it is follow-up work rather than part of this boundary; until then `unexpected_error` is what tells the run skill not to read such a site's rising counter as a plain outage.
   - `_admit_or_absorb` / `_gather_or_absorb` (`cli.py`) are the outer net for what the pipeline cannot absorb itself — `admit_from_feeds` (guarded only per feed, and against `FetchError` only) and a raise outside `gather_forum`'s topic loop.
     - The two calls are guarded separately: an admission that raised must not also forfeit the Rule-B gather.
     - This level costs the site the whole path that raised.
-    - `sites[].error` carries no marker of which boundary caught a failure: neither per-site catch adds one, and a per-feed `FetchError` carries none either. Two topic-level messages do name their topic — the unclassified absorber's `topic <id>:` prefix and the dead-topic notice's `retiring dead topic <id>:` — but they mean opposite things for the worklist (the retired topic completed and is in `polls`), so the run skill reads how much a site produced off its `topics` and `polls` rather than inferring scope from the message.
+    - `sites[].error` carries no marker of which boundary caught a failure: neither per-site catch adds one, and a per-feed `FetchError` carries none either.
+      - Two topic-level messages do name their topic — the unclassified absorber's `topic <id>:` prefix and the dead-topic notice's `retiring dead topic <id>:` — but they mean opposite things for the worklist (the retired topic completed and is in `polls`), so the run skill reads how much a site produced off its `topics` and `polls` rather than inferring scope from the message.
   - Every boundary re-raises `sqlite3.Error`, the forum counterpart of the article path's `MissingPlaywrightError` carve-out: a store error is scoped to a connection, table, or lock rather than to one site or topic, so absorbing it would report one store bug as N site outages — each with a rising failure counter that escalates healthy forums to `persistent`.
     - It cannot be left to the unguarded `site_health` write to surface, because a breakage scoped to the forum tables leaves that write working.
     - `main` reports it as `error: …` with exit 1, which is the honest outcome: the disposition commands the emitted candidates feed need that same store.
   - The absorbed exception is flagged `sites[].unexpected_error`, the same typed classification the article path emits, and `discourse_fetches` is a rough figure rather than an exact total: it counts attempts, and only those a returned result carried home, so a site whose admission the per-site boundary caught reports none of the calls it made.
-  - One forum failure still has no signal of any kind: a moved domain whose old host answers the feeds 200 with a non-feed page admits nothing while reporting a wholly clean status (`AdmitResult.all_feeds_failed` keys on the fetch, not on what parsed). The article path catches the analogue with `zero_links`; the forum path needs a typed zero-admission signal, and until it has one the case is unflagged rather than compensated in skill prose — deriving it from the error text is exactly what the counter's typed-signal rule refuses.
-- **Operational notices never become notes.** The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's summary, not as feed notes.
-- **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index. `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it).
+  - One forum failure still has no signal of any kind: a moved domain whose old host answers the feeds 200 with a non-feed page admits nothing while reporting a wholly clean status (`AdmitResult.all_feeds_failed` keys on the fetch, not on what parsed).
+    - The article path catches the analogue with `zero_links`; the forum path needs a typed zero-admission signal, and until it has one the case is unflagged rather than compensated in skill prose — deriving it from the error text is exactly what the counter's typed-signal rule refuses.
+- **Operational notices never become notes.**
+  - The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's summary, not as feed notes.
+- **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index.
+  - `heal-site` (`cli.py`) re-scrapes under the new pattern and snapshots the matches as seen *before* rewriting `sites.toml` (snapshot-first / config-last, so a fetch failure never leaves a pattern with no snapshot under it).
   - The run heals only where discovery read the page the gather reads and an article cluster can be named in what came back (`kboat-feed-run` step 4), so `cmd_discover`'s plain-HTTP fetch is part of this contract rather than an implementation detail.
   - Giving that command the browser transport would make a `requires_browser` site heal-able and falsify the condition wherever it is stated — in `kboat-feed-run`, in `kboat-add-feed-site`'s browser section, and in README's "Failure and self-heal behavior".
-- **A destructive scope is never selected by omission.** `heal-site` rewrites a scrape pattern; `resnapshot-site` re-scrapes under the **stored** one and writes no config, which is the re-baseline a repointed site needs (`kboat-manage-feed-sites`). They are separate spellings rather than one command with an optional argument because both mark every match seen with `kept=NULL` and nothing un-sees a row: which one runs must never turn on an argument the caller left off.
+- **A destructive scope is never selected by omission.**
+  - `heal-site` rewrites a scrape pattern; `resnapshot-site` re-scrapes under the **stored** one and writes no config, which is the re-baseline a repointed site needs (`kboat-manage-feed-sites`).
+  - They are separate spellings rather than one command with an optional argument because both mark every match seen with `kept=NULL` and nothing un-sees a row: which one runs must never turn on an argument the caller left off.
 - **Run bounds.** Per-site cap 20 and global cap 80 on entries/candidates judged (`DEFAULT_PER_SITE_CAP` / `DEFAULT_GLOBAL_CAP` in `config.py`).
 - **Bounded per-host gather concurrency (article path).** `cmd_new_entries` fetches sites in two phases: the network-only `fetch_site` runs concurrently across hosts in a thread pool bounded at `DEFAULT_GATHER_CONCURRENCY` (16), then the DB-touching `filter_gathered` runs serially on the main thread in registry order.
   - It exists because the gather was a slow sequential sum over ~80 sites (each up to `fetch.DEFAULT_TIMEOUT`), which pushed a run past the foreground timeout and forced backgrounding.
@@ -196,8 +218,10 @@ The user-facing narrative of the observable behavior is README's "Failure and se
     - Sites sharing a host (`_gather_host_key`) are grouped into one worker and fetched **in turn**, so no host is ever hit by two concurrent requests (crawler politeness — `sites.toml` has, e.g., six `aws.amazon.com` feeds).
     - `requires_browser` sites are fetched on the main thread because Playwright's sync API is not thread-safe.
   - The concurrency collapses only the network wall-clock — it does not reorder results (round-robin is unchanged) or read the seen-store off the main thread.
-  - A fetch failure is absorbed per site, and so is an *unexpected* worker exception: it becomes that site's `error` instead of aborting the drain, so one bad site never discards the entries every other site already fetched. Isolation is per site, not per host group — a group's remaining sites are fetched after one of them raises.
-  - The absorbed exception is flagged `sites[].unexpected_error` (carried from `FetchOutcome.unexpected`), a typed classification rather than a prefix on the message — matching `AdmitResult.all_feeds_failed`'s rule below. It asserts only that the failure did not arrive as a `FetchError`/`BrowserFetchError`, not whose fault it is (a page can feed a parser something it rejects), so the run skill reports the message verbatim rather than narrating an unreachable site.
+  - A fetch failure is absorbed per site, and so is an *unexpected* worker exception: it becomes that site's `error` instead of aborting the drain, so one bad site never discards the entries every other site already fetched.
+    - Isolation is per site, not per host group — a group's remaining sites are fetched after one of them raises.
+  - The absorbed exception is flagged `sites[].unexpected_error` (carried from `FetchOutcome.unexpected`), a typed classification rather than a prefix on the message — matching `AdmitResult.all_feeds_failed`'s rule below.
+    - It asserts only that the failure did not arrive as a `FetchError`/`BrowserFetchError`, not whose fault it is (a page can feed a parser something it rejects), so the run skill reports the message verbatim rather than narrating an unreachable site.
   - What is *not* absorbed is a failure of the run rather than of a site: `MissingPlaywrightError` (an unusable browser install, which no browser site could survive) re-raises, as does any `BaseException`.
 - **Site-health escalation.** Each run is stateless, so it cannot tell a chronic outage from a one-run blip on its own.
   - `site_health.py` persists a per-site consecutive-failure counter, shared by both gather paths (source-kind-agnostic, keyed by `site_id`).
