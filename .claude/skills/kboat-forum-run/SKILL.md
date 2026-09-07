@@ -113,7 +113,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    - **Drop** (Rule B, per trigger post) → `feed-filter forum-mark-seen --site-id <id> --topic-id <topic_id> --post-id <post_id> --url '<topic_url>' --title '<title>'`.
      Records the post seen (kept=0); no note.
    - **Subagent or fetch error** on a candidate → do not silently lose it (never-lost).
-     On error, use `forum-remind` (never `forum-mark-seen`): remind with the available `title` (or `--title ""` for the URL fallback) and `--summary 'judging failed: <cause>'`.
+     On error, use `forum-remind` (never `forum-mark-seen`): remind with the available `title` (or `--title ""` for the URL fallback) and a `--summary` line saying judging failed: `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --url '<topic_url>' --title '<title or empty>' --summary 'judging failed: <cause>'`.
      For a Rule-A candidate pass `--is-op` (records the interest verdict); for a Rule-B trigger post pass its `--post-id`.
      A successful remind records the disposition, so the candidate is handed off for manual review rather than dropped and is not re-judged next run — the same never-lost-over-never-duplicated bias as the article path.
 
