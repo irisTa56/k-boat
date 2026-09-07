@@ -66,7 +66,10 @@ _CODE_INDENT = 4
 # marker and the content column is the marker's end plus one, the rest being an
 # indented code block inside the item.
 _MAX_MARKER_SPACES = 4
-_THEMATIC_BREAK = re.compile(r"^(\s*)(?:\*\s*){3,}$|^(\s*)(?:_\s*){3,}$")
+# All three spellings CommonMark gives a thematic break. `---` is also a setext
+# underline where a paragraph is open above it, and both readings end that
+# paragraph, so either way nothing is folded past this line.
+_THEMATIC_BREAK = re.compile(r"^\s*(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
 _FRONTMATTER = "---"
 
 # Exit 2, "the input isn't what this script expects", never exit 1, "a fold is
@@ -129,7 +132,11 @@ def scan(path: Path) -> list[Fold]:
     for line_no, line in enumerate(lines[start:], start + 1):
         fence_match = _FENCE.match(line)
         if fence is not None:
-            if fence_match and fence_match.group(2).startswith(fence[0] * 3):
+            closer = fence_match.group(2) if fence_match else ""
+            # A closing fence is the same character and at least as long, so a
+            # three-backtick fence inside a wrapping four-backtick one does not
+            # end it -- which is how a skill file shows a fenced example.
+            if closer and closer[0] == fence[0] and len(closer) >= len(fence):
                 fence = None
                 para_open = False
             continue
@@ -172,7 +179,9 @@ def scan(path: Path) -> list[Fold]:
         while stack and stack[-1] > indent:
             stack.pop()
         enclosing = stack[-1] if stack else 0
-        para_open = indent < enclosing + _CODE_INDENT
+        # An indented code block starts only where no paragraph is open; where
+        # one is, a deeply indented line goes on continuing it.
+        para_open = para_open or indent < enclosing + _CODE_INDENT
 
     return folds
 
@@ -207,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
     for path in paths:
         try:
             folds += scan(path)
+        except UnicodeDecodeError as exc:
+            print(f"md_fold: {path} is not UTF-8 text: {exc}", file=sys.stderr)
+            return _EXIT_MALFORMED
         except OSError as exc:
             print(f"md_fold: cannot read {path}: {exc}", file=sys.stderr)
             return _EXIT_MALFORMED

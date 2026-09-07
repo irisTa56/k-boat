@@ -130,6 +130,53 @@ def test_fenced_code_is_not_scanned(tmp_path: Path) -> None:
     )
 
 
+def test_a_shorter_inner_fence_does_not_close_a_longer_one(tmp_path: Path) -> None:
+    # How a skill file shows a fenced example: four backticks around three. The
+    # inner block's contents are content, not markdown to scan.
+    assert (
+        _scan(
+            tmp_path,
+            "````markdown\n```text\n- outer item\n  - deeper child\n  stray line\n```\n````\n",
+        )
+        == []
+    )
+
+
+def test_a_fence_of_equal_length_does_close(tmp_path: Path) -> None:
+    # The other half of the same rule: past the close, scanning resumes.
+    folds = _scan(
+        tmp_path,
+        "```text\nnot scanned\n```\n\n- outer item\n  - deeper child\n  stray line\n",
+    )
+    assert [fold.line_no for fold in folds] == [7]
+
+
+def test_every_thematic_break_spelling_interrupts(tmp_path: Path) -> None:
+    # CommonMark spells it three ways; missing one reports an unfixable fold.
+    for rule in ("---", "***", "___", "- - -"):
+        assert _scan(tmp_path, f"- outer item\n  - deeper child\n  {rule}\n") == [], rule
+
+
+def test_a_deeply_indented_line_continues_an_open_paragraph(tmp_path: Path) -> None:
+    # An indented code block starts only where no paragraph is open. Treating
+    # this one as code would close the child's paragraph and hide the fold on
+    # the line after it, which pandoc puts inside that child.
+    folds = _scan(
+        tmp_path,
+        "- outer item\n  - deeper child\n        deeply indented continuation\n  stray for outer\n",
+    )
+    assert [fold.line_no for fold in folds] == [4]
+
+
+def test_main_exits_two_on_a_file_that_is_not_utf8(tmp_path: Path, capsys) -> None:
+    # A `ValueError`, so it escapes the `OSError` catch and would otherwise exit
+    # 1 — the code reserved for "a fold is there".
+    path = tmp_path / "latin1.md"
+    path.write_bytes("- outer item\n  caf\xe9\n".encode("latin-1"))
+    assert md_fold.main([str(path)]) == md_fold._EXIT_MALFORMED
+    assert "not UTF-8 text" in capsys.readouterr().err
+
+
 def test_frontmatter_dashes_are_not_list_markers(tmp_path: Path) -> None:
     # A skill file opens with `---`; without skipping it, the closing delimiter
     # would read as a list marker and every later line as its content.
