@@ -64,9 +64,15 @@ run = "notebooklm auth check --test --json"
 description = "Run all pre-commit checks"
 depends = ["qa:**"]
 
+# Two checks, because `rumdl` cannot make the second: a lazily-continued line is
+# well-formed markdown line by line, and what is wrong about it is only which
+# block it lands in. `scripts/md_fold.py` has the mechanism and the remedy.
 [tasks."qa:md"]
 description = "Lint markdown files"
-run = "rumdl check"
+run = """
+rumdl check
+uv run python scripts/md_fold.py
+"""
 
 [tasks."qa:secrets"]
 description = "Scan staged changes for secrets"

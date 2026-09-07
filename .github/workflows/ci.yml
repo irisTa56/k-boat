@@ -98,6 +98,10 @@ jobs:
       # pins the action's own code, not the `rumdl` binary version it installs
       # (see the header comment). It auto-detects .rumdl.toml at the root.
       - uses: rvben/rumdl@v0.2.62
+      # The one markdown fault rumdl cannot see, mirroring mise's `qa:md`. The
+      # script is stdlib-only, so the runner's own interpreter runs it with no
+      # setup step -- `qa:md` reaches the same script through `uv run python`.
+      - run: python3 scripts/md_fold.py
 
   secret-scan:
     runs-on: ubuntu-latest
