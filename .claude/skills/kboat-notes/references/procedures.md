@@ -267,28 +267,56 @@ That population — a notebook deleted out of band, its `notebooklm_id` left poi
 Reactivation's own transient ending returns a source here holding neither notebook nor queue file, the only such arrival this procedure makes itself.
 It is no new population, though: it is one of these same sources retrying, mid-procedure (see step 2).
 The note and, for a PDF, its `PDFs/<slug>.pdf` remain; reading needs no notebook (open `reading_link` in Obsidian), only AI dialogue or distillation does.
-Do it in this order, so the source is never in a dangerous intermediate state:
+Do it in this order, so the source is never in a dangerous intermediate state.
 
-1. **Reset the state first — before re-creating the notebook.** Clear `filed_date`, and clear every disposition standing on the source **except** `distill` where `distilled_date` stands. `distill` and `distilled_date` move together: clear both for a re-distillation (the stamp otherwise keeps the source out of the ripe set), or leave both. Leaving `distill` set on an already-distilled source is safe — `distilled_date` is what keeps it out of the ripe set, so nothing destructive can reach it — and clearing the flag while the stamp stands is the `distilled_without_distill` violation, reported on every run until a human puts the flag back. Order matters: if the notebook were re-created while a destructive disposition and an already-elapsed `filed_date` still stood, the next routine run could discard the fresh notebook before you finished. Clear them whatever their provenance, not just the disposition that discarded the notebook: a source that never had one usably built discarded nothing, but it rests in the inbox where a human may since have checked `distill`, and `filed_date` counts from that check — so its cooldown can have elapsed long before you get here. With the dispositions cleared the source is momentarily back in the inbox, which is harmless; where `distill` stayed it is not back in the inbox at all, which is equally harmless — the notebook it is about to get is what this procedure is for, not the inbox.
-2. **Re-create the notebook.** If the source still carries a `notebooklm_id`, discard that notebook first (see [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook)) — whatever has become of the notebook it names, and whichever population put it there: an ordinary post-ingest discard, reading the id off the note and clearing the coordinates with it. Do it before the rebuild rather than after, because the rebuild overwrites that id with the new notebook's. Discarding afterwards would then read the new id and delete the notebook just built — recoverable, since re-running gets another. What is not is the notebook the old id pointed at: overwritten, it is referenced by nothing and no vault check can ever see it again, the leak this procedure guards against everywhere else. Discarding first leaves every source here with no notebook, which is what the rest of this step takes for granted. Then re-run the matching ingest procedure's notebook step on the stored source — **step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)** for a web page, **step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source)** for a PDF — and run it whole. The note already holds everything that step reads (the `url`, the `title`, and for a PDF the file), and its write-back merges over the note, so nothing it does needs changing here. Restating a recipe instead would drift from it, and — restating the happy path, as a recipe does — would leave a failed reactivation with no ending at all. Those endings are what this step needs most: the ones that discard do so **passing the id `create` returned**, which is exactly right here, since the notebook this step just made is referenced by nothing — by the time it runs the note's `notebooklm_id` is empty whichever population this is, cleared by the discard that ended the source's last life, cleared just above, or never written at all — so a discard that read the note would find it empty and leak the notebook.
+### Step 1: reset the state first, before re-creating the notebook
 
-   The endings hold as that step writes them, the DLQ among them: a web `url` that has gone walled at any point since the first ingest is the DLQ's own case, and `blocked: true` is what returns the source to `kboat-rescue`'s reach.
-   Only the **queue file** does not carry over, wherever an ending mentions one — kboat-ingest keeps it on a transient failure, deletes it on the PDF `error` branch, deletes it when recording a DLQ entry.
-   The queue file is the queue item ingest was draining, and reactivation starts from a note long past that, so there is none to keep or delete.
-   Nothing else changes: a transient ending still discards the notebook and leaves the note where step 1 put it, without one, so report it and re-run this procedure rather than wait for a run that will not come.
+Clear `filed_date`, and clear every disposition standing on the source **except** `distill` where `distilled_date` stands.
+`distill` and `distilled_date` move together: clear both for a re-distillation (the stamp otherwise keeps the source out of the ripe set), or leave both.
+Leaving `distill` set on an already-distilled source is safe — `distilled_date` is what keeps it out of the ripe set, so nothing destructive can reach it — and clearing the flag while the stamp stands is the `distilled_without_distill` violation, reported on every run until a human puts the flag back.
+Order matters: if the notebook were re-created while a destructive disposition and an already-elapsed `filed_date` still stood, the next routine run could discard the fresh notebook before you finished.
+Clear them whatever their provenance, not just the disposition that discarded the notebook: a source that never had one usably built discarded nothing, but it rests in the inbox where a human may since have checked `distill`, and `filed_date` counts from that check — so its cooldown can have elapsed long before you get here.
+With the dispositions cleared the source is momentarily back in the inbox, which is harmless; where `distill` stayed it is not back in the inbox at all, which is equally harmless — the notebook it is about to get is what this procedure is for, not the inbox.
 
-   Step 3 below belongs to the one ending that gives reactivation what it is for: a notebook whose original source has **usable text**, which is what dialogue and distillation, the two the opener above turns on, both need.
-   Stop at every other ending, reporting where the source landed instead of choosing a disposition on it.
-   Two are worth naming.
+### Step 2: re-create the notebook
 
-   - A **DLQ** ending leaves the source for `kboat-rescue`, and a disposition set on it would sit inert until the rescue clears `blocked`.
-   - A PDF's **empty or garbled extraction** is the ending most easily mistaken for success: it reaches `ready`, keeps its notebook, and records a `notebooklm_id`. Judge it by usable text, not by any text — a garbled extraction has plenty, and it clears a "has text" gate while carrying neither dialogue nor distillation, exactly as an empty one does. Never set `distill` on either, and read step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source) for what that would trap: it owns both the trap and the remedy, a text-bearing copy rather than the `error` branch's different-or-re-exported one.
+If the source still carries a `notebooklm_id`, discard that notebook first (see [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook)) — whatever has become of the notebook it names, and whichever population put it there: an ordinary post-ingest discard, reading the id off the note and clearing the coordinates with it.
+Do it before the rebuild rather than after, because the rebuild overwrites that id with the new notebook's.
+Discarding afterwards would then read the new id and delete the notebook just built — recoverable, since re-running gets another.
+What is not is the notebook the old id pointed at: overwritten, it is referenced by nothing and no vault check can ever see it again, the leak this procedure guards against everywhere else.
+Discarding first leaves every source here with no notebook, which is what the rest of this step takes for granted.
+Then re-run the matching ingest procedure's notebook step on the stored source — **step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)** for a web page, **step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source)** for a PDF — and run it whole.
+The note already holds everything that step reads (the `url`, the `title`, and for a PDF the file), and its write-back merges over the note, so nothing it does needs changing here.
+Restating a recipe instead would drift from it, and — restating the happy path, as a recipe does — would leave a failed reactivation with no ending at all.
+Those endings are what this step needs most: the ones that discard do so **passing the id `create` returned**, which is exactly right here, since the notebook this step just made is referenced by nothing — by the time it runs the note's `notebooklm_id` is empty whichever population this is, cleared by the discard that ended the source's last life, cleared just above, or never written at all — so a discard that read the note would find it empty and leak the notebook.
 
-   Two sources arrive here needing more than a re-run:
+The endings hold as that step writes them, the DLQ among them: a web `url` that has gone walled at any point since the first ingest is the DLQ's own case, and `blocked: true` is what returns the source to `kboat-rescue`'s reach.
+Only the **queue file** does not carry over, wherever an ending mentions one — kboat-ingest keeps it on a transient failure, deletes it on the PDF `error` branch, deletes it when recording a DLQ entry.
+The queue file is the queue item ingest was draining, and reactivation starts from a note long past that, so there is none to keep or delete.
+Nothing else changes: a transient ending still discards the notebook and leaves the note where step 1 put it, without one, so report it and re-run this procedure rather than wait for a run that will not come.
 
-   - A **web source originally rescued** from the DLQ keeps its walled `url`, so the re-fetch gets the wall and the article check records it blocked again. That is its way back to `kboat-rescue`, not a wasted trip — rescue takes only a `blocked` source, so nothing else can put it within reach of the fresh browser capture it needs — but expect the DLQ rather than a notebook.
-   - A **PDF whose file is why its notebook failed** — from an `error` branch, or from an empty or garbled extraction — still holds at `PDFs/<slug>.pdf` the very bytes that failed, so re-adding it unchanged fails the same way. Replace that file first — which copy depends on the diagnosis, per the ending above — and confirm the replacement landed before running this, because nothing downstream will tell you it did not: step 5's verify asks only whether the file is a PDF, which the old one also is, so an unreplaced original sails through it and fails exactly as it failed before. Until such a copy exists there is nothing here to reactivate, which is why those endings send the human for one rather than straight here.
-3. **Choose the new disposition.** `keep` to hold the notebook going forward, or `distill` (optionally `distill` + `keep`) to distil — re-distil, for a source that already was. Where step 1 left `distill` and `distilled_date` standing, adding `keep` beside them is the whole change; do not clear `distill`. Step 1 cleared `filed_date`, so the routine re-stamps it and the cooldown counts fresh.
+Step 3 below belongs to the one ending that gives reactivation what it is for: a notebook whose original source has **usable text**, which is what dialogue and distillation, the two the opener above turns on, both need.
+Stop at every other ending, reporting where the source landed instead of choosing a disposition on it.
+Two are worth naming.
+
+- A **DLQ** ending leaves the source for `kboat-rescue`, and a disposition set on it would sit inert until the rescue clears `blocked`.
+- A PDF's **empty or garbled extraction** is the ending most easily mistaken for success: it reaches `ready`, keeps its notebook, and records a `notebooklm_id`.
+  - Judge it by usable text, not by any text — a garbled extraction has plenty, and it clears a "has text" gate while carrying neither dialogue nor distillation, exactly as an empty one does.
+  - Never set `distill` on either, and read step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source) for what that would trap: it owns both the trap and the remedy, a text-bearing copy rather than the `error` branch's different-or-re-exported one.
+
+Two sources arrive here needing more than a re-run:
+
+- A **web source originally rescued** from the DLQ keeps its walled `url`, so the re-fetch gets the wall and the article check records it blocked again.
+  - That is its way back to `kboat-rescue`, not a wasted trip — rescue takes only a `blocked` source, so nothing else can put it within reach of the fresh browser capture it needs — but expect the DLQ rather than a notebook.
+- A **PDF whose file is why its notebook failed** — from an `error` branch, or from an empty or garbled extraction — still holds at `PDFs/<slug>.pdf` the very bytes that failed, so re-adding it unchanged fails the same way.
+  - Replace that file first — which copy depends on the diagnosis, per the ending above — and confirm the replacement landed before running this, because nothing downstream will tell you it did not: step 5's verify asks only whether the file is a PDF, which the old one also is, so an unreplaced original sails through it and fails exactly as it failed before.
+  - Until such a copy exists there is nothing here to reactivate, which is why those endings send the human for one rather than straight here.
+
+### Step 3: choose the new disposition
+
+`keep` to hold the notebook going forward, or `distill` (optionally `distill` + `keep`) to distil — re-distil, for a source that already was.
+Where step 1 left `distill` and `distilled_date` standing, adding `keep` beside them is the whole change; do not clear `distill`.
+Step 1 cleared `filed_date`, so the routine re-stamps it and the cooldown counts fresh.
 
 ## Procedure: record a blocked source (DLQ)
 
