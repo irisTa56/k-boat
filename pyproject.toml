@@ -11,11 +11,18 @@ dev = [
     "ruff>=0.16.0",
     "ty>=0.0.65",
     "playwright",
-    # Tests only, never imported by the package: an independent oracle for the
-    # frontmatter round-trip. `kboat.frontmatter` is a scanner, not a parser, so
-    # asserting a rewritten note against it would let it grade its own homework —
-    # output that is no longer YAML re-scans to the same entries.
+    # Tests and tooling, never imported by a package. In the tests: an independent
+    # oracle for the frontmatter round-trip — `kboat.frontmatter` is a scanner, not
+    # a parser, so asserting a rewritten note against it would let it grade its own
+    # homework, output that is no longer YAML re-scanning to the same entries. In
+    # `scripts/md_shape.py`: whether a file's opening `---` begins frontmatter to
+    # skip or a thematic break to read, a question its `_without_frontmatter` says
+    # why that module does not answer itself.
     "pyyaml",
+    # Tooling only, never imported by a package: the CommonMark parser
+    # `scripts/md_shape.py` reads block structure from, rather than classifying
+    # lines itself. Its module docstring says why that is not optional.
+    "markdown-it-py",
 ]
 
 # The one ruff config for every workspace member: same coding style everywhere.

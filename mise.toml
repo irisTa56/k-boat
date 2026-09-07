@@ -64,9 +64,16 @@ run = "notebooklm auth check --test --json"
 description = "Run all pre-commit checks"
 depends = ["qa:**"]
 
+# Two commands, because `rumdl` cannot make the second check -- the house rule
+# and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
+# That script parses with `markdown-it-py`, so it runs under `uv run` to reach
+# the workspace venv rather than whatever `python` the PATH lands on.
 [tasks."qa:md"]
 description = "Lint markdown files"
-run = "rumdl check"
+run = """
+rumdl check
+uv run python scripts/md_shape.py
+"""
 
 [tasks."qa:secrets"]
 description = "Scan staged changes for secrets"
@@ -100,11 +107,11 @@ uv run python ../../scripts/coverage_floor.py coverage.json
 """
 
 # `scripts/` is flat tooling, not a workspace member (no `pyproject.toml` of its
-# own, no `--cov-fail-under`) -- but `coverage_floor.py` gates every `qa:py:*`
-# run, so it gets the same lint/type/test commands rather than being the one
-# ungated piece of the gate.
+# own, no `--cov-fail-under`) -- but every script in it gates something (the
+# coverage floor, the markdown shape check), so it gets the same lint/type/test
+# commands rather than being the one ungated piece of the gate.
 [tasks."qa:py:scripts"]
-description = "Lint, type-check, and test the coverage-floor script"
+description = "Lint, type-check, and test the scripts/ tooling"
 run = """
 uv run ruff check scripts
 uv run ruff format --check scripts
@@ -133,7 +140,7 @@ uv run ruff format
 """
 
 [tasks."fmt:py:scripts"]
-description = "Autofix coverage-floor script lint and formatting"
+description = "Autofix scripts/ tooling lint and formatting"
 run = """
 uv run ruff check --fix scripts
 uv run ruff format scripts

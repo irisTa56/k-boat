@@ -1,6 +1,6 @@
 ---
 name: kboat-rescue
-description: Work a blocked (DLQ) K-Boat source to one of its two exits: pull a bot-protected PDF or walled page through the real browser and finish ingesting it, or abandon one whose content cannot be had. It also handles the one browser errand that is not a rescue — putting a walled article back into a notebook whose original vanished, which notebook-health reports but cannot do unattended. Use when the user wants to complete a source ingest left blocked ("the Medium article is walled", "fetch <slug>"), or to give one up ("that URL is dead"). Interactive and Mac-only: it drives the user's Chrome and may ask for a CAPTCHA or a sign-in.
+description: 'Work a blocked (DLQ) K-Boat source to one of its two exits: pull a bot-protected PDF or walled page through the real browser and finish ingesting it, or abandon one whose content cannot be had. It also handles the one browser errand that is not a rescue — putting a walled article back into a notebook whose original vanished, which notebook-health reports but cannot do unattended. Use when the user wants to complete a source ingest left blocked ("the Medium article is walled", "fetch <slug>"), or to give one up ("that URL is dead"). Interactive and Mac-only: it drives the user''s Chrome and may ask for a CAPTCHA or a sign-in.'
 ---
 
 # K-Boat rescue (DLQ → ingested, or given up)

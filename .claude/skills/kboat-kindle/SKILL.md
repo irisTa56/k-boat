@@ -1,6 +1,6 @@
 ---
 name: kboat-kindle
-description: Ingest a Kindle book into the K-Boat vault from its reader URL. Use when the user wants to add a book they read (or are reading) on Kindle, or pastes a `https://read.amazon.co.jp/?asin=...` URL (or a bare ASIN) and says things like "add this book", "ingest this Kindle title", "save this to my Kindle shelf". Interactive and Mac-only: it reads the book's metadata from Amazon through the user's logged-in Chrome (Claude in Chrome). Defers to kboat-notes for the Kindle-note schema and the create transitions.
+description: 'Ingest a Kindle book into the K-Boat vault from its reader URL. Use when the user wants to add a book they read (or are reading) on Kindle, or pastes a `https://read.amazon.co.jp/?asin=...` URL (or a bare ASIN) and says things like "add this book", "ingest this Kindle title", "save this to my Kindle shelf". Interactive and Mac-only: it reads the book''s metadata from Amazon through the user''s logged-in Chrome (Claude in Chrome). Defers to kboat-notes for the Kindle-note schema and the create transitions.'
 ---
 
 # K-Boat Kindle ingest
