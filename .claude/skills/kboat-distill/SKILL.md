@@ -20,28 +20,39 @@ Every Basic Memory call (`search_notes`, `write_note`, `edit_note`) must pass `p
 Run `eval "$(mise env)"` at the top of every shell block here (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it loads `.env` over the `mise.toml` defaults and puts the venv on `PATH`, so `notebooklm`, `kboat-lifecycle`, `kboat-concept`, and `$OBSIDIAN_VAULT_PATH` resolve bare.
 The Bash tool keeps no shell state between calls, so re-run it in each block.
 
-1. Run `notebooklm auth refresh`.
-   - If auth is unusable afterward, STOP and report rather than processing.
-2. Probe Basic Memory once with `search_notes(project="k-boat-knowledge", …)`.
-   - If the `k-boat-knowledge` project does not exist, the knowledge layer is not set up: **STOP the whole run** and report (create the project first; see README).
-     - Phase B's notebook discards are destructive, so do not run them before the durable store exists.
-   - If the project exists but the call fails (Basic Memory runtime down), run Phase A but **skip Phase B and Phase C entirely** and report it.
-     - Phase B's only destructive act is discarding notebooks, and Phase C only writes concept notes (which needs Basic Memory anyway); deferring both to a healthy day loses nothing, since ingest still runs.
-3. Run the deterministic lifecycle pass: `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
-   - This single tool does the whole mechanical core — what used to be hand-evaluated frontmatter logic — so the model never reads every note or does the date math:
+### Step 1: refresh NotebookLM auth
 
-     - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
-       - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
-       - (Pass `--dry-run` to compute without writing — for inspection only.)
-     - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse or are not the expected `type`).
-       - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
-       - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
-     - It **excludes `blocked` (DLQ) sources from both phases**, mechanically and whatever the note carries, so one is never stamped, flagged, or listed even if a human checked a disposition on it by mistake.
-       - Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: an entry re-captured after a successful ingest keeps its notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
+Run `notebooklm auth refresh`.
 
-   Parse this JSON; it is the work list for the rest of the run.
-   The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
-   If the tool is unavailable, fall back to evaluating those predicates by hand over `Sources/*.md`.
+- If auth is unusable afterward, STOP and report rather than processing.
+
+### Step 2: probe Basic Memory
+
+Probe it once with `search_notes(project="k-boat-knowledge", …)`.
+
+- If the `k-boat-knowledge` project does not exist, the knowledge layer is not set up: **STOP the whole run** and report (create the project first; see README).
+  - Phase B's notebook discards are destructive, so do not run them before the durable store exists.
+- If the project exists but the call fails (Basic Memory runtime down), run Phase A but **skip Phase B and Phase C entirely** and report it.
+  - Phase B's only destructive act is discarding notebooks, and Phase C only writes concept notes (which needs Basic Memory anyway); deferring both to a healthy day loses nothing, since ingest still runs.
+
+### Step 3: run the deterministic lifecycle pass
+
+Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
+
+- This single tool does the whole mechanical core — what used to be hand-evaluated frontmatter logic — so the model never reads every note or does the date math:
+
+  - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
+    - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
+    - (Pass `--dry-run` to compute without writing — for inspection only.)
+  - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse or are not the expected `type`).
+    - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
+    - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
+  - It **excludes `blocked` (DLQ) sources from both phases**, mechanically and whatever the note carries, so one is never stamped, flagged, or listed even if a human checked a disposition on it by mistake.
+    - Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: an entry re-captured after a successful ingest keeps its notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
+
+Parse this JSON; it is the work list for the rest of the run.
+The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
+If the tool is unavailable, fall back to evaluating those predicates by hand over `Sources/*.md`.
 
 ## Phase A: maintain the cooldown clock
 
@@ -77,45 +88,68 @@ The ripe predicate the tool applied — `distill`, unambiguous, past the 7-day c
 Process each `phase_b.ripe` source in this exact order.
 The order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
-1. **Resolve the notebook.** Take `notebooklm_id` from the ripe entry (the tool read it from the source note).
-   - Run `notebooklm --quiet list --json 2>/dev/null`; if the id is absent, record it as an anomaly in the run summary and skip this source without stamping or discarding.
-     - **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
-     - Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
-     - The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
-     - This is the same contract as an original-source extraction error in step 3.
-2. **Resolve the sources.** Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment): the warning it hides fires on exactly the notebooks holding saved dialogue, which this step is about).
-   - If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
-   - The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, a note / "unknown" type, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
-   - Identify the original (see kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11)): for a `pdf`, the source with `type: pdf`; for a `web_page`, the source whose `url` matches the note's `url`, or — where that source has `url: null`, a rescued page added as text — whose `title` matches the note's `title`.
-     - Take its id as the grounded authority, and treat **every other source as saved dialogue** to extract in step 3.
-     - If nothing matches, report that the original could not be identified and list what the notebook does hold, then skip this source without stamping or discarding.
-       - Report it **for the notebook-health step**, which runs later in the routine and takes exactly this source (`kboat-notebook-health`, "Scope"): the original went missing out of a notebook that is still there, so it is added back in place rather than rebuilt, and the source stays ripe and distils on a later run with its `distill` disposition and its elapsed cooldown intact.
-       - Do not carry step 1's pointer across — that one is for a notebook that is gone, and this notebook is not.
-   - `fulltext` is keyed by source id.
-3. **Extract** (read-only, safe to repeat).
+### Step 1: resolve the notebook
 
-   Only an extraction error on the **original** source aborts this source — do not stamp, do not discard; record the error in the run summary and continue to the next source.
-   Errors on the other extractions below — saved dialogue notes, `history`, `summary` — are non-fatal: record them in the run summary and continue, do not abort.
+Take `notebooklm_id` from the ripe entry (the tool read it from the source note).
 
-   - **Original content (grounded)**: write the full text of the **original** source (the id resolved in step 2) to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <notebooklm_id> -o <tmpfile>`, then read it.
-     - Use `-o`, not stdout (which truncates at 2000 chars); avoid `-f markdown` (it needs the `markdownify` package, which is not installed, so it errors out).
-     - Confirm the file is a successful fetch (see kboat-notes: the real content — for a web page not empty or a wall, for a PDF not empty or garbled extraction); if not, abort this source as a fetch failure and report it in the run summary.
-     - This is the `#grounded` authority.
-   - **Saved dialogue notes (dialogue)**: for each *other* source from step 2 (reading-time dialogue you saved into the notebook), `fulltext` it the same way and read it.
-     - Its content is dialogue, not the source — treat its claims as dialogue-origin: vet each per the accretion policy's dialogue handling (keep as-is, correct, or drop) before accreting, and key its provenance to the **original** source's `url`.
-     - Skip any note that won't extract and report it in the run summary (non-fatal, per the opener).
-     - There may be zero such notes.
-   - `notebooklm --quiet history --notebook <notebooklm_id> --json` — reading-time dialogue left in the chat (may be empty when you saved it as notes instead).
-     - The dialogue happens through the Gemini UI, which grounds answers in the notebook source but **also draws on web and world knowledge**, citing the sources it used.
-     - Keep those citations: a cited claim is source-grounded, an uncited one is external, and the accretion policy treats them differently.
-   - `notebooklm --quiet summary --notebook <notebooklm_id>` — NotebookLM's own summary (text only; no `--json`).
-4. **Distill into Basic Memory** following the accretion policy below.
-5. **Write the review report** section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
-   - Written before the discard, so the extracted material survives even if the discard fails.
-6. **Stamp `distilled_date`** with today's date on the source note.
-   - This is the commit point; after it the source leaves the ripe set.
-7. **Discard the notebook** (see kboat-notes) — **unless `keep` is also set**, in which case retain it and note the retention in the run summary instead.
-   - When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
+- Run `notebooklm --quiet list --json 2>/dev/null`; if the id is absent, record it as an anomaly in the run summary and skip this source without stamping or discarding.
+  - **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
+  - Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
+  - The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
+  - This is the same contract as an original-source extraction error in step 3.
+
+### Step 2: resolve the sources
+
+Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment): the warning it hides fires on exactly the notebooks holding saved dialogue, which this step is about).
+
+- If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
+- The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, a note / "unknown" type, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
+- Identify the original (see kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11)): for a `pdf`, the source with `type: pdf`; for a `web_page`, the source whose `url` matches the note's `url`, or — where that source has `url: null`, a rescued page added as text — whose `title` matches the note's `title`.
+  - Take its id as the grounded authority, and treat **every other source as saved dialogue** to extract in step 3.
+  - If nothing matches, report that the original could not be identified and list what the notebook does hold, then skip this source without stamping or discarding.
+    - Report it **for the notebook-health step**, which runs later in the routine and takes exactly this source (`kboat-notebook-health`, "Scope"): the original went missing out of a notebook that is still there, so it is added back in place rather than rebuilt, and the source stays ripe and distils on a later run with its `distill` disposition and its elapsed cooldown intact.
+    - Do not carry step 1's pointer across — that one is for a notebook that is gone, and this notebook is not.
+- `fulltext` is keyed by source id.
+
+### Step 3: extract (read-only, safe to repeat)
+
+Only an extraction error on the **original** source aborts this source — do not stamp, do not discard; record the error in the run summary and continue to the next source.
+Errors on the other extractions below — saved dialogue notes, `history`, `summary` — are non-fatal: record them in the run summary and continue, do not abort.
+
+- **Original content (grounded)**: write the full text of the **original** source (the id resolved in step 2) to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <notebooklm_id> -o <tmpfile>`, then read it.
+  - Use `-o`, not stdout (which truncates at 2000 chars); avoid `-f markdown` (it needs the `markdownify` package, which is not installed, so it errors out).
+  - Confirm the file is a successful fetch (see kboat-notes: the real content — for a web page not empty or a wall, for a PDF not empty or garbled extraction); if not, abort this source as a fetch failure and report it in the run summary.
+  - This is the `#grounded` authority.
+- **Saved dialogue notes (dialogue)**: for each *other* source from step 2 (reading-time dialogue you saved into the notebook), `fulltext` it the same way and read it.
+  - Its content is dialogue, not the source — treat its claims as dialogue-origin: vet each per the accretion policy's dialogue handling (keep as-is, correct, or drop) before accreting, and key its provenance to the **original** source's `url`.
+  - Skip any note that won't extract and report it in the run summary (non-fatal, per the opener).
+  - There may be zero such notes.
+- `notebooklm --quiet history --notebook <notebooklm_id> --json` — reading-time dialogue left in the chat (may be empty when you saved it as notes instead).
+  - The dialogue happens through the Gemini UI, which grounds answers in the notebook source but **also draws on web and world knowledge**, citing the sources it used.
+  - Keep those citations: a cited claim is source-grounded, an uncited one is external, and the accretion policy treats them differently.
+- `notebooklm --quiet summary --notebook <notebooklm_id>` — NotebookLM's own summary (text only; no `--json`).
+
+### Step 4: distill into Basic Memory
+
+Follow the accretion policy below.
+
+### Step 5: write the review report
+
+Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
+
+- Written before the discard, so the extracted material survives even if the discard fails.
+
+### Step 6: stamp `distilled_date`
+
+Stamp it with today's date on the source note.
+
+- This is the commit point; after it the source leaves the ripe set.
+
+### Step 7: discard the notebook
+
+Discard it (see kboat-notes) — **unless `keep` is also set**, in which case retain it and note the retention in the run summary instead.
+
+- When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
 
 A crash anywhere in 1–5 leaves the source ripe and replayable.
 A crash between 6 and 7 leaves a notebook to clean up later, never lost data.
