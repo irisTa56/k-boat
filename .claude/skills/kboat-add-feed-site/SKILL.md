@@ -27,55 +27,65 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 ## Procedure (article site)
 
-1. **Discover.** Run `eval "$(mise env)" && feed-filter discover <url>`.
+### Step 1: Discover
 
-   The output is `{candidates: [...], rejection: {reason, message} | null}`.
+Run `eval "$(mise env)" && feed-filter discover <url>`.
 
-   - **Non-zero exit** → discovery did not complete.
-     - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
-   - **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
-     - `needs_js` → an HTML page whose links did not cluster into articles.
-       - A JavaScript-rendered index is the common cause, and an anti-bot interstitial served as an ordinary page reaches it too, so do not relay JavaScript to the user as the established cause.
-       - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
-     - `no_article_clusters` → no feed and no article-shaped link cluster was found.
-       - Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
-     - `no_html_body` → a body with nothing in it, or one the server did not label as HTML, so discovery stopped before the clustering step and has established nothing about the page's article links.
-       - Ask the user for a URL that serves the site's articles as HTML — its article-listing page, or a feed — and re-run discovery on that.
-       - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
-     - `unparseable_body` → the body had content and was labelled HTML, but the parser refused it, so discovery established nothing about the page's article links.
-       - Ask the user for a different URL that serves the site's articles — its article-listing page, or a feed — and re-run discovery on that.
-       - Where they have none, report that this URL cannot be registered from what discovery has, and stop: the rejection carries no candidate, so there is no `article_url_pattern` to register with, and `add-site` rejects a scrape site that has none.
-       - Never write a pattern of your own here: the parser refused the body, so nothing is known about the page's links to write one from.
-   - Otherwise you have one or more `candidates`.
+The output is `{candidates: [...], rejection: {reason, message} | null}`.
 
-2. **Pick the candidate.**
-   - **Prefer a feed candidate** (`feed_type == "feed"`) when one exists — feeds carry titles and summaries, so the run is cheaper and more accurate.
-     - If several feeds surface, prefer the one whose `entry_count` and `sample_urls` look like the main article feed (not a comments or tag feed).
-   - **Otherwise choose a scrape cluster.** Each scrape candidate carries `index_url`, `article_url_pattern`, and up to five `sample_urls`.
-     - Inspect the `sample_urls` and pick the cluster whose URLs are real articles, not navigation, tags, or pagination.
-       - Discovery already drops shallow nav clusters, but it emits every survivor — the judgment of which cluster is *the* article cluster is yours.
-       - Spinning up a subagent to eyeball the samples is at your discretion, not required.
-   - If no candidate looks like real articles, do **not** guess — tell the user what was found and ask for a better listing URL.
+- **Non-zero exit** → discovery did not complete.
+  - Relay the error line as it stands and stop, rather than naming a cause: it says whether an HTTP status came back, and nothing about why.
+- **`rejection` is set** (exit 0, no usable candidate) → take the next step from `reason` alone and never from the `message` wording, and relay that message to the user instead of proceeding:
+  - `needs_js` → an HTML page whose links did not cluster into articles.
+    - A JavaScript-rendered index is the common cause, and an anti-bot interstitial served as an ordinary page reaches it too, so do not relay JavaScript to the user as the established cause.
+    - Either ask for a server-rendered alternative URL (a feed link or a plain archive page), or — if the user wants this exact page as a scrape site — retry registration through the opt-in browser path with `--requires-browser` (see "Sites that need a browser" below).
+  - `no_article_clusters` → no feed and no article-shaped link cluster was found.
+    - Ask the user to point at the site's article-listing/archive page (e.g. `/blog`, `/posts`, `/news`) rather than its landing page, and re-run discovery on that.
+  - `no_html_body` → a body with nothing in it, or one the server did not label as HTML, so discovery stopped before the clustering step and has established nothing about the page's article links.
+    - Ask the user for a URL that serves the site's articles as HTML — its article-listing page, or a feed — and re-run discovery on that.
+    - Where they say the URL they gave already is that page, stop and report that the response it returns carries nothing discovery can read articles from, rather than asking again.
+  - `unparseable_body` → the body had content and was labelled HTML, but the parser refused it, so discovery established nothing about the page's article links.
+    - Ask the user for a different URL that serves the site's articles — its article-listing page, or a feed — and re-run discovery on that.
+    - Where they have none, report that this URL cannot be registered from what discovery has, and stop: the rejection carries no candidate, so there is no `article_url_pattern` to register with, and `add-site` rejects a scrape site that has none.
+    - Never write a pattern of your own here: the parser refused the body, so nothing is known about the page's links to write one from.
+- Otherwise you have one or more `candidates`.
 
-3. **Choose an id and name.**
-   - `--id` is a short, stable, unique slug (e.g. the domain stem, like `example-blog` for `example-blog.com`).
-     - It keys the seen-store and self-heal, so it must not collide with an existing site — run `feed-filter list-sites` if unsure.
-   - `--name` is a human-readable label for the site (used in the notes/summaries).
+### Step 2: Pick the candidate
 
-4. **Register.** Run the matching form:
-   - **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
-   - **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern '<article_url_pattern>'`
-     - Quote the pattern, so the shell does not take its backslashes out — the mangled regex still compiles, so the site registers and matches nothing.
-     - A pattern taken from discovery's output arrives JSON-doubled and has to be unescaped as well; one you wrote yourself is already the value to pass.
-   - Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
+- **Prefer a feed candidate** (`feed_type == "feed"`) when one exists — feeds carry titles and summaries, so the run is cheaper and more accurate.
+  - If several feeds surface, prefer the one whose `entry_count` and `sample_urls` look like the main article feed (not a comments or tag feed).
+- **Otherwise choose a scrape cluster.** Each scrape candidate carries `index_url`, `article_url_pattern`, and up to five `sample_urls`.
+  - Inspect the `sample_urls` and pick the cluster whose URLs are real articles, not navigation, tags, or pagination.
+    - Discovery already drops shallow nav clusters, but it emits every survivor — the judgment of which cluster is *the* article cluster is yours.
+    - Spinning up a subagent to eyeball the samples is at your discretion, not required.
+- If no candidate looks like real articles, do **not** guess — tell the user what was found and ask for a better listing URL.
 
-   `add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
-   That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever written as notes.
-   A non-zero exit *before* that snapshot — the back-catalog fetch failing — leaves nothing written, so report it and retry.
-   One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen.
+### Step 3: Choose an id and name
 
-5. **Confirm.** On success the output is `{site_id, kind, snapshotted}`.
-   - Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
+- `--id` is a short, stable, unique slug (e.g. the domain stem, like `example-blog` for `example-blog.com`).
+  - It keys the seen-store and self-heal, so it must not collide with an existing site — run `feed-filter list-sites` if unsure.
+- `--name` is a human-readable label for the site (used in the notes/summaries).
+
+### Step 4: Register
+
+Run the matching form:
+
+- **Feed:** `feed-filter add-site --id <id> --name <name> --feed-url <feed_url>`
+- **Scrape:** `feed-filter add-site --id <id> --name <name> --index-url <index_url> --article-url-pattern '<article_url_pattern>'`
+  - Quote the pattern, so the shell does not take its backslashes out — the mangled regex still compiles, so the site registers and matches nothing.
+  - A pattern taken from discovery's output arrives JSON-doubled and has to be unescaped as well; one you wrote yourself is already the value to pass.
+- Append `--requires-browser` for a JS / anti-bot site (see "Sites that need a browser" below).
+
+`add-site` snapshots the site's **current** entries into the seen-store **first** (durably), then writes `sites.toml` **last**.
+That snapshot is the cold-start flood guard: only entries that appear *after* registration are ever written as notes.
+A non-zero exit *before* that snapshot — the back-catalog fetch failing — leaves nothing written, so report it and retry.
+One after it does not: the id is checked only when `sites.toml` is written, so re-running `add-site` on a site that already exists exits non-zero with that site's articles freshly marked seen.
+
+### Step 5: Confirm
+
+On success the output is `{site_id, kind, snapshotted}`.
+
+- Tell the user the site was registered, its `kind` (feed or scrape), and how many existing entries were snapshotted as already-seen (so they understand nothing from the back-catalog will be written as a note).
 
 ## Registering a Discourse forum
 
