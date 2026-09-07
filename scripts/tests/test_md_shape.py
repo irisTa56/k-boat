@@ -214,10 +214,15 @@ def test_main_exits_two_on_a_file_that_is_not_utf8(tmp_path: Path, capsys) -> No
     assert "not UTF-8 text" in capsys.readouterr().err
 
 
-def test_frontmatter_dashes_are_not_list_markers(tmp_path: Path) -> None:
-    # A skill file opens with `---`; without skipping it, the closing delimiter
-    # would read as a list marker and every later line as its content.
-    assert _scan(tmp_path, "---\nname: a-skill\n---\n\nPlain prose.\n") == []
+def test_frontmatter_is_not_scanned_as_markdown(tmp_path: Path) -> None:
+    # What the skip is for is the YAML in the block, not its delimiters: either
+    # `---` is a thematic break, which is matched before the marker and opens no
+    # item. A block scalar's value can be shaped exactly like a list with a line
+    # folded into it, and scanning it would report a fold on line 4.
+    assert (
+        _scan(tmp_path, "---\ndescription: |\n  - a bullet in the value\n  a lazy line\n---\n")
+        == []
+    )
 
 
 def test_unterminated_frontmatter_is_scanned_from_the_top(tmp_path: Path) -> None:
