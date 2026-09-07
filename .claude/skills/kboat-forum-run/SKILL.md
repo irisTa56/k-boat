@@ -99,7 +99,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
    This is intended: one note per topic, both axes recorded — no duplicate to suppress.
 
    The topic URL, the title and the summary come off the forum or the judge, so shell-escape each rather than only wrapping it in the quotes shown — close and reopen around every embedded `'` (`'\''`).
-   An apostrophe is ordinary in a topic title, and one left unescaped ends the quoting mid-value: the topic goes unrecorded, so it comes back to be judged again on the next poll.
+   An apostrophe is ordinary in a topic title, and one left unescaped ends the quoting mid-value: the topic goes unrecorded.
 
    - **Keep** (Rule A) → `feed-filter forum-remind --site-id <id> --topic-id <topic_id> --url '<topic_url>' --title '<title>' --summary '<summary>' --is-op` (the note carries the `summary`).
      Writes the `Feeds/` note AND records the interest verdict (kept=1) in one process; vault write first, verdict only on success.
