@@ -27,6 +27,29 @@ import md_shape
 import pytest
 
 
+def _git(repo: Path, *args: str) -> None:
+    """One git command in `repo`, with everything it needs to commit supplied.
+
+    The identity and the signing setting are the two pieces of a global git
+    config that decide whether `commit` succeeds at all, so both are passed
+    here rather than read from the machine: an owner who turns on
+    `commit.gpgsign` would otherwise fail these commits, and `capture_output`
+    would swallow git's account of why.
+    """
+    git = [
+        "git",
+        "-C",
+        str(repo),
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.test",
+        "-c",
+        "commit.gpgsign=false",
+    ]
+    subprocess.run([*git, *args], check=True, capture_output=True)
+
+
 def _scratch_repo(tmp_path: Path, monkeypatch, *names: str) -> Path:
     """A git repository holding one commit of `names`, entered as the cwd.
 
@@ -35,8 +58,9 @@ def _scratch_repo(tmp_path: Path, monkeypatch, *names: str) -> Path:
     and `git init` obeys that variable over its own `-C`, so under one this
     would re-initialise the outer repository instead of building a scratch one.
     Clearing them is also what leaves `md_shape`'s own `git ls-files` reading
-    the repository this chdirs into. The committer is passed per invocation, so
-    nothing here depends on the `git config --global` of the machine it runs on.
+    the repository this chdirs into. What the commits here take from the
+    machine's `git config --global` is bounded by `_git`, which supplies the
+    committer identity and the signing setting itself.
     """
     for name in [name for name in os.environ if name.startswith("GIT_")]:
         monkeypatch.delenv(name)
@@ -44,9 +68,8 @@ def _scratch_repo(tmp_path: Path, monkeypatch, *names: str) -> Path:
     repo.mkdir()
     for name in names:
         (repo / name).write_text(f"# {name}\n", encoding="utf-8")
-    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.test"]
     for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"]):
-        subprocess.run([*git, *args], check=True, capture_output=True)
+        _git(repo, *args)
     monkeypatch.chdir(repo)
     return repo
 
