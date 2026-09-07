@@ -326,6 +326,58 @@ def test_unterminated_frontmatter_is_scanned_from_the_top(tmp_path: Path) -> Non
     assert _scan(tmp_path, "---\n- outer item\n  continuing it\n") == [3]
 
 
+def test_a_delimiter_inside_a_block_scalar_does_not_close_the_frontmatter(tmp_path: Path) -> None:
+    # The closing delimiter is a `---` of its own at column 0, which nothing
+    # inside a mapping reaches: line 4's is indented as the block scalar's
+    # content. Closing the frontmatter there ends it above `name`, which leaves
+    # the gate naming lines 6 and 7 -- one of them a mapping key -- and telling
+    # the author to fold YAML onto the line above it.
+    text = "---\ndescription: |\n  first\n  ---\n  - a bullet\n  a lazy line\nname: x\n---\n"
+    assert _scan(tmp_path, text) == []
+
+
+def test_a_file_opening_with_a_thematic_break_is_read_rather_than_skipped(
+    tmp_path: Path,
+) -> None:
+    # Two `---` at column 0 with markdown between them. What they enclose is a
+    # YAML sequence and frontmatter is a mapping, so these are two thematic
+    # breaks and the lines between them are the document's. Skipping them left
+    # line 4 -- the fault this gate exists for, which pandoc renders as
+    # `<li>outer item prose in it</li>` -- unread under a clean verdict.
+    text = "---\n\n- outer item\n  prose in it\n\n---\n\n# Title\n"
+    assert _scan(tmp_path, text) == [4]
+
+
+def test_frontmatter_no_loader_would_take_is_frontmatter_all_the_same(tmp_path: Path) -> None:
+    # The shape of a skill file here: an unquoted `description` holding `: `,
+    # which stops any loader partway through line 6. What decides is whether
+    # the block opens as a mapping, and it does. A test that needed the whole
+    # block to load would find these lines unreadable, fall back to reading
+    # them as markdown, and name line 5 -- a sequence item's own continuation,
+    # under a remedy that would fold one YAML line onto another. Line 10 is the
+    # document's own fault and the only one here.
+    text = (
+        "---\nname: x\ntopics:\n  - a bullet\n    a lazy line\n"
+        "description: Use it. Mac-only: it reads Chrome.\n---\n"
+        "\n- outer item\n  prose in it\n"
+    )
+    assert _scan(tmp_path, text) == [10]
+
+
+def test_an_indented_opening_delimiter_is_not_frontmatter(tmp_path: Path) -> None:
+    # Column 0 is the rule at the top of the file as much as at the end of the
+    # frontmatter. Line 1 is a thematic break, so line 2 begins the document
+    # and line 4 is prose in the item line 3 opens.
+    assert _scan(tmp_path, "  ---\nkey: |\n  - a bullet\n  a lazy line\n---\n") == [4]
+
+
+def test_lines_yaml_cannot_begin_to_read_are_scanned_as_markdown(tmp_path: Path) -> None:
+    # A tab where YAML wants indentation: nothing in this block is a node, so
+    # there is no mapping here to be frontmatter. Skipping it on the strength
+    # of the two delimiters alone is what would hide line 4.
+    assert _scan(tmp_path, "---\n\tfoo\n- a bullet\n  a lazy line\n---\n") == [4]
+
+
 def test_a_document_with_no_list_at_all_is_not_reported(tmp_path: Path) -> None:
     assert _scan(tmp_path, "# T\n\nOne paragraph.\n\nAnd a second.\n") == []
 
