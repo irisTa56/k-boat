@@ -351,57 +351,95 @@ Given a DLQ source by its slug or `url`, supply the content NotebookLM could not
 The content comes through the user's real browser, which is logged in and can clear the wall the unattended fetch could not.
 A PDF and a web page differ only in how the content is obtained and where the reading copy lives; both end as a normal source in the inbox.
 
-1. Resolve the note from the slug (`Sources/<slug>.md`) or `url`. It must have `blocked: true`. Its `source_type` selects the branch below.
+### Step 1: resolve the note
 
-   **Then check `notebooklm_id`, before going any further.**
-   A DLQ entry usually has none, but one re-captured after a successful ingest keeps the notebook that ingest built — the `blocked_has_notebook` row — and such a source is not missing its content at all: the wall the re-capture met is what set `blocked`, and the article is already inside.
-   Rescuing it is worse than pointless, since step 3 creates a fresh notebook and step 4 writes its id over the stored one, leaving the first referenced by nothing, with whatever dialogue it held.
+Resolve the note from the slug (`Sources/<slug>.md`) or `url`.
+It must have `blocked: true`.
+Its `source_type` selects the branch below.
 
-   Confirm what that notebook holds (`notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null`, resolving the original per [One notebook per source](source-note.md#one-notebook-per-source-11)) and branch:
-   - **The original is there**, so there is nothing to rescue: clear `blocked` under the rule below and stop.
-   - **It is not**, so the source needs [Procedure: restore a source's original into its notebook](#procedure-restore-a-sources-original-into-its-notebook), not a rescue.
-     - Run that **first**, and clear `blocked` only where it ends with a verified original.
-     - Clearing ahead of it would take a source whose content is still not obtained out of `blocked_count`, out of the DLQ view, and out of this skill's own eligibility, which is exactly where the walled ending that procedure says to expect lands.
-     - Otherwise leave `blocked` standing and report.
-   - **The call fails**, so confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null`, as the restore procedure's step 1 does and for the same reason.
-     - Where the id names nothing, there is no notebook to protect and this gate does not apply — go on with the rescue, **after** making the restore procedure's step 1 check that the id really names nothing rather than the listing being the wrong account's. Going on under that mistake is what puts `create` over a live notebook and orphans it, which is the whole reason this gate exists.
-     - Where the notebook is listed and the call still failed, decide nothing and report.
+**Then check `notebooklm_id`, before going any further.**
+A DLQ entry usually has none, but one re-captured after a successful ingest keeps the notebook that ingest built — the `blocked_has_notebook` row — and such a source is not missing its content at all: the wall the re-capture met is what set `blocked`, and the article is already inside.
+Rescuing it is worse than pointless, since step 3 creates a fresh notebook and step 4 writes its id over the stored one, leaving the first referenced by nothing, with whatever dialogue it held.
 
-   **Clearing `blocked` is never a one-field write.**
-   A DLQ entry's dispositions are inert rather than absent and `filed_date` is not cleared while it is blocked (the lifecycle skips a blocked source in both phases), so a `dismiss` ticked before the re-capture, with a stamp already seven days old, puts this source in the **next run's discard set** the moment the flag clears — and the notebook goes with it.
-   A `keep` or `distill` beside a `dismiss` lands as the `ambiguous` violation instead.
-   This is abandon's gate 3 from the other exit and wants the same care: read the standing dispositions, settle with the human which they still want, and name **all three explicitly** in the one record, since `upsert` merges.
-   Abandon's gate 2 binds here too — where `distilled_date` stands, `distill` stays checked and only `keep` and `dismiss` are the human's to settle, since unticking it beside the stamp is the `distilled_without_distill` violation and leaves the routine reading an already-distilled source as active again.
-   For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**, on the ground abandon states at its own two exits: only a re-captured source reaches this state, and recording the DLQ entry overwrote the link with the `url`, so clearing `blocked` without it returns the source to the inbox with recall offering the bot wall as the way to read a PDF that is sitting in the vault.
+Confirm what that notebook holds (`notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null`, resolving the original per [One notebook per source](source-note.md#one-notebook-per-source-11)) and branch:
 
-2. Obtain the content through the real browser (the `kboat-rescue` skill uses Claude in Chrome), letting the human solve any CAPTCHA or sign-in. A wall is what this step expects; a page that turns out to be **gone** rather than walled — a 404, a removed article — has no content to obtain and no re-run will change that, so stop here and offer [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source) instead of driving on.
-   - **PDF** (`source_type: pdf`): get the real file to `PDFs/<slug>.pdf` — by saving it from the browser, or by the human downloading it and pointing the skill at the file. Verify it starts with `%PDF-`. This is the durable reading copy. Check for the file before fetching: a re-captured entry may already hold one from its earlier ingest (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and there is nothing to pull through the browser if it verifies.
-   - **Web page** (`source_type: web_page`): navigate to the `url` and capture the rendered article text once the real content is on screen, writing it to a temp file for step 3. There is no vault file — the reading copy stays the live `url` (the human reads it in the logged-in browser). Judge the captured text is the real article, not a wall, by reading it (the same wall-vs-article judgement as the ingest fetch).
-3. Build the notebook from the supplied content: `create` (read `.notebook.id`) → set chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)) → add the one source, and read the returned source id from the `--json` output. Neither branch's source has a `url`; the web-page branch resolves by the note's `title`, which it is given as `--title`, and the PDF by its type:
-   - **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`.
-   - **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
+- **The original is there**, so there is nothing to rescue: clear `blocked` under the rule below and stop.
+- **It is not**, so the source needs [Procedure: restore a source's original into its notebook](#procedure-restore-a-sources-original-into-its-notebook), not a rescue.
+  - Run that **first**, and clear `blocked` only where it ends with a verified original.
+  - Clearing ahead of it would take a source whose content is still not obtained out of `blocked_count`, out of the DLQ view, and out of this skill's own eligibility, which is exactly where the walled ending that procedure says to expect lands.
+  - Otherwise leave `blocked` standing and report.
+- **The call fails**, so confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null`, as the restore procedure's step 1 does and for the same reason.
+  - Where the id names nothing, there is no notebook to protect and this gate does not apply — go on with the rescue, **after** making the restore procedure's step 1 check that the id really names nothing rather than the listing being the wrong account's.
+    - Going on under that mistake is what puts `create` over a live notebook and orphans it, which is the whole reason this gate exists.
+  - Where the notebook is listed and the call still failed, decide nothing and report.
 
-   Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`.
-   Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report its own timeout.
-   Branch on `.status`, **not** the exit code — it merges `not_found` and `error` into `1`, and here too they want opposite handling.
+**Clearing `blocked` is never a one-field write.**
+A DLQ entry's dispositions are inert rather than absent and `filed_date` is not cleared while it is blocked (the lifecycle skips a blocked source in both phases), so a `dismiss` ticked before the re-capture, with a stamp already seven days old, puts this source in the **next run's discard set** the moment the flag clears — and the notebook goes with it.
+A `keep` or `distill` beside a `dismiss` lands as the `ambiguous` violation instead.
+This is abandon's gate 3 from the other exit and wants the same care: read the standing dispositions, settle with the human which they still want, and name **all three explicitly** in the one record, since `upsert` merges.
+Abandon's gate 2 binds here too — where `distilled_date` stands, `distill` stays checked and only `keep` and `dismiss` are the human's to settle, since unticking it beside the stamp is the `distilled_without_distill` violation and leaves the routine reading an already-distilled source as active again.
+For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**, on the ground abandon states at its own two exits: only a re-captured source reaches this state, and recording the DLQ entry overwrote the link with the `url`, so clearing `blocked` without it returns the source to the inbox with recall offering the bot wall as the way to read a PDF that is sitting in the vault.
 
-   - `ready` → verify the extraction (`fulltext <source_id> --notebook <id> -o <tmpfile>`) and capture `summary`/`topics` (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
-   - `not_found` or `timeout` → neither says the upload failed: `not_found` is a first-poll race against the source appearing (raised without retry), and `timeout` says only that we stopped waiting. On the ingest paths the fix is to let the next unattended run redo the add, but rescue has no next run and its upload came from a human-assisted capture, so **re-run the same `source wait` once** rather than throw that work away — in a *fresh* Bash call, since two 90s waits in one block exceed the 120s budget and are killed, losing the status the retry exists to get. If the retry is still not `ready`, take the notebook-not-built ending in step 4, where it stays the non-verdict it is.
-   - `error` → NotebookLM took the upload and could not process it, durably: the library polls through an ERROR status only for a still-unclassified or media source and treats it as terminal for every other type — an uploaded PDF and a pasted-text source alike. The notebook-not-built ending in step 4, as the one status reaching it that *is* a verdict.
+### Step 2: obtain the content
 
-   Every ending but `ready` leaves a notebook holding nothing usable, so discard it (see [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook)) **passing the id `create` returned**: the DLQ note carries no `notebooklm_id` until step 4, so a discard that read the note would find it empty and leak the notebook.
-4. The wall is now cleared. Update the note with `kboat-note write --type source` — a `{slug, fields}` record carrying `blocked: false`, `notebooklm_id` and the derived `gemini_url`/`notebooklm_url`, the captured `summary`/`topics`, and `reading_link` (`[[<slug>.pdf]]` for a PDF; left as the `url` for a web page) — merged over the DLQ note. `source_type` is unchanged. The source leaves the DLQ and joins the inbox like a freshly-ingested source.
+Obtain the content through the real browser (the `kboat-rescue` skill uses Claude in Chrome), letting the human solve any CAPTCHA or sign-in.
+A wall is what this step expects; a page that turns out to be **gone** rather than walled — a 404, a removed article — has no content to obtain and no re-run will change that, so stop here and offer [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source) instead of driving on.
 
-   Three non-clean endings:
-   - **Wall not cleared** (no real PDF obtained, or the captured text is still a wall): leave `blocked: true` — it stays in the DLQ, where re-running the rescue is the way back. This is the ending for a wall that *held*, not for a source with nothing behind it; a human who decides the wall is not worth another attempt takes [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source) instead, which is a decision for them to make rather than one to read off this ending.
-   - **Notebook not built** (step 3 ended on any status but `ready`): the notebook is discarded and there is no `notebooklm_id`. Two independent axes settle the rest — the note follows what the source still *has*, the report follows the status.
-     - **The note, by branch.** What the source has is judged by what its path requires, the file for a PDF and the article inside the notebook for a web page (the DLQ's own test, see [Procedure: record a blocked source (DLQ)](#procedure-record-a-blocked-source-dlq)). The status does not enter into it.
-       - **PDF** → the real file is at `PDFs/<slug>.pdf`, which is exactly what the PDF path requires, so the wall *is* cleared and this is no DLQ state: write `blocked: false` and `reading_link` = `[[<slug>.pdf]]`, leaving `notebooklm_id` and `summary`/`topics` empty. It lands where an ingest-time failure lands, a readable PDF with no notebook. Clearing `blocked` also takes it out of rescue's reach, so name [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) as the way back.
-       - **Web page** → neither the article in the notebook nor a local copy (its reading copy was to be the still-walled `url`), so it keeps `blocked: true` and rests in the DLQ, where re-running the rescue is the way back.
-     - **The report, by status.** The note above records none of this, so the difference lands here.
-       - **`error`** → a verdict, and one on the *bytes*: NotebookLM could not process what it was handed, so re-sending the same fails the same way. A PDF needs a different or re-exported copy, not the *text-bearing* one an empty extraction calls for (the ingest `error` in step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source) says why the two differ); a web page needs a different capture, its text being re-derivable, so another capture — or the skill's manual fallback of a hand-saved file — may upload cleanly.
-       - **`not_found` or `timeout`**, having outlived step 3's retry → no verdict on anything. Report only that NotebookLM did not finish in time, and that re-running is the fix. Telling a human their file is bad on the strength of a status that says nothing would be a lie the note itself does not tell.
-   - **Empty extraction** (PDF only): a fetched PDF that extracts to nothing keeps `blocked: false` (the fetch succeeded), but report the empty extraction — that is the ingest garbled-extraction case (readable file, unusable notebook), not a DLQ state. Its notebook is kept on the same ground ingest keeps one (step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source)), and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way back once a text-bearing copy exists. A web-page capture has no such case, since the text is supplied directly.
+- **PDF** (`source_type: pdf`): get the real file to `PDFs/<slug>.pdf` — by saving it from the browser, or by the human downloading it and pointing the skill at the file.
+  - Verify it starts with `%PDF-`.
+  - This is the durable reading copy.
+  - Check for the file before fetching: a re-captured entry may already hold one from its earlier ingest (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and there is nothing to pull through the browser if it verifies.
+- **Web page** (`source_type: web_page`): navigate to the `url` and capture the rendered article text once the real content is on screen, writing it to a temp file for step 3.
+  - There is no vault file — the reading copy stays the live `url` (the human reads it in the logged-in browser).
+  - Judge the captured text is the real article, not a wall, by reading it (the same wall-vs-article judgement as the ingest fetch).
+
+### Step 3: build the notebook
+
+Build it from the supplied content: `create` (read `.notebook.id`) → set chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)) → add the one source, and read the returned source id from the `--json` output.
+Neither branch's source has a `url`; the web-page branch resolves by the note's `title`, which it is given as `--title`, and the PDF by its type:
+
+- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`.
+- **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
+
+Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`.
+Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report its own timeout.
+Branch on `.status`, **not** the exit code — it merges `not_found` and `error` into `1`, and here too they want opposite handling.
+
+- `ready` → verify the extraction (`fulltext <source_id> --notebook <id> -o <tmpfile>`) and capture `summary`/`topics` (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
+- `not_found` or `timeout` → neither says the upload failed: `not_found` is a first-poll race against the source appearing (raised without retry), and `timeout` says only that we stopped waiting.
+  - On the ingest paths the fix is to let the next unattended run redo the add, but rescue has no next run and its upload came from a human-assisted capture, so **re-run the same `source wait` once** rather than throw that work away — in a *fresh* Bash call, since two 90s waits in one block exceed the 120s budget and are killed, losing the status the retry exists to get.
+  - If the retry is still not `ready`, take the notebook-not-built ending in step 4, where it stays the non-verdict it is.
+- `error` → NotebookLM took the upload and could not process it, durably: the library polls through an ERROR status only for a still-unclassified or media source and treats it as terminal for every other type — an uploaded PDF and a pasted-text source alike.
+  - The notebook-not-built ending in step 4, as the one status reaching it that *is* a verdict.
+
+Every ending but `ready` leaves a notebook holding nothing usable, so discard it (see [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook)) **passing the id `create` returned**: the DLQ note carries no `notebooklm_id` until step 4, so a discard that read the note would find it empty and leak the notebook.
+
+### Step 4: update the note
+
+The wall is now cleared.
+Update the note with `kboat-note write --type source` — a `{slug, fields}` record carrying `blocked: false`, `notebooklm_id` and the derived `gemini_url`/`notebooklm_url`, the captured `summary`/`topics`, and `reading_link` (`[[<slug>.pdf]]` for a PDF; left as the `url` for a web page) — merged over the DLQ note.
+`source_type` is unchanged.
+The source leaves the DLQ and joins the inbox like a freshly-ingested source.
+
+Three non-clean endings:
+
+- **Wall not cleared** (no real PDF obtained, or the captured text is still a wall): leave `blocked: true` — it stays in the DLQ, where re-running the rescue is the way back.
+  - This is the ending for a wall that *held*, not for a source with nothing behind it; a human who decides the wall is not worth another attempt takes [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source) instead, which is a decision for them to make rather than one to read off this ending.
+- **Notebook not built** (step 3 ended on any status but `ready`): the notebook is discarded and there is no `notebooklm_id`. Two independent axes settle the rest — the note follows what the source still *has*, the report follows the status.
+  - **The note, by branch.** What the source has is judged by what its path requires, the file for a PDF and the article inside the notebook for a web page (the DLQ's own test, see [Procedure: record a blocked source (DLQ)](#procedure-record-a-blocked-source-dlq)). The status does not enter into it.
+    - **PDF** → the real file is at `PDFs/<slug>.pdf`, which is exactly what the PDF path requires, so the wall *is* cleared and this is no DLQ state: write `blocked: false` and `reading_link` = `[[<slug>.pdf]]`, leaving `notebooklm_id` and `summary`/`topics` empty.
+      - It lands where an ingest-time failure lands, a readable PDF with no notebook.
+      - Clearing `blocked` also takes it out of rescue's reach, so name [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) as the way back.
+    - **Web page** → neither the article in the notebook nor a local copy (its reading copy was to be the still-walled `url`), so it keeps `blocked: true` and rests in the DLQ, where re-running the rescue is the way back.
+  - **The report, by status.** The note above records none of this, so the difference lands here.
+    - **`error`** → a verdict, and one on the *bytes*: NotebookLM could not process what it was handed, so re-sending the same fails the same way.
+      - A PDF needs a different or re-exported copy, not the *text-bearing* one an empty extraction calls for (the ingest `error` in step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source) says why the two differ); a web page needs a different capture, its text being re-derivable, so another capture — or the skill's manual fallback of a hand-saved file — may upload cleanly.
+    - **`not_found` or `timeout`**, having outlived step 3's retry → no verdict on anything.
+      - Report only that NotebookLM did not finish in time, and that re-running is the fix.
+      - Telling a human their file is bad on the strength of a status that says nothing would be a lie the note itself does not tell.
+- **Empty extraction** (PDF only): a fetched PDF that extracts to nothing keeps `blocked: false` (the fetch succeeded), but report the empty extraction — that is the ingest garbled-extraction case (readable file, unusable notebook), not a DLQ state.
+  - Its notebook is kept on the same ground ingest keeps one (step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source)), and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way back once a text-bearing copy exists.
+  - A web-page capture has no such case, since the text is supplied directly.
 
 ## Procedure: abandon a blocked source
 
