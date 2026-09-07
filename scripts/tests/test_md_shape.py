@@ -432,6 +432,19 @@ def test_lines_yaml_cannot_begin_to_read_are_scanned_as_markdown(tmp_path: Path)
     assert _scan(tmp_path, "---\n\tfoo\n- a bullet\n  a lazy line\n---\n") == [4]
 
 
+def test_a_block_yaml_cannot_construct_is_scanned_as_markdown(tmp_path: Path) -> None:
+    # The other half of "cannot load": this block scans, parses and composes
+    # as a mapping, and only the last step fails, where PyYAML's timestamp
+    # constructor hands `2026-02-30` to `datetime.date` and gets back a bare
+    # `ValueError` -- outside `YAMLError`, so a catch narrowed to that lets it
+    # out of `_loads_as_a_mapping`. It would leave `scan` mid-document and end
+    # the whole run on exit 1, the code reserved for "a fault is there", with
+    # the files after this one never read. Caught, the block is not a mapping
+    # and so not frontmatter, and the document is markdown from line 1: line 3
+    # makes line 2 a setext heading, and line 6 is the fault under it.
+    assert _scan(tmp_path, "---\nd: 2026-02-30\n---\n\n- outer item\n  prose in it\n") == [6]
+
+
 def test_a_document_with_no_list_at_all_is_not_reported(tmp_path: Path) -> None:
     assert _scan(tmp_path, "# T\n\nOne paragraph.\n\nAnd a second.\n") == []
 

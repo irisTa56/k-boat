@@ -199,7 +199,17 @@ def _loads_as_a_mapping(block: str) -> bool:
     """
     try:
         return isinstance(yaml.safe_load(block), dict)
-    except yaml.YAMLError:
+    # `safe_load` does not raise only `YAMLError`. A block can scan, parse and
+    # compose cleanly and still fail at the last step, where a constructor
+    # builds the Python value: an impossible timestamp -- `2026-02-30`,
+    # `2026-13-01`, `25:00:00` -- reaches `datetime.date` or `datetime.time`
+    # and comes back as a bare `ValueError`. Uncaught that is not a wrong
+    # verdict but no verdict at all, for this file and for every file after
+    # it: it leaves `scan` mid-document and ends the run on the traceback's
+    # exit 1, the code reserved here for "a fault is there". Caught, it is the
+    # same answer as any other failure to load, under the rule this docstring
+    # already states and at the price `_without_frontmatter` already names.
+    except (yaml.YAMLError, ValueError):
         return False
 
 
