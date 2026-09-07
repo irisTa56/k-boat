@@ -348,20 +348,51 @@ def test_a_file_opening_with_a_thematic_break_is_read_rather_than_skipped(
     assert _scan(tmp_path, text) == [4]
 
 
-def test_frontmatter_no_loader_would_take_is_frontmatter_all_the_same(tmp_path: Path) -> None:
-    # The shape of a skill file here: an unquoted `description` holding `: `,
-    # which stops any loader partway through line 6. What decides is whether
-    # the block opens as a mapping, and it does. A test that needed the whole
-    # block to load would find these lines unreadable, fall back to reading
-    # them as markdown, and name line 5 -- a sequence item's own continuation,
-    # under a remedy that would fold one YAML line onto another. Line 10 is the
-    # document's own fault and the only one here.
+def test_a_block_that_does_not_load_is_read_as_markdown_however_it_opens(
+    tmp_path: Path,
+) -> None:
+    # An unquoted `description` holding `: `, which stops every loader partway
+    # through line 6 -- the shape three skill files here had before their
+    # values were quoted. The block opens as a mapping and is still not one,
+    # so these lines are markdown and every reading of them is reported: 5 and
+    # 6 are the YAML the file meant, named under a remedy that would fold one
+    # key onto another, and 10 is the document's own fault. That wrong report
+    # is the price of the rule; what it buys is that no block reaches the skip
+    # on the strength of its first line alone.
     text = (
         "---\nname: x\ntopics:\n  - a bullet\n    a lazy line\n"
         "description: Use it. Mac-only: it reads Chrome.\n---\n"
         "\n- outer item\n  prose in it\n"
     )
-    assert _scan(tmp_path, text) == [10]
+    assert _scan(tmp_path, text) == [5, 6, 10]
+
+
+def test_a_block_opening_as_a_mapping_and_continuing_in_markdown_is_read(
+    tmp_path: Path,
+) -> None:
+    # Line 2 is a mapping key by itself, so a test of the block's opening node
+    # passes this file and blanks lines 2 to 6 -- among them line 5, the fault
+    # this gate exists for, which pandoc renders as
+    # `<li>outer item prose in it</li>`. Loaded whole, the block is a mapping
+    # followed by a sequence at column 0 and loads as neither, so line 1 is a
+    # thematic break and the document begins under it.
+    text = "---\nNote: this section is about ingest.\n\n- outer item\n  prose in it\n\n---\n\n# Title\n"
+    assert _scan(tmp_path, text) == [5]
+
+
+def test_a_closer_carrying_an_indent_does_not_hand_the_body_a_delimiter(
+    tmp_path: Path,
+) -> None:
+    # The same frontmatter twice, closed at column 0 and closed one space in.
+    # A search that takes the first column-0 `---` regardless finds line 9's
+    # thematic break in the second file and blanks the body down to it, hiding
+    # line 7. Requiring the enclosed block to load leaves the mangled file with
+    # no frontmatter at all, so it reports what the intact one reports.
+    body = "\n- outer item\n  prose in it\n\n---\n\n# Title\n"
+    intact = f"---\nname: x\ndescription: a value\n---\n{body}"
+    mangled = f"---\nname: x\ndescription: a value\n ---\n{body}"
+    assert _scan(tmp_path, intact) == [7]
+    assert _scan(tmp_path, mangled) == [7]
 
 
 def test_an_indented_opening_delimiter_is_not_frontmatter(tmp_path: Path) -> None:

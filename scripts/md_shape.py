@@ -52,10 +52,10 @@ about text it quotes.
 
 A verdict is given only for a file that was read whole, and what takes that
 away is a path dropping input before the parser places it. There are two here:
-the frontmatter skip, which `_without_frontmatter` keeps from dropping a line
-it cannot show is YAML, and the parser's own nesting cap, which ends in exit 2
--- the file got no verdict -- rather than in a clean line. Nothing this script
-prints can then be a clean file that was never read.
+the frontmatter skip, which blanks a region only where YAML loads the whole of
+it as a mapping, and the parser's own nesting cap, which ends in exit 2 -- the
+file got no verdict -- rather than in a clean line. Nothing this script prints
+can then be a clean file that was never read.
 
 Every markdown parser caps how deep it will nest, and `markdown-it-py` does not
 merely stop descending at the cap: it abandons the input there and tokenises
@@ -152,61 +152,55 @@ def _without_frontmatter(lines: list[str]) -> str:
     be shaped exactly like a list with a line folded into it. Blanking rather
     than dropping the lines keeps every reported line number the file's own.
 
-    Which lines those are is decided twice over, because `---` on line 1 is
-    also a thematic break and every `---` below it is one too. A delimiter is
-    `---` alone at column 0, where nothing inside a mapping can reach: a block
-    scalar's own `---` is indented under its key, and closing the frontmatter
-    on that one hands the keys below it to this check as prose -- with a
-    remedy that, followed, would corrupt the YAML. And what the delimiters
-    enclose has to open as a YAML mapping, which is the shape of frontmatter:
-    a file that merely begins with a thematic break encloses markdown, and
-    blanking that would leave those lines unread under a clean verdict.
+    Which lines those are is YAML's answer rather than this module's, because
+    `---` on line 1 is also a thematic break and every `---` below it is one
+    too. So the delimiters are only proposed here and YAML disposes: line 1
+    has to be `---` at column 0, every later `---` at column 0 is a candidate
+    closer in turn, and the frontmatter is the first candidate whose enclosed
+    block loads as a YAML mapping -- a mapping being the shape frontmatter
+    has. Where no candidate loads that way the file has no frontmatter, and
+    every line of it is read as markdown.
 
-    A file failing either test has no frontmatter, and every line of it is
-    read as markdown. That is what keeps this path from dropping input:
-    whichever way the two questions come out, no line is skipped on a guess,
-    and neither misreading above can end in a file printed clean.
+    Loading the whole enclosed block, rather than testing how it opens or
+    trusting the first `---` below the top, is what makes the verdict the
+    block's own. Each weaker test admits a file whose lines are markdown: one
+    whose first enclosed line is `Note: this section is about ingest.` opens
+    as a mapping and then continues in prose and lists, and one whose real
+    closing `---` carries a stray indent has its next candidate somewhere down
+    in the body. Taken as frontmatter, either blanks markdown that then goes
+    unread under a clean verdict. Neither block loads as a mapping, so neither
+    is frontmatter, and both files are read from line 1.
 
-    `yaml` answers the second question rather than this module, for the reason
-    `markdown_it` answers CommonMark's -- a hand-written test for a mapping is
-    a hand-written YAML parser, and each disagreement with the real answer is
-    one of those two misreadings again. It is asked of the event stream, which
-    gives the shape of the opening node before any later line has to parse.
-    Loading the whole block instead would answer nothing for a skill file
-    here, whose unquoted `description` runs `... Mac-only: it reads ...` and
-    stops every loader partway: those files would fall through to being read
-    as markdown, and a `topics:` list in one would be reported a YAML line at
-    a time.
+    The price is that frontmatter no loader will take is not frontmatter here.
+    An unquoted `description` holding `: ` was exactly that, so the values in
+    this repository's skill files are quoted; one that is not gets read as
+    markdown, and a `topics:` list under it reported a YAML line at a time.
+    That is a wrong report the author can see and fix, where a wrongly blanked
+    region is a silence they cannot.
     """
     # `rstrip`, not `strip`: column 0 is the rule for the opening delimiter as
     # much as for the closing one.
     if not lines or lines[0].rstrip() != _FRONTMATTER:
         return "\n".join(lines)
     for i, line in enumerate(lines[1:], 1):
-        if line.rstrip() != _FRONTMATTER:
-            continue
-        if _opens_as_a_mapping("\n".join(lines[1:i])):
+        if line.rstrip() == _FRONTMATTER and _loads_as_a_mapping("\n".join(lines[1:i])):
             return "\n" * (i + 1) + "\n".join(lines[i + 1 :])
-        break
     return "\n".join(lines)
 
 
-def _opens_as_a_mapping(block: str) -> bool:
-    """Whether YAML reads `block` as opening a mapping.
+def _loads_as_a_mapping(block: str) -> bool:
+    """Whether YAML reads the whole of `block` as a mapping.
 
-    The events before the first node are the stream's and the document's, so
-    the first node event is the block's own outermost value, and a mapping
-    there is a mapping whatever follows. A block that ends or fails before it
-    -- an empty one, or one whose very first line is not YAML at all -- has no
-    outermost mapping to be frontmatter with.
+    `yaml` answers rather than this module, for the reason `markdown_it`
+    answers CommonMark's question: a hand-written test for frontmatter is a
+    hand-written YAML parser, and every disagreement with the real answer is a
+    region blanked unread or a mapping reported as prose. A block that fails
+    to load, or loads as anything but a mapping, is not frontmatter.
     """
     try:
-        for event in yaml.parse(block, Loader=yaml.SafeLoader):
-            if isinstance(event, yaml.NodeEvent):
-                return isinstance(event, yaml.MappingStartEvent)
+        return isinstance(yaml.safe_load(block), dict)
     except yaml.YAMLError:
         return False
-    return False
 
 
 def _paragraph_lines(token: Token, item_start: int) -> range:
