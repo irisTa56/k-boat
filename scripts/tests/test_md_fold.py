@@ -72,6 +72,52 @@ def test_a_thematic_break_is_not_folded(tmp_path: Path) -> None:
     assert _scan(tmp_path, "- outer item\n  - deeper child\n***\n") == []
 
 
+def test_an_html_comment_is_not_folded(tmp_path: Path) -> None:
+    # An HTML block interrupts a paragraph, and a comment is the kind that turns
+    # up in prose. Pandoc puts this one in the outer item, where it reads.
+    assert _scan(tmp_path, "- outer item\n  - deeper child\n  <!-- a note -->\n") == []
+
+
+def test_an_indented_code_block_opens_no_paragraph(tmp_path: Path) -> None:
+    # Four columns past the enclosing item's content column with no paragraph
+    # open is code, so the line after it continues nothing.
+    assert (
+        _scan(
+            tmp_path,
+            "- outer item\n  - deeper child\n\n        indented code\n  back in the outer item\n",
+        )
+        == []
+    )
+
+
+def test_a_wide_marker_does_not_invent_a_content_column(tmp_path: Path) -> None:
+    # More than four spaces after the marker: CommonMark puts the content column
+    # at the marker's end plus one and reads the rest as code, so `next line` at
+    # column 2 is inside the item rather than short of a column-6 one.
+    assert _scan(tmp_path, "-     wide marker\n  next line\n") == []
+
+
+def test_a_line_at_an_items_marker_column_is_reported(tmp_path: Path) -> None:
+    # Short of the content column, so absent lazy continuation it would fall out
+    # of the list entirely; laziness keeps it in the item. Confirmed with pandoc:
+    # `  - second\n  y` renders `<li>second y</li>`, while a blank line between
+    # them renders `y` as a paragraph outside the list.
+    folds = _scan(tmp_path, "  - second\n  y\n")
+    assert len(folds) == 1
+    assert (folds[0].indent, folds[0].swallowed_by) == (2, 4)
+
+
+def test_a_heading_closes_the_items_it_outdents(tmp_path: Path) -> None:
+    # Pins the heading branch's pop: without it the post-heading paragraph is
+    # measured against a list the heading already ended.
+    assert _scan(tmp_path, "- a\n## h\n  x\nx\n") == []
+
+
+def test_a_blank_separated_top_level_paragraph_closes_the_list(tmp_path: Path) -> None:
+    # Pins the fallthrough's pop, for the same reason.
+    assert _scan(tmp_path, "- a\n\nx\nx\n") == []
+
+
 def test_fenced_code_is_not_scanned(tmp_path: Path) -> None:
     # Text inside a fence is content, not a paragraph line, and a `-` in it is
     # not a list marker.
@@ -124,6 +170,30 @@ def test_main_exits_two_on_an_unreadable_path(tmp_path: Path, capsys) -> None:
     # Exit 2 is "the input isn't what this script expects", never exit 1.
     assert md_fold.main([str(tmp_path / "absent.md")]) == md_fold._EXIT_MALFORMED
     assert "cannot read" in capsys.readouterr().err
+
+
+def test_main_with_no_paths_scans_the_repository(monkeypatch, tmp_path: Path, capsys) -> None:
+    # The invocation `qa:md` and CI both use. A pathspec that silently stopped
+    # matching would otherwise leave the gate green while scanning nothing.
+    clean = tmp_path / "clean.md"
+    clean.write_text("- outer item\n  - deeper child\n", encoding="utf-8")
+    monkeypatch.setattr(md_fold, "tracked_markdown", lambda: [clean])
+    assert md_fold.main([]) == 0
+    assert "1 file(s)" in capsys.readouterr().out
+
+
+def test_main_exits_two_when_the_repository_tracks_no_markdown(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(md_fold, "tracked_markdown", list)
+    assert md_fold.main([]) == md_fold._EXIT_MALFORMED
+    assert "no markdown files" in capsys.readouterr().err
+
+
+def test_tracked_markdown_finds_this_repositorys_own_files() -> None:
+    # Exercises the `git ls-files` call itself, which the two tests above stub.
+    paths = md_fold.tracked_markdown()
+    assert paths
+    assert all(path.suffix in {".md", ".markdown"} for path in paths)
+    assert Path("CLAUDE.md") in paths
 
 
 def test_scan_rejects_a_directory(tmp_path: Path) -> None:
