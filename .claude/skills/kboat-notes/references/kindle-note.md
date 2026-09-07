@@ -35,10 +35,15 @@ Simpler than a source's, because there is no notebook to retain or discard and s
 A Kindle note is created, marked `reading` then `finished` as reading progresses, optionally marked `distill`, and once distilled carries `distilled_date`.
 The note is never deleted — it is a permanent catalogue and de-dup record.
 
-- `reading` — informational (reading progress), set when reading starts. Where a source tracks reading with a single `reading` checkbox, a Kindle book splits it into a `reading` (started) / `finished` (done) pair, since the reading-list view needs a distinct "done" signal.
-- `finished` — informational, set by the human when the book is read to the end. Drives no routine behaviour — the ripe predicate ignores it; its only effect is the Base reading-list view, which filters it out. It is orthogonal to `distill`: a book can be distilled before or after it is marked finished.
-- `distill` checked and `distilled_date` empty → **ripe**: the routine distils the note body and stamps `distilled_date`. Unlike a source there is no 7-day cooldown — a Kindle book is distilled on the next run after `distill` is checked.
-- `distilled_date` set → distilled; a further run is a no-op. Re-distilling requires the human to clear `distilled_date` first, leaving `distill` checked — unchecking it while the stamp stands is the `distilled_without_distill` violation (see [Cross-field rules](validation.md#cross-field-rules)), which the validator reports on every run.
+- `reading` — informational (reading progress), set when reading starts.
+  - Where a source tracks reading with a single `reading` checkbox, a Kindle book splits it into a `reading` (started) / `finished` (done) pair, since the reading-list view needs a distinct "done" signal.
+- `finished` — informational, set by the human when the book is read to the end.
+  - Drives no routine behaviour — the ripe predicate ignores it; its only effect is the Base reading-list view, which filters it out.
+  - It is orthogonal to `distill`: a book can be distilled before or after it is marked finished.
+- `distill` checked and `distilled_date` empty → **ripe**: the routine distils the note body and stamps `distilled_date`.
+  - Unlike a source there is no 7-day cooldown — a Kindle book is distilled on the next run after `distill` is checked.
+- `distilled_date` set → distilled; a further run is a no-op.
+  - Re-distilling requires the human to clear `distilled_date` first, leaving `distill` checked — unchecking it while the stamp stands is the `distilled_without_distill` violation (see [Cross-field rules](validation.md#cross-field-rules)), which the validator reports on every run.
 
 The ripe predicate is `distill && distilled_date` empty.
 The deterministic tool `kboat-lifecycle` evaluates it (alongside the source predicates) and emits the ripe Kindle set as JSON; this skill is the spec, the tool an implementation of it.

@@ -35,7 +35,8 @@ It is therefore the one violation whose usual repair route — find it in the Am
 Work from the note instead, which the DLQ Base view links, and let what the odd tick was asking for decide which repair it wants.
 
 - Where the entry is still meant to be **rescued**, untick whichever disposition is the odd one out, exactly as the repair would elsewhere.
-- Where the tick was a `dismiss` asking to be rid of the entry — the likeliest way this state arises at all — unticking is the wrong repair: it clears the finding and leaves the source ageing in `blocked_count`, having erased the only record of what was wanted. Take the DLQ's abandon exit instead (`kboat-rescue`, then [Procedure: abandon a blocked source](procedures.md#procedure-abandon-a-blocked-source)), which settles the dispositions and clears `blocked` in one record.
+- Where the tick was a `dismiss` asking to be rid of the entry — the likeliest way this state arises at all — unticking is the wrong repair: it clears the finding and leaves the source ageing in `blocked_count`, having erased the only record of what was wanted.
+  - Take the DLQ's abandon exit instead (`kboat-rescue`, then [Procedure: abandon a blocked source](procedures.md#procedure-abandon-a-blocked-source)), which settles the dispositions and clears `blocked` in one record.
 
 **A disposition without a `filed_date` is deliberately not a rule here**: it is what triggers the routine's own Phase A stamp, so a rule would fire on every freshly-ticked checkbox.
 It is reported as the `awaiting_filed_stamp` count instead — see [Backlog stats](#backlog-stats) for what a nonzero value means to each reader.

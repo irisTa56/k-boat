@@ -19,8 +19,10 @@ These notes are plain Markdown and degrade gracefully: the `## Observations` lin
 A concept note accretes across readings, and its `## Observations` section is where it says which reading contributed which claims.
 The section takes one of two shapes, and a write that half-landed leaves a third:
 
-- **flat** — the claims sit directly under `## Observations` with no `###` heading. A note is written this way from its first reading and stays this way while everything in it is one insight.
-- **grouped** — the claims are divided into `###` groups. A group opens with a heading naming what was learned — the angle, not the concept's name repeated — and inside it each reading's claims are followed by that reading's own `- [source]` provenance observation, so a group holding two readings still says which of them each claim came from.
+- **flat** — the claims sit directly under `## Observations` with no `###` heading.
+  - A note is written this way from its first reading and stays this way while everything in it is one insight.
+- **grouped** — the claims are divided into `###` groups.
+  - A group opens with a heading naming what was learned — the angle, not the concept's name repeated — and inside it each reading's claims are followed by that reading's own `- [source]` provenance observation, so a group holding two readings still says which of them each claim came from.
 
 A group is a unit of **insight, not of reading**.
 So a group carries two readings' provenance wherever both landed on the same point, and a note whose second reading only deepened the first's insight stays flat rather than being split.
@@ -49,7 +51,8 @@ A symbol or expression woven into a sentence as prose stays unformatted: `the ra
 This holds even when the same variable also appears inside a wrapped formula on the same line: only the formula is marked up, and the prose mention of that variable stays bare.
 Mark up only an expression presented **as** a formula, equation, or named quantity — an expression on its own, a definition, a derivation — and choose the markup by how the notation is written, not by whether the content is "mathematical":
 
-- If plain ASCII represents it faithfully — arithmetic or pseudocode over `= + − × ÷ /`, parentheses, and named variables (`KV bytes = 2 × num_kv_heads × head_dim × dtype_bytes`) — wrap it in **code**: an inline span for a short expression, a fenced block for a multi-line one. This is lossless, since the ASCII already written is the content; it renders the same everywhere with no MathJax dependency; and it is the default whenever the two cases are close.
+- If plain ASCII represents it faithfully — arithmetic or pseudocode over `= + − × ÷ /`, parentheses, and named variables (`KV bytes = 2 × num_kv_heads × head_dim × dtype_bytes`) — wrap it in **code**: an inline span for a short expression, a fenced block for a multi-line one.
+  - This is lossless, since the ASCII already written is the content; it renders the same everywhere with no MathJax dependency; and it is the default whenever the two cases are close.
 - If the notation needs math typography that ASCII degrades — stacked fractions, Σ/∏/∫ with limits, binomial coefficients, sub/superscript stacks, or Greek letters used as variables (`(1/k)·log2(C choose k)`, `Δ̂(t) = Q(e(t) + Δ(t))`) — wrap it in **LaTeX**: `$…$` inline, `$$…$$` for a display equation, so Obsidian's MathJax renders it.
 
 The split keeps the write-time decision objective — "does ASCII represent this faithfully?" rather than the harder "is this math?" — and the code default is always safe.
