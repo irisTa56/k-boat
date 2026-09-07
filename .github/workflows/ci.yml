@@ -2,10 +2,10 @@ name: CI
 
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
 # to main), but without mise: CI needs neither the notebooklm tool nor a browser.
-# It runs the same ruff / ty / pytest / coverage-floor / rumdl / gitleaks /
-# offline-link-check checks -- uv for the Python gates, official actions for
-# rumdl, gitleaks, and lychee. Keep the checks here in sync with mise.toml's
-# `qa:**` tasks.
+# It runs the same ruff / ty / pytest / coverage-floor / rumdl / md-fold /
+# gitleaks / offline-link-check checks -- uv for the Python gates, official
+# actions for rumdl, gitleaks, and lychee, and the runner's own interpreter for
+# md-fold. Keep the checks here in sync with mise.toml's `qa:**` tasks.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
