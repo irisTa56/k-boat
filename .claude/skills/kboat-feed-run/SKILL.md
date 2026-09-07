@@ -30,21 +30,23 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 ## Procedure
 
 1. **Gather.** Run `eval "$(mise env)" && feed-filter new-entries`.
-   The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
-   - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap.
-     - Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
-   - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text, and is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
-     - The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url '<url>'` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
-   - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
-     `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
-     `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
-     `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
-     A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when the run cannot heal it.
-   - Keep `sites` aside for steps 3–5.
+   - The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
+     - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap.
+       - Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
+     - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text, and is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
+       - The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url '<url>'` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
+     - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
+       - `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
+       - `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
+       - `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
+       - A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when the run cannot heal it.
+     - Keep `sites` aside for steps 3–5.
 
 2. **Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry.
+
    The subagent returns `{keep, wall, title, summary, reason}` (see `prompts/selection.md` "Output").
    Judging the entries in parallel is fine.
+
    - **`kind == "feed"`** — staged to save cost: give the subagent the `title` and the preview `summary` first.
      - If those already place the entry **outside the Topics**, drop it from the preview alone — no body fetch (prompts/selection.md "Walls and unreadable pages").
      - Otherwise the entry is plausibly in scope, so have the subagent run `feed-filter entry-body --url '<url>'` to load the **full** feed body into its own context and judge depth from that.
@@ -62,63 +64,65 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
      - Decide relevance from the preview first: an entry the preview already places out of scope is dropped — never fetched, so never walled.
 
 3. **Act on each judged entry** (one `feed-filter` process per entry — the write/record pair is atomic inside it).
+
    `remind` requires `--title` (and `mark-seen` requires `--title`); `--summary` is optional.
    Pass `--title ""` to invoke the URL fallback when there is no real title, and pass `--summary '<gist>'` when the judge returned one.
    Omitting `--title` is an argparse error (exit 2), not a fallback, and would lose the entry.
    The URL, the title and the summary come off the page or the judge, so shell-escape each rather than only wrapping it in the quotes shown — close and reopen around each embedded `'` (`'\''`).
    An apostrophe is ordinary in a title, and one left unescaped ends the quoting mid-value.
+
    - **Wall** (`wall == true`) → take this branch **before** the keep/drop check: the page was a login/paywall, not the article, so defer to the user instead of dropping it (prompts/selection.md "Walls and unreadable pages").
-     Call `feed-filter remind --site-id <id> --url '<url>' --title '<title>' --summary '<gist>' --wall`.
-     The `--wall` flag sets the note's `wall` boolean, which the Feeds Base surfaces as a 🔒 prefix on the card.
-     **Prefer `--title ""`** (the URL fallback) unless the subagent extracted a genuine article title (e.g. from `og:title` left on the gate) — the visible page title on a wall is usually the gate's ("Sign in — …"), which is worse for manual review than the bare URL.
-     This writes the note and records seen (kept=1) like any keep, so the walled page is handed off once and not judged again.
+     - Call `feed-filter remind --site-id <id> --url '<url>' --title '<title>' --summary '<gist>' --wall`.
+       - The `--wall` flag sets the note's `wall` boolean, which the Feeds Base surfaces as a 🔒 prefix on the card.
+       - **Prefer `--title ""`** (the URL fallback) unless the subagent extracted a genuine article title (e.g. from `og:title` left on the gate) — the visible page title on a wall is usually the gate's ("Sign in — …"), which is worse for manual review than the bare URL.
+       - This writes the note and records seen (kept=1) like any keep, so the walled page is handed off once and not judged again.
    - **Keep** → `feed-filter remind --site-id <id> --url '<url>' --title '<title>' --summary '<gist>'`.
-     This writes the `Feeds/` note **and** records the entry seen (kept=1) in one process.
-     Do **not** also call `mark-seen` — that would double-record.
-     A non-zero exit means the vault write failed and the entry was **not** recorded seen.
-     Two cases, and the stdout tells them apart:
-     - `{"status": "locked", "holder": …}` — a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock").
-       This does **not** recur, because the holder finishes: leave this entry for the next run and **carry on** with the remaining keeps.
-       Report how many were deferred this way.
-     - No `locked` record (a slug collision, an unset vault, a disk error) — surface it and stop reminding, since the failure will recur.
+     - This writes the `Feeds/` note **and** records the entry seen (kept=1) in one process.
+     - Do **not** also call `mark-seen` — that would double-record.
+     - A non-zero exit means the vault write failed and the entry was **not** recorded seen.
+       - Two cases, and the stdout tells them apart:
+         - `{"status": "locked", "holder": …}` — a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock").
+           - This does **not** recur, because the holder finishes: leave this entry for the next run and **carry on** with the remaining keeps.
+           - Report how many were deferred this way.
+         - No `locked` record (a slug collision, an unset vault, a disk error) — surface it and stop reminding, since the failure will recur.
    - **Drop** → `feed-filter mark-seen --site-id <id> --url '<url>' --title '<title>'`.
-     Records the entry seen (kept=0) with no note, so it is not judged again.
+     - Records the entry seen (kept=0) with no note, so it is not judged again.
    - **Subagent or fetch error** on an entry → do not silently lose it.
-     Call `feed-filter remind` anyway with the entry's `title` when it has one, otherwise `--title ""` so the CLI falls back to the URL, plus a `--summary` line saying judging failed: `feed-filter remind --site-id <id> --url '<url>' --title '<entry title or empty>' --summary 'judging failed: <cause>'`.
-     This deliberately favors never-lost over never-duplicated.
+     - Call `feed-filter remind` anyway with the entry's `title` when it has one, otherwise `--title ""` so the CLI falls back to the URL, plus a `--summary` line saying judging failed: `feed-filter remind --site-id <id> --url '<url>' --title '<entry title or empty>' --summary 'judging failed: <cause>'`.
+     - This deliberately favors never-lost over never-duplicated.
 
 4. **Self-heal flagged scrape sites.** For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
-   Heal it where the condition below holds, and report it where it does not:
-   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
-   - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned and which of the two conditions failed.
-     - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
-     - Naming the cluster is your judgement and not a check on the output: a tag or pagination cluster comes back as a candidate like any other and discovery does not tell them apart, and a feed candidate carries no `article_url_pattern` at all.
-       - `heal-site` snapshots everything the pattern matched as seen with no note, so a pattern you were unsure of burns the whole live index and none of those articles is ever written.
-   - Run `feed-filter heal-site --site-id <id> --pattern '<new_pattern>'`.
-     The pattern reaches you as JSON, which doubles every backslash: undo that, and keep the quotes so the shell does not take them out again — either mangling still compiles, so the heal commits a pattern that matches nothing.
-     This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
-     It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
-     On success the output is `{site_id, pattern, snapshotted}`.
-   - A non-zero exit means the index re-scrape failed *before* the config write (snapshot-first / config-last), so `sites.toml` still carries the old pattern and nothing was snapshotted; report it in the summary and let the next run retry the heal.
+   - Heal it where the condition below holds, and report it where it does not:
+     - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
+     - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned and which of the two conditions failed.
+       - `discover` fetches over plain HTTP, so for a `requires_browser` site it is not reading the gather's page, and a pattern derived from it describes something the run never sees. Run it for the report, never to heal with.
+       - Naming the cluster is your judgement and not a check on the output: a tag or pagination cluster comes back as a candidate like any other and discovery does not tell them apart, and a feed candidate carries no `article_url_pattern` at all.
+         - `heal-site` snapshots everything the pattern matched as seen with no note, so a pattern you were unsure of burns the whole live index and none of those articles is ever written.
+     - Run `feed-filter heal-site --site-id <id> --pattern '<new_pattern>'`.
+       - The pattern reaches you as JSON, which doubles every backslash: undo that, and keep the quotes so the shell does not take them out again — either mangling still compiles, so the heal commits a pattern that matches nothing.
+       - This re-scrapes the index under the new pattern, snapshots those URLs as seen (flood guard, kept=NULL), and rewrites `sites.toml` — one process, config written last.
+       - It writes **no** feed note (the heal is an operational notice, not a page); record the heal in the run summary instead.
+       - On success the output is `{site_id, pattern, snapshotted}`.
+     - A non-zero exit means the index re-scrape failed *before* the config write (snapshot-first / config-last), so `sites.toml` still carries the old pattern and nothing was snapshotted; report it in the summary and let the next run retry the heal.
 
 5. **Surface errors.** For each site in `sites` with a non-null `error`, that site's gather failed; the entry list was empty and nothing was recorded, so it retries naturally next run.
-   Two independent fields decide what to write: `unexpected_error` says what **kind** of failure it was, and `persistent` says how hard to **escalate**.
-   - **Kind — `unexpected_error == true`**: the CLI could not classify this failure — it did not arrive as a fetch error.
-     - That is all the flag asserts: it is usually a feed-filter bug, but a page feeding the parser something it rejects looks the same.
-     - So report the `error` **verbatim** with the site id and say it is unclassified, rather than narrating it as an unreachable site; do not diagnose it beyond what the message says.
-   - **Escalation** — by design there is no backoff, so the durable `consecutive_failures`/`persistent` fields carry it (both kinds count toward them):
-     - **Not `persistent`** (the common case): report the `error` in the summary and move on.
-       - A transient failure self-heals; the durable counter resets on the next successful gather, so do not escalate on a single bad run.
-       - An `unexpected_error` is worth reporting even on one run, because a failure the CLI could not classify is not self-evidently transient — report it, but still do not escalate it.
-     - **`persistent == true`**: the site's gather has errored for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient").
-       Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below.
-       The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
-       When it is also an `unexpected_error`, say so and lead with the message: the investigation may end at "this is a bug to fix", but a chronically failing site still needs one.
-       1. **Check first for a moved or renamed feed/index URL.** A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated.
-          If the site moved, pointing it at the new URL restores it with its id and config intact.
-          Name the move as the likely cause in the summary and leave the registry alone — the edit is a hand-edit of local config and belongs to the user (see "Fix a site that moved" in `kboat-manage-feed-sites`).
-       2. **Only if the site is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
-          A long run of failures is not what establishes that — a moved site and a dead one fail the same way, and disabling here ends the very reports that would prompt the user to look.
+   - Two independent fields decide what to write: `unexpected_error` says what **kind** of failure it was, and `persistent` says how hard to **escalate**.
+     - **Kind — `unexpected_error == true`**: the CLI could not classify this failure — it did not arrive as a fetch error.
+       - That is all the flag asserts: it is usually a feed-filter bug, but a page feeding the parser something it rejects looks the same.
+       - So report the `error` **verbatim** with the site id and say it is unclassified, rather than narrating it as an unreachable site; do not diagnose it beyond what the message says.
+     - **Escalation** — by design there is no backoff, so the durable `consecutive_failures`/`persistent` fields carry it (both kinds count toward them):
+       - **Not `persistent`** (the common case): report the `error` in the summary and move on.
+         - A transient failure self-heals; the durable counter resets on the next successful gather, so do not escalate on a single bad run.
+         - An `unexpected_error` is worth reporting even on one run, because a failure the CLI could not classify is not self-evidently transient — report it, but still do not escalate it.
+       - **`persistent == true`**: the site's gather has errored for `consecutive_failures` consecutive runs (the CLI has already decided this crossed the threshold — do not re-judge it as "transient").
+         - Escalate: **flag it as actionable in the run summary** (see Run summary), recommending the two-step investigation below.
+           - The CLI never auto-disables — disabling stays your decision, because a persistent failure is as often a recoverable move as a dead site.
+           - When it is also an `unexpected_error`, say so and lead with the message: the investigation may end at "this is a bug to fix", but a chronically failing site still needs one.
+           1. **Check first for a moved or renamed feed/index URL.** A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated.
+              - If the site moved, pointing it at the new URL restores it with its id and config intact.
+              - Name the move as the likely cause in the summary and leave the registry alone — the edit is a hand-edit of local config and belongs to the user (see "Fix a site that moved" in `kboat-manage-feed-sites`).
+           2. **Only if the site is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).
+              - A long run of failures is not what establishes that — a moved site and a dead one fail the same way, and disabling here ends the very reports that would prompt the user to look.
 
 ## Run summary
 
