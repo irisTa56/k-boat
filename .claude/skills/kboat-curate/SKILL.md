@@ -53,33 +53,43 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 The canonical tag set and the variant→canonical aliases live in the KB as the **`meta/Tag vocabulary`** note (`memory://k-boat-knowledge/meta/tag-vocabulary`) — the tag source of truth.
 Read it first.
 
-1. **Census.** Aggregate every concept note's frontmatter tags:
+### Step 1: Census
 
-   ```bash
-   awk '/^tags:[[:space:]]*$/{f=1;next} f&&/^- /{t=$0;sub(/^- /,"",t);print t;next} f{f=0}' \
-     "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md | sort | uniq -c | sort -rn
-   ```
+Aggregate every concept note's frontmatter tags:
 
-   This assumes the block-style `tags:` form every concept note uses; a note written with an inline array (`tags: [a, b]`) would not be counted, so a surprisingly low total is the cue to check for that form.
+```bash
+awk '/^tags:[[:space:]]*$/{f=1;next} f&&/^- /{t=$0;sub(/^- /,"",t);print t;next} f{f=0}' \
+  "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md | sort | uniq -c | sort -rn
+```
 
-2. **Drift.** Compare the census against the vocabulary note:
-   - A tag listed under the vocabulary's **Avoid** column → fold it to its canonical form.
-     - When the canonical is already on the same note, just drop the variant; otherwise replace it.
-   - A tag **not** in the canonical set and not a known alias → a candidate.
-     - Judge by the note's content: a typo or near-duplicate of an existing tag is folded (and added to the Aliases table in `meta/Tag vocabulary`); a genuinely new facet is **adopted** — add it to the vocabulary note under the right family in the same change.
-   - Leave the "Distinct by design" tags alone (e.g. the three `distributed-*`; `latency`/`throughput` vs `performance`).
+This assumes the block-style `tags:` form every concept note uses; a note written with an inline array (`tags: [a, b]`) would not be counted, so a surprisingly low total is the cue to check for that form.
 
-3. **Coverage.** List the concept notes with no `tags:` block:
+### Step 2: Drift
 
-   ```bash
-   for f in "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md; do grep -q '^tags:' "$f" || echo "$f"; done
-   ```
+Compare the census against the vocabulary note:
 
-   For each, propose tags from the canonical set, reuse-first (prefer existing spellings; per-family guidance in the vocabulary note).
-   Insert the `tags:` block as the last frontmatter key (after `permalink:`), matching how the other concept notes carry tags; keep the YAML list indentation identical so the file Basic Memory re-ingests stays valid.
+- A tag listed under the vocabulary's **Avoid** column → fold it to its canonical form.
+  - When the canonical is already on the same note, just drop the variant; otherwise replace it.
+- A tag **not** in the canonical set and not a known alias → a candidate.
+  - Judge by the note's content: a typo or near-duplicate of an existing tag is folded (and added to the Aliases table in `meta/Tag vocabulary`); a genuinely new facet is **adopted** — add it to the vocabulary note under the right family in the same change.
+- Leave the "Distinct by design" tags alone (e.g. the three `distributed-*`; `latency`/`throughput` vs `performance`).
 
-4. **Apply on confirmation.** Edit tag blocks (on disk or via `edit_note`).
-   - Keep the two in sync: when you **adopt** a new tag, add it to `meta/Tag vocabulary`; when you **fold** a variant, record it in that note's Aliases table so it does not return.
+### Step 3: Coverage
+
+List the concept notes with no `tags:` block:
+
+```bash
+for f in "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md; do grep -q '^tags:' "$f" || echo "$f"; done
+```
+
+For each, propose tags from the canonical set, reuse-first (prefer existing spellings; per-family guidance in the vocabulary note).
+Insert the `tags:` block as the last frontmatter key (after `permalink:`), matching how the other concept notes carry tags; keep the YAML list indentation identical so the file Basic Memory re-ingests stays valid.
+
+### Step 4: Apply on confirmation
+
+Edit tag blocks (on disk or via `edit_note`).
+
+- Keep the two in sync: when you **adopt** a new tag, add it to `meta/Tag vocabulary`; when you **fold** a variant, record it in that note's Aliases table so it does not return.
 
 ## Report
 
