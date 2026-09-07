@@ -40,9 +40,12 @@ differ in what the author has to do. A blank line before the line un-folds it
 and leaves it prose inside the outer item, still failing this check, so the fix
 either way is to fold the line onto the marker's or give the item a heading.
 
-Only a paragraph is ever reported. A code block, a table, an HTML block and a
-thematic break cannot live on a marker's line, so the remedy the rule names is
-not open to them -- which also settles a code block's verdict by what it is
+Only a paragraph is ever reported, because the house rule is about prose: a
+code block, a table, an HTML block and a thematic break are not prose, so the
+rule does not ask after them. Each of them can sit on a marker's own line all
+the same -- `-     wide marker` puts an indented code block there -- so what
+leaves them unreported is this rule's subject rather than anything CommonMark
+forbids, and the same subject settles a code block's verdict by what it is
 rather than by whether the author fenced or indented it. Inside a blockquote
 nothing is scanned at all: the rule is about this repository's own prose, not
 about text it quotes.

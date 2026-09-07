@@ -252,9 +252,9 @@ def test_a_setext_underline_in_an_item_makes_a_heading_not_prose(tmp_path: Path)
 
 
 def test_an_indented_code_block_under_an_item_is_not_reported(tmp_path: Path) -> None:
-    # A block that cannot live on the marker's line, so the remedy the rule
-    # names is not open to it -- and the fenced spelling of the same block is
-    # not reported either, which is what keeps the verdict off the spelling.
+    # Code rather than prose, and the rule asks only after prose -- and the
+    # fenced spelling of the same block is not reported either, which is what
+    # keeps the verdict off the spelling.
     assert _scan(tmp_path, "- outer item\n  - deeper child\n\n        indented code\n") == []
 
 
