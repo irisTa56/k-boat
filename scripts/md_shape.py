@@ -42,11 +42,13 @@ content column is prose that item swallowed, blank line before it or not:
 Where both faults describe the same line, it is reported as a fold, the more
 specific reading of the two.
 
-The block starts that interrupt an open paragraph -- a blockquote, an HTML
-block, a thematic break -- are exempt from the fold, which is a claim about
-where CommonMark puts a line and would be false for them. They are not exempt
-from prose inside an item, which claims only that a block sits inside one, and
-that is as true of them as of a paragraph.
+Only a paragraph is ever reported, under either fault. A blockquote, an HTML
+block, a thematic break and an indented code block are exempt from both: the
+fold is a claim about where CommonMark puts a line and would be false for any of
+them, and the remedy the second fault names -- fold the line onto the marker's
+-- is not open to a block that cannot live on that line. Exempting them also
+settles a code block's verdict by what it is rather than by how it is spelt,
+since a fenced one is already unscanned.
 
 The scan is otherwise narrow, and where it cannot decide it does not report: it
 gates commits, so a false positive costs more than a miss. Two consequences
@@ -155,20 +157,15 @@ def _frontmatter_end(lines: list[str]) -> int:
     return 0
 
 
-def _inside_an_item(
-    stack: list[int], path: Path, line_no: int, indent: int, line: str
-) -> list[Report]:
-    """Close the items this line outdents, and report the one it lands inside.
+def _close_items(stack: list[int], indent: int) -> None:
+    """Drop the open items this line outdents past. Mutates `stack`.
 
-    Mutates `stack`. What survives the unwinding has a content column no deeper
-    than this line's indentation, so an innermost survivor is an item the line
-    sits at or past the content column of -- the whole of the second fault.
+    Every line does this, reported or not: what a later line is measured
+    against has to be the items still open at that point, not the ones a line
+    the scan stayed silent about had already closed.
     """
     while stack and stack[-1] > indent:
         stack.pop()
-    if not stack:
-        return []
-    return [Report(PROSE, str(path), line_no, indent, stack[-1], line)]
 
 
 def scan(path: Path) -> list[Report]:
@@ -218,8 +215,9 @@ def scan(path: Path) -> list[Report]:
             continue
 
         if _BLOCKQUOTE.match(line) or _THEMATIC_BREAK.match(line) or _HTML.match(line):
+            # None of these is a paragraph, so neither fault is about it.
             para_open = False
-            reports += _inside_an_item(stack, path, line_no, indent, line)
+            _close_items(stack, indent)
             continue
 
         marker = _MARKER.match(line)
@@ -235,11 +233,19 @@ def scan(path: Path) -> list[Report]:
             # CommonMark keeps the line in the deeper item, so the stack stands.
             continue
 
-        reports += _inside_an_item(stack, path, line_no, indent, line)
+        # What survives the unwinding has a content column no deeper than this
+        # line's indentation, so an innermost survivor is an item the line sits
+        # at or past the content column of -- the whole of the second fault.
+        _close_items(stack, indent)
         enclosing = stack[-1] if stack else 0
-        # An indented code block starts only where no paragraph is open; where
-        # one is, a deeply indented line goes on continuing it.
-        para_open = para_open or indent < enclosing + _CODE_INDENT
+        if not para_open and indent >= enclosing + _CODE_INDENT:
+            # An indented code block, which starts only where no paragraph is
+            # open -- where one is, a deeply indented line goes on continuing
+            # it. Nothing continues a code block lazily, so nothing reopens.
+            continue
+        para_open = True
+        if stack:
+            reports.append(Report(PROSE, str(path), line_no, indent, enclosing, line))
 
     return reports
 

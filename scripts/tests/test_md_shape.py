@@ -75,45 +75,60 @@ def test_a_heading_is_reported_as_neither(tmp_path: Path) -> None:
     assert _scan(tmp_path, "- outer item\n  - deeper child\n## A heading\n") == []
 
 
-def test_a_blockquote_is_prose_in_the_item_not_a_fold(tmp_path: Path) -> None:
-    # It interrupts the child's paragraph, so calling it folded would be false;
-    # it still sits at the outer item's content column.
-    reports = _scan(tmp_path, "- outer item\n  - deeper child\n  > quoted\n")
-    assert _found(reports) == [(md_shape.PROSE, 3, 2, 2)]
+def test_a_blockquote_is_reported_as_neither(tmp_path: Path) -> None:
+    # Calling it folded would be false -- it interrupts the child's paragraph --
+    # and it cannot be folded onto a marker's line either, so the second fault's
+    # remedy is not open to it. It still closes the child, which is what leaves
+    # the paragraph after it measured against the outer item.
+    reports = _scan(tmp_path, "- outer item\n  - deeper child\n  > quoted\n\n  after it\n")
+    assert _found(reports) == [(md_shape.PROSE, 5, 2, 2)]
 
 
-def test_an_html_comment_is_prose_in_the_item_not_a_fold(tmp_path: Path) -> None:
-    # Same again: pandoc puts this one in the outer item, where it reads -- and
-    # inside an item is exactly what the second fault reports.
-    reports = _scan(tmp_path, "- outer item\n  - deeper child\n  <!-- a note -->\n")
-    assert _found(reports) == [(md_shape.PROSE, 3, 2, 2)]
+def test_an_html_block_is_reported_as_neither(tmp_path: Path) -> None:
+    # Same again, and the same unwinding under it.
+    reports = _scan(
+        tmp_path,
+        "- outer item\n  - deeper child\n  <!-- a note -->\n\n  after it\n",
+    )
+    assert _found(reports) == [(md_shape.PROSE, 5, 2, 2)]
 
 
-def test_every_thematic_break_spelling_is_prose_in_the_item(tmp_path: Path) -> None:
-    # CommonMark spells it three ways; reporting one as folded would name a
-    # remedy -- a blank line -- that changes nothing about where it renders.
+def test_every_thematic_break_spelling_is_reported_as_neither(tmp_path: Path) -> None:
+    # CommonMark spells it three ways, and none of the three is prose that could
+    # move onto the marker's line or a paragraph a blank line could unstick.
     for rule in ("---", "***", "___"):
-        reports = _scan(tmp_path, f"- outer item\n  - deeper child\n  {rule}\n")
-        assert _found(reports) == [(md_shape.PROSE, 3, 2, 2)], rule
+        reports = _scan(tmp_path, f"- outer item\n  - deeper child\n  {rule}\n\n  after it\n")
+        assert _found(reports) == [(md_shape.PROSE, 5, 2, 2)], rule
+
+
+def test_a_block_start_back_at_the_margin_closes_the_list(tmp_path: Path) -> None:
+    # Reported as neither is not the same as unread: the break still closes both
+    # items, so the indented line under it is a paragraph of its own rather than
+    # one inside the outer item. Pandoc puts it after the `<hr />`, outside the
+    # `<ul>` entirely.
+    assert _scan(tmp_path, "- outer item\n  - deeper child\n***\n\n  after it\n") == []
 
 
 def test_a_spaced_thematic_break_is_read_as_the_break_not_a_marker(tmp_path: Path) -> None:
     # `- - -` is both spellable as a list item and a thematic break; CommonMark
     # gives the break precedence, so it closes the child rather than opening an
-    # item, and the next line is measured against the outer item alone.
+    # item, and the next line is measured against the outer item alone -- as
+    # prose in it, where reading the break as a marker would make it a fold.
     reports = _scan(tmp_path, "- outer item\n  - deeper child\n  - - -\n  after it\n")
-    assert _found(reports) == [(md_shape.PROSE, 3, 2, 2), (md_shape.PROSE, 4, 2, 2)]
+    assert _found(reports) == [(md_shape.PROSE, 4, 2, 2)]
 
 
-def test_an_indented_code_block_is_prose_in_the_item(tmp_path: Path) -> None:
+def test_an_indented_code_block_is_reported_as_neither(tmp_path: Path) -> None:
     # Four columns past the enclosing item's content column with no paragraph
     # open is code, so the line after it continues nothing and is not folded.
-    # Both lines are still blocks sitting inside the outer item.
+    # The code is a block rather than prose, and the fenced spelling of the same
+    # block is unscanned, so reporting this one would turn the verdict on how
+    # the author spelt it.
     reports = _scan(
         tmp_path,
         "- outer item\n  - deeper child\n\n        indented code\n  back in the outer item\n",
     )
-    assert _found(reports) == [(md_shape.PROSE, 4, 8, 4), (md_shape.PROSE, 5, 2, 2)]
+    assert _found(reports) == [(md_shape.PROSE, 5, 2, 2)]
 
 
 def test_a_wide_marker_does_not_invent_a_content_column(tmp_path: Path) -> None:
