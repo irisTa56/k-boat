@@ -61,7 +61,8 @@ Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and
 The subagent judges three fields; prefer existing values and keep the vocabulary small.
 
 - `role` — the closed 6-value enum above. Pick exactly one.
-- `domain` — a controlled **14-word** vocabulary (kebab-case), typically 1–3 per repo. Add a new value only when none fits; the point of a coarse vocabulary is a clean browse axis, so resist one-off domains (the fine detail belongs in `topics`/`summary`).
+- `domain` — a controlled **14-word** vocabulary (kebab-case), typically 1–3 per repo.
+  - Add a new value only when none fits; the point of a coarse vocabulary is a clean browse axis, so resist one-off domains (the fine detail belongs in `topics`/`summary`).
 
   ```text
   ai-agents, ai-infrastructure, ml, devtools, web-development,
@@ -72,13 +73,21 @@ The subagent judges three fields; prefer existing values and keep the vocabulary
   - `general` is the fallback when nothing else fits.
   - `embedded-iot` and `media` are umbrellas (embedded/iot/home-automation; graphics/audio/game-dev).
   - Fold the obvious neighbours rather than inventing: storage/search → `data`; messaging/networking/blockchain → `distributed-systems`; cloud/observability → `infrastructure`; api/api-gateway/microservices → `web-development`; code-intelligence → `devtools`; osint → `security`; transportation → `geospatial`.
-- `summary` — one or two plain Japanese sentences saying what the project is and who it is for. No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is.
+- `summary` — one or two plain Japanese sentences saying what the project is and who it is for.
+  - No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is.
 
 ## Repo lifecycle and state
 
 There is nothing destructive to gate, so the state is minimal:
 
-- Created when `kboat-ingest` sees the repo's link in the queue and routes it here (the `kboat-repos` skill fetches metadata, the subagent classifies, `kboat-repos write` writes the note, the queue file is deleted). The note is the durable record; the queue file is only a queue entry.
+- Created when `kboat-ingest` sees the repo's link in the queue and routes it here (the `kboat-repos` skill fetches metadata, the subagent classifies, `kboat-repos write` writes the note, the queue file is deleted).
+  - The note is the durable record; the queue file is only a queue entry.
 - `reading` — informational, set by the human; drives nothing.
-- `refreshed_date` advances each time `kboat-repos refresh` re-fetches the GitHub metadata and recomputes `status`. Refresh **preserves** the judged layer (`role`/`domain`/`summary`) and the `## Notes` body.
-- **Renames/transfers/case are adopted automatically.** When `gh` resolves a different canonical `owner/repo` than the note holds, refresh updates `url`/`title` and renames the file to the new canonical slug (carrying the judgement layer and body across). This keeps every note keyed off the live repo and is why the catalogue does not accumulate stale-name notes. The one exception is a slug **collision** — the new canonical slug is already spoken for — which refresh reports as a `rename_collisions` entry carrying a typed `reason` for which of four ways it was, only some of them a human's to merge. The note keeps its identity and its metadata is refreshed in place meanwhile; `kboat-repos` "Procedure: refresh the catalogue" step 2 maps each reason to who acts. A note the run did not refresh — for any of the reasons under [Procedure: refresh repo metadata](procedures.md#procedure-refresh-repo-metadata) — is reported under `failed`; the note is never deleted by the routine.
+- `refreshed_date` advances each time `kboat-repos refresh` re-fetches the GitHub metadata and recomputes `status`.
+- Refresh **preserves** the judged layer (`role`/`domain`/`summary`) and the `## Notes` body.
+- **Renames/transfers/case are adopted automatically.**
+  - When `gh` resolves a different canonical `owner/repo` than the note holds, refresh updates `url`/`title` and renames the file to the new canonical slug (carrying the judgement layer and body across).
+    - This keeps every note keyed off the live repo and is why the catalogue does not accumulate stale-name notes.
+  - The one exception is a slug **collision** — the new canonical slug is already spoken for — which refresh reports as a `rename_collisions` entry carrying a typed `reason` for which of four ways it was, only some of them a human's to merge.
+    - The note keeps its identity and its metadata is refreshed in place meanwhile; `kboat-repos` "Procedure: refresh the catalogue" step 2 maps each reason to who acts.
+- A note the run did not refresh — for any of the reasons under [Procedure: refresh repo metadata](procedures.md#procedure-refresh-repo-metadata) — is reported under `failed`; the note is never deleted by the routine.
