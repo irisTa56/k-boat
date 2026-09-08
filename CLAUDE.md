@@ -92,6 +92,9 @@ The root `pyproject.toml` carries the workspace's ruff configuration along with 
 It defers here for one thing: clearing `required-version` after a ruff minor bump fails the gate.
 Diff `ruff check --isolated --show-settings` between the old and the new binary, decide about whatever the new default no longer covers, then widen the range.
 
+The NotebookLM CLI's pin (`tools/notebooklm/pyproject.toml`) defers here for the same reason, and `.github/dependabot.yml` says why its Dependabot PR is the one that must not auto-merge.
+Its bump also falsifies prose: the skills state the CLI's behaviour and the values it emits as the installed version's, so a bump means re-reading every statement that names one — a source type name, say, which a release can add or rename.
+
 ## Git workflow
 
 - Never push to `main` directly; branch first, then PR.

@@ -1,16 +1,29 @@
-# Dependabot version updates. Two ecosystems:
+# Dependabot version updates. Three entries:
 #
 # - uv, at the workspace root ("/"): Dependabot reads the root uv.lock, which
 #   resolves the whole workspace, so one entry covers every member's runtime deps
 #   plus the root dev group — no per-member entry as packages are added.
 # - github-actions, at "/": keeps the action versions pinned across the CI
 #   workflows (.github/workflows/*.yml) current.
+# - uv, at "/tools/notebooklm": the browser-driven NotebookLM CLI, whose exact pin
+#   is what this entry exists to announce. See below.
 #
-# The mise-managed tools are out of Dependabot's scope.
-# gitleaks, lychee, rumdl and uv track `latest`, so `mise upgrade` covers them.
-# notebooklm-py does not: `mise upgrade` will not cross an exact pin.
-# Bump it by hand, and verify against the live service before merging.
-# No CI job exercises the browser-driven CLI, so a green pipeline is no signal.
+# The mise-managed tools are out of Dependabot's scope, and can be: gitleaks,
+# lychee, rumdl and uv all track `latest`, so `mise upgrade` covers them.
+#
+# notebooklm-py needs an exact pin instead: no CI job exercises the browser-driven
+# CLI, so each bump has to be checked against the live NotebookLM service by hand,
+# and `mise upgrade` will not cross an exact pin. A pin Dependabot watches cannot
+# sit in mise.toml either, no ecosystem reading one — hence the uv project of its
+# own. The next exact pin that needs watching wants that same shape, not a fourth
+# entry here.
+#
+# Its PR is the notification, not the change: merging it is a decision a person
+# makes after running the new version against the live service. So it is the one
+# Dependabot PR here that must not auto-merge. `pull-request-branch-name.prefix`
+# is what dependabot-auto-merge.yml matches on, and it sits on the two entries a
+# green CI vouches for rather than on this one — that way a lost config line stops
+# an auto-merge rather than starting one.
 version: 2
 updates:
   - package-ecosystem: "uv"
@@ -20,6 +33,8 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+    pull-request-branch-name:
+      prefix: "dependabot-automerge"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -30,3 +45,12 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "ci"
+    pull-request-branch-name:
+      prefix: "dependabot-automerge"
+
+  # Ungrouped and unprefixed, both deliberately: one dependency, and a branch name
+  # the auto-merge workflow will not match.
+  - package-ecosystem: "uv"
+    directory: "/tools/notebooklm"
+    schedule:
+      interval: "monthly"
