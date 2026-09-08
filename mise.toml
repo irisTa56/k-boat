@@ -9,11 +9,6 @@ gitleaks = "latest"
 lychee = "latest"
 rumdl = "latest"
 uv = "latest"
-# The browser-driven NotebookLM CLI, isolated from the project venv (uvx-backed).
-# Keeps the `kboat` package zero-dependency; auth lives in ~/.notebooklm, Chromium
-# in Playwright's cache, both outside this env. `notebooklm login` installs Chromium
-# on first run, so no explicit playwright step is needed.
-"pipx:notebooklm-py" = { version = "0.7.3", extras = "browser" }
 
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
@@ -25,11 +20,25 @@ _.file = ".env"
 # editable plus the shared dev tooling, so each package's console scripts are
 # callable bare.
 _.python.venv = { path = ".venv", create = true }
+# The NotebookLM CLI's own venv (tools/notebooklm/pyproject.toml says why it has
+# one), behind the venv above rather than in front of it, so `python` still
+# resolves to the workspace and only `notebooklm` comes from here.
+_.path = ["tools/notebooklm/.venv/bin"]
 
 [hooks]
+# Keep the git-hook generation first. A failing step aborts the rest (`sh -o
+# errexit`) while `mise install` still exits 0, and of the three this is the only
+# one whose absence is silent: a missing venv fails the next command loudly, a
+# missing pre-commit hook lets every later commit through ungated. Both syncs
+# reach the network, so neither can take that place.
+#
+# `--no-active` silences uv's warning that `VIRTUAL_ENV` (exported above) is not
+# this project's environment, which is the intent and would otherwise be noise on
+# the output the paragraph above asks the reader to scan.
 postinstall = """
-uv sync
 mise generate git-pre-commit --write --task=pre-commit
+uv sync
+uv sync --project tools/notebooklm --no-active
 """
 
 [tasks."fmt:md"]

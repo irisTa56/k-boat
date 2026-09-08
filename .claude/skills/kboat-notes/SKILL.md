@@ -26,7 +26,7 @@ Where this skill says "source" it means a `Sources/*.md` note; the Kindle and re
   - It holds the distilled concept notes and may live outside the vault (for K-Boat it is a Git-managed directory).
   - When unset, default to `<OBSIDIAN_VAULT_PATH>/Knowledge`.
 - Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke the CLIs bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
-  - `mise env` exports `.env` over `mise.toml`'s defaults and puts both the uv venv (`.venv/bin`, the `kboat-*` scripts) and the mise tools (the `notebooklm` CLI, the `pipx:notebooklm-py` tool) on `PATH`, so the bare names resolve and `$OBSIDIAN_VAULT_PATH` expands inside arguments (no `.venv/bin/` prefix, no `--vault` flag).
+  - `mise env` exports `.env` over `mise.toml`'s defaults and puts both the workspace venv (`.venv/bin`, the `kboat-*` scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv/bin`, the `notebooklm` CLI) on `PATH`, so the bare names resolve and `$OBSIDIAN_VAULT_PATH` expands inside arguments (no `.venv/bin/` prefix, no `--vault` flag).
   - The Bash tool keeps no shell state between calls, so re-run `eval "$(mise env)"` in each block.
   - Without this on `PATH`, a bare `notebooklm` fails.
 - When parsing `--json` output, pass the global `--quiet` flag (`notebooklm --quiet … --json`): some subcommands (e.g. `source list`) otherwise print status to stdout, where it corrupts the JSON.

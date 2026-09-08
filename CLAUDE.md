@@ -9,7 +9,7 @@ This file is the umbrella project doc — the shared conventions plus the K-Boat
 A uv workspace (mise + uv). K-Boat is not an application.
 It is a Claude Code skill package plus a thin Python environment: K-Boat's skills at the repo-root `.claude/skills/` are the product, and most "code" is prose an agent executes.
 The exception is the deterministic, purely-mechanical core, extracted into a tested Python library — the `kboat` package (`packages/kboat/`) — so the model neither re-derives it nor pays tokens for it.
-The browser-driven NotebookLM CLI is a separate mise tool (`pipx:notebooklm-py`).
+The browser-driven NotebookLM CLI (`notebooklm-py`) is a uv project of its own at `tools/notebooklm/`, kept out of the workspace resolution.
 
 Product skills stay at the root rather than in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name.
 
@@ -31,7 +31,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 ## Environment
 
 - Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke it bare.
-  - It loads `.env` over `mise.toml`'s defaults and puts the single workspace `.venv` (both members' console scripts) and the `notebooklm` mise tool on `PATH`.
+  - It loads `.env` over `mise.toml`'s defaults and puts the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
   - Re-run it per block — the Bash tool keeps no state.
   - `mise env` prints the whole of `.env`, secrets included, so `eval` it and never read its output.
     - To inspect the environment, filter to the one variable you need: `mise env | grep '^export PATH='`.

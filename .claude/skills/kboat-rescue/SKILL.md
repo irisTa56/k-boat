@@ -46,7 +46,7 @@ Do not set `blocked` to bring the source into this skill's usual path — that r
 On those two, an entry that still carries one is not missing its content and is not this skill's to rescue — kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source) step 1 owns that gate and where such a source goes instead.
 It has to be read here rather than at step 5, where this skill points at that procedure: by then the browser fetch has run and step 5's `create` has built the notebook whose id would overwrite the stored one.
 That is why the no-argument listing shows the field — an entry carrying one is visible before the user picks it.
-Load the env with `eval "$(mise env)"` at the top of every shell block (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it sets `$OBSIDIAN_VAULT_PATH` from `.env` and puts the venv on `PATH`, so the `notebooklm` commands resolve bare.
+Load the env with `eval "$(mise env)"` at the top of every shell block (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it sets `$OBSIDIAN_VAULT_PATH` from `.env` and puts both venvs on `PATH`, so the `notebooklm` commands resolve bare.
 The Bash tool keeps no shell state, so re-run it in each block.
 
 **Invoked to give one up** ("that URL is dead", "drop the blocked one"): kboat-notes' triggers are of two kinds, and what the source needs first depends on which the user is naming.
