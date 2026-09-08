@@ -17,7 +17,7 @@ Every Basic Memory call (`search_notes`, `write_note`, `edit_note`) must pass `p
 
 ## Run-level preamble
 
-Run `eval "$(mise env)"` at the top of every shell block here (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it loads `.env` over the `mise.toml` defaults and puts the venv on `PATH`, so `notebooklm`, `kboat-lifecycle`, `kboat-concept`, and `$OBSIDIAN_VAULT_PATH` resolve bare.
+Run `eval "$(mise env)"` at the top of every shell block here (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it loads `.env` over the `mise.toml` defaults and puts both venvs on `PATH`, so `notebooklm`, `kboat-lifecycle`, `kboat-concept`, and `$OBSIDIAN_VAULT_PATH` resolve bare.
 The Bash tool keeps no shell state between calls, so re-run it in each block.
 
 ### Step 1: refresh NotebookLM auth
@@ -100,10 +100,10 @@ Take `notebooklm_id` from the ripe entry (the tool read it from the source note)
 
 ### Step 2: resolve the sources
 
-Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment): the warning it hides fires on exactly the notebooks holding saved dialogue, which this step is about).
+Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment), since this step decides which source is the original from what the call returns).
 
 - If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
-- The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, a note / "unknown" type, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
+- The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, type `gemini_chat`, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
 - Identify the original (see kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11)): for a `pdf`, the source with `type: pdf`; for a `web_page`, the source whose `url` matches the note's `url`, or — where that source has `url: null`, a rescued page added as text — whose `title` matches the note's `title`.
   - Take its id as the grounded authority, and treat **every other source as saved dialogue** to extract in step 3.
   - If nothing matches, report that the original could not be identified and list what the notebook does hold, then skip this source without stamping or discarding.

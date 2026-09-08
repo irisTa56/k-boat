@@ -14,9 +14,9 @@ K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package
 
 ## Setup
 
-- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; it installs the tools and a postinstall hook syncs the venv.
-- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), installed as a mise tool (isolated from the project venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run.
-- To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both the venv and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
+- Dependencies are managed with [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). Run `mise install`; it installs the tools and a postinstall hook syncs the venvs. Read its output: a failed hook step is only a warning, and `mise install` still exits 0, so the first symptom otherwise is `command not found` at the next step here.
+- The NotebookLM CLI comes from [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py), pinned in its own uv project at `tools/notebooklm/` (isolated from the workspace venv). Authenticate once with `mise run nblm:login`, which also installs Chromium on first run.
+- To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both venvs and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
 - `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
 - Distilled knowledge is a Basic Memory project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
 

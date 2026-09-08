@@ -1,0 +1,19 @@
+# The browser-driven NotebookLM CLI, as a uv project of its own rather than a
+# workspace member or a root dependency group. What the pin is doing here, and how
+# it gets bumped, is .github/dependabot.yml's to say; what the separation buys is
+# that the resolution is its own. `notebooklm-py` caps `httpx`, which feed-filter
+# also depends on, and in one lock that cap would bound a member's runtime
+# dependency — from here it cannot reach one.
+#
+# `mise install` syncs this and puts its `.venv/bin` on `PATH` (see mise.toml).
+# Auth lives in ~/.notebooklm and Chromium in Playwright's cache, both outside the
+# repo.
+[project]
+name = "notebooklm-tool"
+version = "0"
+requires-python = ">=3.14"
+dependencies = ["notebooklm-py[browser]==0.8.2"]
+
+# Nothing here is importable: this project exists to pin and install a CLI.
+[tool.uv]
+package = false

@@ -48,7 +48,7 @@ A rescued web page keeps its original `url` on the note for identity; it is only
 ### Saved dialogue as extra sources
 
 The notebook is a reading-and-dialogue workspace, so reading-time dialogue is part of what it holds.
-A useful Gemini exchange can be **saved back into the notebook as a NotebookLM note**, which then appears in `notebooklm source list` as an *additional* source — typically `url: null` and a note / "unknown" type, with a topic-style `title` distinct from the original.
+A useful Gemini exchange can be **saved back into the notebook as a NotebookLM note**, which then appears in `notebooklm source list` as an *additional* source — typically `url: null` and type `gemini_chat`, with a topic-style `title` distinct from the original.
 This is expected and not a 1:1 violation: the 1:1 invariant is one notebook per *original* source, and the original is identifiable by the rule above, so every other source in the notebook is saved dialogue.
 
 Distillation treats the two differently (see kboat-distill): the original source's content is the `#grounded` authority, and each saved dialogue note is treated as `#dialogue` unless the source grounds it — vetted before accreting and keyed to the **original** source's `url` for provenance (the two roots can't resolve a wikilink, and the dialogue happened over that source).

@@ -9,7 +9,7 @@ This file is the umbrella project doc — the shared conventions plus the K-Boat
 A uv workspace (mise + uv). K-Boat is not an application.
 It is a Claude Code skill package plus a thin Python environment: K-Boat's skills at the repo-root `.claude/skills/` are the product, and most "code" is prose an agent executes.
 The exception is the deterministic, purely-mechanical core, extracted into a tested Python library — the `kboat` package (`packages/kboat/`) — so the model neither re-derives it nor pays tokens for it.
-The browser-driven NotebookLM CLI is a separate mise tool (`pipx:notebooklm-py`).
+The browser-driven NotebookLM CLI (`notebooklm-py`) is a uv project of its own at `tools/notebooklm/`, kept out of the workspace resolution.
 
 Product skills stay at the root rather than in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name.
 
@@ -31,7 +31,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 ## Environment
 
 - Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke it bare.
-  - It loads `.env` over `mise.toml`'s defaults and puts the single workspace `.venv` (both members' console scripts) and the `notebooklm` mise tool on `PATH`.
+  - It loads `.env` over `mise.toml`'s defaults and puts the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
   - Re-run it per block — the Bash tool keeps no state.
   - `mise env` prints the whole of `.env`, secrets included, so `eval` it and never read its output.
     - To inspect the environment, filter to the one variable you need: `mise env | grep '^export PATH='`.
@@ -91,6 +91,9 @@ Automation:
 The root `pyproject.toml` carries the workspace's ruff configuration along with its own reasons; each member carries its own pytest configuration, and `.rumdl.toml` and `lychee.toml` are workspace-wide.
 It defers here for one thing: clearing `required-version` after a ruff minor bump fails the gate.
 Diff `ruff check --isolated --show-settings` between the old and the new binary, decide about whatever the new default no longer covers, then widen the range.
+
+The NotebookLM CLI's pin (`tools/notebooklm/pyproject.toml`) defers here for the same reason, and `.github/dependabot.yml` says why its Dependabot PR is the one that must not auto-merge.
+Its bump also falsifies prose: the skills state the CLI's behaviour and the values it emits as the installed version's, so a bump means re-reading every statement that names one — a source type name, say, which a release can add or rename.
 
 ## Git workflow
 
