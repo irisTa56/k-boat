@@ -12,7 +12,7 @@
 name = "notebooklm-tool"
 version = "0"
 requires-python = ">=3.14"
-dependencies = ["notebooklm-py[browser]==0.7.3"]
+dependencies = ["notebooklm-py[browser]==0.8.2"]
 
 # Nothing here is importable: this project exists to pin and install a CLI.
 [tool.uv]

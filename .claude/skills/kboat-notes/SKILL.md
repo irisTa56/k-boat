@@ -30,7 +30,7 @@ Where this skill says "source" it means a `Sources/*.md` note; the Kindle and re
   - The Bash tool keeps no shell state between calls, so re-run `eval "$(mise env)"` in each block.
   - Without this on `PATH`, a bare `notebooklm` fails.
 - When parsing `--json` output, pass the global `--quiet` flag (`notebooklm --quiet … --json`): some subcommands (e.g. `source list`) otherwise print status to stdout, where it corrupts the JSON.
-  - **`--quiet` reaches the CLI's own output and not the library beneath it**, which writes to stderr — an `UnknownTypeWarning` naming a source kind the installed version does not know (notebooklm-py 0.7.3 does not know the one a saved note carries, so this fires for every notebook holding reading-time dialogue), or an `ERROR … rpc_code=…` line ahead of a failure.
+  - **`--quiet` reaches the CLI's own output and not the library beneath it**, which writes to stderr — an `UnknownTypeWarning` naming a source kind the installed version does not know, or an `ERROR … rpc_code=…` line ahead of a failure.
     - The Bash tool merges the two streams, so an agent deciding whether a call succeeded meets that text first, and a warning naming a version problem reads like a failure.
   - Redirect stderr (`2>/dev/null`) wherever a decision turns on the output: both the success payload and the `--json` error object come back on stdout, so nothing is lost.
 - For CLI usage and authentication details, see the `notebooklm-py` skill.

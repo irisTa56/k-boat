@@ -220,7 +220,7 @@ Step 2 imports the ingest verification whole, so every ending that step has arri
 
 ### Step 1: confirm the original is really missing
 
-Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per [One notebook per source (1:1)](source-note.md#one-notebook-per-source-11); redirect stderr per [Environment](../SKILL.md#environment), the warning it hides firing loudest on the notebooks this procedure exists for.
+Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per [One notebook per source (1:1)](source-note.md#one-notebook-per-source-11); redirect stderr per [Environment](../SKILL.md#environment), since what this procedure does next turns on what the call returns.
 If the original is there, stop — whether its text is any good is a different question with its own checks.
 
 Two answers are not a missing original:
@@ -242,8 +242,9 @@ No match also comes back when the rule was given something it cannot classify, a
 So **act on a listing in which nothing could be a source ingest added** (an empty one, or one holding only saved notes), and **stop on anything that could be**, whatever its type, reporting what the listing holds.
 
 Read the type names as version-local.
-With notebooklm-py 0.7.3 a fetched page is `web_page`, an uploaded file `pdf`, a pasted-text upload (a rescued page) `pasted_text`, a page NotebookLM classified its own way something outside this schema's two values (`youtube`, `epub`, …) — and a saved note is `unknown`, not as NotebookLM's answer but because the CLI does not recognise the kind and says so, printing `UnknownTypeWarning: Unknown source type code 18`.
-A later version will name that kind something else, so keep the test and not the literal string; a `notebooklm` bump is where to re-read this.
+With notebooklm-py 0.8.2 a fetched page is `web_page`, an uploaded file `pdf`, a pasted-text upload (a rescued page) `pasted_text`, a saved note `gemini_chat`, and a page NotebookLM classified its own way something outside this schema's two values (`youtube`, `epub`, …).
+A kind the installed version does not recognise reads as `unknown` instead, not as NotebookLM's answer but because the CLI has no name for the code and says so on stderr, printing `UnknownTypeWarning: Unknown source type code <n>`.
+So keep the test and not the literal string; a `notebooklm` bump is where to re-read this.
 
 **Say what ends the stop report, because repeating it tomorrow does not.**
 A human looking at the listing beside the note finds one of two things:
@@ -280,11 +281,12 @@ Delete the source just added (`notebooklm --quiet source delete <source_id> --no
 So re-list a few times, seconds apart, before concluding anything from an empty difference, and treat a difference that stays empty as *could not confirm* rather than as a clean notebook.
 
 A new id is either your add or a note the reader saved in the seconds between the two listings, and **you cannot tell them apart while the row is still settling**.
-A source list row carries its type and its `url` in the same metadata block, the `url` at a later position, so a row whose block has not landed reports `type: unknown` *and* `url: null` — the same shape a saved note reports, that type being what an unmapped code and an absent one both serialize to.
+A source list row carries its type and its `url` in the same metadata block, the `url` at a later position, so a row whose block has not landed reports `type: unknown` *and* `url: null`, an absent code serializing to the same type an unmapped one does.
+Neither value identifies anything while the row is in that state, and your own add passes through it too.
 
 - **Settle before attributing**: re-list until each new row carries a type, a few seconds apart.
 - Then attribute by what you handed the add — the note's `url` for the web restore, the note's `title` for the browser capture below, `type: pdf` for the file.
-  - A settled saved note is `unknown`, which none of the three adds ever is.
+  - A settled saved note is `gemini_chat`, which none of the three adds ever is.
 - Delete only what you attributed that way, so a note saved in the window is never in the delete set: it is the reader's own writing, and nothing regenerates it.
 - **A row that will not settle is not "nothing was added".**
   - Report it as a source you could not attribute, naming the notebook.
