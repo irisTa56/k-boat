@@ -97,7 +97,7 @@ jobs:
       # visible, reviewable diff instead of a silent `@v0` re-resolve. This
       # pins the action's own code, not the `rumdl` binary version it installs
       # (see the header comment). It auto-detects .rumdl.toml at the root.
-      - uses: rvben/rumdl@v0.2.62
+      - uses: rvben/rumdl@v0.2.66
       # Pinned to the same full version as the `python-qa` job's, for the same
       # reason: setup-uv publishes no floating major tag.
       - uses: astral-sh/setup-uv@v10.0.1
