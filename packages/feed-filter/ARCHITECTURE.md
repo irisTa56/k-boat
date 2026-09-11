@@ -113,7 +113,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | --- | --- |
 | `discover` | find feed/scrape candidates for a URL |
 | `add-site` | register a site (snapshots seen, then writes config) |
-| `list-sites` | list registered sites (with enabled/disabled status) |
+| `list-sites` | list registered sites (with enabled/disabled status) as a bare JSON array, one object per site, naming it `id` where the other commands emit `site_id` |
 | `new-entries` | gather new, unseen entries across non-forum sites (each entry's `summary` is a preview; the full body is cached for `entry-body`) |
 | `query-new` | gather new, unseen pages by neural-searching one or more `--query` descriptions (Exa); same entry shape as `new-entries`, plus `query` provenance. `queries[].new` counts pages that survived both dedupe layers, *before* the global cap, and `cost_dollars` is a floor (a request answered with an unparseable body reports nothing) |
 | `entry-body` | print one gathered entry's full cached body (`{url, body}` with `url` canonicalized; `body` is `null` on a cache miss) for the judge |
