@@ -50,7 +50,7 @@ Run `eval "$(mise env)" && feed-filter new-entries`.
 **Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry.
 
 The subagent returns `{keep, wall, title, summary, reason}` (see `prompts/selection.md` "Output").
-Judging the entries in parallel is fine.
+Launch every judge in one message and in the foreground (`run_in_background: false`), so they run in parallel and step 3 starts with every result in hand; a judge started in the background leaves the run with nothing to do but wait for it.
 
 - **`kind == "feed"`** — staged to save cost: give the subagent the `title` and the preview `summary` first.
   - If those already place the entry **outside the Topics**, drop it from the preview alone — no body fetch (prompts/selection.md "Walls and unreadable pages").
