@@ -30,6 +30,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 - Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent.
   - This file is gitignored local config; if it is absent (a fresh checkout), stop and report that it must be created by copying `prompts/selection.example.md` to `prompts/selection.md` — do not judge with no criteria.
   - Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
+    - `list-sites` prints a bare JSON array, one object per site, and names the site `id` — the value `forum-new` emits as `site_id`.
   - The same `list-sites` row carries `forum_subject` for the Rule-A native-subject exclusion (step 2).
 
 ## Procedure
