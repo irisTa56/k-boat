@@ -63,7 +63,7 @@ Run `eval "$(mise env)" && feed-filter forum-new`.
 **Judge each candidate**, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
 
 - Use a **Sonnet** subagent for Rule A and a **haiku** subagent for Rule B (see the model split above).
-- Judging candidates in parallel is fine.
+- Judging candidates in parallel is fine, but launch each judge in the foreground (`run_in_background: false`): step 3 needs every result, and a judge started in the background leaves the run with nothing to do but wait for it.
 
 **Rule A** (`rule == "A"`) — cross-domain interest judgment on the OP:
 
