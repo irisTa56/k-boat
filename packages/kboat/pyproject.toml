@@ -6,10 +6,15 @@ description = "Deterministic K-Boat tools over a shared frontmatter core: lifecy
 # every `OSError`. `kboat.note.migrate` rests on that to report a probe it cannot
 # make as a row rather than aborting the scan.
 requires-python = ">=3.14"
-# Intentionally zero runtime dependencies: the mechanical core stays a pure,
-# independently-testable package. The browser-driven NotebookLM CLI lives outside
-# this env in its own uv project (`tools/notebooklm`), so it never leaks in here.
-dependencies = []
+# Runtime dependencies are kept few, and one is added only where it replaces logic
+# this package would otherwise maintain by hand. PyYAML reads the concept notes
+# Basic Memory writes, which fold a long value onto a continuation line that
+# `kboat.frontmatter`'s scanner does not model. The browser-driven NotebookLM CLI
+# lives outside this env in its own uv project (`tools/notebooklm`), so it never
+# leaks in here.
+dependencies = [
+    "pyyaml>=6",
+]
 
 [project.scripts]
 kboat-lifecycle = "kboat.lifecycle.__main__:main"

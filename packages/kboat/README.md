@@ -49,5 +49,5 @@ Change the relevant spec first, then this package and its tests.
 
 ## Development
 
-- Zero runtime dependencies by design, so the core stays a pure, independently-testable package.
+- Few runtime dependencies: one is added only where it replaces logic this package would otherwise maintain by hand.
 - QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`. `mise.toml` defines the workspace-wide gates, and the [root README](../../README.md) has the layout and the setup order.
