@@ -39,6 +39,15 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 - **Orphans** — concept notes with no inbound or outbound relations; propose relations or a hub note.
 - **Duplicates / overlaps** — clusters covering the same ground; propose an index note or relations, not a merge (log merge candidates for a human).
 - **Naming** — flag vague titles, especially a generic phrase narrowed by a parenthetical qualifier (the pattern `Generic phrase (what it is really about)`, clearer rewritten as `Specific phrase`); propose a clearer title.
+  - Also flag every title that is not its own filename (kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)), since Basic Memory reports no broken link for it; propose a title free of the sanitized characters.
+
+    ```bash
+    for f in "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md; do
+      t=$(sed -n 's/^title: //p' "$f" | head -1 | sed -e "s/^'\(.*\)'$/\1/" -e 's/^"\(.*\)"$/\1/')
+      [ "$t" = "$(basename "$f" .md)" ] || printf '%s\t%s\n' "$(basename "$f")" "$t"
+    done
+    ```
+
 - **Relations** — high-confidence missing edges, and contradictions (the same pair related one way from one side and another from the other); reconcile to one direction.
 - **Sparse notes** — thin bodies missing Observations or Relations; propose enrichment.
 
