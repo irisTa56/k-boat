@@ -39,14 +39,14 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 - **Orphans** — concept notes with no inbound or outbound relations; propose relations or a hub note.
 - **Duplicates / overlaps** — clusters covering the same ground; propose an index note or relations, not a merge (log merge candidates for a human).
 - **Naming** — flag vague titles, especially a generic phrase narrowed by a parenthetical qualifier (the pattern `Generic phrase (what it is really about)`, clearer rewritten as `Specific phrase`); propose a clearer title.
-  - Also flag every title that is not its own filename (kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)), and propose one free of the characters that note forbids.
+  - Also flag every title that is not its own filename or carries a character kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids, and propose one free of those characters.
 
     ```bash
     .venv/bin/python - "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md <<'EOF'
     import pathlib, sys, yaml
     for path in map(pathlib.Path, sys.argv[1:]):
         title = yaml.safe_load(path.read_text().split("---\n", 2)[1]).get("title")
-        if title != path.stem:
+        if title != path.stem or any(char in title for char in "#^[]"):
             print(f"{path.name}\t{title}")
     EOF
     ```
