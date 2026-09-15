@@ -210,6 +210,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
     - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, since `distilled_date` is stamped whatever any one note did and nothing under that key is retried.
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
+  - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title.
 - **Cap creates per run.** Set a hard ceiling on new concept notes per run.
   - If hit, stop creating, finish appends, log the deferred concepts as uncreated candidates in the report (they are knowledge to promote), and escalate the cap-hit itself — that the ceiling was reached and how many were left — in the run summary.
 - **Ground every claim.** Treat the **original** source's `fulltext` (and the source-grounded NotebookLM `summary`) as the authority.

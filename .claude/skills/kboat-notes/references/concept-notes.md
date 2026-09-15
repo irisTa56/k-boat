@@ -5,6 +5,11 @@ The generic note mechanics and the accretion procedure are defined by the Basic 
 What `## Observations` looks like once more than one reading has fed a note is K-Boat's own, and this skill owns it: [Reading groups](#reading-groups) below.
 
 Relations between concepts use wikilinks (`- relation_type [[Other Concept]]`); both ends live in this same root, so they resolve in Basic Memory, Obsidian, and Foam.
+That holds only while a note's title is also its filename, because Basic Memory resolves `[[...]]` by title while Obsidian and Foam resolve it by filename.
+Basic Memory derives the filename from the title with [`sanitize_for_filename`](https://github.com/basicmachines-co/basic-memory/blob/main/src/basic_memory/file_utils.py), which replaces each of `/ \ < > : " | ? *` with `-`, collapses a run of `-` into one, and strips `.` and `-` from both ends.
+So a concept title carries none of those characters and no `--`, and neither starts nor ends with `.` or `-`: write `CPU-GPU` or `A and B`, not `CPU/GPU` or `A / B`.
+A title that breaks this still resolves in Basic Memory, so nothing there reports the links it breaks.
+Nor does a concept title carry `#`, `^`, `[`, or `]`, which Basic Memory leaves in the filename: in a wikilink, [Obsidian](https://obsidian.md/help/links) and [Foam](https://github.com/foambubble/foam/blob/main/docs/user/features/wikilinks.md) read `#` as the start of a heading link and `#^` as the start of a block link, and a bracket ends the link, so `[[C#]]` points at a heading in a note `C`.
 Provenance back to a source is different: the source note lives in the vault, a separate root, so a wikilink to it could not resolve.
 Record provenance instead as an observation carrying the source's canonical URL, e.g. `- [source] <title> — <url>`.
 This is root-independent, stable, and greppable.
