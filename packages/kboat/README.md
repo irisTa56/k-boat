@@ -23,6 +23,10 @@ Change the relevant spec first, then this package and its tests.
 - `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
   - That answer is the branch `kboat-distill` takes before adding to one.
   - Text carrying no `## Observations` heading at all is refused (exit 2, empty stdout) rather than answered.
+- `kboat-knowledge` — the knowledge-base audits `kboat-curate` runs over `<knowledge root>/concepts/*.md`, the root taken from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
+  - `titles` prints `{"flagged": [{"file", "title"}]}`: the notes whose title a filename-resolved wikilink cannot reach.
+  - `tags` prints `{"counts": {tag: n}, "untagged": [file]}`: the facet-tag census.
+  - A root with no `concepts/` is refused (exit 2); an unreadable base, an iCloud-evicted note, or a note whose frontmatter does not parse fails (exit 1, empty stdout).
 
 ## Shared modules
 
@@ -49,5 +53,5 @@ Change the relevant spec first, then this package and its tests.
 
 ## Development
 
-- Zero runtime dependencies by design, so the core stays a pure, independently-testable package.
+- Runtime dependencies follow the rule in [CLAUDE.md](CLAUDE.md#working-on-it).
 - QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`. `mise.toml` defines the workspace-wide gates, and the [root README](../../README.md) has the layout and the setup order.

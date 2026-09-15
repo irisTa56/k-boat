@@ -19,7 +19,7 @@ dependencies = [
     "tomlkit>=0.15",
     # The shared note core: feed-filter writes Feeds/ notes through kboat.write /
     # kboat.schema rather than reimplementing frontmatter serialization. Resolved
-    # from the workspace (see [tool.uv.sources]); kboat itself stays zero-dependency.
+    # from the workspace (see [tool.uv.sources]).
     "kboat",
 ]
 

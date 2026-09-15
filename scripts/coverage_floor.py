@@ -1,8 +1,7 @@
 """Fail if any `src/` file's coverage drops below a fixed floor.
 
-Stdlib-only by design: this script is invoked from the same `qa:py:*` gate
-that keeps `kboat` a zero-runtime-dependency package, so it must not need
-anything beyond what ships with Python itself.
+Stdlib-only: it reads one JSON report, which needs nothing beyond what ships
+with Python itself.
 
 Reads a `coverage json` report -- the JSON format `coverage`/pytest-cov write
 (each member's `pytest` produces it directly via `--cov-report=json` in its
