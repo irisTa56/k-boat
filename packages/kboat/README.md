@@ -23,6 +23,10 @@ Change the relevant spec first, then this package and its tests.
 - `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
   - That answer is the branch `kboat-distill` takes before adding to one.
   - Text carrying no `## Observations` heading at all is refused (exit 2, empty stdout) rather than answered.
+- `kboat-knowledge` — the knowledge-base audits `kboat-curate` runs over `<knowledge root>/concepts/*.md`, the root taken from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
+  - `titles` prints `{"flagged": [{"file", "title"}]}`: the notes whose title a filename-resolved wikilink cannot reach.
+  - `tags` prints `{"counts": {tag: n}, "untagged": [file]}`: the facet-tag census.
+  - A root with no `concepts/` is refused (exit 2); an unreadable base or an iCloud-evicted note fails (exit 1, empty stdout).
 
 ## Shared modules
 

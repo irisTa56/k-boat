@@ -39,16 +39,10 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 - **Orphans** — concept notes with no inbound or outbound relations; propose relations or a hub note.
 - **Duplicates / overlaps** — clusters covering the same ground; propose an index note or relations, not a merge (log merge candidates for a human).
 - **Naming** — flag vague titles, especially a generic phrase narrowed by a parenthetical qualifier (the pattern `Generic phrase (what it is really about)`, clearer rewritten as `Specific phrase`); propose a clearer title.
-  - Also flag every title that is not its own filename or carries a character kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids, and propose one free of those characters.
+  - Also flag every note `kboat-knowledge titles` lists under `flagged`, whose title is not its own filename or carries a character kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids, and propose a title free of those characters; a null `title` means the note's frontmatter could not be read.
 
     ```bash
-    .venv/bin/python - "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md <<'EOF'
-    import pathlib, sys, yaml
-    for path in map(pathlib.Path, sys.argv[1:]):
-        title = yaml.safe_load(path.read_text().split("---\n", 2)[1]).get("title")
-        if title != path.stem or any(char in title for char in "#^[]"):
-            print(f"{path.name}\t{title}")
-    EOF
+    kboat-knowledge titles
     ```
 
 - **Relations** — high-confidence missing edges, and contradictions (the same pair related one way from one side and another from the other); reconcile to one direction.
@@ -67,14 +61,13 @@ Read it first.
 
 ### Step 1: Census
 
-Aggregate every concept note's frontmatter tags:
+Count every concept note's frontmatter tags:
 
 ```bash
-awk '/^tags:[[:space:]]*$/{f=1;next} f&&/^- /{t=$0;sub(/^- /,"",t);print t;next} f{f=0}' \
-  "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md | sort | uniq -c | sort -rn
+kboat-knowledge tags
 ```
 
-This assumes the block-style `tags:` form every concept note uses; a note written with an inline array (`tags: [a, b]`) would not be counted, so a surprisingly low total is the cue to check for that form.
+`counts` maps each tag to how many notes carry it, most used first, and `untagged` is the input to Step 3.
 
 ### Step 2: Drift
 
@@ -88,12 +81,7 @@ Compare the census against the vocabulary note:
 
 ### Step 3: Coverage
 
-List the concept notes with no `tags:` block:
-
-```bash
-for f in "$KBOAT_KNOWLEDGE_PATH"/concepts/*.md; do grep -q '^tags:' "$f" || echo "$f"; done
-```
-
+The concept notes carrying no tag are the census's `untagged` list from Step 1.
 For each, propose tags from the canonical set, reuse-first (prefer existing spellings; per-family guidance in the vocabulary note).
 Insert the `tags:` block as the last frontmatter key (after `permalink:`), matching how the other concept notes carry tags; keep the YAML list indentation identical so the file Basic Memory re-ingests stays valid.
 
