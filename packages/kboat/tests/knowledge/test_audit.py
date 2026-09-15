@@ -9,6 +9,7 @@ import yaml
 
 from kboat.knowledge import (
     EvictedNotesError,
+    UnreadableNotesError,
     flagged_titles,
     frontmatter,
     read_concepts,
@@ -74,21 +75,32 @@ def test_a_title_carrying_wikilink_syntax_is_flagged(tmp_path: Path, title: str)
 
 @pytest.mark.parametrize(
     "text",
-    [
-        "---\ntype: note\n---\n\nbody\n",
-        "---\ntitle: [unclosed\n---\n\nbody\n",
-        "---\n- a list\n---\n\nbody\n",
-        "no frontmatter at all\n",
-        "---\ntitle:\n  nested: mapping\n---\n",
-    ],
+    ["---\ntype: note\n---\n\nbody\n", "---\ntitle:\n  nested: mapping\n---\n"],
 )
-def test_a_note_without_a_readable_title_is_flagged_with_a_null_title(
-    tmp_path: Path, text: str
-) -> None:
+def test_a_missing_or_non_string_title_is_flagged_as_null(tmp_path: Path, text: str) -> None:
     _write_raw(tmp_path, "Some note", text)
     assert flagged_titles(read_concepts(tmp_path)) == [
         {"file": "concepts/Some note.md", "title": None}
     ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\ntitle: X\ntags:\n  - gpu\n - cuda\n---\n",
+        "---\n- a list\n---\n\nbody\n",
+        "no frontmatter at all\n",
+    ],
+)
+def test_frontmatter_that_does_not_parse_refuses_the_whole_read(tmp_path: Path, text: str) -> None:
+    # Read as empty, the first case would count as untagged, and the curate pass
+    # would add a second `tags:` block to a note that already has one.
+    _write(tmp_path, "Fine", {"title": "Fine", "tags": ["gpu"]})
+    _write_raw(tmp_path, "Broken", text)
+    _write_raw(tmp_path, "Also broken", "---\ntitle: [unclosed\n---\n")
+    with pytest.raises(UnreadableNotesError) as exc:
+        read_concepts(tmp_path)
+    assert exc.value.files == ["concepts/Also broken.md", "concepts/Broken.md"]
 
 
 def test_only_markdown_files_are_read(tmp_path: Path) -> None:

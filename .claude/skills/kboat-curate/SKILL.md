@@ -31,6 +31,7 @@ eval "$(mise env)"
 Basic Memory must be reachable (it is the search/query layer).
 If it is down, the tag census still works (it reads files on disk), but the graph audit (`memory-curate`) does not — say so and defer that half.
 On-disk frontmatter edits are picked up by Basic Memory's file watcher, so editing a tag block directly is fine; new notes and relation edits go through the Basic Memory tools.
+While any concept note's frontmatter does not parse, `kboat-knowledge` refuses both audits (exit 1, the files on stderr); report those notes for repair before auditing the rest.
 
 ## Part A — graph health
 
@@ -39,7 +40,7 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 - **Orphans** — concept notes with no inbound or outbound relations; propose relations or a hub note.
 - **Duplicates / overlaps** — clusters covering the same ground; propose an index note or relations, not a merge (log merge candidates for a human).
 - **Naming** — flag vague titles, especially a generic phrase narrowed by a parenthetical qualifier (the pattern `Generic phrase (what it is really about)`, clearer rewritten as `Specific phrase`); propose a clearer title.
-  - Also flag every note `kboat-knowledge titles` lists under `flagged`, whose title is not its own filename or carries a character kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids, and propose a title free of those characters; a null `title` means the note's frontmatter could not be read.
+  - Also flag every note `kboat-knowledge titles` lists under `flagged`, whose title is not its own filename or carries a character kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids, and propose a title free of those characters; a null `title` means the note has no string `title`.
 
     ```bash
     kboat-knowledge titles

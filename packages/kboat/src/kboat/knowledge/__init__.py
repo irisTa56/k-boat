@@ -18,7 +18,10 @@ title such as `yes` or `1.10` compares against its filename as text.
 The directory is listed with `kboat.io_utils.list_note_dir`, which raises where the OS
 refuses the listing. A concept note that an iCloud placeholder stands in for is
 refused rather than left out: a census that skipped it would describe a base it never
-read in full.
+read in full. So is a note whose frontmatter does not parse as a YAML mapping. Read as
+empty, it would pass for a note with no title and no tags, and the curate pass would
+add a second `tags:` block to a note that already has one while its real break went
+unfixed.
 """
 
 from __future__ import annotations
@@ -51,6 +54,14 @@ class EvictedNotesError(Exception):
         super().__init__(f"{len(placeholders)} concept note(s) are iCloud placeholders")
 
 
+class UnreadableNotesError(Exception):
+    """Concept notes whose frontmatter does not parse as a YAML mapping."""
+
+    def __init__(self, files: list[str]) -> None:
+        self.files = files
+        super().__init__(f"{len(files)} concept note(s) have frontmatter that does not parse")
+
+
 @dataclass(frozen=True)
 class ConceptNote:
     """One concept note as the audits read it."""
@@ -60,40 +71,44 @@ class ConceptNote:
     frontmatter: dict[str, object]
 
 
-def frontmatter(text: str) -> dict[str, object]:
-    """The note's frontmatter as strings, lists and mappings; `{}` where none can be read.
+def frontmatter(text: str) -> dict[str, object] | None:
+    """The note's frontmatter as strings, lists and mappings.
 
-    A block that is not YAML, or not a mapping, reads as empty rather than raising. The
-    note is still reported -- its title as missing and its tags as absent -- and that is
-    what sends a human to look at it.
+    `None` where the note has no frontmatter block, or the block is not YAML or not a
+    mapping.
     """
     match = _FRONTMATTER_RE.match(text)
     if match is None:
-        return {}
+        return None
     try:
         loaded = yaml.load(match.group(1), Loader=yaml.BaseLoader)
     except yaml.YAMLError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def read_concepts(root: Path) -> list[ConceptNote]:
     """Every concept note under `root`, sorted by filename.
 
-    Raises `EvictedNotesError` where any concept note is an iCloud placeholder, and
+    Raises `EvictedNotesError` where any concept note is an iCloud placeholder,
+    `UnreadableNotesError` naming every note whose frontmatter does not parse, and
     `OSError` where the directory or a note cannot be read.
     """
     notes, placeholders = list_note_dir(root / CONCEPTS_DIR)
     if placeholders:
         raise EvictedNotesError(placeholders)
-    return [
-        ConceptNote(
-            file=path.relative_to(root).as_posix(),
-            stem=path.stem,
-            frontmatter=frontmatter(path.read_text(encoding="utf-8")),
-        )
-        for path in notes
-    ]
+    concepts: list[ConceptNote] = []
+    unreadable: list[str] = []
+    for path in notes:
+        file = path.relative_to(root).as_posix()
+        fields = frontmatter(path.read_text(encoding="utf-8"))
+        if fields is None:
+            unreadable.append(file)
+            continue
+        concepts.append(ConceptNote(file=file, stem=path.stem, frontmatter=fields))
+    if unreadable:
+        raise UnreadableNotesError(unreadable)
+    return concepts
 
 
 def title_is_flagged(title: object, stem: str) -> bool:
@@ -106,7 +121,7 @@ def title_is_flagged(title: object, stem: str) -> bool:
 
 
 def flagged_titles(notes: Iterable[ConceptNote]) -> list[dict[str, str | None]]:
-    """`{file, title}` for each note whose title is flagged; `title` is null where unread."""
+    """`{file, title}` for each flagged note; `title` is null where it is missing or not a string."""
     flagged: list[dict[str, str | None]] = []
     for note in notes:
         title = note.frontmatter.get("title")

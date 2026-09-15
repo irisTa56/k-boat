@@ -72,6 +72,17 @@ def test_an_evicted_note_fails_with_nothing_on_stdout(
     assert ".Evicted.md.icloud" in captured.err
 
 
+def test_a_note_whose_frontmatter_does_not_parse_fails_with_nothing_on_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _note(tmp_path, "Fine", "---\ntitle: Fine\n---\n")
+    _note(tmp_path, "Broken", "---\ntitle: Broken\ntags:\n  - gpu\n - cuda\n---\n")
+    assert main(["--knowledge", str(tmp_path), "tags"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "concepts/Broken.md" in captured.err
+
+
 @pytest.mark.parametrize(
     "error",
     [PermissionError(13, "Permission denied"), UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")],

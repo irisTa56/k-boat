@@ -10,9 +10,10 @@ Both read `<knowledge root>/concepts/*.md`, the root defaulting to
 
 A root with no `concepts/` directory is a usage error (exit 2) rather than an empty
 answer: the likeliest cause is a mis-set root, and an empty census would read as a
-base with nothing in it. A listing or a read the OS refuses, and a concept note that
-is an iCloud placeholder, exit 1 with an empty stdout and the cause on stderr, since
-the audit did not happen for a reason outside the caller.
+base with nothing in it. A listing or a read the OS refuses, a concept note that is an
+iCloud placeholder, and a concept note whose frontmatter does not parse exit 1 with an
+empty stdout and the cause on stderr, since the audit did not happen for a reason
+outside the caller.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from pathlib import Path
 from kboat.knowledge import (
     CONCEPTS_DIR,
     EvictedNotesError,
+    UnreadableNotesError,
     flagged_titles,
     read_concepts,
     tag_census,
@@ -62,6 +64,11 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"{exc}; download them and re-run:\n")
         for path in exc.placeholders:
             sys.stderr.write(f"  {path}\n")
+        return 1
+    except UnreadableNotesError as exc:
+        sys.stderr.write(f"{exc}; fix them and re-run:\n")
+        for file in exc.files:
+            sys.stderr.write(f"  {file}\n")
         return 1
     except (OSError, UnicodeDecodeError) as exc:
         sys.stderr.write(f"could not read the knowledge base: {exc}\n")

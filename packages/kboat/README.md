@@ -26,7 +26,7 @@ Change the relevant spec first, then this package and its tests.
 - `kboat-knowledge` — the knowledge-base audits `kboat-curate` runs over `<knowledge root>/concepts/*.md`, the root taken from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
   - `titles` prints `{"flagged": [{"file", "title"}]}`: the notes whose title a filename-resolved wikilink cannot reach.
   - `tags` prints `{"counts": {tag: n}, "untagged": [file]}`: the facet-tag census.
-  - A root with no `concepts/` is refused (exit 2); an unreadable base or an iCloud-evicted note fails (exit 1, empty stdout).
+  - A root with no `concepts/` is refused (exit 2); an unreadable base, an iCloud-evicted note, or a note whose frontmatter does not parse fails (exit 1, empty stdout).
 
 ## Shared modules
 
