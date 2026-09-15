@@ -53,5 +53,5 @@ Change the relevant spec first, then this package and its tests.
 
 ## Development
 
-- Few runtime dependencies: one is added only where it replaces logic this package would otherwise maintain by hand.
+- Runtime dependencies follow the rule in [CLAUDE.md](CLAUDE.md#working-on-it).
 - QA: `mise run qa:py:kboat` (ruff, `ty`, pytest, plus a per-file coverage floor); autofix with `mise run fmt:py:kboat`. `mise.toml` defines the workspace-wide gates, and the [root README](../../README.md) has the layout and the setup order.
