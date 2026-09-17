@@ -331,3 +331,32 @@ def test_discover_topic_ids_drops_non_topic_links() -> None:
 </channel></rss>"""
     ids = discover_topic_ids(feed, "https://f.example.com")
     assert ids == [99]
+
+
+# ---------------------------------------------------------------------------
+# Lone surrogates (the rule is ``json_text``'s)
+# ---------------------------------------------------------------------------
+
+# Fed as raw bytes: `json.loads` turns a `\udXXX` escape into a lone surrogate, which
+# building the string in Python would not reproduce the way it arrives.
+
+
+def test_a_lone_surrogate_in_a_title_or_post_is_substituted() -> None:
+    body = (
+        b'{"id": 7, "slug": "t", "title": "Bug in \\ud83d handling", "post_stream": {"posts": ['
+        b'{"id": 1, "post_number": 1, "cooked": "<p>see \\ud83d here</p>", "actions_summary": []}'
+        b"]}}"
+    )
+
+    topic, posts = parse_topic(body)
+
+    assert topic.title == "Bug in ? handling"
+    assert posts[0].text == "see ? here"
+
+
+def test_a_lone_surrogate_in_a_slug_drops_the_slug() -> None:
+    body = b'{"id": 7, "slug": "bug-\\ud83d-report", "title": "T", "post_stream": {"posts": []}}'
+
+    topic, _ = parse_topic(body)
+
+    assert topic.slug == ""

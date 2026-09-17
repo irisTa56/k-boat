@@ -20,6 +20,7 @@ import httpx
 
 from feed_filter.config import EXA_ENDPOINT, SUMMARY_PREVIEW_CHARS, env_exa_key
 from feed_filter.feeds import MAX_BODY_CHARS
+from feed_filter.json_text import display_text, identity_text
 
 # Exa's own snippet is the query gather's stand-in for feed metadata: it lets the
 # judge drop an out-of-scope page without fetching it, the same short-circuit the
@@ -63,19 +64,15 @@ class QueryOutcome:
     error: str | None = None
 
 
-def _clean(value: object) -> str:
-    """Coerce an untrusted JSON scalar to a stripped, UTF-8-encodable string.
+def _as_str(value: object) -> str:
+    """An untrusted JSON scalar as a stripped string, or ``""`` when it is not one.
 
-    ``json.loads`` accepts a ``\\udXXX`` escape and hands back a lone surrogate,
-    which UTF-8 cannot encode. Left in, it raises far downstream — in
-    ``canonical_url``'s query re-encoding, or in the CLI's ``json.dumps`` — and
-    aborts the whole invocation over one hit, losing every query's results and the
-    record of what was already billed. A truncating producer emits these routinely:
-    slicing a UTF-16 string at a fixed length splits an astral character in half.
-    Replacing here keeps the repair at the single untrusted-input boundary.
+    It may still hold a lone surrogate: each caller passes it through
+    ``json_text.display_text`` or ``json_text.identity_text`` by what the field is
+    for. One left in fails the whole invocation, losing every query's results and
+    the report of what was already billed.
     """
-    text = value.strip() if isinstance(value, str) else ""
-    return text.encode("utf-8", "replace").decode("utf-8")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _web_url(value: object) -> str:
@@ -96,8 +93,11 @@ def _web_url(value: object) -> str:
     other queries' results and the report of what was already billed. Dropping the
     hit keeps a malformed payload costing only itself, which is what this gather
     promises.
+
+    A URL holding a lone surrogate is dropped the same way, rather than repaired:
+    it is the note's identity, so ``json_text`` refuses it.
     """
-    url = _clean(value)
+    url = identity_text(_as_str(value))
     try:
         parts = urlsplit(url)
         parts.port  # noqa: B018 — raises on a malformed port, which is the check
@@ -120,7 +120,7 @@ def usable_cost(value: float) -> float:
 def _cost(payload: dict[str, Any]) -> float:
     """Exa's reported cost, or ``0.0`` when absent, non-numeric, or unusable.
 
-    The same boundary discipline ``_clean`` applies to text. An integer too large
+    The same boundary discipline ``_as_str`` applies to text. An integer too large
     for a float raises ``OverflowError``, which ``cli.main`` does not catch, so it
     would dump a traceback and lose every query's results; a non-finite float would
     reach stdout as a bare ``Infinity``/``NaN`` token, which is not JSON and would
@@ -186,8 +186,8 @@ def search(client: httpx.Client, query: str, *, num_results: int) -> QueryOutcom
         hits.append(
             QueryHit(
                 url=url,
-                title=_clean(item.get("title")),
-                text=_clean(item.get("text"))[:MAX_BODY_CHARS],
+                title=display_text(_as_str(item.get("title"))),
+                text=display_text(_as_str(item.get("text")))[:MAX_BODY_CHARS],
             )
         )
     return QueryOutcome(query=query, hits=tuple(hits), cost_dollars=_cost(payload))

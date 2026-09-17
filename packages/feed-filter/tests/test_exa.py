@@ -237,24 +237,36 @@ def test_missing_cost_defaults_to_zero() -> None:
     assert outcome.error is None
 
 
-def test_lone_surrogates_are_replaced_not_propagated() -> None:
-    """A `\\udXXX` escape survives `json.loads` but cannot be UTF-8 encoded, so it
-    would abort the run downstream. Fed as a raw body, since building the string in
-    Python would not reproduce how it arrives."""
-    body = (
-        '{"results": [{"url": "https://a.example/p?q=\\ud800",'
-        ' "title": "T\\ud800", "text": "b\\ud800"}],'
-        ' "costDollars": {"total": 0.007}}'
-    )
+def _raw_run(body: str) -> Any:
+    """Serve ``body`` verbatim: a `\\udXXX` escape becomes a lone surrogate only as
+    `json.loads` decodes it, which building the payload in Python would not reproduce."""
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200, content=body.encode(), headers={"content-type": "application/json"}
         )
 
-    outcome = _run(handler)
+    return _run(handler)
+
+
+def test_a_lone_surrogate_in_a_title_or_text_is_substituted() -> None:
+    outcome = _raw_run(
+        '{"results": [{"url": "https://a.example/p", "title": "T\\ud800", "text": "b\\ud800"}]}'
+    )
 
     hit = outcome.hits[0]
-    for field in (hit.url, hit.title, hit.text):
-        field.encode("utf-8")  # would raise on a surviving lone surrogate
-    assert hit.url.startswith("https://a.example/p")
+    assert (hit.url, hit.title, hit.text) == ("https://a.example/p", "T?", "b?")
+
+
+def test_a_hit_whose_url_holds_a_lone_surrogate_is_dropped() -> None:
+    # In the path, a substituted `?` would move the rest of it into the query and
+    # file the page under a second note name; the query-string case is dropped too.
+    outcome = _raw_run(
+        '{"results": ['
+        '{"url": "https://ex.com/posts/a\\ud83db/7", "title": "path"},'
+        '{"url": "https://ex.com/p?q=\\ud800", "title": "query"},'
+        '{"url": "https://ex.com/ok", "title": "ok"}'
+        "]}"
+    )
+
+    assert [h.url for h in outcome.hits] == ["https://ex.com/ok"]
