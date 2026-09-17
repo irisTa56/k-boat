@@ -41,8 +41,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # A uv.lock that no longer matches its pyproject.toml fails the run rather than
-  # being installed as it stands (which `UV_FROZEN` would do) or re-resolved.
+  # A workspace uv.lock that no longer matches its pyproject.toml fails the run
+  # rather than being installed as it stands (which `UV_FROZEN` would do) or
+  # re-resolved. tools/notebooklm/uv.lock is not covered: only the postinstall
+  # hook syncs it, and `mise install` exits 0 when the hook fails.
   UV_LOCKED: "1"
 
 jobs:
