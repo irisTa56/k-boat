@@ -6,7 +6,8 @@ description: 'Work a blocked (DLQ) K-Boat source to one of its two exits: pull a
 # K-Boat rescue (DLQ → ingested, or given up)
 
 Some sources cannot be fetched unattended — a bot-protected PDF behind an AWS WAF / Cloudflare CAPTCHA is the motivating case, and kboat-notes [Procedure: record a blocked source (DLQ)](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq) lists them all.
-Ingest parks these in the **DLQ** as source notes with `blocked: true`, and with an empty `notebooklm_id` where it created the note — one recorded over a note that already existed keeps what that note had: any file an earlier ingest downloaded, and, in the state the `blocked_has_notebook` row describes (kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules)), a notebook.
+Ingest parks these in the **DLQ** as source notes with `blocked: true`, and with an empty `notebooklm_id` — one recorded over a note that already existed keeps any file an earlier ingest downloaded.
+An entry can also still hold a notebook, the state the `blocked_has_notebook` row describes (kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules)).
 This skill completes one: it obtains the content through the user's real browser — where a human can solve any CAPTCHA or sign in — builds the 1:1 notebook, and clears `blocked`, keeping the same note and `url`.
 
 It also carries the DLQ's **other** exit, for the entry no rescue can complete: a `url` that now 404s, a page that is gone, or one the user simply decides not to chase.

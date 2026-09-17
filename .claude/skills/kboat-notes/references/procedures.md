@@ -472,7 +472,7 @@ A DLQ entry's dispositions are inert rather than absent and `filed_date` is not 
 A `keep` or `distill` beside a `dismiss` lands as the `ambiguous` violation instead.
 This is abandon's gate 3 from the other exit and wants the same care: read the standing dispositions, settle with the human which they still want, and name **all three explicitly** in the one record, since `upsert` merges.
 Abandon's gate 2 binds here too — where `distilled_date` stands, `distill` stays checked and only `keep` and `dismiss` are the human's to settle, since unticking it beside the stamp is the `distilled_without_distill` violation and leaves the routine reading an already-distilled source as active again.
-For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**, on the ground abandon states at its own two exits: an entry holding a notebook was recorded over a note that already existed, and recording it overwrote the link with the `url`, so clearing `blocked` without it returns the source to the inbox with recall offering the bot wall as the way to read a PDF that is sitting in the vault.
+For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**, on the ground abandon states at its own two exits: where the entry was recorded over an earlier note, recording it overwrote the link with the `url`, so clearing `blocked` without it returns the source to the inbox with recall offering the bot wall as the way to read a PDF that is sitting in the vault.
 
 ### Step 2: obtain the content
 
