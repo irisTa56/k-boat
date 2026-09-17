@@ -37,8 +37,8 @@ from kboat.schema import DAILY_DIR, DIR_BY_TYPE, QUESTIONS_FILE
 
 from .candidates import candidate_from, is_active_web
 from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_daily_notes
-from .notes import FrontmatterError, Value, parse_frontmatter, set_picked
-from .questions import extract_questions
+from .notes import NOTE_READ_ERRORS, Value, parse_frontmatter, set_picked
+from .questions import QuestionsUnreadableError, extract_questions
 
 
 def _load_sources(
@@ -52,7 +52,7 @@ def _load_sources(
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-        except (FrontmatterError, OSError) as exc:
+        except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         notes.append((path.stem, rel, fm))
@@ -64,14 +64,18 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
     candidates = [
         candidate_from(slug, rel, fm).to_json() for slug, rel, fm in notes if is_active_web(fm)
     ]
-    daily_notes = [
-        {"date": dn.date, "body": dn.body}
-        for dn in extract_daily_notes(vault / DAILY_DIR, today, lookback_days)
-    ]
-    questions = [
-        {"rank": q.rank, "question": q.question, "note": q.note}
-        for q in extract_questions(vault / QUESTIONS_FILE)
-    ]
+    days, unreadable_days = extract_daily_notes(vault / DAILY_DIR, today, lookback_days)
+    daily_notes = [{"date": dn.date, "body": dn.body} for dn in days]
+    for entry in unreadable_days:
+        anomalies.append({"path": f"{DAILY_DIR}/{entry['path']}", "error": entry["error"]})
+    try:
+        questions = [
+            {"rank": q.rank, "question": q.question, "note": q.note}
+            for q in extract_questions(vault / QUESTIONS_FILE)
+        ]
+    except QuestionsUnreadableError as exc:
+        questions = []
+        anomalies.append({"path": QUESTIONS_FILE, "error": str(exc)})
     return {
         "today": today.isoformat(),
         "vault": str(vault),
@@ -106,7 +110,7 @@ def _cmd_set(vault: Path, slugs: list[str]) -> dict[str, object]:
                 picked.append(slug)
             else:
                 reset += 1
-        except (FrontmatterError, OSError) as exc:
+        except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": f"picked write failed: {exc}"})
     return {
         "vault": str(vault),

@@ -54,6 +54,16 @@ class FrontmatterError(ValueError):
     """The note has no parseable `---` frontmatter block, or lacks a required field."""
 
 
+# What a per-note boundary catches. `UnicodeDecodeError` is a `ValueError` rather than an
+# `OSError`, so without it one note that is not UTF-8 ends the whole run; the wider
+# `ValueError` would also swallow a bug of ours as that note's anomaly.
+# A boundary takes `NOTE_READ_ERRORS` where it parses or rewrites frontmatter, and
+# `PLAIN_READ_ERRORS` where nothing it guards can raise `FrontmatterError`, or an earlier arm
+# already catches it.
+NOTE_READ_ERRORS = (FrontmatterError, OSError, UnicodeDecodeError)
+PLAIN_READ_ERRORS = (OSError, UnicodeDecodeError)
+
+
 # --------- lines ---------
 
 

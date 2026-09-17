@@ -33,7 +33,8 @@ RECORD: dict[str, Any] = {
 
 
 def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO(text))
+    # Not a `StringIO`: `cli.py` reads `sys.stdin.buffer`, which a `StringIO` does not have.
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(text.encode("utf-8"))))
 
 
 def test_usage_and_unknown_subcommand(capsys: pytest.CaptureFixture[str]) -> None:

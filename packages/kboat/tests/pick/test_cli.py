@@ -97,6 +97,26 @@ def test_candidates_lists_only_active_web_plus_daily_notes(
     assert out["lookback_days"] == 14  # default window
 
 
+def test_a_source_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_gather(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
+    assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/bad.md"]
+
+
+def test_an_unreadable_questions_file_and_daily_note_are_anomalies_not_silence(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (vault / "Questions.md").write_bytes(b"- what about \xff\n")
+    (vault / "Daily" / "2026-06-11.md").write_bytes(b"\xff\n")
+    assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert sorted(a["path"] for a in out["anomalies"]) == ["Daily/2026-06-11.md", "Questions.md"]
+    assert out["questions"] == []
+
+
 def test_candidates_lookback_window_drops_stale_notes(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -171,6 +191,27 @@ def test_set_reports_a_picked_flag_it_could_not_write(
     paths = sorted(a["path"] for a in out["anomalies"])
     assert paths == ["Sources/reading1.md", "Sources/web1.md"]
     assert all(a["error"].startswith("picked write failed") for a in out["anomalies"])
+
+
+def test_set_reports_a_note_that_turns_unreadable_between_load_and_write(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The vault lock is advisory, so a note can change between the load's read and the write's.
+    real_read_text = Path.read_text
+    reads: list[Path] = []
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "web2.md":
+            reads.append(self)
+            if len(reads) > 1:  # the write loop's read, after `_load_sources`'s
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    assert main(["--vault", str(vault), "set", "--slugs", "web1"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/web2.md"]
+    assert out["anomalies"][0]["error"].startswith("picked write failed")
 
 
 def test_empty_slugs_clears_all(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,7 +30,8 @@ def vault(tmp_path: Path) -> Path:
 def _run(argv: list[str], stdin: str, monkeypatch: pytest.MonkeyPatch) -> int:
     import io
 
-    monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
+    # Not a `StringIO`: `cli.py` reads `sys.stdin.buffer`, which a `StringIO` does not have.
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(stdin.encode("utf-8"))))
     return main(argv)
 
 
@@ -401,3 +404,90 @@ def test_a_vault_root_that_does_not_exist_is_reported_not_created(
     assert _run(["write", "--type", "source", "--vault", str(missing)], rec, monkeypatch) == 1
     assert "write failed:" in capsys.readouterr().err
     assert not missing.exists()
+
+
+def test_an_existing_note_that_is_not_utf8_fails_with_a_record_not_a_traceback(
+    vault: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (vault / "Sources" / f"{SLUG}.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
+    rec = json.dumps(
+        {
+            "slug": SLUG,
+            "fields": {
+                "type": "source",
+                "title": "T",
+                "url": URL,
+                "source_type": "web_page",
+            },
+        }
+    )
+    assert _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch) == 1
+    assert "write failed:" in capsys.readouterr().err
+
+
+def _run_subprocess(
+    vault: Path, payload: bytes, note_type: str = "source"
+) -> subprocess.CompletedProcess[bytes]:
+    """`kboat-note write` as a real process with the locale variables stripped.
+
+    An in-process fake stdin gets `errors="strict"`, so it passes with the CLI still broken
+    under the `C` locale, whose stdin handler is `surrogateescape`.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in ("LANG", "LC_ALL", "LC_CTYPE")}
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "kboat.note.__main__",
+            "write",
+            "--type",
+            note_type,
+            "--vault",
+            str(vault),
+        ],
+        input=payload,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_stdin_bytes_that_are_not_utf8_are_a_record_to_fix(vault: Path) -> None:
+    payload = b'{"slug": "abc", "fields": {"type": "source", "title": "T\xff"}}'
+    proc = _run_subprocess(vault, payload)
+
+    assert proc.returncode == 2
+    assert b"not valid UTF-8" in proc.stderr
+    assert proc.stdout == b""
+    assert list((vault / "Sources").glob("*.md")) == []
+
+
+@pytest.mark.parametrize(
+    ("note_type", "record"),
+    [
+        (
+            "source",
+            {
+                "slug": SLUG,
+                "fields": {
+                    "type": "source",
+                    "title": "T\ud83d",
+                    "url": URL,
+                    "source_type": "web_page",
+                },
+            },
+        ),
+        # Never encoded as note content: on APFS it fails at the file name, as an `OSError`.
+        ("kindle", {"slug": "B0\udcff", "fields": {"type": "kindle", "title": "T"}}),
+    ],
+    ids=["in_a_field", "in_the_slug"],
+)
+def test_a_lone_surrogate_already_in_the_record_is_a_record_to_fix(
+    vault: Path, note_type: str, record: dict[str, object]
+) -> None:
+    proc = _run_subprocess(vault, json.dumps(record).encode("utf-8"), note_type)
+
+    assert proc.returncode == 2
+    assert b"lone surrogate" in proc.stderr
+    assert proc.stdout == b""
+    assert [p for d in ("Sources", "Kindles") for p in (vault / d).iterdir()] == []

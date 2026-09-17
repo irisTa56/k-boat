@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kboat.frontmatter import (
+    NOTE_READ_ERRORS,
     Entry,
-    FrontmatterError,
     names_key,
     parse_entries,
     parse_frontmatter,
@@ -147,7 +147,7 @@ def _read_target(path: Path, identity: str) -> tuple[_Target | None, str]:
         text = path.read_text(encoding="utf-8")
         fm = parse_frontmatter(text)
         entries = parse_entries(text)
-    except (FrontmatterError, OSError) as exc:
+    except NOTE_READ_ERRORS as exc:
         return None, f"parse_error: {exc}"
     value = fm.get(identity)
     if value is None:
@@ -526,7 +526,8 @@ def migrate(vault: Path, *, apply: bool) -> Report:
                 continue
             try:
                 apply_row(vault, row)
-            except (FrontmatterError, OSError) as exc:
+            # `apply_row` re-reads the note, which can have changed since `plan` read it.
+            except NOTE_READ_ERRORS as exc:
                 row.status = "failed"
                 # `plan` names a strand before the move, and this row's move may
                 # have failed anywhere: before the first rename, between the PDF's

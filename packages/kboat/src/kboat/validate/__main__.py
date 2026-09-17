@@ -21,7 +21,7 @@ from datetime import date
 from pathlib import Path
 
 from kboat.cli import add_today_argument, add_vault_argument, vault_path
-from kboat.frontmatter import FrontmatterError, parse_frontmatter
+from kboat.frontmatter import NOTE_READ_ERRORS, parse_frontmatter
 from kboat.io_utils import list_note_dir
 from kboat.lifecycle.core import Kindle, Source
 from kboat.schema import DIR_BY_TYPE
@@ -74,7 +74,7 @@ def _validate_vault(
             count += 1
             try:
                 fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-            except (FrontmatterError, OSError) as exc:
+            except NOTE_READ_ERRORS as exc:
                 violations.append(Violation(rel, "_frontmatter", "parse_error", str(exc)))
                 continue
             violations.extend(check_note(note_type, fm, rel))

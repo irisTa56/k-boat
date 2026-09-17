@@ -29,7 +29,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 
-from kboat.frontmatter import FrontmatterError
+from kboat.frontmatter import NOTE_READ_ERRORS
 from kboat.lock import VaultLockedError, VaultLockUnavailableError
 from kboat.write import WROTE_A_NOTE, BadInputError
 
@@ -140,12 +140,25 @@ def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
 
 
 def _read_json_record() -> dict:
+    # Decoded strictly by hand, since `sys.stdin`'s error handler follows the locale
+    # (`surrogateescape` under `C`/`POSIX`, PEP 540). An `OSError` is left to `run_write`'s
+    # exit 1, since it is not a record to fix.
     try:
-        record = json.load(sys.stdin)
+        text = sys.stdin.buffer.read().decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise BadInputError(f"stdin is not valid UTF-8: {e}") from e
+    try:
+        record = json.loads(text)
     except json.JSONDecodeError as e:
         raise BadInputError(f"stdin is not valid JSON: {e}") from e
     if not isinstance(record, dict):
         raise BadInputError("record must be a JSON object")
+    # JSON's `\u` escape admits a lone surrogate, which a UTF-8 note cannot hold, so the whole
+    # record is checked here rather than wherever one field happens to fail.
+    try:
+        json.dumps(record, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise BadInputError(f"record holds a lone surrogate: {e}") from e
     return record
 
 
@@ -161,6 +174,9 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
     refusal, or a vault another run holds), 0 a note on disk. Success is named
     rather than the refusals: a status this mapping has not heard of is one it
     cannot claim wrote a note.
+
+    Stdin that is not UTF-8, and a record holding a lone surrogate in any key or value, exit
+    2; an `OSError` reading stdin exits 1.
     """
     try:
         result = write(_read_json_record())
@@ -169,7 +185,7 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
         return 2
     except VaultLockedError as e:
         return emit_locked(e)
-    except (FrontmatterError, OSError) as e:
+    except NOTE_READ_ERRORS as e:
         sys.stderr.write(f"write failed: {e}\n")
         return 1
     json.dump(result, sys.stdout, ensure_ascii=False, indent=2)

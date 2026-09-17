@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kboat.pick.questions import extract_questions
+import pytest
+
+from kboat.pick.questions import QuestionsUnreadableError, extract_questions
 
 
 def _write(path: Path, text: str) -> Path:
@@ -101,3 +103,11 @@ def test_empty_file_is_empty_backlog(tmp_path: Path) -> None:
 
 def test_missing_file_is_empty_backlog(tmp_path: Path) -> None:
     assert extract_questions(tmp_path / "Questions.md") == []
+
+
+def test_a_questions_file_that_cannot_be_read_is_not_an_empty_backlog(tmp_path: Path) -> None:
+    path = tmp_path / "Questions.md"
+    path.write_bytes(b"- what about \xff\n")
+    with pytest.raises(QuestionsUnreadableError):
+        extract_questions(path)
+    assert extract_questions(tmp_path / "Absent.md") == []

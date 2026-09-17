@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from kboat.frontmatter import split_lines, strip_frontmatter
+from kboat.frontmatter import PLAIN_READ_ERRORS, split_lines, strip_frontmatter
 
 # A top-level list item (marker at column 0, no leading indentation): one question.
 _TOP_ITEM = re.compile(r"^[-*+][ \t]+(\S.*)$")
@@ -35,6 +35,14 @@ class Question:
     note: str  # nested sub-bullets/continuation joined by newlines, "" when none
 
 
+class QuestionsUnreadableError(Exception):
+    """The questions file is there and could not be read.
+
+    An anomaly to report, where a missing file is an empty backlog: the caller has to tell
+    the two apart.
+    """
+
+
 def extract_questions(questions_file: Path) -> list[Question]:
     """Parse the open-questions backlog file into ordered questions.
 
@@ -47,7 +55,11 @@ def extract_questions(questions_file: Path) -> list[Question]:
     """
     if not questions_file.is_file():
         return []
-    text = strip_frontmatter(questions_file.read_text(encoding="utf-8"))
+    try:
+        raw = questions_file.read_text(encoding="utf-8")
+    except PLAIN_READ_ERRORS as exc:
+        raise QuestionsUnreadableError(str(exc)) from exc
+    text = strip_frontmatter(raw)
     questions: list[Question] = []
     note_lines: list[str] = []
     open_for_note = False

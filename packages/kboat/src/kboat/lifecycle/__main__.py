@@ -40,7 +40,7 @@ from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE
 
 from .core import Kindle, Source, compute_plan, select_ripe_kindles
-from .notes import FrontmatterError, parse_frontmatter, set_filed_date
+from .notes import NOTE_READ_ERRORS, parse_frontmatter, set_filed_date
 
 
 def _source_json(s: Source) -> dict[str, object]:
@@ -75,7 +75,7 @@ def _load_sources(sources_dir: Path, vault: Path) -> tuple[list[Source], list[di
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-        except (FrontmatterError, OSError) as exc:
+        except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "source":
@@ -96,7 +96,7 @@ def _load_kindles(kindles_dir: Path, vault: Path) -> tuple[list[Kindle], list[di
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
-        except (FrontmatterError, OSError) as exc:
+        except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "kindle":
@@ -118,7 +118,7 @@ def _apply_phase_a(
         path = vault / s.path
         try:
             atomic_write_text(path, set_filed_date(path.read_text(encoding="utf-8"), value))
-        except (FrontmatterError, OSError) as exc:
+        except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": s.path, "error": f"filed_date write failed: {exc}"})
     return anomalies
 

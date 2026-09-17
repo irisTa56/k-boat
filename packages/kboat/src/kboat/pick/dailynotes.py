@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from kboat.frontmatter import strip_frontmatter
+from kboat.frontmatter import PLAIN_READ_ERRORS, strip_frontmatter
 
 DEFAULT_LOOKBACK_DAYS = 14
 
@@ -36,8 +36,8 @@ def _parse_date(stem: str) -> date | None:
 
 def extract_daily_notes(
     daily_dir: Path, today: date, lookback_days: int = DEFAULT_LOOKBACK_DAYS
-) -> list[DailyNote]:
-    """Recent Daily-note bodies, newest-first, within the look-back window.
+) -> tuple[list[DailyNote], list[dict[str, str]]]:
+    """Recent Daily-note bodies newest-first, and the notes that could not be read.
 
     A day is in scope when its date `d` satisfies `earliest <= d <= today`, where
     `earliest = today - lookback_days` (the window is inclusive of both ends). A note
@@ -45,15 +45,22 @@ def extract_daily_notes(
     so it carries no signal into the pick.
     """
     days: list[DailyNote] = []
+    unreadable: list[dict[str, str]] = []
     if not daily_dir.is_dir():
-        return days
+        return days, unreadable
     earliest = today - timedelta(days=lookback_days)
     for path in daily_dir.glob("*.md"):
         d = _parse_date(path.stem)
         if d is None or d > today or d < earliest:
             continue
-        body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
+        # Reported rather than skipped: nothing else would tell a note that could not be read
+        # from a day with no note.
+        try:
+            body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
+        except PLAIN_READ_ERRORS as exc:
+            unreadable.append({"path": path.name, "error": str(exc)})
+            continue
         if body:
             days.append(DailyNote(date=d.isoformat(), body=body))
     days.sort(key=lambda dn: dn.date, reverse=True)
-    return days
+    return days, unreadable

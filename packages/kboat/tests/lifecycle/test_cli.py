@@ -200,6 +200,37 @@ def test_a_filed_date_it_could_not_write_is_an_anomaly(vault: Path, capsys):
     assert out["anomalies"][0]["error"].startswith("filed_date write failed")
 
 
+def test_a_note_that_turns_unreadable_between_load_and_stamp_is_an_anomaly(
+    vault: Path, capsys, monkeypatch
+):
+    # The vault lock is advisory, so the note can change between the plan's read and the stamp's.
+    sources = vault / "Sources"
+    write_note(sources, "a", distill=True)
+    real_read_text = Path.read_text
+    reads: list[Path] = []
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "a.md":
+            reads.append(self)
+            if len(reads) > 1:  # the rewrite's read, after the plan's
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    out = run(vault, capsys)
+
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/a.md"]
+    assert out["anomalies"][0]["error"].startswith("filed_date write failed")
+
+
+def test_a_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_pass(vault: Path, capsys):
+    (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
+    (vault / "Kindles").mkdir(exist_ok=True)
+    (vault / "Kindles" / "B0BAD.md").write_bytes(b"---\ntype: kindle\ntitle: \xff\n---\n")
+    out = run(vault, capsys)
+    assert sorted(a["path"] for a in out["anomalies"]) == ["Kindles/B0BAD.md", "Sources/bad.md"]
+
+
 def test_missing_kindles_dir_is_empty(vault: Path, capsys):
     # Kindles/ is optional — a sources-only vault must not error.
     out = run(vault, capsys)

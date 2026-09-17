@@ -141,6 +141,16 @@ def test_a_note_already_at_the_target_name_is_a_conflict_never_an_overwrite(vaul
     assert "already there" in fresh.read_text(), "and the note in the way is untouched"
 
 
+def test_a_note_that_is_not_utf8_is_skipped_not_a_traceback(vault: Path) -> None:
+    _source(vault, STALE, STALE_URL)
+    (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\nurl: \xff\n---\n")
+    rows, skipped = plan(vault)
+    assert [(s.path, s.reason.split(":")[0]) for s in skipped] == [
+        ("Sources/bad.md", "parse_error")
+    ]
+    assert [r.path for r in rows] == [f"Sources/{STALE}.md"]
+
+
 def test_a_note_directory_that_cannot_be_listed_is_skipped_not_scanned_clean(vault: Path) -> None:
     # "Nothing to do" is terminal for a repair that runs once, and this report is
     # what the `--apply` is approved from — so an unread directory has to say so
@@ -291,6 +301,24 @@ def test_a_failed_apply_keeps_the_strand_whose_rename_did_land(
     assert row.status == "failed"
     assert f"Sources/.{STALE}.md.icloud stays behind" in row.detail
     assert "flush failed" in row.detail
+
+
+def test_a_note_that_stops_decoding_under_the_apply_is_a_failed_row(
+    vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `_retarget_reading_link` is where `apply_row` re-reads the note `plan` already read.
+    _source(vault, STALE, STALE_URL)
+    monkeypatch.setattr(
+        migrate_mod,
+        "_retarget_reading_link",
+        _raise(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")),
+    )
+
+    report = migrate(vault, apply=True)
+
+    row = next(r for r in report.rows if r.current == STALE)
+    assert row.status == "failed"
+    assert "invalid start byte" in row.detail
 
 
 def test_an_evicted_note_at_the_target_is_not_reported_as_taken(vault: Path) -> None:
