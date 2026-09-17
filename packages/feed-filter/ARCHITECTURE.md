@@ -31,6 +31,7 @@ Pure primitives:
   - It keeps the full article off the run orchestrator's stdout/context: `new-entries` emits only a preview and the judge pulls the body via `entry-body`.
   - Operational cache, **not** dedupe/never-lost state — a miss just falls the judge back to a `WebFetch`.
 - `sites.py` — `sites.toml` read/write (via `tomlkit`, preserving formatting).
+- `json_text.py` — the rule for a lone surrogate `json.loads` hands back, which every JSON reader (`discourse`, `exa`) applies to each string field at its read; the module docstring states the rule and its reasons.
 
 Deterministic httpx ingestion:
 

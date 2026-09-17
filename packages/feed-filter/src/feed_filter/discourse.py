@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from feed_filter.feeds import html_to_text, parse_feed
+from feed_filter.json_text import display_text, identity_text
 from kboat.canonical import canonical_url
 
 # ---------------------------------------------------------------------------
@@ -145,7 +146,8 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
     ``_as_list``/``_as_dict``), so a malformed or lite payload — a wrong type at
     *any* level, not just an absent key — degrades to ``(_EMPTY_TOPIC, [])`` (or
     a post with empty fields) rather than leaking a ``KeyError``/
-    ``AttributeError``/``TypeError`` into ``main()``.
+    ``AttributeError``/``TypeError`` into ``main()``. A string field then passes
+    through ``json_text``, which settles a lone surrogate by what the field is for.
     """
     try:
         data = json.loads(json_bytes)
@@ -157,8 +159,10 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
 
     topic = ForumTopic(
         id=_as_int(data.get("id")),
-        slug=_as_str(data.get("slug")),
-        title=_as_str(data.get("title")),
+        # The slug is built into the note's URL, so it is identity text; an
+        # unwritable one takes ``forum_pipeline``'s slugless ``/t/<id>`` fallback.
+        slug=identity_text(_as_str(data.get("slug"))),
+        title=display_text(_as_str(data.get("title"))),
         like_count=_as_int(data.get("like_count")),
     )
 
@@ -173,7 +177,7 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
             if isinstance(action, dict) and action.get("id") == 2:
                 likes = _as_int(action.get("count"))
                 break
-        cooked = _as_str(raw.get("cooked"))
+        cooked = display_text(_as_str(raw.get("cooked")))
         posts.append(
             ForumPost(
                 id=_as_int(raw.get("id")),
