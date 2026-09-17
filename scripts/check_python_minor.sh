@@ -1,46 +1,20 @@
 #!/usr/bin/env bash
-# Fail when a newer stable CPython minor exists than the one this workspace
-# runs, so a new interpreter release announces itself instead of staying
-# unnoticed until someone happens to check by hand.
+# Fail when a newer stable CPython minor is out than the one this workspace
+# runs. Run from the repository root.
 #
-# Does not parse any `pyproject.toml`: uv's own resolution is the source for
-# both sides being compared.
-#   - "latest": the newest stable CPython the *running uv binary* knows how to
-#     install when run outside any project -- an empty directory, so no
-#     `requires-python` bounds it. That is only as current as uv's own release
-#     (its list of installable Pythons ships inside the binary), so an old uv
-#     under-reports "latest" without erroring -- the CI job pins `version:
-#     "latest"` on its setup-uv step for this reason; a stale local uv can
-#     still under-report for a manual run (`mise upgrade` keeps it current).
-#     Fetched into a fresh, throwaway UV_PYTHON_INSTALL_DIR made just for this
-#     run: a bare `uv python install` (no version pinned) is a no-op -- and
-#     reports whatever is already there, however old -- once *any* Python
-#     already satisfies it, so reusing an ambient install dir that already
-#     holds an interpreter would silently stop this side from ever seeing a
-#     new release.
-#   - "project": the interpreter uv selects inside this repository, which
-#     `requires-python` (owned by packages/kboat/pyproject.toml) does bound.
-# uv excludes pre-releases from "latest" by policy -- a pre-release is only
-# chosen when no stable release satisfies the request -- so a release
-# candidate such as 3.15.0rc2 never trips this check early. See
-# https://docs.astral.sh/uv/concepts/python-versions/#pre-release-python-versions
-#
-# Run from the repository root, as the other scripts/ tools are.
+# Both sides come from uv's own resolution rather than from parsing any
+# `pyproject.toml`: "latest" is the newest stable CPython the running uv can
+# install outside any project, and "project" is the interpreter uv selects
+# here under `requires-python`. uv never picks a pre-release while a stable
+# release satisfies the request, so a release candidate does not trip this.
 
 set -euo pipefail
 
-# Never fall back to a `python` already on PATH: both sides must be
-# uv-managed CPython builds, or "latest" vs. "project" would compare two
-# different kinds of interpreter.
+# Both sides must be uv-managed builds, not whatever `python` is on PATH.
 export UV_PYTHON_PREFERENCE=only-managed
 
-# Never fall back to an already-active venv either: `uv run --no-project`
-# still prefers one over resolving a fresh interpreter, `--no-project` and
-# UV_PYTHON_PREFERENCE notwithstanding. Run this from a shell that has already
-# activated this repository's own `.venv` (as `mise activate`/`eval "$(mise
-# env)"` do, per the root CLAUDE.md) and, unset, the "latest" side would
-# silently report this project's own interpreter back -- always equal to
-# "project", so the check would never fire.
+# `uv run --no-project` still prefers an active venv, so with this repository's
+# `.venv` active "latest" would report the project's own minor back.
 unset VIRTUAL_ENV
 
 empty_dir=$(mktemp -d)
@@ -48,16 +22,16 @@ latest_install_dir=$(mktemp -d)
 venv_dir=$(mktemp -d)
 trap 'rm -rf "$empty_dir" "$latest_install_dir" "$venv_dir"' EXIT
 
+# A fresh install dir: a bare `uv python install` does nothing once any
+# interpreter is installed, so a reused dir keeps reporting that one.
 latest=$(
   cd "$empty_dir" &&
     UV_PYTHON_INSTALL_DIR="$latest_install_dir" uv python install --no-bin -q &&
     UV_PYTHON_INSTALL_DIR="$latest_install_dir" uv run --no-project python -c 'import sys; print(sys.version_info[1])'
 )
 
-# A path outside `.venv`, so this never recreates or disturbs the checkout's
-# own environment -- `uv venv` still reads *this* repository's
-# `requires-python` to pick the interpreter, it just writes the venv
-# somewhere disposable instead of to the default path.
+# Outside `.venv`, so the checkout's own environment is left alone; `uv venv`
+# still picks the interpreter from this workspace's `requires-python`.
 uv venv -q "$venv_dir/venv"
 project=$("$venv_dir/venv/bin/python" -c 'import sys; print(sys.version_info[1])')
 
