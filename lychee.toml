@@ -10,8 +10,8 @@ exclude = [
     "^https?://([a-z0-9-]+\\.)*example\\.com([:/]|$)",
 ]
 
-# The settings every invocation shares -- hence here rather than on four command
-# lines. Each names this file with `--config`, so a config that cannot be found
+# The settings every invocation shares -- hence here rather than on each command
+# line. Each names this file with `--config`, so a config that cannot be found
 # fails the commit and the PR instead of narrowing the walk in silence.
 
 # `.claude/skills` is the product content, and lychee skips dotdirs by default.
