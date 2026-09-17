@@ -3,24 +3,9 @@ name: CI
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
 # to main), but without mise: CI needs neither the notebooklm tool nor a browser.
 # It runs the same ruff / ty / pytest / coverage-floor / rumdl / md-shape /
-# shellcheck / shfmt / gitleaks / offline-link-check checks -- uv for the Python
-# gates, md-shape among them; official actions for rumdl, gitleaks, and lychee;
-# and apt for the shell checks (see the `shell-qa` job below for why). Keep the
+# gitleaks / offline-link-check checks -- uv for the Python gates, md-shape
+# among them, and official actions for rumdl, gitleaks, and lychee. Keep the
 # checks here in sync with mise.toml's `qa:**` tasks.
-#
-# Neither `shell-qa` nor `python-minor-check` is a required check --
-# `dependabot-auto-merge.yml`'s PRECONDITION names the ones that are.
-# `python-minor-check` is also the one job below with no local `qa:**`
-# counterpart, and the only one scoped to `schedule` alone: it fails when uv
-# resolves a newer stable CPython minor outside this project than the one
-# `requires-python` admits inside it, a fact that does not depend on any given
-# PR's diff, so running it there would only repeat the same answer on every
-# open PR until the interpreter range moves. Scoping it to the weekly
-# schedule instead means the maintainer meets it as the failed-run email that
-# schedule already sends, rather than as a merge blocker for a release outside
-# this repository's control. `scripts/check_python_minor.sh` says how the
-# check works, and the root CLAUDE.md's "Tooling config" section says what to
-# do once it fails.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -150,55 +135,23 @@ jobs:
           args: --offline --no-progress --config lychee.toml .
           fail: true
 
-  shell-qa:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      # shellcheck ships preinstalled on this runner image
-      # (https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
-      # lists it under "Installed apt packages"); shfmt does not, but Ubuntu
-      # noble's `universe` component carries it
-      # (https://packages.ubuntu.com/noble/shfmt, 3.8.0-1 there), so a plain
-      # apt install covers both without adding a third-party action to pin and
-      # watch. (A pip-installable wrapper exists for each too -- `shellcheck-py`,
-      # `shfmt-py` -- but apt needs nothing this workflow does not already have.)
-      - name: Install shfmt
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shfmt
-      # Same commands as mise's `qa:sh` task. The version differs: apt's
-      # shellcheck/shfmt here can trail what `mise upgrade` tracks locally as
-      # `latest`.
-      - name: shellcheck, shfmt
-        run: |
-          shellcheck scripts/*.sh
-          shfmt -i 2 -d scripts/*.sh
-
+  # Stays red while a newer CPython minor is out, so it is a reminder and must
+  # never become a required check. Skipped on the schedule, whose run exists to
+  # surface drift no PR exercises and would have that hidden behind this red.
   python-minor-check:
     runs-on: ubuntu-latest
-    # Only on the weekly schedule -- see the header comment.
-    if: github.event_name == 'schedule'
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v7
       # Pinned to the same full version as the `python-qa` job's, for the same
       # reason: setup-uv publishes no floating major tag.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
-          # This job resolves no project dependencies (no `uv sync`), so it has
-          # nothing worth caching -- and setup-uv's cache key has no per-job
-          # component (architecture / OS / Python version / lockfile hash /
-          # optional suffix only), so on a cache miss this job's near-empty
-          # save would win the race and get restored by `python-qa` and
-          # `markdown-lint` too, replacing their real dependency cache.
+          # setup-uv's cache key has no per-job part, so this job's near-empty
+          # save (it runs no `uv sync`) could replace the one the others restore.
           enable-cache: false
-          # The newest CPython uv will install is whatever its own release
-          # knows about, so this job needs the newest uv release, not merely
-          # whatever no-`version`'s config-file lookup would otherwise find --
-          # an unrelated future `[tool.uv] required-version` pin (the kind
-          # `dependabot-auto-merge.yml`'s header already anticipates for other
-          # gate tools) would freeze this check's "latest" answer to that
-          # uv's release date, with no error to say so. An explicit `version`
-          # skips that lookup, per setup-uv's own README.
+          # uv installs only the CPython releases it knew of when built, and
+          # without `version` setup-uv installs any uv `required-version` pins.
           version: "latest"
       - name: Fail if a newer stable CPython minor exists than requires-python admits
         run: scripts/check_python_minor.sh
