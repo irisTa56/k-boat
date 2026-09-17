@@ -53,6 +53,9 @@ A matching note stops the item in the first of these states it is in, with nothi
 A slug collision stops the item too, keeping its queue file (see Errors).
 Every other item goes on to the sniff.
 
+Items that share a slug are one source, so take them in turn rather than alongside each other: de-dup a later one only once the earlier one has finished step 4.
+Its de-dup has to read the note that earlier item writes; run before that note exists, it would let the later item through to build a second notebook over the first.
+
 GET the URL with a browser User-Agent and sniff the response (not HEAD; see kboat-notes [Procedure: ingest a PDF source](../kboat-notes/references/procedures.md#procedure-ingest-a-pdf-source) for why and the exact rule): `%PDF-` bytes ⇒ **PDF**; an HTML bot challenge for a **PDF endpoint** — the URL's last path segment ends in `.pdf`, or it has a `/pdf/` delivery segment (e.g. ACM `/doi/pdf/<doi>`) and the response is a real Cloudflare-style challenge (`403`/`503`/`429` `Just a moment…`) — ⇒ **blocked PDF** → record it in the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), to be rescued later; HTML otherwise ⇒ **web page**, provisionally (step 3 settles it).
 The extension never promotes to the PDF path — the bytes do (an arXiv `/pdf/<id>` link serves a real PDF); a bare `/pdf/` segment alone is not a blocked-PDF signal (a `200` docs page stays a web page) — only a `.pdf` suffix or an actual challenge response is.
 This sniff is the fast path, not the verdict: a URL that defeats both of its inputs falls through to the web page rule and is caught after the add instead (step 3).
