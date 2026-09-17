@@ -23,9 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Shared settings come from `lychee.toml`. The action, not `mise run
-      # check:links`, because its `failIfEmpty` (on by default) fails the run on a
-      # walk that found no links, which lychee alone exits 0 on.
+      # Shared settings come from `lychee.toml`. The action rather than `mise run
+      # check:links`: it already supplies the GitHub token, the job summary and a
+      # run that does not fail, so this one workflow staying different costs little.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
           args: --verbose --no-progress --config lychee.toml .
