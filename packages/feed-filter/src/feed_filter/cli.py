@@ -118,6 +118,35 @@ def _url_arg(raw: str) -> CanonicalUrl:
         raise BadUrlError(f"--url is not a usable URL: {exc}") from exc
 
 
+class BadArgvError(ValueError):
+    """A CLI argument's text is not valid UTF-8.
+
+    POSIX decodes ``argv`` with the ``surrogateescape`` error handler, so a
+    byte sequence in an argument that is not valid UTF-8 (a shell script
+    assembling ``--title`` from a forum post or a model's summary, a
+    multi-byte character truncated by a length limit upstream) becomes a lone
+    surrogate in the parsed string instead of failing at argv-decode time.
+    Silently carried through this CLI's whole call graph, it fails only on
+    the first re-encode to UTF-8 — a SQLite bind, the vault write, the stdout
+    emit — deep inside whichever handler runs, as a bare
+    ``UnicodeEncodeError`` (a ``ValueError`` subclass). Checked once here,
+    right after ``argparse`` hands back the parsed arguments, rather than at
+    each of those encode sites.
+    """
+
+
+def _reject_unencodable_args(args: argparse.Namespace) -> None:
+    """Raise ``BadArgvError`` if any string argument holds an undecodable byte."""
+    for name, value in vars(args).items():
+        if not isinstance(value, str):
+            continue
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            flag = f"--{name.replace('_', '-')}"
+            raise BadArgvError(f"{flag} is not valid text: {exc}") from exc
+
+
 def _positive_int(value: str) -> int:
     """argparse type for a count that must be at least one.
 
@@ -1294,6 +1323,10 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
+    - ``BadArgvError`` — an argument's text is not valid UTF-8 (a ``ValueError``
+      subclass; see its docstring — checked once, right after ``argparse``
+      parses ``argv``, rather than at each of the several places downstream
+      that would otherwise hit it as a bare ``UnicodeEncodeError``);
     - ``BadUrlError`` — a ``--url`` argument is not a URL ``canonical_url`` can
       parse (a ``ValueError`` subclass; see its docstring);
     - ``SiteConfigError`` — deliberate ``sites.toml`` / CLI-argument shape
@@ -1329,6 +1362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
     try:
+        _reject_unencodable_args(args)
         exit_code: int = args.handler(args)
     except VaultLockedError as exc:
         _emit({"status": "locked", "holder": exc.holder})
@@ -1344,6 +1378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         BrowserFetchError,
         VaultError,
         BadInputError,
+        BadArgvError,
         BadUrlError,
         SiteConfigError,
         UnknownSiteError,

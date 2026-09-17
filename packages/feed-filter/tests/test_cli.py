@@ -503,6 +503,35 @@ def test_entry_body_with_an_unparseable_url_surfaces_as_clean_exit(
     assert "error: --url is not a usable URL" in capsys.readouterr().err
 
 
+def test_mark_seen_with_undecodable_argv_text_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``--title`` holding a byte argv could not decode renders through ``cli.main``.
+
+    POSIX decodes argv with ``surrogateescape``, so an invalid-UTF-8 byte in an
+    argument (a shell script assembling ``--title`` from a forum post, a
+    truncated multi-byte character) becomes a lone surrogate in the parsed
+    string, exactly as it would arrive here — this passes the same shape
+    directly rather than through a real subprocess. Uncaught, it would fail
+    only much later at the first re-encode (the ``seen.record`` SQLite bind),
+    deep inside the handler; ``_reject_unencodable_args`` catches it once,
+    right after ``argparse`` parses ``argv``.
+    """
+    rc = cli.main(
+        [
+            "mark-seen",
+            "--site-id",
+            "s1",
+            "--url",
+            "https://example.com/a",
+            "--title",
+            "caf\udcc3",
+        ]
+    )
+    assert rc == 1
+    assert "error: --title is not valid text" in capsys.readouterr().err
+
+
 # --- list-sites -----------------------------------------------------------
 
 
