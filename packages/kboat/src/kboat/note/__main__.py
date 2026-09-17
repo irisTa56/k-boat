@@ -110,7 +110,7 @@ def _migrate_slugs(argv: list[str]) -> int:
     # readability that is actually wrong.
     try:
         mode = vault.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         sys.stderr.write(f"no vault at {vault}\n")
         return 1
     except OSError as exc:

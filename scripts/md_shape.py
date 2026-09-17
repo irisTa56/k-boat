@@ -209,7 +209,7 @@ def _loads_as_a_mapping(block: str) -> bool:
     # exit 1, the code reserved here for "a fault is there". Caught, it is the
     # same answer as any other failure to load, under the rule this docstring
     # already states and at the price `_without_frontmatter` already names.
-    except (yaml.YAMLError, ValueError):
+    except yaml.YAMLError, ValueError:
         return False
 
 

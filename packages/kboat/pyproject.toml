@@ -2,10 +2,15 @@
 name = "kboat"
 version = "0.1.0"
 description = "Deterministic K-Boat tools over a shared frontmatter core: lifecycle, repos, the daily pick, validation, and the note writer."
-# A behavioural floor: from 3.14 `Path.exists()` is `os.path.exists` and swallows
-# every `OSError`. `kboat.note.migrate` rests on that to report a probe it cannot
-# make as a row rather than aborting the scan.
-requires-python = ">=3.14"
+# The interpreter range, and this is its owner. The floor is behavioural: from 3.14
+# `Path.exists()` is `os.path.exists` and swallows every `OSError`, and
+# `kboat.note.migrate` rests on that to report a probe it cannot make as a row rather
+# than aborting the scan. The ceiling is there because that premise, and the one
+# `kboat-vault-conventions` states for `Path.glob`, are a minor release's to change:
+# uv will not build an environment on an interpreter outside this range, so the next
+# minor has to be admitted by hand instead of arriving with whatever the machine
+# offers. Move it to the next minor only together with the check in the root CLAUDE.md.
+requires-python = ">=3.14,<3.15"
 # Added only under the rule in CLAUDE.md "Working on it". PyYAML reads the concept
 # notes Basic Memory writes, which fold a long value onto a continuation line that
 # `kboat.frontmatter`'s scanner does not model. The browser-driven NotebookLM CLI

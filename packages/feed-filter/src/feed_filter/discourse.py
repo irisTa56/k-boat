@@ -151,7 +151,7 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
     """
     try:
         data = json.loads(json_bytes)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError, UnicodeDecodeError:
         return _EMPTY_TOPIC, []
 
     if not isinstance(data, dict):

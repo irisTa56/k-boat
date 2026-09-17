@@ -11,7 +11,11 @@
 [project]
 name = "notebooklm-tool"
 version = "0"
-requires-python = ">=3.14"
+# The workspace's interpreter range (packages/kboat/pyproject.toml owns it), held
+# here too because this resolution is out of the workspace's reach. Nothing in CI
+# runs this CLI, so an interpreter it was never checked on would reach the skills as
+# unreviewed as an unchecked release would.
+requires-python = ">=3.14,<3.15"
 dependencies = ["notebooklm-py[browser]==0.8.2"]
 
 # Nothing here is importable: this project exists to pin and install a CLI.

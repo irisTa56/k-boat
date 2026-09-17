@@ -140,7 +140,7 @@ def _read_holder(fd: int, lock_path: Path) -> dict[str, object]:
         # Bounded: a record is well under this, and a lock file that somehow is not is
         # not one to pull into memory whole.
         loaded = json.loads(os.pread(fd, 4096, 0).decode("utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
+    except OSError, UnicodeDecodeError, ValueError:
         return record
     if isinstance(loaded, dict):
         pid = loaded.get("pid")

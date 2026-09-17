@@ -354,7 +354,7 @@ def refresh(
     # both of those are the vault's shape rather than its readability.
     try:
         listable = repos_dir.stat()
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         # `NotADirectoryError` belongs here, not with the refusals: it is what a
         # vault root that is a regular file raises, and `list_note_dir` reads a
         # non-directory as empty — so letting it fall through turned a mis-typed
