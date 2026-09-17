@@ -5,19 +5,19 @@ name: CI
 # It runs the same ruff / ty / pytest / coverage-floor / rumdl / md-shape /
 # shellcheck / shfmt / gitleaks / offline-link-check checks -- uv for the Python
 # gates, md-shape among them; official actions for rumdl, gitleaks, and lychee;
-# and, for the shell checks, apt instead of a third action -- shellcheck ships
-# preinstalled on this runner image, and shfmt installs from Ubuntu noble's
-# `universe` component (https://packages.ubuntu.com/noble/shfmt), since neither
-# is a Python or JS package `uv`/`npm` could hand us. Keep the checks here in
-# sync with mise.toml's `qa:**` tasks.
+# and apt for the shell checks (see the `shell-qa` job below for why). Keep the
+# checks here in sync with mise.toml's `qa:**` tasks.
 #
-# `python-minor-check` is the one job below with no local `qa:**` counterpart:
-# it fails when uv resolves a newer stable CPython minor outside this project
-# than the one `requires-python` admits inside it, so a new interpreter release
-# gets a red job instead of going unnoticed -- `scripts/check_python_minor.sh`
-# says how, and the root CLAUDE.md's "Tooling config" section says what to do
-# about it. It is deliberately not in the branch ruleset (see that file), so
-# its failure reminds the maintainer without blocking a merge.
+# Neither `shell-qa` nor `python-minor-check` is in the branch ruleset: the four
+# required checks stay python-qa / markdown-lint / secret-scan /
+# link-check-offline, unchanged by this workflow gaining two more jobs.
+# `python-minor-check` is also the one job below with no local `qa:**`
+# counterpart: it fails when uv resolves a newer stable CPython minor outside
+# this project than the one `requires-python` admits inside it, so a new
+# interpreter release gets a red job instead of going unnoticed --
+# `scripts/check_python_minor.sh` says how, and the root CLAUDE.md's "Tooling
+# config" section says what to do about it. That job is deliberately not
+# required -- its failure is a reminder, never a merge gate.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -155,13 +155,17 @@ jobs:
       # (https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
       # lists it under "Installed apt packages"); shfmt does not, but Ubuntu
       # noble's `universe` component carries it
-      # (https://packages.ubuntu.com/noble/shfmt), so a plain apt install covers
-      # both without a third-party action to pin and watch.
+      # (https://packages.ubuntu.com/noble/shfmt, 3.8.0-1 there), so a plain
+      # apt install covers both without adding a third-party action to pin and
+      # watch. (A pip-installable wrapper exists for each too -- `shellcheck-py`,
+      # `shfmt-py` -- but apt needs nothing this workflow does not already have.)
       - name: Install shfmt
         run: |
           sudo apt-get update
           sudo apt-get install -y shfmt
-      # Matches mise's `qa:sh` task exactly.
+      # Same commands as mise's `qa:sh` task. The version differs: apt's
+      # shellcheck/shfmt here can trail what `mise upgrade` tracks locally as
+      # `latest`.
       - name: shellcheck, shfmt
         run: |
           shellcheck scripts/*.sh

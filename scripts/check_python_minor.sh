@@ -6,7 +6,12 @@
 # Does not parse any `pyproject.toml`: uv's own resolution is the source for
 # both sides being compared.
 #   - "latest": the newest stable CPython uv installs when run outside any
-#     project -- an empty directory, so no `requires-python` bounds it.
+#     project -- an empty directory, so no `requires-python` bounds it. Fetched
+#     into a fresh, throwaway UV_PYTHON_INSTALL_DIR made just for this run: a
+#     bare `uv python install` (no version pinned) is a no-op -- and reports
+#     whatever is already there, however old -- once *any* Python already
+#     satisfies it, so reusing an ambient install dir that already holds an
+#     interpreter would silently stop this side from ever seeing a new release.
 #   - "project": the interpreter uv selects inside this repository, which
 #     `requires-python` (owned by packages/kboat/pyproject.toml) does bound.
 # uv excludes pre-releases from "latest" by policy -- a pre-release is only
@@ -14,11 +19,7 @@
 # candidate such as 3.15.0rc2 never trips this check early. See
 # https://docs.astral.sh/uv/concepts/python-versions/#pre-release-python-versions
 #
-# Run from the repository root, as the other scripts/ tools are. Set
-# UV_PYTHON_INSTALL_DIR before calling this to keep the interpreter it
-# downloads for the "latest" side out of the shared managed-Python install
-# dir -- CI always should, and so should a manual run that wants to avoid
-# adding to it.
+# Run from the repository root, as the other scripts/ tools are.
 
 set -euo pipefail
 
@@ -28,13 +29,14 @@ set -euo pipefail
 export UV_PYTHON_PREFERENCE=only-managed
 
 empty_dir=$(mktemp -d)
+latest_install_dir=$(mktemp -d)
 venv_dir=$(mktemp -d)
-trap 'rm -rf "$empty_dir" "$venv_dir"' EXIT
+trap 'rm -rf "$empty_dir" "$latest_install_dir" "$venv_dir"' EXIT
 
 latest=$(
   cd "$empty_dir" &&
-    uv python install --no-bin -q &&
-    uv run --no-project python -c 'import sys; print(sys.version_info[1])'
+    UV_PYTHON_INSTALL_DIR="$latest_install_dir" uv python install --no-bin -q &&
+    UV_PYTHON_INSTALL_DIR="$latest_install_dir" uv run --no-project python -c 'import sys; print(sys.version_info[1])'
 )
 
 # A path outside `.venv`, so this never recreates or disturbs the checkout's
