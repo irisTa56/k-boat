@@ -95,6 +95,13 @@ Diff `ruff check --isolated --show-settings` between the old and the new binary,
 The NotebookLM CLI's pin (`tools/notebooklm/pyproject.toml`) defers here for the same reason, and `.github/dependabot.yml` says why its Dependabot PR is the one that must not auto-merge.
 Its bump also falsifies prose: the skills state the CLI's behaviour and the values it emits as the installed version's, so a bump means re-reading every statement that names one — a source type name, say, which a release can add or rename.
 
+The interpreter range (`requires-python`, owned by `packages/kboat/pyproject.toml`) defers here for admitting the next minor, which uv refuses until the range is widened.
+Widen it in all three `pyproject.toml` files that carry it, move `target-version` with it, sync both environments onto the new interpreter, and before the change lands:
+
+- Read the new minor's `pathlib` and `os.path` changes against the `Path.exists` and `Path.glob` premises `kboat-vault-conventions` states.
+- Revert each `kboat.io_utils` boundary to the bare `pathlib` call it replaces, and confirm its test fails on the premise rather than on something else.
+- Run the NotebookLM CLI against the live service, as a bump of its pin requires.
+
 ## Git workflow
 
 - Never push to `main` directly; branch first, then PR.
