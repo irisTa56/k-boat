@@ -167,8 +167,14 @@ def test_failed_migration_rolls_back_so_the_next_open_recovers(
     crashing[2] = (*crashing[2], "INSERT INTO no_such_table VALUES (1)")
     monkeypatch.setattr(seen, "_MIGRATIONS", crashing)
     monkeypatch.setattr(seen.sqlite3, "connect", spy)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(sqlite3.OperationalError) as exc_info:
         seen.open_db(path)
+    # A bad statement is SQLITE_ERROR, not SQLITE_BUSY: it must propagate as the
+    # bare OperationalError it is, never wrapped as the busy-only
+    # SeenStoreBusyError cli.main's boundary is narrowed to catch — a SQL bug of
+    # ours must reach a traceback, not the `error: …` + exit 1 a real lock
+    # timeout gets (see test_open_db_wraps_a_genuine_lock_timeout_as_seen_store_busy_error).
+    assert not isinstance(exc_info.value, seen.SeenStoreBusyError)
     monkeypatch.undo()
 
     # A failed open returns no handle, so nothing else can close one it left behind
@@ -234,6 +240,46 @@ def test_opener_that_loses_the_migration_race_skips_the_applied_step(tmp_path: P
         assert version == len(seen._MIGRATIONS)
     finally:
         loser.close()
+
+
+def test_open_db_wraps_a_genuine_lock_timeout_as_seen_store_busy_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real ``SQLITE_BUSY`` on ``BEGIN IMMEDIATE`` becomes ``SeenStoreBusyError``.
+
+    Unlike the race in the test above, this one holds the write lock across the
+    whole migration attempt so the opener genuinely times out — the case
+    ``cli.main``'s boundary is built to catch (a busy_timeout is patched to 50ms so
+    the test does not wait on sqlite3's 5s default). Confirms both that the wrap
+    happens and that it is still an ``sqlite3.OperationalError``, so a caller
+    matching that broader type is unaffected.
+    """
+    path = tmp_path / "v2.db"
+    raw = sqlite3.connect(path)
+    raw.execute("PRAGMA journal_mode=WAL")
+    _apply(raw, 2)
+    raw.commit()
+    raw.close()
+
+    holder = sqlite3.connect(path)
+    holder.execute("BEGIN IMMEDIATE")  # takes the write lock and never releases it here
+
+    real_connect = sqlite3.connect
+
+    def fast_timeout_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        kwargs["timeout"] = 0.05
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(seen.sqlite3, "connect", fast_timeout_connect)
+
+    try:
+        with pytest.raises(seen.SeenStoreBusyError) as exc_info:
+            seen.open_db(path)
+        assert "locked" in str(exc_info.value)
+        assert isinstance(exc_info.value, sqlite3.OperationalError)
+    finally:
+        holder.rollback()
+        holder.close()
 
 
 def test_reopen_is_idempotent(tmp_path: Path) -> None:

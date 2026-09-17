@@ -63,6 +63,7 @@ from feed_filter.config import (
     DEFAULT_QUERY_RESULTS,
     QUERY_SITE_ID,
     SUMMARY_PREVIEW_CHARS,
+    MissingEnvError,
     db_path,
     sites_path,
     vault_path,
@@ -78,9 +79,11 @@ from feed_filter.forum_pipeline import (
 )
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
-from feed_filter.seen import is_seen, open_db, record, snapshot
+from feed_filter.seen import SeenStoreBusyError, is_seen, open_db, record, snapshot
 from feed_filter.sites import (
     SiteConfig,
+    SiteConfigError,
+    UnknownSiteError,
     add_site,
     load_sites,
     set_enabled,
@@ -187,13 +190,13 @@ def _site_from_args(args: argparse.Namespace) -> SiteConfig:
 
 
 def _select_sites(site_id: str | None) -> list[SiteConfig]:
-    """Load the registry, optionally narrowing to one id (KeyError if absent)."""
+    """Load the registry, optionally narrowing to one id (``UnknownSiteError`` if absent)."""
     sites = load_sites(sites_path())
     if site_id is None:
         return sites
     selected = [s for s in sites if s.id == site_id]
     if not selected:
-        raise KeyError(f"no site with id {site_id!r}")
+        raise UnknownSiteError(f"no site with id {site_id!r}")
     return selected
 
 
@@ -560,19 +563,21 @@ def cmd_mark_seen(args: argparse.Namespace) -> int:
 
 
 def _scrape_site_for(site_id: str, verb: str) -> SiteConfig:
-    """The enabled scrape site ``site_id`` names, or a ``ValueError`` naming ``verb``.
+    """The enabled scrape site ``site_id`` names, or a ``SiteConfigError`` naming ``verb``.
 
     Shared by ``heal-site`` and ``resnapshot-site``, which re-scrape the same way and
     differ only in where the pattern comes from and whether config is written.
     """
-    site = _select_sites(site_id)[0]  # KeyError if id absent — before any side effect
+    site = _select_sites(site_id)[0]  # UnknownSiteError if id absent — before any side effect
     if not site.enabled:
         # A disabled site is inert (new-entries skips it). Re-scraping would run a gather
         # it should not, and would slip past the on-disk Playwright gate (which now
         # ignores disabled sites) into a raw ModuleNotFoundError. Refuse — enable first.
-        raise ValueError(f"{verb} targets enabled sites only (site {site.id!r}); enable it first")
+        raise SiteConfigError(
+            f"{verb} targets enabled sites only (site {site.id!r}); enable it first"
+        )
     if site.kind != "scrape":
-        raise ValueError(f"{verb} targets scrape sites only (site {site.id!r})")
+        raise SiteConfigError(f"{verb} targets scrape sites only (site {site.id!r})")
     return site
 
 
@@ -1248,7 +1253,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse argv, dispatch, and map operational failures to a non-zero exit.
 
     Every expected runtime failure becomes a stderr ``error: …`` line and exit 1
-    — never a traceback, never a silent success:
+    — never a traceback, never a silent success. Each entry below is either a
+    dedicated domain type or a builtin this codebase raises for one specific,
+    named reason and no other — the taxonomy that lets this catch stay narrow:
+    a bug that happens to raise a bare ``ValueError``/``KeyError``/``sqlite3.Error``
+    beneath a handler is *not* one of these types and reaches a traceback instead
+    of being reported as a user error.
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (the writer refused it);
@@ -1263,25 +1273,34 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
-    - ``ValueError`` — shape/validation (bad site config, a non-scrape or disabled
-      site given to heal-site / resnapshot-site, an unset ``OBSIDIAN_VAULT_PATH``);
-    - ``KeyError`` — unknown site id;
+    - ``SiteConfigError`` — deliberate ``sites.toml`` / CLI-argument shape
+      validation (a ``ValueError`` subclass; see its docstring for why every raise
+      site is operator-facing and none is an internal invariant);
+    - ``UnknownSiteError`` — an operator-supplied ``--site-id`` names no registered
+      site (a ``KeyError`` subclass; see its docstring);
+    - ``MissingEnvError`` — a required environment variable (``OBSIDIAN_VAULT_PATH``)
+      is unset (a ``ValueError`` subclass; see its docstring);
     - ``OSError`` — filesystem failures from the config writes / db open
-      (disk full, permission, atomic-rename failure). Caught for the same reason
-      a ``VaultError`` is: a write that can't complete is an operational failure
-      to report, not a stack trace to dump.
+      (disk full, permission, atomic-rename failure). Kept as the bare builtin,
+      unlike ``ValueError``/``KeyError``/``sqlite3.Error`` above: every raise this
+      CLI's call graph can reach is a real syscall failure (``atomic_write_text``,
+      a config read) — an operator's environment, never a logic bug, which in
+      Python raises ``TypeError``/``AttributeError``/... instead. Caught for the
+      same reason a ``VaultError`` is: a write that can't complete is an
+      operational failure to report, not a stack trace to dump.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (the add-site / heal-site / resnapshot-site snapshot), the browser
       analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
-    - ``sqlite3.Error`` — the seen-store could not be opened or written; the case
-      this exists for is a lock timeout, when two processes opening the store at
-      once serialize on the migration's ``BEGIN IMMEDIATE`` and the loser exceeds
-      the busy timeout. Like ``ValueError`` and ``OSError`` above it, the catch is
-      broader than that one case and will report a SQL bug of ours the same way —
-      accepted, because a CLI whose contract is ``error: …`` + exit 1 should not
-      dump a traceback for a failing statement either.
+    - ``SeenStoreBusyError`` — two processes race the seen-store's migration
+      ``BEGIN IMMEDIATE`` and this one loses past the busy timeout (a
+      ``sqlite3.OperationalError`` subclass; see its docstring). Replaces a bare
+      ``sqlite3.Error`` catch: SQLite raises the same ``OperationalError`` for a
+      lock timeout and for a bad migration statement, so only the site that knows
+      *which* one it is — ``open_db`` — may narrow it, by ``sqlite_errorname``;
+      every other ``sqlite3.Error`` (a bad statement, a constraint violation, a
+      binding mismatch) is a SQL bug of ours and now reaches a traceback.
     """
     args = build_parser().parse_args(argv)
     try:
@@ -1295,11 +1314,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         BrowserFetchError,
         VaultError,
         BadInputError,
-        ValueError,
-        KeyError,
+        SiteConfigError,
+        UnknownSiteError,
+        MissingEnvError,
         OSError,
         MissingPlaywrightError,
-        sqlite3.Error,
+        SeenStoreBusyError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

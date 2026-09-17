@@ -42,7 +42,7 @@ from feed_filter.forum_pipeline import (
     TriggerPost,
 )
 from feed_filter.pipeline import FetchOutcome
-from feed_filter.seen import count, is_seen, open_db
+from feed_filter.seen import SeenStoreBusyError, count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
 from feed_filter.vault import VaultError
 from kboat.canonical import CanonicalUrl, canonical_url
@@ -239,21 +239,26 @@ def test_filesystem_error_surfaces_as_clean_exit(
     assert "error: disk full" in capsys.readouterr().err
 
 
-def test_seen_store_error_surfaces_as_clean_exit(
+def test_seen_store_busy_error_surfaces_as_clean_exit(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A seen-store failure reports like any other operational one, not as a traceback.
+    """A seen-store lock timeout reports like any other operational one, not a traceback.
 
-    The case this exists for is a lock timeout: two processes opening the store at
-    once serialize on the migration's ``BEGIN IMMEDIATE``, and the loser can exceed
-    the busy timeout. Every skill parses the ``error: …`` + exit 1 contract, so a
-    traceback there would break the run summary rather than report a retryable run.
+    The case this exists for: two processes opening the store at once serialize on
+    the migration's ``BEGIN IMMEDIATE``, and the loser can exceed the busy timeout
+    — ``seen.open_db`` reports that one case as ``SeenStoreBusyError`` (see its
+    docstring and ``test_seen.py``'s real-lock-contention test), which is what this
+    stubs. Every skill parses the ``error: …`` + exit 1 contract, so a traceback
+    there would break the run summary rather than report a retryable run. A bare
+    ``sqlite3.Error`` — a SQL bug of ours — is a *different* test
+    (``test_forum_new_store_error_fails_the_run_not_the_site``): it is no longer in
+    this boundary and must reach a traceback instead.
     """
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
 
     def boom(path: Path) -> None:
-        raise sqlite3.OperationalError("database is locked")
+        raise SeenStoreBusyError("database is locked")
 
     monkeypatch.setattr(cli, "open_db", boom)
     capsys.readouterr()  # drop the add-site output
@@ -1916,17 +1921,23 @@ def test_forum_new_per_site_boundary_does_not_absorb_base_exception(
 
 
 @pytest.mark.parametrize("raising_call", ["admit_from_feeds", "gather_forum"])
-def test_forum_new_store_error_fails_the_run_not_the_site(
+def test_forum_new_store_bug_fails_the_run_not_the_site(
     state_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     raising_call: str,
 ) -> None:
-    """A store error is the run's failure, so neither per-site guard absorbs it.
+    """A store bug is the run's failure, so neither per-site guard absorbs it.
 
     ``site_health`` is left intact here on purpose: a breakage scoped to the forum
     tables leaves that write working, so the unguarded write cannot be relied on to
-    surface it and the guards must re-raise themselves.
+    surface it and the guards must re-raise themselves — proven here by the
+    exception reaching ``cli.main``'s caller unchanged, attributed to no site.
+
+    "no such column" is a bad-SQL bug, not the seen-store's one deliberate
+    ``sqlite3.OperationalError`` (a busy-timeout lock, wrapped as
+    ``SeenStoreBusyError`` — see ``test_seen_store_busy_error_surfaces_as_clean_exit``),
+    so ``cli.main``'s narrowed boundary no longer reports it as ``error: …`` +
+    exit 1: it propagates out of ``cli.main`` like the ``KeyboardInterrupt`` above.
     """
     _no_client(monkeypatch)
     _add_forum_site()
@@ -1943,10 +1954,8 @@ def test_forum_new_store_error_fails_the_run_not_the_site(
     )
     monkeypatch.setattr(cli, raising_call, broken_forum_table)
 
-    assert cli.main(["forum-new"]) == 1
-    err = capsys.readouterr().err
-    assert "no such column" in err
-    assert "ef2" not in err, "the run failed outright, it did not blame each site in turn"
+    with pytest.raises(sqlite3.OperationalError, match="no such column"):
+        cli.main(["forum-new"])
 
 
 def test_forum_new_gather_guard_catches_a_real_due_topics_failure(

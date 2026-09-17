@@ -18,6 +18,20 @@ from pathlib import Path
 
 from kboat.canonical import CanonicalUrl
 
+
+class SeenStoreBusyError(sqlite3.OperationalError):
+    """Another opener holds the migration lock past the busy timeout.
+
+    Raised only for ``SQLITE_BUSY`` on ``open_db``'s ``BEGIN IMMEDIATE`` — two
+    processes racing to migrate the store at once, and this one lost the wait. A
+    real, expected race between two runs, not a SQL bug, and the only sqlite3
+    failure ``open_db`` treats that way: any other ``sqlite3.Error`` (a bad
+    migration statement, a corrupt file) propagates unmasked. A
+    ``sqlite3.OperationalError`` subclass so a caller still matching that type
+    keeps working unchanged.
+    """
+
+
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
 # applies every entry past the DB's current ``PRAGMA user_version`` and stamps the
 # new version in the same transaction — so adding a column in a later phase is an
@@ -171,14 +185,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 
 def open_db(path: Path) -> sqlite3.Connection:
-    """Open (creating + migrating) the seen-store at ``path`` in WAL mode."""
+    """Open (creating + migrating) the seen-store at ``path`` in WAL mode.
+
+    Raises ``SeenStoreBusyError`` — see its docstring — for the one sqlite3
+    failure this function expects; every other ``sqlite3.Error`` propagates as
+    the ``sqlite3.OperationalError``/``sqlite3.Error`` subtype it actually is.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         _migrate(conn)
-    except BaseException:
+    except BaseException as exc:
         conn.close()  # a failed open returns no handle, so nothing else can close it
+        # sqlite_errorname is set by the C layer on every exception it actually
+        # raises; getattr guards a hand-constructed OperationalError (none occur
+        # in this codebase today, but the check must not itself raise).
+        if getattr(exc, "sqlite_errorname", None) == "SQLITE_BUSY":
+            raise SeenStoreBusyError(str(exc)) from exc
         raise
     return conn
 
