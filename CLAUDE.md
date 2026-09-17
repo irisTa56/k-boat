@@ -52,11 +52,6 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 `mise.toml` is the task list and carries its own reasons; `mise run pre-commit` is the gate, run by the git hook its postinstall generates.
 
-## Tests
-
-A test for a guard whose failure would pass silently — a narrowed `except`, a report of what could not be read — is seen failing with that guard removed before it is committed.
-Where a test-driven development skill is available, work that red-green loop through it.
-
 ## Architecture (K-Boat)
 
 Each skill carries its own `description`, which is what says when to reach for it.
@@ -107,6 +102,11 @@ Then, before the change lands:
 - Read the new minor's `pathlib` and `os.path` changes against the `Path.exists` and `Path.glob` premises `kboat-vault-conventions` states.
 - Revert each `kboat.io_utils` boundary to the bare `pathlib` call it replaces, and confirm its test fails on the premise rather than on something else.
 - Run the NotebookLM CLI against the live service, as a bump of its pin requires.
+
+## Tests
+
+A test for a guard whose failure would pass silently — a narrowed `except`, a report of what could not be read — is seen failing with that guard removed before it is committed.
+Where a test-driven development skill is available, work that red-green loop through it.
 
 ## Git workflow
 
