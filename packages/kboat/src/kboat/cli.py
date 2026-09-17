@@ -140,8 +140,27 @@ def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
 
 
 def _read_json_record() -> dict:
+    # Decoded here rather than left to `sys.stdin`, whose error handler is not ours
+    # to assume: Python enables UTF-8 mode when `LC_CTYPE` is `C`/`POSIX` (PEP 540),
+    # which sets `errors="surrogateescape"` — and that is the locale an unattended
+    # `kboat-routine` shell has. Under it a byte that is not UTF-8 does not fail
+    # here at all; it survives as a lone surrogate and detonates at the write, past
+    # every boundary, as a traceback with an empty stdout. Reading the buffer and
+    # decoding strictly makes the failure land here in every locale, rather than
+    # depending on one this process did not choose.
+    #
+    # An `OSError` here is left uncaught: it is not a record to fix, and folding it
+    # into `BadInputError`'s exit 2 would have a caller retry a payload no retry can
+    # change. It propagates to `run_write`'s own `NOTE_READ_ERRORS` arm instead,
+    # exiting 1 like any other write that did not happen.
     try:
-        record = json.load(sys.stdin)
+        text = sys.stdin.buffer.read().decode("utf-8")
+    except UnicodeDecodeError as e:
+        # Bytes that are not UTF-8 are a record to fix — exit 2 — not the exit 1 a
+        # caller reads as an environment to retry.
+        raise BadInputError(f"stdin is not valid UTF-8: {e}") from e
+    try:
+        record = json.loads(text)
     except json.JSONDecodeError as e:
         raise BadInputError(f"stdin is not valid JSON: {e}") from e
     if not isinstance(record, dict):
@@ -161,11 +180,26 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
     refusal, or a vault another run holds), 0 a note on disk. Success is named
     rather than the refusals: a status this mapping has not heard of is one it
     cannot claim wrote a note.
+
+    Bytes on stdin that are not UTF-8 are a record to fix: `_read_json_record` maps
+    that `UnicodeDecodeError` to `BadInputError` itself, so it exits 2 through this
+    function's `BadInputError` arm rather than reaching `NOTE_READ_ERRORS` below. A
+    `UnicodeEncodeError` from a lone surrogate already inside the record — JSON
+    admits one (`"\\ud83d"`), and nothing else in the content can carry one, an
+    existing note being read strictly — is the same kind of record to fix, and
+    exits 2 for the same reason, in its own arm below. An `OSError` while reading
+    stdin is not caught by name anywhere: `_read_json_record` leaves it to
+    propagate, and it lands in the `NOTE_READ_ERRORS` arm below like any other
+    write that did not happen (exit 1) — today's behaviour, named here rather than
+    left to be rediscovered.
     """
     try:
         result = write(_read_json_record())
     except BadInputError as e:
         sys.stderr.write(f"{e}\n")
+        return 2
+    except UnicodeEncodeError as e:
+        sys.stderr.write(f"record holds a character that cannot be written: {e}\n")
         return 2
     except VaultLockedError as e:
         return emit_locked(e)
