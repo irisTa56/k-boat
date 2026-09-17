@@ -98,7 +98,7 @@ def _check_root(vault: Path) -> tuple[Check, bool]:
     """
     try:
         mode = vault.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         return Check("vault_root", Status.FAILED, f"vault root does not exist: {vault}"), True
     except OSError as exc:
         return Check("vault_root", Status.FAILED, f"vault root could not be read: {exc}"), False
@@ -182,7 +182,7 @@ def _check_folders(vault: Path) -> list[Check]:
         """
         try:
             mode = (vault / name).stat().st_mode
-        except (FileNotFoundError, NotADirectoryError):
+        except FileNotFoundError, NotADirectoryError:
             return False
         except OSError:
             return True
@@ -213,7 +213,7 @@ def _check_questions(vault: Path) -> Check:
     questions = vault / QUESTIONS_FILE
     try:
         found = questions.stat()
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         found = None
     except OSError as exc:
         # Its own finding, and never "missing": the remedy for missing is to create
@@ -299,7 +299,7 @@ def _placeholders(
         directory = vault / name
         try:
             mode = directory.stat().st_mode
-        except (FileNotFoundError, NotADirectoryError):
+        except FileNotFoundError, NotADirectoryError:
             continue  # an absent folder is `_check_folders`' finding, not this one
         except OSError as exc:
             # `is_dir()` was the gate here and swallowed this, so a note directory
@@ -331,7 +331,7 @@ def _placeholders(
             rel_dir = directory.relative_to(vault).as_posix()
             try:
                 directory.stat()
-            except (FileNotFoundError, NotADirectoryError):
+            except FileNotFoundError, NotADirectoryError:
                 vanished.append(rel_dir)
             except OSError as exc:
                 # The same boundary the in-walk probe carries, for the same reason:
@@ -375,7 +375,7 @@ def _placeholders(
                 rel = here.relative_to(vault).as_posix()
                 try:
                     here.stat()
-                except (FileNotFoundError, NotADirectoryError):
+                except FileNotFoundError, NotADirectoryError:
                     vanished.append(rel)
                 except OSError as exc:
                     # The sibling race the `vanished` split absorbs, from the other

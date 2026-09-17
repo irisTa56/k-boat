@@ -100,7 +100,7 @@ def name_occupied(path: Path) -> bool:
     """
     try:
         path.lstat()
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         return False
     return True
 
@@ -118,7 +118,7 @@ def file_present(path: Path) -> bool:
     """
     try:
         mode = path.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         return False
     # A *file*, as the name says: a directory at a note's slug is a name held by
     # something that is not a note, and the two answers route to opposite remedies
@@ -199,7 +199,7 @@ def list_note_dir(directory: Path) -> tuple[list[Path], list[Path]]:
     """
     try:
         entries = sorted(directory.iterdir())
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         return [], []
     # Listable is not usable, and `iterdir` only answers the first. An `r--`
     # directory lists its names and refuses every `read_text` beneath it, so a

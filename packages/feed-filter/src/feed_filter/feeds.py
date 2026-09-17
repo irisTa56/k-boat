@@ -133,7 +133,7 @@ def _published_at(entry: object) -> int | None:
         if value:
             try:
                 return int(calendar.timegm(value))
-            except (TypeError, ValueError, OverflowError):
+            except TypeError, ValueError, OverflowError:
                 continue
     return None
 
