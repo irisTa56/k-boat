@@ -103,6 +103,11 @@ Then, before the change lands:
 - Revert each `kboat.io_utils` boundary to the bare `pathlib` call it replaces, and confirm its test fails on the premise rather than on something else.
 - Run the NotebookLM CLI against the live service, as a bump of its pin requires.
 
+## Tests
+
+A test for a guard whose failure would pass silently — a narrowed `except`, a report of what could not be read — is seen failing with that guard removed before it is committed.
+Where a test-driven development skill is available, work that red-green loop through it.
+
 ## Git workflow
 
 - Never push to `main` directly; branch first, then PR.
