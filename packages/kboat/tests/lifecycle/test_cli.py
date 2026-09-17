@@ -200,6 +200,32 @@ def test_a_filed_date_it_could_not_write_is_an_anomaly(vault: Path, capsys):
     assert out["anomalies"][0]["error"].startswith("filed_date write failed")
 
 
+def test_a_note_that_turns_unreadable_between_load_and_stamp_is_an_anomaly(
+    vault: Path, capsys, monkeypatch
+):
+    # `_load_sources` reads the note once to plan the stamp; `_apply_phase_a` reads
+    # it again to rewrite `filed_date`. The vault lock is advisory, so Obsidian or
+    # iCloud can change the file between the two — this pins that the second read's
+    # own `UnicodeDecodeError` lands as an anomaly rather than escaping the pass.
+    sources = vault / "Sources"
+    write_note(sources, "a", distill=True)
+    real_read_text = Path.read_text
+    reads: list[Path] = []
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "a.md":
+            reads.append(self)
+            if len(reads) > 1:  # the rewrite's read, after the plan's
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    out = run(vault, capsys)
+
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/a.md"]
+    assert out["anomalies"][0]["error"].startswith("filed_date write failed")
+
+
 def test_a_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_pass(vault: Path, capsys):
     # `UnicodeDecodeError` is a `ValueError`, so without it in the boundary a
     # single bad note escapes and takes the whole pass with it.

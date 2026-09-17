@@ -197,6 +197,31 @@ def test_set_reports_a_picked_flag_it_could_not_write(
     assert all(a["error"].startswith("picked write failed") for a in out["anomalies"])
 
 
+def test_set_reports_a_note_that_turns_unreadable_between_load_and_write(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `_load_sources` reads every note once to know what is present; `_cmd_set`
+    # reads a note again to rewrite its `picked` flag. The vault lock is advisory,
+    # so Obsidian or iCloud can change a file between the two — this pins that the
+    # second read's own `UnicodeDecodeError` lands as an anomaly rather than
+    # escaping the pass.
+    real_read_text = Path.read_text
+    reads: list[Path] = []
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "web2.md":
+            reads.append(self)
+            if len(reads) > 1:  # the write loop's read, after `_load_sources`'s
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_read_text(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    assert main(["--vault", str(vault), "set", "--slugs", "web1"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/web2.md"]
+    assert out["anomalies"][0]["error"].startswith("picked write failed")
+
+
 def test_empty_slugs_clears_all(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
     main(["--vault", str(vault), "set", "--slugs", "web1"])
     capsys.readouterr()
