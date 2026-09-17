@@ -22,14 +22,32 @@ from kboat.canonical import CanonicalUrl
 class SeenStoreBusyError(sqlite3.OperationalError):
     """Another opener holds the migration lock past the busy timeout.
 
-    Raised only for ``SQLITE_BUSY`` on ``open_db``'s ``BEGIN IMMEDIATE`` — two
-    processes racing to migrate the store at once, and this one lost the wait. A
-    real, expected race between two runs, not a SQL bug, and the only sqlite3
+    Raised only when SQLite reports a busy condition (primary result code
+    ``SQLITE_BUSY``, in any of its plain or extended forms — see
+    ``_is_lock_busy``) on ``open_db``'s ``BEGIN IMMEDIATE`` — two processes
+    racing to migrate the store at once, and this one lost the wait. A real,
+    expected race between two runs, not a SQL bug, and the only sqlite3
     failure ``open_db`` treats that way: any other ``sqlite3.Error`` (a bad
     migration statement, a corrupt file) propagates unmasked. A
     ``sqlite3.OperationalError`` subclass so a caller still matching that type
     keeps working unchanged.
     """
+
+
+def _is_lock_busy(exc: BaseException) -> bool:
+    """True iff ``exc`` is a SQLite busy condition, plain or extended.
+
+    Checks the *primary* result code (the low byte, ``code & 0xFF``) rather
+    than ``sqlite_errorname``: under WAL, a lock wait can come back as an
+    extended code — ``SQLITE_BUSY_RECOVERY``, ``SQLITE_BUSY_SNAPSHOT``,
+    ``SQLITE_BUSY_TIMEOUT`` — whose name is not the literal string
+    ``"SQLITE_BUSY"`` but whose primary code still is. ``sqlite_errorcode`` is
+    set by the C layer on every exception it actually raises; ``getattr``
+    guards a hand-constructed one (none occur in this codebase today, but the
+    check must not itself raise).
+    """
+    code = getattr(exc, "sqlite_errorcode", None)
+    return code is not None and code & 0xFF == sqlite3.SQLITE_BUSY
 
 
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
@@ -198,10 +216,7 @@ def open_db(path: Path) -> sqlite3.Connection:
         _migrate(conn)
     except BaseException as exc:
         conn.close()  # a failed open returns no handle, so nothing else can close it
-        # sqlite_errorname is set by the C layer on every exception it actually
-        # raises; getattr guards a hand-constructed OperationalError (none occur
-        # in this codebase today, but the check must not itself raise).
-        if getattr(exc, "sqlite_errorname", None) == "SQLITE_BUSY":
+        if _is_lock_busy(exc):
             raise SeenStoreBusyError(str(exc)) from exc
         raise
     return conn

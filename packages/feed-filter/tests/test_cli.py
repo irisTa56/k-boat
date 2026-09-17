@@ -250,9 +250,9 @@ def test_seen_store_busy_error_surfaces_as_clean_exit(
     docstring and ``test_seen.py``'s real-lock-contention test), which is what this
     stubs. Every skill parses the ``error: …`` + exit 1 contract, so a traceback
     there would break the run summary rather than report a retryable run. A bare
-    ``sqlite3.Error`` — a SQL bug of ours — is a *different* test
-    (``test_forum_new_store_error_fails_the_run_not_the_site``): it is no longer in
-    this boundary and must reach a traceback instead.
+    ``sqlite3.Error`` — a SQL bug of ours, outside this boundary — is a *different*
+    test (``test_forum_new_store_bug_fails_the_run_not_the_site``), which asserts
+    the traceback instead.
     """
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
@@ -265,6 +265,122 @@ def test_seen_store_busy_error_surfaces_as_clean_exit(
 
     assert cli.main(["new-entries"]) == 1
     assert "error: database is locked" in capsys.readouterr().err
+
+
+# --- cli.main's error boundary ---------------------------------------------
+#
+# The tests above each pin one domain type's message through `cli.main`. These
+# pin the boundary's *shape*: that the narrowing itself holds (a bare
+# ValueError/KeyError from a bug is not swallowed), and that every remaining
+# sites.py/config.py raise site still renders as `error: …` + exit 1 through
+# `cli.main` — not only through a direct `pytest.raises(ValueError)` on the
+# function, which a plain `ValueError` also satisfies and so cannot tell a
+# `SiteConfigError` apart from a reverted bare builtin.
+
+
+def test_a_bare_value_error_from_a_bug_is_not_reported_as_a_user_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``ValueError`` that is not one of the domain subclasses is a bug, not input.
+
+    ``cmd_discover`` is a convenient handler to stub: it takes no vault/db setup.
+    A real ``FetchError`` from the same call site is the CLI's normal, reported
+    failure (``test_discover_transport_error_exits_nonzero``); a bare
+    ``ValueError`` from the same place must propagate instead of being read as
+    the same kind of failure.
+    """
+    _no_client(monkeypatch)
+
+    def boom(url: str, *, client: object) -> DiscoveryResult:
+        raise ValueError("not a domain exception")
+
+    monkeypatch.setattr(cli, "discover", boom)
+    with pytest.raises(ValueError, match="not a domain exception"):
+        cli.main(["discover", "https://e.example.com"])
+
+
+def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``KeyError`` that is not ``UnknownSiteError`` is a bug, not an unknown id."""
+    _no_client(monkeypatch)
+
+    def boom(url: str, *, client: object) -> DiscoveryResult:
+        raise KeyError("not a domain exception")
+
+    monkeypatch.setattr(cli, "discover", boom)
+    with pytest.raises(KeyError, match="not a domain exception"):
+        cli.main(["discover", "https://e.example.com"])
+
+
+@pytest.mark.parametrize(
+    "toml_body",
+    [
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'like_threshold = "6"\n',
+            id="opt_int_wrong_type",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'enabled = "yes"\n',
+            id="opt_bool_wrong_type",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f1.xml"\n'
+            '[[site]]\nid = "a"\nname = "A2"\nfeed_url = "https://a.example.com/f2.xml"\n',
+            id="duplicate_id",
+        ),
+        pytest.param('[[site]]\nid = "a"\nname = "A"\n', id="exactly_one_of"),
+        pytest.param('[[site]]\nid = "a\nname = "A"\n', id="not_valid_toml"),
+    ],
+)
+def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(
+    state_dir: Path, toml_body: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each ``sites.py`` shape-validation raise still renders through ``cli.main``.
+
+    ``test_sites.py`` pins each of these directly against ``load_sites``, but a
+    ``pytest.raises(ValueError)`` there is satisfied by a plain ``ValueError`` too
+    — it cannot tell ``SiteConfigError`` apart from a reverted bare builtin. Only
+    a run through ``cli.main`` proves the type reaching the boundary is still one
+    ``cli.main``'s tuple actually lists.
+    """
+    sites_path().write_text(toml_body, encoding="utf-8")
+    assert cli.main(["list-sites"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_remind_with_unset_vault_path_surfaces_as_clean_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``OBSIDIAN_VAULT_PATH`` unset must render through ``cli.main``, not only
+    through a direct ``pytest.raises(ValueError)`` on ``vault_path()`` (same
+    reasoning as the ``sites.toml`` cases above).
+
+    Deliberately does not use the ``state_dir`` fixture, which would set the
+    env var; ``isolate_env_secrets`` (autouse, conftest) already clears it.
+    ``vault_path()`` is the first thing ``cmd_remind`` evaluates that can fail,
+    before any db/sites-file access, so this needs no other setup.
+    """
+    rc = cli.main(["remind", "--site-id", "s1", "--url", "https://example.com/a", "--title", "T"])
+    assert rc == 1
+    assert "OBSIDIAN_VAULT_PATH" in capsys.readouterr().err
+
+
+def test_entry_body_with_an_unparseable_url_surfaces_as_clean_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A ``--url`` ``canonical_url`` cannot parse renders through ``cli.main``.
+
+    ``entry-body`` canonicalizes before touching the db, so this needs no other
+    setup. The port is out of range (``> 65535``), which makes
+    ``urllib.parse.SplitResult.port`` raise — the same shape of failure as the
+    malformed-IPv6-literal case ``raise-findings`` reproduced.
+    """
+    rc = cli.main(["entry-body", "--url", "https://example.com:99999/a"])
+    assert rc == 1
+    assert "error: --url is not a usable URL" in capsys.readouterr().err
 
 
 # --- list-sites -----------------------------------------------------------
@@ -1936,8 +2052,8 @@ def test_forum_new_store_bug_fails_the_run_not_the_site(
     "no such column" is a bad-SQL bug, not the seen-store's one deliberate
     ``sqlite3.OperationalError`` (a busy-timeout lock, wrapped as
     ``SeenStoreBusyError`` — see ``test_seen_store_busy_error_surfaces_as_clean_exit``),
-    so ``cli.main``'s narrowed boundary no longer reports it as ``error: …`` +
-    exit 1: it propagates out of ``cli.main`` like the ``KeyboardInterrupt`` above.
+    so ``cli.main``'s boundary does not catch it: it propagates out of
+    ``cli.main`` like the ``KeyboardInterrupt`` above.
     """
     _no_client(monkeypatch)
     _add_forum_site()

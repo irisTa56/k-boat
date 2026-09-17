@@ -91,10 +91,31 @@ from feed_filter.sites import (
     validate_article_url_pattern,
 )
 from feed_filter.vault import VaultError, write_feed_note
-from kboat.canonical import canonical_url
+from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.cli import add_today_argument
 from kboat.lock import VaultLockedError
 from kboat.write import BadInputError
+
+
+class BadUrlError(ValueError):
+    """A ``--url`` argument is not a URL ``canonical_url`` can parse.
+
+    ``canonical_url`` (``kboat.canonical``) is a shared helper with no CLI
+    awareness of its own; it raises a bare ``ValueError`` when urllib's
+    ``SplitResult`` cannot parse the URL (a malformed IPv6 literal, a port out
+    of range). Every caller in this module passes operator-typed ``--url``
+    text, so that ``ValueError`` is deliberate input validation, not a bug —
+    wrapped once here, at the boundary that knows the argument came from the
+    operator, rather than at each call site.
+    """
+
+
+def _url_arg(raw: str) -> CanonicalUrl:
+    """``canonical_url(raw)``, or ``BadUrlError`` naming why it could not."""
+    try:
+        return canonical_url(raw)
+    except ValueError as exc:
+        raise BadUrlError(f"--url is not a usable URL: {exc}") from exc
 
 
 def _positive_int(value: str) -> int:
@@ -520,7 +541,7 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
     variant of that URL would otherwise miss a body that is cached. The emitted
     ``url`` is the canonical form the body was found under.
     """
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
         body = body_cache.get(conn, cu)
     _emit({"url": str(cu), "body": body})
@@ -536,7 +557,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
     — the never-lost half. ``write_feed_note`` falls the note's ``title`` back to
     the URL when blank, so a ``--title ""`` still writes a valid note.
     """
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     result = write_feed_note(
         vault_path(),
         cu,
@@ -555,7 +576,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
 
 def cmd_mark_seen(args: argparse.Namespace) -> int:
     """Record a dropped entry seen (kept=0); no note."""
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
         record(conn, cu, args.site_id, args.title or None, kept=0)
     _emit({"url": str(cu), "kept": False})
@@ -978,7 +999,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     ``upsert`` of that note, not a duplicate, so the disposition is recorded on
     every keep without tracking which URLs are already open.
     """
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     result = write_feed_note(
         vault_path(),
         cu,
@@ -1255,10 +1276,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     Every expected runtime failure becomes a stderr ``error: …`` line and exit 1
     — never a traceback, never a silent success. Each entry below is either a
     dedicated domain type or a builtin this codebase raises for one specific,
-    named reason and no other — the taxonomy that lets this catch stay narrow:
-    a bug that happens to raise a bare ``ValueError``/``KeyError``/``sqlite3.Error``
-    beneath a handler is *not* one of these types and reaches a traceback instead
-    of being reported as a user error.
+    named reason and no other, so that a bare ``ValueError``/``KeyError``/
+    ``sqlite3.Error`` raised anywhere else — a bug beneath a handler — is not
+    one of these types and reaches a traceback instead of being reported as a
+    user error.
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (the writer refused it);
@@ -1273,6 +1294,8 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
+    - ``BadUrlError`` — a ``--url`` argument is not a URL ``canonical_url`` can
+      parse (a ``ValueError`` subclass; see its docstring);
     - ``SiteConfigError`` — deliberate ``sites.toml`` / CLI-argument shape
       validation (a ``ValueError`` subclass; see its docstring for why every raise
       site is operator-facing and none is an internal invariant);
@@ -1280,14 +1303,12 @@ def main(argv: Sequence[str] | None = None) -> int:
       site (a ``KeyError`` subclass; see its docstring);
     - ``MissingEnvError`` — a required environment variable (``OBSIDIAN_VAULT_PATH``)
       is unset (a ``ValueError`` subclass; see its docstring);
-    - ``OSError`` — filesystem failures from the config writes / db open
-      (disk full, permission, atomic-rename failure). Kept as the bare builtin,
-      unlike ``ValueError``/``KeyError``/``sqlite3.Error`` above: every raise this
-      CLI's call graph can reach is a real syscall failure (``atomic_write_text``,
-      a config read) — an operator's environment, never a logic bug, which in
-      Python raises ``TypeError``/``AttributeError``/... instead. Caught for the
-      same reason a ``VaultError`` is: a write that can't complete is an
-      operational failure to report, not a stack trace to dump.
+    - ``OSError`` — the one builtin kept bare. Every raise this CLI's call graph
+      can reach is a real syscall failure (``atomic_write_text``, a config read:
+      disk full, permission, atomic-rename failure) — an operator's environment,
+      never a logic bug, which in Python raises ``TypeError``/``AttributeError``/...
+      instead. Caught for the same reason a ``VaultError`` is: a write that can't
+      complete is an operational failure to report, not a stack trace to dump.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (the add-site / heal-site / resnapshot-site snapshot), the browser
       analog of ``FetchError``;
@@ -1295,12 +1316,12 @@ def main(argv: Sequence[str] | None = None) -> int:
       extra, or Chromium would not launch (the message carries the install command);
     - ``SeenStoreBusyError`` — two processes race the seen-store's migration
       ``BEGIN IMMEDIATE`` and this one loses past the busy timeout (a
-      ``sqlite3.OperationalError`` subclass; see its docstring). Replaces a bare
-      ``sqlite3.Error`` catch: SQLite raises the same ``OperationalError`` for a
-      lock timeout and for a bad migration statement, so only the site that knows
-      *which* one it is — ``open_db`` — may narrow it, by ``sqlite_errorname``;
-      every other ``sqlite3.Error`` (a bad statement, a constraint violation, a
-      binding mismatch) is a SQL bug of ours and now reaches a traceback.
+      ``sqlite3.OperationalError`` subclass; see its docstring). SQLite reports the
+      same ``OperationalError`` type for a lock timeout and for a bad migration
+      statement, so only the site that knows *which* one it is — ``open_db`` — may
+      narrow it, by the SQLite result code; every other ``sqlite3.Error`` (a bad
+      statement, a constraint violation, a binding mismatch) is a SQL bug of ours
+      and reaches a traceback.
     """
     args = build_parser().parse_args(argv)
     try:
@@ -1314,6 +1335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         BrowserFetchError,
         VaultError,
         BadInputError,
+        BadUrlError,
         SiteConfigError,
         UnknownSiteError,
         MissingEnvError,

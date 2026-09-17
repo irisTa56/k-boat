@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tomlkit
+import tomlkit.exceptions
 from tomlkit.items import Table
 
 from feed_filter.config import QUERY_SITE_ID
@@ -57,9 +58,8 @@ class SiteConfigError(ValueError):
     ``sites.toml`` content or from an operator-typed CLI argument — never from a
     value this codebase computes internally — so a raise here is always a
     config mistake to report, never a bug of ours to mask. A ``ValueError``
-    subclass so existing ``pytest.raises(ValueError)`` callers and the
-    ``load_sites``/``add_site`` "raises ``ValueError``" contract keep working
-    unchanged.
+    subclass so a caller checking ``except ValueError`` or ``isinstance(_,
+    ValueError)`` — this module's own tests included — keeps working unchanged.
     """
 
 
@@ -253,19 +253,36 @@ def _iter_site_tables(doc: tomlkit.TOMLDocument) -> list[Table]:
     return list(doc.get("site", []))
 
 
+def _parse_toml(path: Path) -> tomlkit.TOMLDocument:
+    """Read and parse ``path``, or ``SiteConfigError`` naming why not.
+
+    ``tomlkit.exceptions.ParseError`` (a ``ValueError`` subclass) and a
+    ``UnicodeDecodeError`` from a non-UTF-8 file are both a malformed
+    hand-edited ``sites.toml`` — the same source every other check in this
+    module guards, never a bug of ours — so they belong in the same domain
+    type as the rest of this module's validation rather than in
+    ``cli.main``'s bare-builtin catch.
+    """
+    try:
+        return tomlkit.parse(path.read_text(encoding="utf-8"))
+    except (tomlkit.exceptions.ParseError, UnicodeDecodeError) as exc:
+        raise SiteConfigError(f"{path} is not valid TOML: {exc}") from exc
+
+
 def load_sites(path: Path) -> list[SiteConfig]:
     """Parse ``sites.toml`` into validated SiteConfigs; missing file → ``[]``.
 
     Raises ``SiteConfigError`` on a duplicate id, on ``QUERY_SITE_ID`` (reserved for
     the query gather, which belongs to no registered site), on a missing required
-    key, or on a shape-invalid entry: a corrupt registry surfaces loudly rather than
-    silently routing to the wrong site. Enforced here and not only in ``add_site``
-    because ``sites.toml`` is hand-edited personal state, so a row can arrive
-    without ever passing through the write path.
+    key, on a shape-invalid entry, or on a file that is not valid TOML: a corrupt
+    registry surfaces loudly rather than silently routing to the wrong site.
+    Enforced here and not only in ``add_site`` because ``sites.toml`` is
+    hand-edited personal state, so a row can arrive without ever passing
+    through the write path.
     """
     if not path.exists():
         return []
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    doc = _parse_toml(path)
     sites: list[SiteConfig] = []
     seen_ids: set[str] = set()
     for table in _iter_site_tables(doc):
@@ -303,10 +320,11 @@ def add_site(path: Path, site: SiteConfig) -> None:
     Raises ``SiteConfigError`` if ``site.id`` is already registered (ids are
     unique), if it is ``QUERY_SITE_ID`` — the query gather stamps that id on
     entries that belong to no registered site, so letting a real site take it
-    would make the two indistinguishable as ``Feeds/``-note provenance — or if
-    its ``article_url_pattern`` does not compile.
+    would make the two indistinguishable as ``Feeds/``-note provenance — if
+    its ``article_url_pattern`` does not compile, or if an existing file at
+    ``path`` is not valid TOML.
     """
-    doc = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
+    doc = _parse_toml(path) if path.exists() else tomlkit.document()
 
     if site.article_url_pattern is not None:
         validate_article_url_pattern(site.article_url_pattern, site.id)
@@ -353,12 +371,12 @@ def update_pattern(path: Path, site_id: str, pattern: str) -> None:
     """Rewrite only ``site_id``'s ``article_url_pattern`` (self-heal).
 
     Raises ``UnknownSiteError`` if the id is absent, and ``SiteConfigError`` if
-    ``pattern`` does not compile or the id names a non-scrape site (feed or forum):
+    ``pattern`` does not compile, the id names a non-scrape site (feed or forum) —
     writing a pattern there would corrupt the exactly-one-of invariant and break
-    ``load_sites`` for the whole file.
+    ``load_sites`` for the whole file — or the file is not valid TOML.
     """
     validate_article_url_pattern(pattern, site_id)
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    doc = _parse_toml(path)
     for table in _iter_site_tables(doc):
         if _req_str(table, "id", path) == site_id:
             # Reject any non-scrape row, matching load_sites' notion of "scrape
@@ -379,12 +397,13 @@ def update_pattern(path: Path, site_id: str, pattern: str) -> None:
 def set_enabled(path: Path, site_id: str, enabled: bool) -> None:
     """Toggle ``site_id``'s ``enabled`` flag (enable-site / disable-site).
 
-    Raises ``UnknownSiteError`` if the id is absent. Mirrors the emit-only-when-non-default
-    serialization: disabling writes ``enabled = false``; enabling removes the key so
-    the row returns to its minimal default-true form. Atomic write, so a crash never
+    Raises ``UnknownSiteError`` if the id is absent, or ``SiteConfigError`` if the
+    file is not valid TOML. Mirrors the emit-only-when-non-default serialization:
+    disabling writes ``enabled = false``; enabling removes the key so the row
+    returns to its minimal default-true form. Atomic write, so a crash never
     leaves a half-toggled registry.
     """
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    doc = _parse_toml(path)
     for table in _iter_site_tables(doc):
         if _req_str(table, "id", path) == site_id:
             if enabled:
