@@ -43,10 +43,6 @@ uv sync
 uv sync --project tools/notebooklm --no-active
 """
 
-[tasks."fmt:md"]
-description = "Format markdown files"
-run = "rumdl check --fix"
-
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
 # Shared settings come from `lychee.toml`.
 [tasks."check:links"]
@@ -85,6 +81,10 @@ run = """
 rumdl check
 uv run python scripts/md_shape.py
 """
+
+[tasks."fmt:md"]
+description = "Format markdown files"
+run = "rumdl check --fix"
 
 [tasks."qa:secrets"]
 description = "Scan staged changes for secrets"
