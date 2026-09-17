@@ -110,7 +110,7 @@ The inbox views exclude `blocked` sources (`blocked != true`), so the to-read li
 See [Procedure: record a blocked source (DLQ)](procedures.md#procedure-record-a-blocked-source-dlq) and [Procedure: rescue a blocked source](procedures.md#procedure-rescue-a-blocked-source).
 
 `blocked` takes precedence over the dispositions: any `distill`/`keep`/`dismiss` checked on a blocked source is **inert** until an exit clears `blocked`, because the lifecycle excludes `blocked` mechanically rather than because there is nothing to act on.
-That distinction matters where a DLQ entry does hold a notebook — the re-capture case the `blocked_has_notebook` row describes — since the inertness is the only thing keeping the lifecycle off it, and clearing `blocked` is what ends it.
+That distinction matters where a DLQ entry does hold a notebook — the state the `blocked_has_notebook` row describes — since the inertness is the only thing keeping the lifecycle off it, and clearing `blocked` is what ends it.
 The routine excludes `blocked` from both phases (hence the `!blocked` term in the ripe and dismiss predicates), and every non-DLQ Base view filters `blocked != true` — so a blocked source's only home is the DLQ view, never the inbox, Holding, or Ambiguous, whatever its disposition flags say.
 
 A DLQ entry has **exactly two exits**, both human-initiated, and both clear `blocked` — nothing else does, which is why the queue drains only when a human works it.

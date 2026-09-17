@@ -21,12 +21,23 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
 
 1. Get the slug for the `url`: `kboat-note slug "<url>"`, and read `.slug` (same oracle as Conventions; `.canonical_url` is what it hashed).
    - This is the de-dup key, and the only name the note write will accept.
-   - If `Sources/<slug>.md` already exists, read its `url`: when it names the same page, this is the same source, so update it in place rather than creating a new note (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes), and if it already has a `notebooklm_id` it already has a notebook, so do not create a second one.
+   - Run this step before anything fetches the `url` — ahead of the type sniff in [ingest a PDF source](#procedure-ingest-a-pdf-source), whichever path that sniff then picks.
+     - The sniff sends a blocked PDF straight to [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq), whose write merges `blocked: true` onto whatever note stands at the slug, so only a de-dup that has already run keeps a wall met on a re-capture from landing on a note that already has its notebook.
+   - If `Sources/<slug>.md` already exists, read its `url`: when it names the same page, this is the same source, so any write goes to that note rather than a new one (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes).
    - Compare the two URLs canonically, never as raw strings: run `kboat-note slug` on the note's stored `url` as well and compare the two `.canonical_url` values.
      - A page linked twice — with a trailing slash, or with a feed's tracking parameter — is one source, which is why both links reach this slug at all, and a raw-string comparison would read the second one as a different page and report a collision that is not there.
-   - A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-fetch or create a notebook for it; treat the item as already recorded (the caller deletes the queue file and reports "already in the DLQ").
    - When the existing note's `url` names a **different** page, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
    - A note whose `url` cannot be read as a value to compare (hand-edited into a folded scalar, a list, a quoted key) is the same refusal for a different reason: nothing shows it to be this page, so it is reported for a human to repair rather than overwritten.
+   - A matching note stops the item here in the first of these states it is in, with nothing fetched, built, or written; the caller deletes the queue file, the note on disk standing in for the capture:
+     - **`blocked: true`** → a DLQ entry awaiting `kboat-rescue`; the caller reports it as "already in the DLQ".
+     - **`dismiss: true`** → a dismissed source; the caller reports it as "already dismissed", telling the human to untick `dismiss` and capture the URL again if they want to read it.
+       - `dismiss` is a disposition the human set, and a member force-writes only the fields it owns (`kboat-vault-conventions`, "The write contract"), so ingest does not clear it.
+       - While it stands, the dismiss branch discards the source's notebook once the cooldown has run — one a rebuild here would make, or the one a source still in its cooldown holds — so the capture is undone unless the human unticks it.
+     - **`distilled_date` set and no `notebooklm_id`** → a distilled source whose notebook was discarded; the caller reports it as "already distilled", naming [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) as the way to have a notebook for it again.
+       - A rebuild here would give it a notebook nothing ever discards, `distilled_date` keeping it out of the ripe set; reactivation settles `distill` and the stamp before it builds.
+     - **It has a `notebooklm_id`** → it already has its notebook, so do not create a second one.
+       - This stop reports nothing, so it comes last, where no state that owes a report can reach it first.
+   - Any other matching note goes on like a new source, each write merging over it.
 2. Otherwise create the note with `kboat-note write --type source` (it owns the file write — schema field order, YAML quoting, the always-present defaults, de-dup, and the `added_date` stamp — so the agent never hand-assembles frontmatter).
    - Pipe a `{slug, fields}` JSON record whose `fields` carry what is known now: `type: source`, `title`, `source_type: web_page`, `url`, and `reading_link` = the `url`.
    - The tool starts `reading`/`distill`/`keep`/`dismiss`/`blocked`/`picked` at `false`, leaves `summary`/`topics`/`filed_date`/`distilled_date` empty, and stamps `added_date`; step 3 fills `summary`/`topics`.
@@ -70,7 +81,7 @@ One source reaches this path with its type already decided: a GitHub blob/raw `.
 That rewritten raw URL is the source's `url` throughout — the de-dup slug, the download, and the stored provenance — so the byte-sniff below is confirmation (the raw URL serves `%PDF-`), not the type decision.
 Every other PDF is decided by the sniff.
 
-A source is a PDF when fetching its `url` yields PDF bytes, not HTML — decide this in kboat-ingest before choosing a path.
+A source is a PDF when fetching its `url` yields PDF bytes, not HTML — decide this in kboat-ingest before choosing a path, and only for an item step 1's de-dup below has let through.
 Do **not** use HEAD: bot-protected hosts answer HEAD with 403/405, and a plain `curl` (default User-Agent) is served an HTML challenge instead of the file.
 Fetch with a GET (no `Range` header — a range request can itself trigger a challenge), a browser `User-Agent` (a current Chrome UA string), and redirects followed (`-L`), so the sniff issues the same request the step 2 download would and its verdict predicts that download.
 Then judge by the response — the bytes first, and for an HTML body whether it is a real page or a bot challenge:
@@ -95,12 +106,9 @@ So the web path re-checks the type against NotebookLM's own once the source is a
 The rules here stay the fast path — they decide the common cases before a notebook is created.
 Every web source pays for the `source get` round trip regardless (one call in a step that already makes several), however confident the sniff looked; what only a URL defeating both inputs gets from it is a *changed* type.
 
-1. Get the slug and de-dup exactly as step 1 of [create or update a source note](#procedure-create-or-update-a-source-note) — the same `kboat-note slug` oracle, so nothing here is hashed by hand.
+1. Get the slug and de-dup exactly as step 1 of [create or update a source note](#procedure-create-or-update-a-source-note), and before the sniff above — the same `kboat-note slug` oracle, so nothing here is hashed by hand, and the same stops, so an item that step stops is never sniffed or downloaded.
    - What differs is only *which* URL the note stores: the queued one, even when it points straight at the PDF.
-   - If `Sources/<slug>.md` already exists whose `url` names this page and which has a `notebooklm_id`, it already has its file and notebook — update the note in place and stop, without re-downloading or creating a second notebook (the 1:1 invariant).
-   - A matching note with `blocked: true` is a DLQ entry awaiting `kboat-rescue` — do not re-download or create a notebook; treat the item as already recorded (the caller deletes the queue file and reports "already in the DLQ").
-   - If the existing note's `url` names a different page, report the slug collision and stop.
-   - Otherwise this is a new source — continue with steps 2–5.
+   - An item the de-dup lets through continues with steps 2–5.
 2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
    - Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check.
      - This same magic-byte check must still hold immediately before the upload — treat download → verify → upload as one uninterrupted sequence — which is why step 5 opens by making it again rather than trusting this one.
@@ -136,7 +144,7 @@ Every web source pays for the `source get` round trip regardless (one call in a 
      - `not_found` or `timeout` → neither says the upload failed, so decide nothing from them.
        - `not_found` is a first-poll race against the source appearing (it is raised without retry), and `timeout` says only that we stopped waiting.
        - Discard the notebook (passing the id `create` returned) and leave the note without a `notebooklm_id` — the transient shape where kboat-ingest keeps the queue file and the next run redoes the upload.
-         - The note and its file are already on disk, which step 1's de-dup allows: it stops only on a note that already has a `notebooklm_id`.
+         - The note and its file are already on disk, which step 1's de-dup allows: a note without a `notebooklm_id` stops there only when it is `blocked`, `dismiss`ed, or already distilled.
    - Once `ready`, verify the extraction.
      - Write the text to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile>` and read it.
        - Use `-o`, not stdout, which truncates at 2000 chars and would make a good PDF look empty.
@@ -422,7 +430,8 @@ Ingest does not drop a blocked source; it parks it in the DLQ:
    - Only the sniff-time blocked PDF never created one; the other three cases did.
    - `notebooklm_id` is left empty either way **on a note this run is creating**, and rescue creates a fresh notebook.
      - The same qualification covers the file: an entry recorded here has none, the fetch never having produced one.
-     - Where the slug already holds a fully ingested source, this step writes over that note without touching its `notebooklm_id` or its `PDFs/<slug>.pdf`, so the entry keeps both — the state the `blocked_has_notebook` row describes, and the reason the abandon and rescue procedures check before assuming either is absent.
+     - Where the slug already holds a note an earlier ingest wrote, this step writes over it without touching its `PDFs/<slug>.pdf`, so the entry keeps any file that ingest downloaded — the reason the abandon and rescue procedures check for one before assuming it is absent.
+     - It never writes over a note that still has its notebook: step 1 of [create or update a source note](#procedure-create-or-update-a-source-note) stops that one before anything is fetched, and every route here starts after that step or, on a reactivation, after its own discard.
 3. The note now sits in the DLQ Base view, identified by its slug.
    - kboat-ingest deletes the queue file — the durable note has replaced it.
    - `kboat-rescue` later supplies the content and clears `blocked`.
@@ -443,7 +452,7 @@ It must have `blocked: true`.
 Its `source_type` selects the branch below.
 
 **Then check `notebooklm_id`, before going any further.**
-A DLQ entry usually has none, but one re-captured after a successful ingest keeps the notebook that ingest built — the `blocked_has_notebook` row — and such a source is not missing its content at all: the wall the re-capture met is what set `blocked`, and the article is already inside.
+A DLQ entry usually has none, but one can still carry the notebook an earlier ingest built — the `blocked_has_notebook` row — and such a source is not missing its content at all: the article is already inside.
 Rescuing it is worse than pointless, since step 3 creates a fresh notebook and step 4 writes its id over the stored one, leaving the first referenced by nothing, with whatever dialogue it held.
 
 Confirm what that notebook holds (`notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null`, resolving the original per [One notebook per source](source-note.md#one-notebook-per-source-11)) and branch:
@@ -459,11 +468,11 @@ Confirm what that notebook holds (`notebooklm --quiet source list --notebook <no
   - Where the notebook is listed and the call still failed, decide nothing and report.
 
 **Clearing `blocked` is never a one-field write.**
-A DLQ entry's dispositions are inert rather than absent and `filed_date` is not cleared while it is blocked (the lifecycle skips a blocked source in both phases), so a `dismiss` ticked before the re-capture, with a stamp already seven days old, puts this source in the **next run's discard set** the moment the flag clears — and the notebook goes with it.
+A DLQ entry's dispositions are inert rather than absent and `filed_date` is not cleared while it is blocked (the lifecycle skips a blocked source in both phases), so a `dismiss` ticked before the entry was recorded, with a stamp already seven days old, puts this source in the **next run's discard set** the moment the flag clears — and the notebook goes with it.
 A `keep` or `distill` beside a `dismiss` lands as the `ambiguous` violation instead.
 This is abandon's gate 3 from the other exit and wants the same care: read the standing dispositions, settle with the human which they still want, and name **all three explicitly** in the one record, since `upsert` merges.
 Abandon's gate 2 binds here too — where `distilled_date` stands, `distill` stays checked and only `keep` and `dismiss` are the human's to settle, since unticking it beside the stamp is the `distilled_without_distill` violation and leaves the routine reading an already-distilled source as active again.
-For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**, on the ground abandon states at its own two exits: only a re-captured source reaches this state, and recording the DLQ entry overwrote the link with the `url`, so clearing `blocked` without it returns the source to the inbox with recall offering the bot wall as the way to read a PDF that is sitting in the vault.
+For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**, on the ground abandon states at its own two exits: where the entry was recorded over an earlier note, recording it overwrote the link with the `url`, so clearing `blocked` without it returns the source to the inbox with recall offering the bot wall as the way to read a PDF that is sitting in the vault.
 
 ### Step 2: obtain the content
 
@@ -537,7 +546,7 @@ Load `Sources/<slug>.md` and put it through three gates.
 
 1. **`blocked: true`.** `upsert` is create-or-update, so a slug matching no note would have it *create* a phantom tombstone with empty required fields rather than refuse.
 2. **`distilled_date` and `distill` agree.** A stamp standing with the flag unticked is the `distilled_without_distill` violation ([Cross-field rules](validation.md#cross-field-rules)); repair it first, because which write applies is read off the stamp and the violation would otherwise survive it.
-3. **`notebooklm_id` empty, where the tombstone record is the one being written.** A DLQ entry usually has none, but one re-captured after a successful ingest keeps its notebook (the `blocked_has_notebook` row).
+3. **`notebooklm_id` empty, where the tombstone record is the one being written.** A DLQ entry usually has none, but one can still carry one (the `blocked_has_notebook` row).
    - The tombstone puts such a source in the dismiss branch's discard set once its cooldown elapses — on the next run where a `filed_date` already stands seven days old, a week out where none stands yet, but in neither case never — and clearing `blocked` silences the rule that was flagging it, so nothing in the meantime names what is about to go.
    - Decide before writing: discard the notebook deliberately per [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook), or leave the entry alone.
    - The `distilled_date` record below is exempt — it leaves the source in the distill branch, where nothing is ever scheduled against the notebook, so let it keep one.
@@ -556,7 +565,7 @@ Any left to the merge lands beside `dismiss` as the `ambiguous` violation, tradi
 **Where `distilled_date` stands, write the other record**: `blocked` and `dismiss` false, `distill` and the stamp left alone, and for a `pdf` source `reading_link` = `[[<slug>.pdf]]` besides.
 There is nothing left to abandon — the knowledge is already in the graph — so the source rests in Holding as the distilled source it is.
 `keep` is deliberately not named: with `dismiss` false it composes with `distill` legitimately, and clearing it would take the source off the read-later shelf `kboat-recall` searches by default.
-The `reading_link` matters for the same reason — only a re-captured source can carry a `distilled_date` into the DLQ, and recording that entry overwrote the link with the `url`, which would then be what recall offers as the way to read it.
+The `reading_link` matters for the same reason — a `distilled_date` reaches the DLQ only on a note that already existed, and recording the entry over it overwrote the link with the `url`, which would then be what recall offers as the way to read it.
 
 **The record lands in one write**, `kboat-note write` taking one record and one `upsert` being one atomic write (see `kboat-vault-conventions`, "The write contract"), so no part of the set is ever on disk without the rest.
 That matters because neither half stands alone: `dismiss: true` is inert while `blocked` stands, and `blocked: false` lands wherever the existing ticks leave it — no cross-field rule fires on any of those landings, so a half-write produces no signal that it happened.
@@ -567,12 +576,12 @@ Nothing on the note distinguishes it from a source dismissed after being read, a
 
 The state is reversible, `dismiss` being a checkbox and not a stamp.
 **Untick `dismiss` first, whatever comes next.**
-Re-queueing the URL while it still stands builds a notebook that the next routine run discards on the standing flag.
+Re-queueing the URL while it still stands gets nothing back: ingest's de-dup stops a dismissed tombstone and reports it as already dismissed (step 1 of [create or update a source note](#procedure-create-or-update-a-source-note)).
 
 - A **web page** goes on to [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook), which re-fetches the `url`.
   - For a genuinely dead one that re-fetch records the source blocked again.
 - A **PDF** takes one of three routes, and `PDFs/<slug>.pdf` picks between them — check for the file first, since reactivation rebuilds from it and step 5 of [Procedure: ingest a PDF source](#procedure-ingest-a-pdf-source) builds nothing when it is missing.
-  - **The file is there** — the entry a re-capture re-blocked after a successful ingest. Set `reading_link` = `[[<slug>.pdf]]` in the record that unticks `dismiss` (recording the DLQ entry overwrote it with the `url`, and nothing on this route writes it back), then reactivate.
+  - **The file is there** — the entry recorded over a note whose file an earlier ingest had downloaded. Set `reading_link` = `[[<slug>.pdf]]` in the record that unticks `dismiss` (recording the DLQ entry overwrote it with the `url`, and nothing on this route writes it back), then reactivate.
   - **No file, live `url`** — the entry ingest recorded. Re-queue the URL: ingest downloads and files the PDF where the wall has dropped, and where it still stands records the DLQ entry again, putting the source back within `kboat-rescue`'s reach.
   - **No file, dead `url`** — put the file at `PDFs/<slug>.pdf` by hand, set `reading_link` = `[[<slug>.pdf]]` in the same record that unticks `dismiss`, then reactivate.
 

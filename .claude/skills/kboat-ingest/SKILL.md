@@ -40,7 +40,22 @@ Any other extension (or a `/tree` directory or the repo root) stays the repo pat
 
 For every other URL, follow the source path.
 
-### Step 1: decide the path, then gather signal
+### Step 1: de-duplicate, decide the path, then gather signal
+
+De-duplicate before anything fetches the URL, per kboat-notes [create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note) step 1, which owns the rule and why it runs first.
+The key is the slug, which `kboat-note slug "<url>"` gives you — never hash a URL by hand: that slug is the only name the note write accepts, and it is the canonical URL's hash, so two links to one page yield one note.
+A matching note stops the item in the first of these states it is in, with nothing fetched, built, or written, and step 4 deletes its queue file:
+
+- `blocked: true` → a DLQ entry awaiting `kboat-rescue`; report it as **already in the DLQ** (see Run summary).
+- `dismiss: true` → a dismissed source, with or without its notebook; report it as **already dismissed** (see Run summary).
+- `distilled_date` set and no `notebooklm_id` → a distilled source whose notebook was discarded; report it as **already distilled** (see Run summary).
+- It already has a `notebooklm_id` → it already has its notebook; nothing to report.
+
+A slug collision stops the item too, keeping its queue file (see Errors).
+Every other item goes on to the sniff.
+
+Items that share a slug are one source, so take them in turn rather than alongside each other: de-dup a later one only once the earlier one has finished step 4.
+Its de-dup has to read the note that earlier item writes; run before that note exists, it would let the later item through to build a second notebook over the first.
 
 GET the URL with a browser User-Agent and sniff the response (not HEAD; see kboat-notes [Procedure: ingest a PDF source](../kboat-notes/references/procedures.md#procedure-ingest-a-pdf-source) for why and the exact rule): `%PDF-` bytes ⇒ **PDF**; an HTML bot challenge for a **PDF endpoint** — the URL's last path segment ends in `.pdf`, or it has a `/pdf/` delivery segment (e.g. ACM `/doi/pdf/<doi>`) and the response is a real Cloudflare-style challenge (`403`/`503`/`429` `Just a moment…`) — ⇒ **blocked PDF** → record it in the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), to be rescued later; HTML otherwise ⇒ **web page**, provisionally (step 3 settles it).
 The extension never promotes to the PDF path — the bytes do (an arXiv `/pdf/<id>` link serves a real PDF); a bare `/pdf/` segment alone is not a blocked-PDF signal (a `200` docs page stays a web page) — only a `.pdf` suffix or an actual challenge response is.
@@ -51,14 +66,14 @@ This sniff is the fast path, not the verdict: a URL that defeats both of its inp
   - If the fetch fails (bot protection, HTTP 4xx/5xx, timeout), record the error and fall back to the capture's link text.
   - (The durable `summary`/`topics` come later from the source guide, per kboat-notes, not this fetch.)
 - **PDF**: follow kboat-notes [Procedure: ingest a PDF source](../kboat-notes/references/procedures.md#procedure-ingest-a-pdf-source) instead of steps 2–3 below.
-  - The title comes from the abstract page (arXiv) or the PDF itself, not an HTML fetch; downloading the file, de-duplicating, and creating the notebook are all part of that procedure.
+  - The title comes from the abstract page (arXiv) or the PDF itself, not an HTML fetch; downloading the file and creating the notebook are part of that procedure, and its de-dup is the one this step already ran.
   - The same commit-point rule holds — the source-note write is the commit point — and step 4 below still deletes the queue file only after that note exists.
 
 ### Step 2: create the source note
 
 Create a `Sources/*.md` note (see kboat-notes), using the fetched title.
 
-- De-duplicate per kboat-notes — the key is the slug, which `kboat-note slug "<url>"` gives you (never hash a URL by hand: that slug is the only name the note write accepts, and it is the canonical URL's hash, so two links to one page yield one note): if `Sources/<slug>.md` already exists for this `url` and already has a `notebooklm_id`, it already has its notebook — skip step 3 and just update the note in place; if it exists with `blocked: true`, it is a DLQ entry awaiting `kboat-rescue` — do not re-fetch, just delete the queue file and report it as already in the DLQ.
+- Step 1 has already de-duplicated; where a note already stands at the slug, the write merges over it.
 - The source-note write is the commit point: every queue item must end with a note on disk.
 
 ### Step 3: create the source's 1:1 notebook
@@ -84,7 +99,7 @@ Delete the queue file only after the source note is written, by removing its cap
     - This summary is the only place that could say where it came from.
   - Do not delete the stub: deleting a placeholder is how a file leaves iCloud.
 
-A DLQ note counts as written — the durable note replaces the capture, so delete it.
+A DLQ note counts as written, and so does the note step 1's de-dup stopped on — the durable note replaces the capture, so delete it.
 Keep the queue file only when no note was written, the write failed, or a **transient** failure left the source without a notebook and the next run could still get it one: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`, a `source wait` `not_found`/`timeout`, a failed `source get`, or a `status: locked` refusal from the note write (another run held the vault — kboat-vault-conventions "Durability and the vault lock").
 The test is whether a retry could succeed, not whether a notebook exists — a PDF whose upload NotebookLM answered with `.status: error` has no notebook either, but the verdict is durable and its file is already on disk, so the queue file goes and the outcome is reported instead of retried for good.
 
@@ -136,7 +151,7 @@ This is the same capture as the per-item procedure's step 3 applied to existing 
 
 ## Safety
 
-- De-duplicate per kboat-notes (the slug from `kboat-note slug`); never create a second notebook for a source that already has a `notebooklm_id`.
+- De-duplicate per kboat-notes (the slug from `kboat-note slug`) before fetching anything; never create a second notebook for a source that already has a `notebooklm_id`, and never build one under a standing `dismiss`.
 - Keep the queue file if writing the source note fails.
 
 ## Errors
@@ -183,7 +198,7 @@ Collect, per item, at least:
 - Source-note write failures.
   - The queue file is kept (see Safety).
 - Slug collisions: an existing `Sources/<slug>.md` cannot be shown to be this item — it holds a `url` naming a different page, or holds one in a shape the reader cannot compare (see kboat-notes de-dup).
-  - A second link to a page already ingested is **not** this case: it shares the slug by design and updates that note.
+  - A second link to a page already ingested is **not** this case: it shares the slug by design and is that note's source, which step 1 handles.
   - Stop that item without overwriting, keep its queue file, and report which of the two it was; this is deterministic, so it needs a human to resolve rather than a retry.
 - A failed `notebooklm auth refresh` at the start.
   - If auth is unusable, stop and report rather than processing the queue.
@@ -196,6 +211,10 @@ End the run with a summary covering:
   - Count the two PDF-unusable outcomes separately — the upload errored, or it reached `ready` and extracted to empty/garbled text — since they send the human after different things (a re-exported copy versus a text-bearing one) and leave different states: both a readable file, but the errored one no notebook and the empty extraction an unusable notebook kept.
   - Also note any source NotebookLM typed outside the schema's two values (`youtube`, `epub`, …): it ingested fine and is kept as a `web_page`, so this is not an error — only a heads-up that its `source_type` is approximate.
   - For PDFs also count: transient download failures (queue file kept) and titles that fell back to the capture's link text.
+- Captures step 1's de-dup stopped as already in the DLQ, already dismissed, or already distilled, since nothing else records that they were made: the queue file is gone and the note is unchanged.
+  - **Already in the DLQ**: name each, with `kboat-rescue` as the way on.
+  - **Already dismissed**: name each, with the instruction to untick `dismiss` and capture the URL again to read it.
+  - **Already distilled**: name each, with kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) as the way to have a notebook for it again.
 - Backfill (the summary/topics retry sweep): candidates seen, backfilled this run, still empty after a retry (guide failed again), any whose original had gone out of its notebook, any whose notebook held something the identification rule could not match, and any whose `notebooklm_id` named no notebook at all.
   - Name all three: the notebook-health step later in the run takes the first two and has no other way to learn of them, and the third only a reactivation settles.
 - Stranded iCloud stubs: every `Queue/.<name>.md.icloud` a capture deletion left behind (step 4).
