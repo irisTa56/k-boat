@@ -102,7 +102,6 @@ class BadUrlError(ValueError):
 
 
 def _url_arg(raw: str) -> CanonicalUrl:
-    """``canonical_url(raw)``, or ``BadUrlError`` naming why it could not."""
     try:
         return canonical_url(raw)
     except ValueError as exc:

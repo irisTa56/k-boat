@@ -450,11 +450,23 @@ def test_remind_with_unset_vault_path_surfaces_as_clean_exit(
     assert "OBSIDIAN_VAULT_PATH" in capsys.readouterr().err
 
 
-def test_entry_body_with_an_unparseable_url_surfaces_as_clean_exit(
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["entry-body"], id="entry-body"),
+        pytest.param(["remind", "--site-id", "s1", "--title", "T"], id="remind"),
+        pytest.param(["mark-seen", "--site-id", "s1", "--title", "T"], id="mark-seen"),
+        pytest.param(
+            ["forum-remind", "--site-id", "s1", "--topic-id", "1", "--title", "T"],
+            id="forum-remind",
+        ),
+    ],
+)
+def test_an_unparseable_url_argument_surfaces_as_clean_exit(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A ``--url`` ``canonical_url`` cannot parse renders through ``cli.main``."""
-    rc = cli.main(["entry-body", "--url", "https://example.com:99999/a"])
+    rc = cli.main([*argv, "--url", "https://example.com:99999/a"])
     assert rc == 1
     assert "error: --url is not a usable URL" in capsys.readouterr().err
 
