@@ -313,6 +313,43 @@ def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expe
     assert seen.is_lock_busy(exc) is expected
 
 
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        pytest.param(sqlite3.SQLITE_BUSY, True, id="busy_still_counts"),
+        pytest.param(sqlite3.SQLITE_PERM, True, id="permission_denied"),
+        pytest.param(sqlite3.SQLITE_NOMEM, True, id="out_of_memory"),
+        pytest.param(sqlite3.SQLITE_READONLY, True, id="readonly_database"),
+        pytest.param(sqlite3.SQLITE_IOERR, True, id="disk_io_error"),
+        pytest.param(sqlite3.SQLITE_CORRUPT, True, id="corrupt_database"),
+        pytest.param(sqlite3.SQLITE_FULL, True, id="disk_full"),
+        pytest.param(sqlite3.SQLITE_CANTOPEN, True, id="cannot_open_file"),
+        pytest.param(sqlite3.SQLITE_NOTADB, True, id="not_a_database_file"),
+        pytest.param(sqlite3.SQLITE_ERROR, False, id="bad_sql_is_a_bug"),
+        pytest.param(sqlite3.SQLITE_CONSTRAINT, False, id="constraint_violation_is_a_bug"),
+        pytest.param(sqlite3.SQLITE_MISMATCH, False, id="type_mismatch_is_a_bug"),
+        pytest.param(sqlite3.SQLITE_MISUSE, False, id="library_misuse_is_a_bug"),
+        pytest.param(sqlite3.SQLITE_RANGE, False, id="bind_out_of_range_is_a_bug"),
+        pytest.param(None, False, id="no_sqlite_errorcode_at_all"),
+    ],
+)
+def test_is_environment_failure_covers_busy_and_the_operators_environment(
+    code: int | None, expected: bool
+) -> None:
+    """``is_environment_failure`` folds in ``is_lock_busy`` plus every other
+    SQLite primary result code that names a permissions, memory, disk, or
+    file-corruption failure — mirroring the operator's-environment-vs-logic-bug
+    split ``cli.main``'s docstring already draws for bare ``OSError``. A bug in
+    this codebase's own SQL (bad syntax, a constraint our upserts should never
+    hit, a binding mismatch) must read as not-an-environment-failure, so
+    ``cli.main`` lets it reach a traceback instead of reporting it.
+    """
+    exc = sqlite3.OperationalError("x")
+    if code is not None:
+        exc.sqlite_errorcode = code
+    assert seen.is_environment_failure(exc) is expected
+
+
 def test_reopen_is_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "feed-filter.db"
     c1 = seen.open_db(path)

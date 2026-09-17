@@ -79,7 +79,7 @@ from feed_filter.forum_pipeline import (
 )
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
-from feed_filter.seen import is_lock_busy, is_seen, open_db, record, snapshot
+from feed_filter.seen import is_environment_failure, is_seen, open_db, record, snapshot
 from feed_filter.sites import (
     SiteConfig,
     SiteConfigError,
@@ -1314,16 +1314,18 @@ def main(argv: Sequence[str] | None = None) -> int:
       analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
-    - a ``sqlite3.Error`` where ``is_lock_busy`` (``feed_filter.seen``) is true —
-      two processes race the seen-store's lock (any write can hit this, not only
-      ``open_db``'s migration ``BEGIN IMMEDIATE``) and this one loses past the
-      busy timeout. SQLite reports the *same* ``OperationalError`` type for a
-      lock timeout and for a bad statement, so classification is by SQLite's
-      result code (``is_lock_busy``), not by type — checked here, the one place
-      every sqlite3 call in this CLI's graph funnels through, rather than at
-      each call site. Every other ``sqlite3.Error`` (a bad statement, a
-      constraint violation, a binding mismatch) is a SQL bug of ours and
-      reaches a traceback.
+    - a ``sqlite3.Error`` where ``is_environment_failure`` (``feed_filter.seen``)
+      is true — two processes racing the seen-store's lock (any write can hit
+      this, not only ``open_db``'s migration ``BEGIN IMMEDIATE``) and this one
+      losing past the busy timeout, or SQLite reporting a permission, memory,
+      disk, or file-corruption failure it attributes to the environment rather
+      than to a statement. SQLite reports the *same* ``OperationalError`` (or
+      ``DatabaseError``) type for those and for a bad statement, so
+      classification is by SQLite's result code (``is_environment_failure``),
+      not by type — checked here, the one place every sqlite3 call in this
+      CLI's graph funnels through, rather than at each call site. Every other
+      ``sqlite3.Error`` (a bad statement, a constraint violation, a binding
+      mismatch) is a SQL bug of ours and reaches a traceback.
     """
     args = build_parser().parse_args(argv)
     try:
@@ -1333,7 +1335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except sqlite3.Error as exc:
-        if not is_lock_busy(exc):
+        if not is_environment_failure(exc):
             raise
         print(f"error: {exc}", file=sys.stderr)
         return 1

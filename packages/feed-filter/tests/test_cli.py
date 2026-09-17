@@ -278,11 +278,12 @@ def test_seen_store_busy_error_on_an_ordinary_write_surfaces_as_clean_exit(
     A migration lock is the case the seen-store's own docstring names, but any
     write can hit the same lock (``record``, ``record_post``, a
     ``site_health``/``body_cache`` commit) — ``cli.main``'s classification
-    (``is_lock_busy``) is centralized in ``cli.main`` precisely so every one of
-    them is covered without a wrap at each call site (see ``seen.is_lock_busy``'s
-    docstring). Proven here with a *real* two-connection race during
-    ``mark-seen``'s ``record`` call, patched to a short busy timeout so the test
-    does not wait out sqlite3's 5s default.
+    (``is_environment_failure``, which folds in ``is_lock_busy``) is
+    centralized in ``cli.main`` precisely so every one of them is covered
+    without a wrap at each call site (see ``seen.is_lock_busy``'s docstring).
+    Proven here with a *real* two-connection race during ``mark-seen``'s
+    ``record`` call, patched to a short busy timeout so the test does not wait
+    out sqlite3's 5s default.
     """
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
     with contextlib.closing(open_db(db_path())):
@@ -308,6 +309,28 @@ def test_seen_store_busy_error_on_an_ordinary_write_surfaces_as_clean_exit(
     finally:
         holder.rollback()
         holder.close()
+
+
+def test_a_corrupt_seen_store_file_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A seen-store file that is not a database reports, rather than tracebacks.
+
+    SQLite reports this as ``SQLITE_NOTADB`` (a primary result code
+    ``is_environment_failure`` recognizes), the same "operator's environment,
+    never a logic bug" category ``OSError`` gets — a corrupt or foreign file at
+    ``FEED_FILTER_DB``, not something this codebase's own SQL could cause. Real
+    condition, not a stub: writes non-SQLite bytes to the path and lets
+    ``open_db`` hit the real error.
+    """
+    db_path().write_bytes(b"not a sqlite database")
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+
+    rc = cli.main(
+        ["mark-seen", "--site-id", "a", "--url", "https://a.example.com/x", "--title", "T"]
+    )
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
 
 
 # --- cli.main's error boundary ---------------------------------------------
@@ -406,6 +429,11 @@ def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
         ),
         pytest.param('[[site]]\nid = "a"\nname = "A"\n', id="exactly_one_of"),
         pytest.param('[[site]]\nid = "a\nname = "A"\n', id="not_valid_toml"),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            "enabled = false\nenabled = false\n",
+            id="duplicate_key_in_one_table",
+        ),
     ],
 )
 def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(
@@ -944,6 +972,31 @@ def test_new_entries_unknown_site_id_exits_nonzero(
 
 
 # --- remind / mark-seen ---------------------------------------------------
+
+
+def test_remind_against_a_broken_existing_note_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-remind that reads a hand-broken existing note reports, not tracebacks.
+
+    ``upsert`` reads the existing note before overwriting it (this is a
+    re-remind, the same URL/slug as before); a broken frontmatter fence makes
+    ``kboat.frontmatter`` raise ``FrontmatterError`` (a ``ValueError``
+    subclass) — an Obsidian note a human broke by hand, not a bug of ours, the
+    same "repair it by hand" case ``VaultError``'s unreadable-``url`` collision
+    already covers. ``vault.write_feed_note`` now wraps it as ``VaultError``.
+    """
+    url = "https://e.example.com/a"
+    feeds_dir = vault_path() / "Feeds"
+    feeds_dir.mkdir(parents=True, exist_ok=True)
+    note_path = feeds_dir / f"{url_slug(str(canonical_url(url)))}.md"
+    note_path.write_text("no fence here\njust text\n", encoding="utf-8")
+
+    rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "repair it by hand" in err
 
 
 def test_remind_writes_then_records_atomically(

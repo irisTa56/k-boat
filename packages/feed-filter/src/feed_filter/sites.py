@@ -256,16 +256,21 @@ def _iter_site_tables(doc: tomlkit.TOMLDocument) -> list[Table]:
 def _parse_toml(path: Path) -> tomlkit.TOMLDocument:
     """Read and parse ``path``, or ``SiteConfigError`` naming why not.
 
-    ``tomlkit.exceptions.ParseError`` (a ``ValueError`` subclass) and a
-    ``UnicodeDecodeError`` from a non-UTF-8 file are both a malformed
-    hand-edited ``sites.toml`` — the same source every other check in this
-    module guards, never a bug of ours — so they belong in the same domain
-    type as the rest of this module's validation rather than in
-    ``cli.main``'s bare-builtin catch.
+    ``tomlkit.exceptions.TOMLKitError`` (its ``ParseError`` subclass, but also
+    ``KeyAlreadyPresent`` — a repeated key inside one ``[[site]]`` table, e.g.
+    ``enabled`` written twice — which derives from ``TOMLKitError`` alone, not
+    ``ParseError``/``ValueError``) and a ``UnicodeDecodeError`` from a non-UTF-8
+    file are both a malformed hand-edited ``sites.toml`` — the same source
+    every other check in this module guards, never a bug of ours — so they
+    belong in the same domain type as the rest of this module's validation
+    rather than in ``cli.main``'s bare-builtin catch. The whole ``TOMLKitError``
+    hierarchy is caught rather than enumerating its subclasses: everything
+    tomlkit itself raises while parsing is a complaint about the file's
+    content, never a bug this codebase's own logic could trigger.
     """
     try:
         return tomlkit.parse(path.read_text(encoding="utf-8"))
-    except (tomlkit.exceptions.ParseError, UnicodeDecodeError) as exc:
+    except (tomlkit.exceptions.TOMLKitError, UnicodeDecodeError) as exc:
         raise SiteConfigError(f"{path} is not valid TOML: {exc}") from exc
 
 

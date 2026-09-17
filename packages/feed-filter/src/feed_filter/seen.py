@@ -44,6 +44,44 @@ def is_lock_busy(exc: BaseException) -> bool:
     return code is not None and code & 0xFF == sqlite3.SQLITE_BUSY
 
 
+# Primary SQLite result codes (https://www.sqlite.org/rescode.html) that name a
+# failure of the *environment* — permissions, memory, the disk, the file itself
+# — rather than this codebase's own SQL. Mirrors the split cli.main's docstring
+# already draws for OSError (an operator's environment, never a logic bug), for
+# the sqlite3 result-code space instead of errno. Every other code a
+# sqlite3.Error can carry (SQLITE_ERROR: bad SQL; SQLITE_CONSTRAINT: every
+# insert in this codebase is an idempotent upsert, so a raw constraint
+# violation means the SQL itself is wrong; SQLITE_MISMATCH/MISUSE/RANGE: a
+# parameter-binding bug) is a bug of ours, which cli.main leaves uncaught.
+_ENVIRONMENT_CODES = frozenset(
+    {
+        sqlite3.SQLITE_PERM,
+        sqlite3.SQLITE_NOMEM,
+        sqlite3.SQLITE_READONLY,
+        sqlite3.SQLITE_IOERR,
+        sqlite3.SQLITE_CORRUPT,
+        sqlite3.SQLITE_FULL,
+        sqlite3.SQLITE_CANTOPEN,
+        sqlite3.SQLITE_NOTADB,
+    }
+)
+
+
+def is_environment_failure(exc: BaseException) -> bool:
+    """True iff ``exc``'s sqlite3 primary result code names an environment failure.
+
+    A lock timeout (``is_lock_busy``) is one such condition; the others are
+    ``_ENVIRONMENT_CODES``. Checked the same way as ``is_lock_busy`` — by the
+    masked primary code, defensively via ``getattr`` — for the same reason: an
+    extended code (e.g. an ``IOERR`` sub-variant) shares its primary byte with
+    the plain one.
+    """
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code is None:
+        return False
+    return is_lock_busy(exc) or code & 0xFF in _ENVIRONMENT_CODES
+
+
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
 # applies every entry past the DB's current ``PRAGMA user_version`` and stamps the
 # new version in the same transaction — so adding a column in a later phase is an
