@@ -48,7 +48,7 @@ Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
     - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
     - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
   - It **excludes `blocked` (DLQ) sources from both phases**, mechanically and whatever the note carries, so one is never stamped, flagged, or listed even if a human checked a disposition on it by mistake.
-    - Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: an entry re-captured after a successful ingest keeps its notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
+    - Do not read the exclusion as redundant on the grounds that a DLQ entry has nothing to act on: a DLQ entry can still hold a notebook (see kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row), and this exclusion is the only thing keeping the dismiss branch off it until one of the DLQ's two exits clears `blocked`.
 
 Parse this JSON; it is the work list for the rest of the run.
 The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
