@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Pinned to a full version: setup-uv publishes no floating `v8` major tag.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
       - name: Sync the workspace venv
@@ -97,10 +97,10 @@ jobs:
       # visible, reviewable diff instead of a silent `@v0` re-resolve. This
       # pins the action's own code, not the `rumdl` binary version it installs
       # (see the header comment). It auto-detects .rumdl.toml at the root.
-      - uses: rvben/rumdl@v0.2.68
+      - uses: rvben/rumdl@v0.2.73
       # Pinned to the same full version as the `python-qa` job's, for the same
       # reason: setup-uv publishes no floating major tag.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
       - name: Sync the workspace venv
@@ -145,7 +145,7 @@ jobs:
       - uses: actions/checkout@v7
       # Pinned to the same full version as the `python-qa` job's, for the same
       # reason: setup-uv publishes no floating major tag.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           # setup-uv's cache key has no per-job part, so this job's near-empty
           # save (it runs no `uv sync`) could replace the one the others restore.
