@@ -69,7 +69,7 @@ This sniff is the fast path, not the verdict: a URL that defeats both of its inp
 
 Create a `Sources/*.md` note (see kboat-notes), using the fetched title.
 
-- Step 1 has already de-duplicated: a matching note that reaches this step is one a transient failure left without a notebook, and the write merges over it.
+- Step 1 has already de-duplicated; where a note already stands at the slug, the write merges over it.
 - The source-note write is the commit point: every queue item must end with a note on disk.
 
 ### Step 3: create the source's 1:1 notebook

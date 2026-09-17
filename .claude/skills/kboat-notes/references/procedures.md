@@ -34,7 +34,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
      - **`dismiss: true`** → a dismissed tombstone; the caller reports it as "already dismissed", telling the human to untick `dismiss` and capture the URL again if they want to read it.
        - `dismiss` is a disposition the human set, and a member force-writes only the fields it owns (`kboat-vault-conventions`, "The write contract"), so ingest does not clear it.
        - Building under it would be undone: the standing `dismiss` and `filed_date` put the new notebook in the dismiss branch's discard set once the cooldown has run, which on a tombstone it usually already has.
-   - A matching note in none of those states is one a transient failure left without a notebook; it goes on like a new source, each write merging over it.
+   - Any other matching note goes on like a new source, each write merging over it.
 2. Otherwise create the note with `kboat-note write --type source` (it owns the file write — schema field order, YAML quoting, the always-present defaults, de-dup, and the `added_date` stamp — so the agent never hand-assembles frontmatter).
    - Pipe a `{slug, fields}` JSON record whose `fields` carry what is known now: `type: source`, `title`, `source_type: web_page`, `url`, and `reading_link` = the `url`.
    - The tool starts `reading`/`distill`/`keep`/`dismiss`/`blocked`/`picked` at `false`, leaves `summary`/`topics`/`filed_date`/`distilled_date` empty, and stamps `added_date`; step 3 fills `summary`/`topics`.
@@ -105,7 +105,7 @@ Every web source pays for the `source get` round trip regardless (one call in a 
 
 1. Get the slug and de-dup exactly as step 1 of [create or update a source note](#procedure-create-or-update-a-source-note), and before the sniff above — the same `kboat-note slug` oracle, so nothing here is hashed by hand, and the same stops, so an item that step stops is never sniffed or downloaded.
    - What differs is only *which* URL the note stores: the queued one, even when it points straight at the PDF.
-   - An item the de-dup lets through is a new source, or one a transient failure left without a notebook — continue with steps 2–5.
+   - An item the de-dup lets through continues with steps 2–5.
 2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
    - Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check.
      - This same magic-byte check must still hold immediately before the upload — treat download → verify → upload as one uninterrupted sequence — which is why step 5 opens by making it again rather than trusting this one.
