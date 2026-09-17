@@ -19,23 +19,17 @@ from pathlib import Path
 from kboat.canonical import CanonicalUrl
 
 
-class SeenStoreBusyError(sqlite3.OperationalError):
-    """Another opener holds the migration lock past the busy timeout.
-
-    Raised only when SQLite reports a busy condition (primary result code
-    ``SQLITE_BUSY``, in any of its plain or extended forms — see
-    ``_is_lock_busy``) on ``open_db``'s ``BEGIN IMMEDIATE`` — two processes
-    racing to migrate the store at once, and this one lost the wait. A real,
-    expected race between two runs, not a SQL bug, and the only sqlite3
-    failure ``open_db`` treats that way: any other ``sqlite3.Error`` (a bad
-    migration statement, a corrupt file) propagates unmasked. A
-    ``sqlite3.OperationalError`` subclass so a caller still matching that type
-    keeps working unchanged.
-    """
-
-
-def _is_lock_busy(exc: BaseException) -> bool:
+def is_lock_busy(exc: BaseException) -> bool:
     """True iff ``exc`` is a SQLite busy condition, plain or extended.
+
+    A busy lock can hit *any* write against this store, not only ``open_db``'s
+    migration ``BEGIN IMMEDIATE`` — ``record``, ``record_post``,
+    ``set_op_verdict``, a ``site_health``/``body_cache`` commit, all reach the
+    same file. Rather than wrap each such call site individually (the same
+    condition, guarded N times), the classification lives here as a plain
+    predicate and ``cli.main`` is the one place that applies it, to every
+    ``sqlite3.Error`` its call graph can raise, regardless of which write hit
+    the lock.
 
     Checks the *primary* result code (the low byte, ``code & 0xFF``) rather
     than ``sqlite_errorname``: under WAL, a lock wait can come back as an
@@ -205,19 +199,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
 def open_db(path: Path) -> sqlite3.Connection:
     """Open (creating + migrating) the seen-store at ``path`` in WAL mode.
 
-    Raises ``SeenStoreBusyError`` — see its docstring — for the one sqlite3
-    failure this function expects; every other ``sqlite3.Error`` propagates as
-    the ``sqlite3.OperationalError``/``sqlite3.Error`` subtype it actually is.
+    A migration-lock timeout and a genuine ``sqlite3.Error`` both propagate as
+    whatever sqlite3 type they actually are; ``cli.main`` is where the two are
+    told apart (``is_lock_busy``), not here — see that module's docstring for
+    why the classification is centralized rather than repeated at every
+    sqlite3 call site this store makes.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         _migrate(conn)
-    except BaseException as exc:
+    except BaseException:
         conn.close()  # a failed open returns no handle, so nothing else can close it
-        if _is_lock_busy(exc):
-            raise SeenStoreBusyError(str(exc)) from exc
         raise
     return conn
 

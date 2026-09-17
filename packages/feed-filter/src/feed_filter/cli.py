@@ -79,7 +79,7 @@ from feed_filter.forum_pipeline import (
 )
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
-from feed_filter.seen import SeenStoreBusyError, is_seen, open_db, record, snapshot
+from feed_filter.seen import is_lock_busy, is_seen, open_db, record, snapshot
 from feed_filter.sites import (
     SiteConfig,
     SiteConfigError,
@@ -685,14 +685,14 @@ def cmd_resnapshot_site(args: argparse.Namespace) -> int:
 
 
 def cmd_disable_site(args: argparse.Namespace) -> int:
-    """Stop gathering a site; config and seen-store are preserved (KeyError if absent)."""
+    """Stop gathering a site; config and seen-store are preserved (UnknownSiteError if absent)."""
     set_enabled(sites_path(), args.site_id, False)
     _emit({"site_id": args.site_id, "enabled": False})
     return 0
 
 
 def cmd_enable_site(args: argparse.Namespace) -> int:
-    """Resume gathering a disabled site (KeyError if absent)."""
+    """Resume gathering a disabled site (UnknownSiteError if absent)."""
     set_enabled(sites_path(), args.site_id, True)
     _emit({"site_id": args.site_id, "enabled": True})
     return 0
@@ -728,7 +728,7 @@ def cmd_add_forum(args: argparse.Namespace) -> int:
     eagerly would silently discard every topic that was due for Rule-A judgment on
     the first run — a loss, not a safety measure.
     """
-    site = _forum_site_from_args(args)  # shape validation first (ValueError propagates)
+    site = _forum_site_from_args(args)  # shape validation first (SiteConfigError propagates)
     add_site(sites_path(), site)
     _emit({"site_id": site.id, "kind": site.kind, "forum_url": site.forum_url})
     return 0
@@ -1067,7 +1067,7 @@ def cmd_forum_poll_done(args: argparse.Namespace) -> int:
     Resolves ``poll_offsets_days`` from the site config (per-site override else
     the config default loaded by ``SiteConfig`` at construction time).
     """
-    site = _select_sites(args.site_id)[0]  # KeyError if absent — before any side effect
+    site = _select_sites(args.site_id)[0]  # UnknownSiteError if absent — before any side effect
     offsets = (
         site.poll_offsets_days if site.poll_offsets_days is not None else DEFAULT_POLL_OFFSETS_DAYS
     )
@@ -1314,20 +1314,27 @@ def main(argv: Sequence[str] | None = None) -> int:
       analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
-    - ``SeenStoreBusyError`` — two processes race the seen-store's migration
-      ``BEGIN IMMEDIATE`` and this one loses past the busy timeout (a
-      ``sqlite3.OperationalError`` subclass; see its docstring). SQLite reports the
-      same ``OperationalError`` type for a lock timeout and for a bad migration
-      statement, so only the site that knows *which* one it is — ``open_db`` — may
-      narrow it, by the SQLite result code; every other ``sqlite3.Error`` (a bad
-      statement, a constraint violation, a binding mismatch) is a SQL bug of ours
-      and reaches a traceback.
+    - a ``sqlite3.Error`` where ``is_lock_busy`` (``feed_filter.seen``) is true —
+      two processes race the seen-store's lock (any write can hit this, not only
+      ``open_db``'s migration ``BEGIN IMMEDIATE``) and this one loses past the
+      busy timeout. SQLite reports the *same* ``OperationalError`` type for a
+      lock timeout and for a bad statement, so classification is by SQLite's
+      result code (``is_lock_busy``), not by type — checked here, the one place
+      every sqlite3 call in this CLI's graph funnels through, rather than at
+      each call site. Every other ``sqlite3.Error`` (a bad statement, a
+      constraint violation, a binding mismatch) is a SQL bug of ours and
+      reaches a traceback.
     """
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.handler(args)
     except VaultLockedError as exc:
         _emit({"status": "locked", "holder": exc.holder})
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except sqlite3.Error as exc:
+        if not is_lock_busy(exc):
+            raise
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except (
@@ -1341,7 +1348,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         MissingEnvError,
         OSError,
         MissingPlaywrightError,
-        SeenStoreBusyError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

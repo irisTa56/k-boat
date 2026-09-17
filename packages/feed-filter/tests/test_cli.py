@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import pytest
 
 import kboat.lock
-from feed_filter import browser, cli, forum_pipeline
+from feed_filter import browser, cli, forum_pipeline, seen
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.config import (
     DEFAULT_QUERY_RESULTS,
@@ -42,7 +42,7 @@ from feed_filter.forum_pipeline import (
     TriggerPost,
 )
 from feed_filter.pipeline import FetchOutcome
-from feed_filter.seen import SeenStoreBusyError, count, is_seen, open_db
+from feed_filter.seen import count, is_seen, open_db
 from feed_filter.sites import SiteConfig, add_site, load_sites
 from feed_filter.vault import VaultError
 from kboat.canonical import CanonicalUrl, canonical_url
@@ -239,26 +239,29 @@ def test_filesystem_error_surfaces_as_clean_exit(
     assert "error: disk full" in capsys.readouterr().err
 
 
-def test_seen_store_busy_error_surfaces_as_clean_exit(
+def test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A seen-store lock timeout reports like any other operational one, not a traceback.
+    """A migration-lock timeout reports like any other operational one, not a traceback.
 
-    The case this exists for: two processes opening the store at once serialize on
-    the migration's ``BEGIN IMMEDIATE``, and the loser can exceed the busy timeout
-    — ``seen.open_db`` reports that one case as ``SeenStoreBusyError`` (see its
-    docstring and ``test_seen.py``'s real-lock-contention test), which is what this
-    stubs. Every skill parses the ``error: …`` + exit 1 contract, so a traceback
-    there would break the run summary rather than report a retryable run. A bare
-    ``sqlite3.Error`` — a SQL bug of ours, outside this boundary — is a *different*
-    test (``test_forum_new_store_bug_fails_the_run_not_the_site``), which asserts
-    the traceback instead.
+    Two processes opening the store at once serialize on the migration's
+    ``BEGIN IMMEDIATE``, and the loser can exceed the busy timeout —
+    ``cli.main``'s ``is_lock_busy`` check reports that as ``error: …`` + exit 1
+    (a bare ``sqlite3.Error`` a bug would raise instead reaches a traceback:
+    ``test_forum_new_store_bug_fails_the_run_not_the_site``). This is a stub, not
+    a real race — ``test_seen.py``'s
+    ``test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error``
+    and ``test_seen_store_busy_error_on_an_ordinary_write_surfaces_as_clean_exit``
+    below (both real two-connection contention) establish that a genuine lock
+    timeout actually produces this shape.
     """
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
 
-    def boom(path: Path) -> None:
-        raise SeenStoreBusyError("database is locked")
+    def boom(path: Path) -> sqlite3.Connection:
+        exc = sqlite3.OperationalError("database is locked")
+        exc.sqlite_errorcode = sqlite3.SQLITE_BUSY
+        raise exc
 
     monkeypatch.setattr(cli, "open_db", boom)
     capsys.readouterr()  # drop the add-site output
@@ -267,15 +270,65 @@ def test_seen_store_busy_error_surfaces_as_clean_exit(
     assert "error: database is locked" in capsys.readouterr().err
 
 
+def test_seen_store_busy_error_on_an_ordinary_write_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lock timeout on an ORDINARY write, not only ``open_db``'s migration, is caught.
+
+    A migration lock is the case the seen-store's own docstring names, but any
+    write can hit the same lock (``record``, ``record_post``, a
+    ``site_health``/``body_cache`` commit) — ``cli.main``'s classification
+    (``is_lock_busy``) is centralized in ``cli.main`` precisely so every one of
+    them is covered without a wrap at each call site (see ``seen.is_lock_busy``'s
+    docstring). Proven here with a *real* two-connection race during
+    ``mark-seen``'s ``record`` call, patched to a short busy timeout so the test
+    does not wait out sqlite3's 5s default.
+    """
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    with contextlib.closing(open_db(db_path())):
+        pass  # fully migrate the store first, so the race below hits a write, not a migration
+
+    holder = sqlite3.connect(db_path(), timeout=0.05)
+    holder.execute("BEGIN IMMEDIATE")  # take the write lock and never release it here
+
+    real_connect = sqlite3.connect
+
+    def fast_timeout_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        kwargs["timeout"] = 0.05
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(seen.sqlite3, "connect", fast_timeout_connect)
+
+    try:
+        rc = cli.main(
+            ["mark-seen", "--site-id", "a", "--url", "https://a.example.com/x", "--title", "T"]
+        )
+        assert rc == 1
+        assert "error: database is locked" in capsys.readouterr().err
+    finally:
+        holder.rollback()
+        holder.close()
+
+
 # --- cli.main's error boundary ---------------------------------------------
 #
 # The tests above each pin one domain type's message through `cli.main`. These
 # pin the boundary's *shape*: that the narrowing itself holds (a bare
-# ValueError/KeyError from a bug is not swallowed), and that every remaining
-# sites.py/config.py raise site still renders as `error: …` + exit 1 through
-# `cli.main` — not only through a direct `pytest.raises(ValueError)` on the
-# function, which a plain `ValueError` also satisfies and so cannot tell a
-# `SiteConfigError` apart from a reverted bare builtin.
+# ValueError/KeyError from a bug is not swallowed), and that a representative
+# sample of `sites.py`/`config.py` raise sites — one per distinct check,
+# spanning `_opt_int`, `_opt_bool`, `_opt_int_list`, `_req_str`, `load_sites`'s
+# own checks, `__post_init__`'s checks, and `_parse_toml` — still renders as
+# `error: …` + exit 1 through `cli.main`, not only through a direct
+# `pytest.raises(ValueError)` on the function, which a plain `ValueError` also
+# satisfies and so cannot tell a `SiteConfigError` apart from a reverted bare
+# builtin. Not every one of `sites.py`'s raise sites has its own case here:
+# `validate_article_url_pattern`, `add_site`'s reserved-id/already-exists
+# checks, and `_scrape_site_for`'s enabled/kind checks already have dedicated
+# `cli.main`-level tests elsewhere in this file (the regex, add-forum
+# reserved-id/duplicate, heal-site/resnapshot-site tests); `update_pattern`'s
+# own scrape-only check is unreached from any CLI command today
+# (`_scrape_site_for` already guarantees the kind before calling it — see its
+# docstring) and is left untested here.
 
 
 def test_a_bare_value_error_from_a_bug_is_not_reported_as_a_user_error(
@@ -327,6 +380,26 @@ def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
             id="opt_bool_wrong_type",
         ),
         pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'forum_url = "https://forum.example.com"\n'
+            'poll_offsets_days = "not-a-list"\n',
+            id="opt_int_list_not_a_list",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'forum_url = "https://forum.example.com"\n'
+            "poll_offsets_days = [1, 2.5, 3]\n",
+            id="opt_int_list_item_not_an_int",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nfeed_url = "https://a.example.com/f.xml"\n',
+            id="req_str_missing_name",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "   "\nfeed_url = "https://a.example.com/f.xml"\n',
+            id="name_blank",
+        ),
+        pytest.param(
             '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f1.xml"\n'
             '[[site]]\nid = "a"\nname = "A2"\nfeed_url = "https://a.example.com/f2.xml"\n',
             id="duplicate_id",
@@ -347,6 +420,20 @@ def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(
     ``cli.main``'s tuple actually lists.
     """
     sites_path().write_text(toml_body, encoding="utf-8")
+    assert cli.main(["list-sites"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_non_utf8_sites_toml_surfaces_as_clean_exit_through_main(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``sites.toml`` that is not UTF-8 also renders through ``cli.main``.
+
+    A distinct case from ``not_valid_toml`` above (a syntax error in otherwise
+    UTF-8 text): this one fails at ``path.read_text``, before ``tomlkit`` ever
+    sees the bytes, and needs bytes rather than a Python string to construct.
+    """
+    sites_path().write_bytes(b'\xff\xfeid = "a"\nname = "A"\n')
     assert cli.main(["list-sites"]) == 1
     assert "error:" in capsys.readouterr().err
 
@@ -375,8 +462,8 @@ def test_entry_body_with_an_unparseable_url_surfaces_as_clean_exit(
 
     ``entry-body`` canonicalizes before touching the db, so this needs no other
     setup. The port is out of range (``> 65535``), which makes
-    ``urllib.parse.SplitResult.port`` raise — the same shape of failure as the
-    malformed-IPv6-literal case ``raise-findings`` reproduced.
+    ``urllib.parse.SplitResult.port`` raise — one of several shapes
+    ``canonical_url`` cannot parse; a malformed IPv6 literal is another.
     """
     rc = cli.main(["entry-body", "--url", "https://example.com:99999/a"])
     assert rc == 1
@@ -1682,6 +1769,15 @@ def test_add_forum_duplicate_id_exits_nonzero(
     assert "error:" in capsys.readouterr().err
 
 
+def test_add_forum_reserved_id_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """add-forum rejects the query gather's reserved id (``add_site``'s ``SiteConfigError``)."""
+    rc = cli.main(["add-forum", "--id", cli.QUERY_SITE_ID, "--name", "F", "--forum-url", FORUM_URL])
+    assert rc == 1
+    assert "reserved" in capsys.readouterr().err
+
+
 # --- forum-new ---------------------------------------------------------------
 
 
@@ -2049,11 +2145,11 @@ def test_forum_new_store_bug_fails_the_run_not_the_site(
     surface it and the guards must re-raise themselves — proven here by the
     exception reaching ``cli.main``'s caller unchanged, attributed to no site.
 
-    "no such column" is a bad-SQL bug, not the seen-store's one deliberate
-    ``sqlite3.OperationalError`` (a busy-timeout lock, wrapped as
-    ``SeenStoreBusyError`` — see ``test_seen_store_busy_error_surfaces_as_clean_exit``),
-    so ``cli.main``'s boundary does not catch it: it propagates out of
-    ``cli.main`` like the ``KeyboardInterrupt`` above.
+    "no such column" is a bad-SQL bug, not a lock timeout — ``is_lock_busy``
+    (``feed_filter.seen``) is false for it, so ``cli.main``'s boundary does not
+    catch it: it propagates out of ``cli.main`` like the ``KeyboardInterrupt``
+    above (contrast ``test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit``,
+    where the same exception type *is* caught, because it is a lock timeout).
     """
     _no_client(monkeypatch)
     _add_forum_site()

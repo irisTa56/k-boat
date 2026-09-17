@@ -169,12 +169,11 @@ def test_failed_migration_rolls_back_so_the_next_open_recovers(
     monkeypatch.setattr(seen.sqlite3, "connect", spy)
     with pytest.raises(sqlite3.OperationalError) as exc_info:
         seen.open_db(path)
-    # A bad statement is SQLITE_ERROR, not SQLITE_BUSY: it must propagate as the
-    # bare OperationalError it is, never wrapped as the busy-only
-    # SeenStoreBusyError cli.main's boundary is narrowed to catch — a SQL bug of
-    # ours must reach a traceback, not the `error: …` + exit 1 a real lock
-    # timeout gets (see test_open_db_wraps_a_genuine_lock_timeout_as_seen_store_busy_error).
-    assert not isinstance(exc_info.value, seen.SeenStoreBusyError)
+    # A bad statement is SQLITE_ERROR, not SQLITE_BUSY: cli.main's is_lock_busy
+    # check must read this as a bug (not the busy case a real lock timeout gets;
+    # see test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error),
+    # so it must reach a traceback, not the `error: …` + exit 1 contract.
+    assert not seen.is_lock_busy(exc_info.value)
     monkeypatch.undo()
 
     # A failed open returns no handle, so nothing else can close one it left behind
@@ -242,17 +241,18 @@ def test_opener_that_loses_the_migration_race_skips_the_applied_step(tmp_path: P
         loser.close()
 
 
-def test_open_db_wraps_a_genuine_lock_timeout_as_seen_store_busy_error(
+def test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A real ``SQLITE_BUSY`` on ``BEGIN IMMEDIATE`` becomes ``SeenStoreBusyError``.
+    """A real ``SQLITE_BUSY`` on ``BEGIN IMMEDIATE`` is a lock timeout per ``is_lock_busy``.
 
     Unlike the race in the test above, this one holds the write lock across the
-    whole migration attempt so the opener genuinely times out — the case
-    ``cli.main``'s boundary is built to catch (a busy_timeout is patched to 50ms so
-    the test does not wait on sqlite3's 5s default). Confirms both that the wrap
-    happens and that it is still an ``sqlite3.OperationalError``, so a caller
-    matching that broader type is unaffected.
+    whole migration attempt so the opener genuinely times out (a busy_timeout is
+    patched to 50ms so the test does not wait on sqlite3's 5s default).
+    ``open_db`` itself does not classify — it lets the bare
+    ``sqlite3.OperationalError`` propagate, same as any other sqlite3 failure —
+    but confirms that the exception ``cli.main`` will see really does read as
+    busy through ``is_lock_busy``, not just in the mocked CLI-level test.
     """
     path = tmp_path / "v2.db"
     raw = sqlite3.connect(path)
@@ -273,13 +273,44 @@ def test_open_db_wraps_a_genuine_lock_timeout_as_seen_store_busy_error(
     monkeypatch.setattr(seen.sqlite3, "connect", fast_timeout_connect)
 
     try:
-        with pytest.raises(seen.SeenStoreBusyError) as exc_info:
+        with pytest.raises(sqlite3.OperationalError) as exc_info:
             seen.open_db(path)
         assert "locked" in str(exc_info.value)
-        assert isinstance(exc_info.value, sqlite3.OperationalError)
+        assert seen.is_lock_busy(exc_info.value)
     finally:
         holder.rollback()
         holder.close()
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        pytest.param(sqlite3.SQLITE_BUSY, True, id="plain_busy"),
+        pytest.param(sqlite3.SQLITE_BUSY_RECOVERY, True, id="busy_recovery"),
+        pytest.param(sqlite3.SQLITE_BUSY_SNAPSHOT, True, id="busy_snapshot"),
+        pytest.param(sqlite3.SQLITE_BUSY_TIMEOUT, True, id="busy_timeout_extended_code"),
+        pytest.param(sqlite3.SQLITE_ERROR, False, id="a_bug_not_a_lock"),
+        pytest.param(None, False, id="no_sqlite_errorcode_at_all"),
+    ],
+)
+def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expected: bool) -> None:
+    """``is_lock_busy`` reads the *primary* result code, not the exact name.
+
+    Under WAL, a lock wait can come back as an extended code (recovery,
+    snapshot, timeout) whose ``sqlite_errorname`` is not the literal string
+    ``"SQLITE_BUSY"`` but whose primary code (``code & 0xFF``) still is — this
+    pins that ``is_lock_busy`` reads all four the same way, and that a genuine
+    bug's code (``SQLITE_ERROR``) or no code at all reads as not-busy.
+
+    A manually constructed exception has no ``sqlite_errorcode`` attribute at
+    all (confirmed: ``getattr(sqlite3.OperationalError("x"), "sqlite_errorcode",
+    "MISSING")`` returns the sentinel), so it is set by hand here rather than
+    passed to the constructor, matching how the C layer actually attaches it.
+    """
+    exc = sqlite3.OperationalError("x")
+    if code is not None:
+        exc.sqlite_errorcode = code
+    assert seen.is_lock_busy(exc) is expected
 
 
 def test_reopen_is_idempotent(tmp_path: Path) -> None:
