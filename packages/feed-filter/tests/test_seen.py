@@ -169,11 +169,7 @@ def test_failed_migration_rolls_back_so_the_next_open_recovers(
     monkeypatch.setattr(seen.sqlite3, "connect", spy)
     with pytest.raises(sqlite3.OperationalError) as exc_info:
         seen.open_db(path)
-    # A bad statement is SQLITE_ERROR, not an environment failure: cli.main's
-    # is_environment_failure check must read this as a bug (not the busy case
-    # a real lock timeout gets; see
-    # test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error),
-    # so it must reach a traceback, not the `error: …` + exit 1 contract.
+    # A bad statement is a bug of ours, which cli.main must let reach a traceback.
     assert not seen.is_environment_failure(exc_info.value)
     monkeypatch.undo()
 
@@ -248,12 +244,7 @@ def test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error(
     """A real ``SQLITE_BUSY`` on ``BEGIN IMMEDIATE`` is a lock timeout per ``is_lock_busy``.
 
     Unlike the race in the test above, this one holds the write lock across the
-    whole migration attempt so the opener genuinely times out (a busy_timeout is
-    patched to 50ms so the test does not wait on sqlite3's 5s default).
-    ``open_db`` itself does not classify — it lets the bare
-    ``sqlite3.OperationalError`` propagate, same as any other sqlite3 failure —
-    but confirms that the exception ``cli.main`` will see really does read as
-    busy through ``is_lock_busy``, not just in the mocked CLI-level test.
+    whole migration attempt so the opener genuinely times out.
     """
     path = tmp_path / "v2.db"
     raw = sqlite3.connect(path)
@@ -297,16 +288,7 @@ def test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error(
 def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expected: bool) -> None:
     """``is_lock_busy`` reads the *primary* result code, not the exact name.
 
-    Under WAL, a lock wait can come back as an extended code (recovery,
-    snapshot, timeout) whose ``sqlite_errorname`` is not the literal string
-    ``"SQLITE_BUSY"`` but whose primary code (``code & 0xFF``) still is — this
-    pins that ``is_lock_busy`` reads all four the same way, and that a genuine
-    bug's code (``SQLITE_ERROR``) or no code at all reads as not-busy.
-
-    A manually constructed exception has no ``sqlite_errorcode`` attribute at
-    all (confirmed: ``getattr(sqlite3.OperationalError("x"), "sqlite_errorcode",
-    "MISSING")`` returns the sentinel), so it is set by hand here rather than
-    passed to the constructor, matching how the C layer actually attaches it.
+    A constructed exception carries no ``sqlite_errorcode``, so the code is set by hand.
     """
     exc = sqlite3.OperationalError("x")
     if code is not None:
@@ -343,19 +325,7 @@ def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expe
 def test_is_environment_failure_covers_busy_and_the_operators_environment(
     code: int | None, expected: bool
 ) -> None:
-    """``is_environment_failure`` folds in ``is_lock_busy`` plus every other
-    SQLite primary result code that names a permissions, memory, disk, or
-    file-corruption failure — mirroring the operator's-environment-vs-logic-bug
-    split ``cli.main``'s docstring already draws for bare ``OSError``. Includes
-    a representative extended code per environment condition (a read-only
-    *directory*, an I/O error on a *write*, "can't open" because the path *is a
-    directory*) since, like ``SQLITE_BUSY``, several of these have variants
-    whose ``sqlite_errorname`` is not their plain name but whose primary code
-    still is. A bug in this codebase's own SQL (bad syntax, a constraint our
-    upserts should never hit, a binding mismatch) must read as
-    not-an-environment-failure, so ``cli.main`` lets it reach a traceback
-    instead of reporting it.
-    """
+    """An environment code, plain or extended, is a failure to report; our own SQL's is not."""
     exc = sqlite3.OperationalError("x")
     if code is not None:
         exc.sqlite_errorcode = code

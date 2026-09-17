@@ -48,10 +48,7 @@ class VaultError(Exception):
     other refusal is raised too rather than read as a write: what makes never-lost
     hold is that nothing is recorded seen unless a note landed, so a status this
     module does not recognise must not be the one that slips through. Also raised
-    when `upsert` cannot even *read* an existing note to update it — a broken
-    frontmatter fence (`kboat.frontmatter.FrontmatterError`) or a non-UTF-8 file,
-    both a hand-edited note in Obsidian, never a bug of ours — the same "repair by
-    hand" case as the unreadable-`url` collision above, just caught earlier. An
+    when an existing note cannot be read at all, which a human repairs the same way. An
     `OSError` from the atomic write (disk full, permission, an iCloud-evicted
     placeholder) is left to propagate; the CLI maps both to a non-zero exit and
     skips the seen-record, so the entry is retried rather than silently lost.

@@ -84,14 +84,7 @@ ENV_VAULT = "OBSIDIAN_VAULT_PATH"
 
 
 class MissingEnvError(ValueError):
-    """A required environment variable is unset.
-
-    Reachable only from the operator's own environment (a workspace ``.env``
-    they have not populated), never from a value this codebase computes — so it
-    is always a setup step to report, never a bug of ours to mask. A
-    ``ValueError`` subclass, so a caller checking ``except ValueError`` still
-    catches it.
-    """
+    """A required environment variable is unset."""
 
 
 def sites_path() -> Path:

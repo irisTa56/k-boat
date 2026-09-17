@@ -98,16 +98,7 @@ from kboat.write import BadInputError
 
 
 class BadUrlError(ValueError):
-    """A ``--url`` argument is not a URL ``canonical_url`` can parse.
-
-    ``canonical_url`` (``kboat.canonical``) is a shared helper with no CLI
-    awareness of its own; it raises a bare ``ValueError`` when urllib's
-    ``SplitResult`` cannot parse the URL (a malformed IPv6 literal, a port out
-    of range). Every caller in this module passes operator-typed ``--url``
-    text, so that ``ValueError`` is deliberate input validation, not a bug —
-    wrapped once here, at the boundary that knows the argument came from the
-    operator, rather than at each call site.
-    """
+    """A ``--url`` argument is not a URL ``canonical_url`` can parse."""
 
 
 def _url_arg(raw: str) -> CanonicalUrl:
@@ -119,42 +110,19 @@ def _url_arg(raw: str) -> CanonicalUrl:
 
 
 class BadArgvError(ValueError):
-    """A CLI argument's text is not valid UTF-8.
-
-    POSIX decodes ``argv`` with the ``surrogateescape`` error handler, so a
-    byte sequence in an argument that is not valid UTF-8 (a shell script
-    assembling ``--title`` from a forum post or a model's summary, a
-    multi-byte character truncated by a length limit upstream) becomes a lone
-    surrogate in the parsed string instead of failing at argv-decode time.
-    Silently carried through this CLI's whole call graph, it fails only on
-    the first re-encode to UTF-8 — a SQLite bind, the vault write, the stdout
-    emit — deep inside whichever handler runs, as a bare
-    ``UnicodeEncodeError`` (a ``ValueError`` subclass). Checked once here,
-    right after ``argparse`` hands back the parsed arguments, rather than at
-    each of those encode sites.
-
-    In ``query-new``, the check runs before any request goes out, so a bad
-    query among several good ones refuses the whole run rather than sending
-    (and billing) the good ones first and losing their results to a crash
-    that follows.
-    """
+    """A CLI argument's text is not valid UTF-8."""
 
 
-# discover's `url` is this CLI's one positional argument (no `--` spelling —
-# `add_argument("url")`, not `add_argument("--url")`); every other `url` dest
-# here is a `--url` flag. Named explicitly, checked against `args.command`
-# (the dest names collide), rather than introspecting argparse's own actions
-# for what is otherwise the only positional in the whole CLI.
+# discover's `url` is positional, while every other command's `url` dest is `--url`.
 _POSITIONAL_ARG_COMMAND = {"url": "discover"}
 
 
 def _reject_unencodable_args(args: argparse.Namespace) -> None:
     """Raise ``BadArgvError`` if any string argument holds an undecodable byte.
 
-    Checks list/tuple-valued arguments too: ``query-new --query`` is
-    repeatable (``action="append"``), so its value is a ``list[str]``, not a
-    plain string, and it would otherwise carry an undecodable query straight
-    into a request Exa bills for before the encode failure ever surfaces.
+    POSIX decodes ``argv`` with ``surrogateescape``, so such a byte arrives as a lone
+    surrogate and would fail only at a later UTF-8 encode, inside a handler. Run it
+    before dispatch, so ``query-new`` sends no billed request when one query is bad.
     """
     for name, value in vars(args).items():
         items = value if isinstance(value, (list, tuple)) else (value,)
@@ -1327,12 +1295,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse argv, dispatch, and map operational failures to a non-zero exit.
 
     Every expected runtime failure becomes a stderr ``error: …`` line and exit 1
-    — never a traceback, never a silent success. Each entry below is either a
-    dedicated domain type or a builtin this codebase raises for one specific,
-    named reason and no other, so that a bare ``ValueError``/``KeyError``/
-    ``sqlite3.Error`` raised anywhere else — a bug beneath a handler — is not
-    one of these types and reaches a traceback instead of being reported as a
-    user error.
+    — never a traceback, never a silent success. Only the entries below qualify, so
+    a bare ``ValueError`` or ``KeyError`` a bug raises beneath a handler reaches a
+    traceback. Raise a domain type only for a value the operator supplied
+    (``sites.toml``, an argument, the environment); an internal invariant that
+    raised one would be reported as a user error.
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (the writer refused it);
@@ -1347,42 +1314,24 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
-    - ``BadArgvError`` — an argument's text is not valid UTF-8 (a ``ValueError``
-      subclass; see its docstring — checked once, right after ``argparse``
-      parses ``argv``, rather than at each of the several places downstream
-      that would otherwise hit it as a bare ``UnicodeEncodeError``);
-    - ``BadUrlError`` — a ``--url`` argument is not a URL ``canonical_url`` can
-      parse (a ``ValueError`` subclass; see its docstring);
-    - ``SiteConfigError`` — deliberate ``sites.toml`` / CLI-argument shape
-      validation (a ``ValueError`` subclass; see its docstring for why every raise
-      site is operator-facing and none is an internal invariant);
-    - ``UnknownSiteError`` — an operator-supplied ``--site-id`` names no registered
-      site (a ``KeyError`` subclass; see its docstring);
-    - ``MissingEnvError`` — a required environment variable (``OBSIDIAN_VAULT_PATH``)
-      is unset (a ``ValueError`` subclass; see its docstring);
-    - ``OSError`` — the one builtin kept bare. Every raise this CLI's call graph
-      can reach is a real syscall failure (``atomic_write_text``, a config read:
-      disk full, permission, atomic-rename failure) — an operator's environment,
-      never a logic bug, which in Python raises ``TypeError``/``AttributeError``/...
-      instead. Caught for the same reason a ``VaultError`` is: a write that can't
-      complete is an operational failure to report, not a stack trace to dump.
+    - ``BadArgvError`` — an argument's text is not valid UTF-8;
+    - ``BadUrlError`` — a ``--url`` argument is not a URL ``canonical_url`` can parse;
+    - ``SiteConfigError`` — a ``sites.toml`` entry or a site argument fails validation;
+    - ``UnknownSiteError`` — ``--site-id`` names no registered site;
+    - ``MissingEnvError`` — ``OBSIDIAN_VAULT_PATH`` is unset;
+    - ``OSError`` — filesystem failures from the config writes / db open
+      (disk full, permission, atomic-rename failure). Kept a bare builtin because
+      every ``OSError`` this CLI can reach is the operator's environment, not a
+      bug of ours.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (the add-site / heal-site / resnapshot-site snapshot), the browser
       analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
-    - a ``sqlite3.Error`` where ``is_environment_failure`` (``feed_filter.seen``)
-      is true — two processes racing the seen-store's lock (any write can hit
-      this, not only ``open_db``'s migration ``BEGIN IMMEDIATE``) and this one
-      losing past the busy timeout, or SQLite reporting a permission, memory,
-      disk, or file-corruption failure it attributes to the environment rather
-      than to a statement. SQLite reports the *same* ``OperationalError`` (or
-      ``DatabaseError``) type for those and for a bad statement, so
-      classification is by SQLite's result code (``is_environment_failure``),
-      not by type — checked here, the one place every sqlite3 call in this
-      CLI's graph funnels through, rather than at each call site. Every other
-      ``sqlite3.Error`` (a bad statement, a constraint violation, a binding
-      mismatch) is a SQL bug of ours and reaches a traceback.
+    - a ``sqlite3.Error`` that ``seen.is_environment_failure`` accepts: a lock
+      timeout, or a permission, memory, disk, or corruption failure. SQLite raises
+      the same types for a bad statement, so any other ``sqlite3.Error`` is a SQL
+      bug of ours and reaches a traceback.
     """
     args = build_parser().parse_args(argv)
     try:

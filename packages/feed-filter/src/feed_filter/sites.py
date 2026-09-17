@@ -52,27 +52,11 @@ _FORUM_TUNING_FIELDS = (*_FORUM_INT_FIELDS, "poll_offsets_days")
 
 
 class SiteConfigError(ValueError):
-    """A ``sites.toml`` entry or ``add-site``/``add-forum``/``heal-site`` argument
-    fails deliberate shape validation.
-
-    Every raise site in this module is reachable only from hand-edited
-    ``sites.toml`` content or from an operator-typed CLI argument — never from a
-    value this codebase computes internally — so a raise here is always a
-    config mistake to report, never a bug of ours to mask. A ``ValueError``
-    subclass, so a caller checking ``except ValueError`` or ``isinstance(_,
-    ValueError)`` — this module's own tests included — still catches it.
-    """
+    """A ``sites.toml`` entry or a site-defining CLI argument fails validation."""
 
 
 class UnknownSiteError(KeyError):
-    """No site is registered under a given id.
-
-    The id always comes from an operator-supplied ``--site-id`` (or,
-    internally, a value read back off the same registry), never fabricated by
-    this codebase, so it is always a lookup a human can fix by checking
-    ``list-sites``. A ``KeyError`` subclass, so a caller checking
-    ``except KeyError`` still catches it.
-    """
+    """No site is registered under a given id."""
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -128,15 +112,8 @@ class SiteConfig:
         if not self.name.strip():
             raise SiteConfigError(f"site name must be non-empty (site {self.id!r})")
 
-        # feed_url/index_url/forum_url are handed to urlsplit() at gather time
-        # (_gather_host_key's host grouping, among other places) with no guard
-        # of its own there — a value urlsplit() itself cannot parse (e.g. an
-        # unterminated IPv6 literal, "https://[bad/feed") raises a bare
-        # ValueError deep in a gather, not at load time. Catch it here instead,
-        # at construction, so a hand-edited sites.toml entry with a broken URL
-        # is the same SiteConfigError as any other malformed row.
-        # article_url_pattern is a regex, not a URL, and has its own guard
-        # (validate_article_url_pattern).
+        # Gather code calls urlsplit() on these unguarded, so a value it rejects is
+        # caught here, at load time, rather than as a ValueError inside a gather.
         for field in ("feed_url", "index_url", "forum_url"):
             value = getattr(self, field)
             if value is None:
@@ -202,21 +179,13 @@ def _opt_str(table: Table, key: str) -> str | None:
 
 
 # --- Strict value parsing. ----------------------------------------------------------
-# A wrong-typed TOML value is rejected with SiteConfigError (a ValueError subclass)
-# rather than the TypeError ruff's TRY004 prefers. TRY004 matches the literal
-# `ValueError` name only, so raising a differently-named subclass here does not
-# trip it. These parsers validate *file content*, not a caller's argument:
-# `load_sites` / `add_site` document one SiteConfigError contract covering every
-# malformed row, and `cli.main` catches SiteConfigError to render it as `error: …` +
-# exit 1. TypeError would split that contract in two and force the CLI to catch
-# TypeError as well — which would swallow the traceback of a genuine type bug
-# anywhere beneath it.
+# A wrong-typed TOML value raises SiteConfigError rather than the TypeError ruff's
+# TRY004 prefers: these parsers validate file content, not a caller's argument, and
+# catching TypeError in `cli.main` would swallow the traceback of a genuine type bug.
 
 
 def _opt_bool(table: Table, key: str, *, default: bool = False) -> bool:
-    """Strict bool parse: absent → ``default``, non-bool → ``SiteConfigError``.
-
-    No soft coercion.
+    """Strict bool parse: absent → ``default``, non-bool → ``SiteConfigError`` (no soft coercion).
 
     Ported from loose-feeds ``_require_bool``: a hand-edited ``requires_browser =
     "yes"`` (a string, not a TOML bool) must fail loudly rather than read as a
@@ -277,17 +246,8 @@ def _iter_site_tables(doc: tomlkit.TOMLDocument) -> list[Table]:
 def _parse_toml(path: Path) -> tomlkit.TOMLDocument:
     """Read and parse ``path``, or ``SiteConfigError`` naming why not.
 
-    ``tomlkit.exceptions.TOMLKitError`` (its ``ParseError`` subclass, but also
-    ``KeyAlreadyPresent`` — a repeated key inside one ``[[site]]`` table, e.g.
-    ``enabled`` written twice — which derives from ``TOMLKitError`` alone, not
-    ``ParseError``/``ValueError``) and a ``UnicodeDecodeError`` from a non-UTF-8
-    file are both a malformed hand-edited ``sites.toml`` — the same source
-    every other check in this module guards, never a bug of ours — so they
-    belong in the same domain type as the rest of this module's validation
-    rather than in ``cli.main``'s bare-builtin catch. The whole ``TOMLKitError``
-    hierarchy is caught rather than enumerating its subclasses: everything
-    tomlkit itself raises while parsing is a complaint about the file's
-    content, never a bug this codebase's own logic could trigger.
+    Catches all of ``TOMLKitError``, not only ``ParseError``: a key repeated inside
+    one table raises ``KeyAlreadyPresent``, which is not a ``ParseError``.
     """
     try:
         return tomlkit.parse(path.read_text(encoding="utf-8"))
