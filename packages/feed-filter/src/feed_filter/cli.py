@@ -132,19 +132,43 @@ class BadArgvError(ValueError):
     ``UnicodeEncodeError`` (a ``ValueError`` subclass). Checked once here,
     right after ``argparse`` hands back the parsed arguments, rather than at
     each of those encode sites.
+
+    In ``query-new``, the check runs before any request goes out, so a bad
+    query among several good ones refuses the whole run rather than sending
+    (and billing) the good ones first and losing their results to a crash
+    that follows.
     """
 
 
+# discover's `url` is this CLI's one positional argument (no `--` spelling —
+# `add_argument("url")`, not `add_argument("--url")`); every other `url` dest
+# here is a `--url` flag. Named explicitly, checked against `args.command`
+# (the dest names collide), rather than introspecting argparse's own actions
+# for what is otherwise the only positional in the whole CLI.
+_POSITIONAL_ARG_COMMAND = {"url": "discover"}
+
+
 def _reject_unencodable_args(args: argparse.Namespace) -> None:
-    """Raise ``BadArgvError`` if any string argument holds an undecodable byte."""
+    """Raise ``BadArgvError`` if any string argument holds an undecodable byte.
+
+    Checks list/tuple-valued arguments too: ``query-new --query`` is
+    repeatable (``action="append"``), so its value is a ``list[str]``, not a
+    plain string, and it would otherwise carry an undecodable query straight
+    into a request Exa bills for before the encode failure ever surfaces.
+    """
     for name, value in vars(args).items():
-        if not isinstance(value, str):
-            continue
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError as exc:
-            flag = f"--{name.replace('_', '-')}"
-            raise BadArgvError(f"{flag} is not valid text: {exc}") from exc
+        items = value if isinstance(value, (list, tuple)) else (value,)
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                if _POSITIONAL_ARG_COMMAND.get(name) == args.command:
+                    arg = name
+                else:
+                    arg = f"--{name.replace('_', '-')}"
+                raise BadArgvError(f"{arg} is not valid text: {exc}") from exc
 
 
 def _positive_int(value: str) -> int:

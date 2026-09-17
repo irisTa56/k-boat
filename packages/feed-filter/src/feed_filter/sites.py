@@ -59,8 +59,8 @@ class SiteConfigError(ValueError):
     ``sites.toml`` content or from an operator-typed CLI argument — never from a
     value this codebase computes internally — so a raise here is always a
     config mistake to report, never a bug of ours to mask. A ``ValueError``
-    subclass so a caller checking ``except ValueError`` or ``isinstance(_,
-    ValueError)`` — this module's own tests included — keeps working unchanged.
+    subclass, so a caller checking ``except ValueError`` or ``isinstance(_,
+    ValueError)`` — this module's own tests included — still catches it.
     """
 
 
@@ -70,8 +70,8 @@ class UnknownSiteError(KeyError):
     The id always comes from an operator-supplied ``--site-id`` (or,
     internally, a value read back off the same registry), never fabricated by
     this codebase, so it is always a lookup a human can fix by checking
-    ``list-sites``. A ``KeyError`` subclass so existing ``pytest.raises(KeyError)``
-    callers keep working unchanged.
+    ``list-sites``. A ``KeyError`` subclass, so a caller checking
+    ``except KeyError`` still catches it.
     """
 
 
@@ -203,9 +203,9 @@ def _opt_str(table: Table, key: str) -> str | None:
 
 # --- Strict value parsing. ----------------------------------------------------------
 # A wrong-typed TOML value is rejected with SiteConfigError (a ValueError subclass)
-# rather than the TypeError ruff's TRY004 prefers — no suppression needed below,
-# because TRY004 matches the literal `ValueError` name and does not follow the
-# subclass. These parsers validate *file content*, not a caller's argument:
+# rather than the TypeError ruff's TRY004 prefers. TRY004 matches the literal
+# `ValueError` name only, so raising a differently-named subclass here does not
+# trip it. These parsers validate *file content*, not a caller's argument:
 # `load_sites` / `add_site` document one SiteConfigError contract covering every
 # malformed row, and `cli.main` catches SiteConfigError to render it as `error: …` +
 # exit 1. TypeError would split that contract in two and force the CLI to catch

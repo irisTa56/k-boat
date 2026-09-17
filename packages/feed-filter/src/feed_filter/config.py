@@ -89,8 +89,8 @@ class MissingEnvError(ValueError):
     Reachable only from the operator's own environment (a workspace ``.env``
     they have not populated), never from a value this codebase computes — so it
     is always a setup step to report, never a bug of ours to mask. A
-    ``ValueError`` subclass so existing ``pytest.raises(ValueError)`` callers
-    keep working unchanged.
+    ``ValueError`` subclass, so a caller checking ``except ValueError`` still
+    catches it.
     """
 
 

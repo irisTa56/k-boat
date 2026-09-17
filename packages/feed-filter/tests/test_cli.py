@@ -532,6 +532,43 @@ def test_mark_seen_with_undecodable_argv_text_surfaces_as_clean_exit(
     assert "error: --title is not valid text" in capsys.readouterr().err
 
 
+def test_query_new_with_undecodable_query_surfaces_as_clean_exit_before_any_request(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--query`` is repeatable (``action="append"``), so it is a ``list[str]``,
+    not a plain string — ``_reject_unencodable_args`` must check each item, not
+    skip the whole value for not being a ``str``.
+
+    A good query ahead of the bad one must not be sent (and billed) before the
+    crash: the check runs before ``cmd_query_new`` issues any request, so
+    ``search`` here must never be called.
+    """
+    _no_client(monkeypatch)
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "search", lambda *a, **k: calls.append("called"))
+
+    rc = cli.main(["query-new", "--query", "good query", "--query", "caf\udce9 latte"])
+
+    assert rc == 1
+    assert "error: --query is not valid text" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_discover_with_undecodable_url_names_the_positional_argument(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``discover``'s ``url`` is a positional argument (no ``--url`` flag), so the
+    error must not claim a ``--url`` flag exists — other commands' ``--url``
+    shares the same ``dest`` name, so this is disambiguated by ``args.command``.
+    """
+    _no_client(monkeypatch)
+    rc = cli.main(["discover", "https://example.com/\udce9"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error: url is not valid text" in err
+    assert "--url" not in err
+
+
 # --- list-sites -----------------------------------------------------------
 
 
