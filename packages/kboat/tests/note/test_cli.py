@@ -425,7 +425,9 @@ def test_an_existing_note_that_is_not_utf8_fails_with_a_record_not_a_traceback(
     assert "write failed:" in capsys.readouterr().err
 
 
-def _run_subprocess(vault: Path, payload: bytes) -> subprocess.CompletedProcess[bytes]:
+def _run_subprocess(
+    vault: Path, payload: bytes, note_type: str = "source"
+) -> subprocess.CompletedProcess[bytes]:
     """`kboat-note write` as a real process with the locale variables stripped.
 
     An in-process fake stdin gets `errors="strict"`, so it passes with the CLI still broken
@@ -439,7 +441,7 @@ def _run_subprocess(vault: Path, payload: bytes) -> subprocess.CompletedProcess[
             "kboat.note.__main__",
             "write",
             "--type",
-            "source",
+            note_type,
             "--vault",
             str(vault),
         ],
@@ -460,23 +462,32 @@ def test_stdin_bytes_that_are_not_utf8_are_a_record_to_fix(vault: Path) -> None:
     assert list((vault / "Sources").glob("*.md")) == []
 
 
-def test_a_lone_surrogate_already_in_the_record_is_a_record_to_fix(vault: Path) -> None:
-    # JSON's `\u` escape carries a lone surrogate past the strict decode, to the write.
-    payload = json.dumps(
-        {
-            "slug": SLUG,
-            "fields": {
-                "type": "source",
-                "title": "T\ud83d",
-                "url": URL,
-                "source_type": "web_page",
+@pytest.mark.parametrize(
+    ("note_type", "record"),
+    [
+        (
+            "source",
+            {
+                "slug": SLUG,
+                "fields": {
+                    "type": "source",
+                    "title": "T\ud83d",
+                    "url": URL,
+                    "source_type": "web_page",
+                },
             },
-        }
-    ).encode("utf-8")
-    proc = _run_subprocess(vault, payload)
+        ),
+        # Never encoded as note content: on APFS it fails at the file name, as an `OSError`.
+        ("kindle", {"slug": "B0\udcff", "fields": {"type": "kindle", "title": "T"}}),
+    ],
+    ids=["in_a_field", "in_the_slug"],
+)
+def test_a_lone_surrogate_already_in_the_record_is_a_record_to_fix(
+    vault: Path, note_type: str, record: dict[str, object]
+) -> None:
+    proc = _run_subprocess(vault, json.dumps(record).encode("utf-8"), note_type)
 
     assert proc.returncode == 2
-    assert b"cannot be written" in proc.stderr
-    assert b"Traceback" not in proc.stderr
+    assert b"lone surrogate" in proc.stderr
     assert proc.stdout == b""
-    assert list((vault / "Sources").glob("*.md")) == []
+    assert [p for d in ("Sources", "Kindles") for p in (vault / d).iterdir()] == []

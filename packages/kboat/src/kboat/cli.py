@@ -140,10 +140,9 @@ def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
 
 
 def _read_json_record() -> dict:
-    # Decoded strictly by hand: `sys.stdin`'s error handler follows the locale, and under
-    # `C`/`POSIX` (PEP 540) it is `surrogateescape`, which carries bytes that are not UTF-8
-    # through to fail at the write instead. An `OSError` is left to `run_write`'s exit 1,
-    # since it is not a record to fix.
+    # Decoded strictly by hand, since `sys.stdin`'s error handler follows the locale
+    # (`surrogateescape` under `C`/`POSIX`, PEP 540). An `OSError` is left to `run_write`'s
+    # exit 1, since it is not a record to fix.
     try:
         text = sys.stdin.buffer.read().decode("utf-8")
     except UnicodeDecodeError as e:
@@ -154,6 +153,12 @@ def _read_json_record() -> dict:
         raise BadInputError(f"stdin is not valid JSON: {e}") from e
     if not isinstance(record, dict):
         raise BadInputError("record must be a JSON object")
+    # JSON's `\u` escape admits a lone surrogate, which a UTF-8 note cannot hold, so the whole
+    # record is checked here rather than wherever one field happens to fail.
+    try:
+        json.dumps(record, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise BadInputError(f"record holds a lone surrogate: {e}") from e
     return record
 
 
@@ -170,17 +175,13 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
     rather than the refusals: a status this mapping has not heard of is one it
     cannot claim wrote a note.
 
-    Stdin that is not UTF-8 exits 2, and so does a `UnicodeEncodeError` at the write: only
-    the record can carry a lone surrogate (JSON admits `"\\ud83d"`), since an existing note
-    is decoded strictly. An `OSError` reading stdin exits 1.
+    Stdin that is not UTF-8, and a record holding a lone surrogate in any key or value, exit
+    2; an `OSError` reading stdin exits 1.
     """
     try:
         result = write(_read_json_record())
     except BadInputError as e:
         sys.stderr.write(f"{e}\n")
-        return 2
-    except UnicodeEncodeError as e:
-        sys.stderr.write(f"record holds a character that cannot be written: {e}\n")
         return 2
     except VaultLockedError as e:
         return emit_locked(e)
