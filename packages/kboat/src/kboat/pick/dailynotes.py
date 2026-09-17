@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from kboat.frontmatter import strip_frontmatter
+from kboat.frontmatter import PLAIN_READ_ERRORS, strip_frontmatter
 
 DEFAULT_LOOKBACK_DAYS = 14
 
@@ -58,10 +58,9 @@ def extract_daily_notes(
         # because a day whose note could not be read is not a day with no note, and
         # nothing else would ever say so. A day with no file never reaches here, and
         # a file whose body is empty carries no signal and is skipped silently.
-        # `UnicodeDecodeError` is a `ValueError`, so it needs naming beside `OSError`.
         try:
             body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
-        except (OSError, UnicodeDecodeError) as exc:
+        except PLAIN_READ_ERRORS as exc:
             unreadable.append({"path": path.name, "error": str(exc)})
             continue
         if body:

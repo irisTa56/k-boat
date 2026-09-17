@@ -54,6 +54,31 @@ class FrontmatterError(ValueError):
     """The note has no parseable `---` frontmatter block, or lacks a required field."""
 
 
+# The exceptions a per-note boundary must catch, stated once so every site widens
+# the same way instead of re-deriving (and re-explaining) it on its own.
+#
+# `UnicodeDecodeError` is a `ValueError`, not an `OSError`, so a note the vault
+# holds in another encoding would otherwise escape a boundary that only names
+# `OSError` and take the whole run down with it: a traceback on stderr and an
+# empty stdout, where the contract owes an anomaly entry and the rest of the
+# report. Deliberately not the wider `ValueError` `kboat.lock` catches on its own
+# lock record: that would also swallow a bug of ours as though it were one
+# note's anomaly, which a boundary this narrow must not do.
+#
+# Two shapes, because not every boundary can raise `FrontmatterError` at the point
+# it can fail:
+# - `NOTE_READ_ERRORS` is for a boundary where frontmatter parsing is in play —
+#   loading a note, or rewriting one by a path that re-parses it (`set_field` and
+#   its callers raise `FrontmatterError` for a line the rewrite expects and does
+#   not find).
+# - `PLAIN_READ_ERRORS` drops `FrontmatterError` for a boundary that cannot raise
+#   it: a sibling text format with its own parser (a queue capture, the questions
+#   file, a Daily note's body), or a sibling read at a site where a `FrontmatterError`
+#   from the same operation is already caught in a preceding arm of its own.
+NOTE_READ_ERRORS = (FrontmatterError, OSError, UnicodeDecodeError)
+PLAIN_READ_ERRORS = (OSError, UnicodeDecodeError)
+
+
 # --------- lines ---------
 
 

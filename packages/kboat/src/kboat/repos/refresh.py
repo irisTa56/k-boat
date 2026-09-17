@@ -47,7 +47,12 @@ from kboat.cli import (
     emit_locked,
     vault_path,
 )
-from kboat.frontmatter import FrontmatterError, parse_frontmatter
+from kboat.frontmatter import (
+    NOTE_READ_ERRORS,
+    PLAIN_READ_ERRORS,
+    FrontmatterError,
+    parse_frontmatter,
+)
 from kboat.frontmatter import set_fields as _set_rendered_fields
 from kboat.io_utils import (
     atomic_write_text,
@@ -188,10 +193,7 @@ def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dic
         try:
             text = path.read_text(encoding="utf-8")
             fm = parse_frontmatter(text)
-        # `UnicodeDecodeError` alongside the other two: it is a `ValueError`, so a
-        # note that is not UTF-8 would otherwise escape every boundary in this pass
-        # and take the whole catalogue's refresh with it.
-        except (FrontmatterError, OSError, UnicodeDecodeError) as exc:
+        except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "repo":
@@ -433,9 +435,8 @@ def refresh(
             # that here cannot help.
             failed.append(_failure(rel, was, reason="note", error=str(exc)))
             continue
-        # `UnicodeDecodeError` for the same reason as the load above: `_apply` reads
-        # the note again, and the file can have changed under the run.
-        except (OSError, UnicodeDecodeError) as exc:
+        # `_apply` reads the note again, and the file can have changed under the run.
+        except PLAIN_READ_ERRORS as exc:
             failed.append(_failure(rel, was, reason="write", error=str(exc)))
             continue
         updated.append(written)

@@ -7,9 +7,15 @@ and re-exports the primitives the pick code imports.
 
 from __future__ import annotations
 
-from kboat.frontmatter import FrontmatterError, Value, parse_frontmatter, set_field
+from kboat.frontmatter import (
+    NOTE_READ_ERRORS,
+    FrontmatterError,
+    Value,
+    parse_frontmatter,
+    set_field,
+)
 
-__all__ = ["FrontmatterError", "Value", "parse_frontmatter", "set_picked"]
+__all__ = ["NOTE_READ_ERRORS", "FrontmatterError", "Value", "parse_frontmatter", "set_picked"]
 
 
 def set_picked(text: str, value: bool) -> str:

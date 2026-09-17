@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from kboat.frontmatter import split_lines, strip_frontmatter
+from kboat.frontmatter import PLAIN_READ_ERRORS, split_lines, strip_frontmatter
 
 # A top-level list item (marker at column 0, no leading indentation): one question.
 _TOP_ITEM = re.compile(r"^[-*+][ \t]+(\S.*)$")
@@ -58,10 +58,9 @@ def extract_questions(questions_file: Path) -> list[Question]:
     # Raising `QuestionsUnreadableError` rather than returning nothing: the backlog is
     # the pick's primary signal, so a file that is there and cannot be read is not
     # the same as no file, and the caller has to be able to tell them apart.
-    # `UnicodeDecodeError` is a `ValueError`, so it needs naming beside `OSError`.
     try:
         raw = questions_file.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+    except PLAIN_READ_ERRORS as exc:
         raise QuestionsUnreadableError(str(exc)) from exc
     text = strip_frontmatter(raw)
     questions: list[Question] = []

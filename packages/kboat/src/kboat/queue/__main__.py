@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from kboat.cli import add_vault_argument, vault_path
+from kboat.frontmatter import PLAIN_READ_ERRORS
 from kboat.schema import QUEUE_DIR
 
 from .parse import parse_capture
@@ -30,10 +31,7 @@ def _cmd_list(vault: Path, folder: str) -> dict[str, object]:
         rel = path.relative_to(vault).as_posix()
         try:
             capture = parse_capture(path.read_text(encoding="utf-8"))
-        # `UnicodeDecodeError` for the reason `kboat.repos.refresh` gives: it is a
-        # `ValueError`, so a capture that is not UTF-8 would escape this boundary and
-        # take the whole drain with it.
-        except (OSError, UnicodeDecodeError) as exc:
+        except PLAIN_READ_ERRORS as exc:
             files.append({"path": rel, "url": None, "title": "", "error": str(exc)})
             continue
         entry: dict[str, object] = {"path": rel, "url": capture.url, "title": capture.title}

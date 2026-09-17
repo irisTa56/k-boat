@@ -8,6 +8,7 @@ wrapper, and re-exports the primitives the lifecycle code imports.
 from __future__ import annotations
 
 from kboat.frontmatter import (
+    NOTE_READ_ERRORS,
     FrontmatterError,
     Scalar,
     Value,
@@ -17,6 +18,7 @@ from kboat.frontmatter import (
 )
 
 __all__ = [
+    "NOTE_READ_ERRORS",
     "FrontmatterError",
     "Scalar",
     "Value",

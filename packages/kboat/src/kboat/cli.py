@@ -29,7 +29,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 
-from kboat.frontmatter import FrontmatterError
+from kboat.frontmatter import NOTE_READ_ERRORS
 from kboat.lock import VaultLockedError, VaultLockUnavailableError
 from kboat.write import WROTE_A_NOTE, BadInputError
 
@@ -169,10 +169,7 @@ def run_write(write: Callable[[dict], dict[str, object]]) -> int:
         return 2
     except VaultLockedError as e:
         return emit_locked(e)
-    # `UnicodeDecodeError` alongside them: it is a `ValueError`, so an existing note
-    # that is not UTF-8 would escape this edge and the caller would get a traceback
-    # and empty stdout where the write contract promises a `status` record.
-    except (FrontmatterError, OSError, UnicodeDecodeError) as e:
+    except NOTE_READ_ERRORS as e:
         sys.stderr.write(f"write failed: {e}\n")
         return 1
     json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
