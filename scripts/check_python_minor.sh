@@ -28,6 +28,15 @@ set -euo pipefail
 # different kinds of interpreter.
 export UV_PYTHON_PREFERENCE=only-managed
 
+# Never fall back to an already-active venv either: `uv run --no-project`
+# still prefers one over resolving a fresh interpreter, `--no-project` and
+# UV_PYTHON_PREFERENCE notwithstanding. Run this from a shell that has already
+# activated this repository's own `.venv` (as `mise activate`/`eval "$(mise
+# env)"` do, per the root CLAUDE.md) and, unset, the "latest" side would
+# silently report this project's own interpreter back -- always equal to
+# "project", so the check would never fire.
+unset VIRTUAL_ENV
+
 empty_dir=$(mktemp -d)
 latest_install_dir=$(mktemp -d)
 venv_dir=$(mktemp -d)

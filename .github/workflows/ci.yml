@@ -17,10 +17,10 @@ name: CI
 # PR's diff, so running it there would only repeat the same answer on every
 # open PR until the interpreter range moves. Scoping it to the weekly
 # schedule instead means the maintainer meets it as the failed-run email that
-# schedule already sends, exactly the "reminder, not a gate" the task this job
-# exists for calls for. `scripts/check_python_minor.sh` says how the check
-# works, and the root CLAUDE.md's "Tooling config" section says what to do
-# once it fails.
+# schedule already sends, rather than as a merge blocker for a release outside
+# this repository's control. `scripts/check_python_minor.sh` says how the
+# check works, and the root CLAUDE.md's "Tooling config" section says what to
+# do once it fails.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
