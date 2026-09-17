@@ -405,19 +405,6 @@ def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
             "enabled = false\nenabled = false\n",
             id="duplicate_key_in_one_table",
         ),
-        pytest.param(
-            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://[bad/feed"\n',
-            id="feed_url_not_a_usable_url",
-        ),
-        pytest.param(
-            '[[site]]\nid = "a"\nname = "A"\nindex_url = "https://[bad/"\n'
-            'article_url_pattern = "/p/"\n',
-            id="index_url_not_a_usable_url",
-        ),
-        pytest.param(
-            '[[site]]\nid = "a"\nname = "A"\nforum_url = "https://[bad/"\n',
-            id="forum_url_not_a_usable_url",
-        ),
     ],
 )
 def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(
@@ -435,6 +422,25 @@ def test_non_utf8_sites_toml_surfaces_as_clean_exit_through_main(
     """A ``sites.toml`` that is not UTF-8 also renders through ``cli.main``."""
     sites_path().write_bytes(b'\xff\xfeid = "a"\nname = "A"\n')
     assert cli.main(["list-sites"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["disable-site", "--site-id", "a"], id="set_enabled"),
+        pytest.param(
+            ["add-forum", "--id", "f", "--name", "F", "--forum-url", "https://forum.example.com"],
+            id="add_site",
+        ),
+    ],
+)
+def test_a_writer_over_invalid_sites_toml_surfaces_as_clean_exit(
+    state_dir: Path, argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A command that parses ``sites.toml`` without ``load_sites`` renders it too."""
+    sites_path().write_text('[[site]]\nid = "a\n', encoding="utf-8")
+    assert cli.main(argv) == 1
     assert "error:" in capsys.readouterr().err
 
 
@@ -954,6 +960,26 @@ def test_new_entries_unexpected_worker_exception_is_isolated_to_its_site(
     assert status["c1"]["unexpected_error"] is False
     assert all(status[i]["error"] is None for i in ("a1", "b2"))
     assert all(status[i]["unexpected_error"] is False for i in ("a1", "b2"))
+
+
+def test_new_entries_isolates_a_site_whose_url_does_not_parse(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``feed_url`` ``urlsplit`` rejects costs its own site, not the gather."""
+    sites_path().write_text(
+        '[[site]]\nid = "bad"\nname = "Bad"\nfeed_url = "https://[bad/f.xml"\n'
+        '[[site]]\nid = "ok"\nname = "Ok"\nfeed_url = "https://ok.example.com/f.xml"\n',
+        encoding="utf-8",
+    )
+    _no_client(monkeypatch)
+
+    def fetch(site: SiteConfig, *, client: object) -> FetchOutcome:
+        return FetchOutcome(entries=[_entry(f"https://e.example.com/{site.id}")], error=None)
+
+    monkeypatch.setattr(cli, "fetch_site", fetch)
+
+    assert cli.main(["new-entries"]) == 0
+    assert {e["site_id"] for e in _out(capsys)["entries"]} == {"bad", "ok"}
 
 
 def test_new_entries_does_not_absorb_a_missing_browser(

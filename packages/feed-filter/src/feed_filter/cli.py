@@ -306,12 +306,16 @@ def _gather_host_key(site: SiteConfig) -> str:
     Sites sharing a host are grouped so they fetch **sequentially within one
     worker**, never concurrently — no host is ever hit by two simultaneous
     requests (crawler politeness); concurrency in ``cmd_new_entries`` is across
-    hosts only. Falls back to the site id when the URL carries no netloc, so a
-    malformed entry becomes its own group rather than colliding with others under
-    an empty key.
+    hosts only. Falls back to the site id when the URL carries no netloc or does not
+    parse, so a malformed entry becomes its own group, whose fetch then fails inside
+    the per-site boundary rather than failing the whole gather here.
     """
     url = site.feed_url or site.index_url or ""
-    return urlsplit(url).netloc.lower() or site.id
+    try:
+        netloc = urlsplit(url).netloc
+    except ValueError:
+        netloc = ""
+    return netloc.lower() or site.id
 
 
 def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, FetchOutcome]:

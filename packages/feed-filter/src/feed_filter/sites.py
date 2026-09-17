@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import tomlkit
 import tomlkit.exceptions
@@ -111,19 +110,6 @@ class SiteConfig:
             raise SiteConfigError("site id must be non-empty")
         if not self.name.strip():
             raise SiteConfigError(f"site name must be non-empty (site {self.id!r})")
-
-        # Gather code calls urlsplit() on these unguarded, so a value it rejects is
-        # caught here, at load time, rather than as a ValueError inside a gather.
-        for field in ("feed_url", "index_url", "forum_url"):
-            value = getattr(self, field)
-            if value is None:
-                continue
-            try:
-                urlsplit(value)
-            except ValueError as exc:
-                raise SiteConfigError(
-                    f"{field} is not a usable URL (site {self.id!r}): {exc}"
-                ) from exc
 
         has_feed = self.feed_url is not None
         has_pattern = self.article_url_pattern is not None
