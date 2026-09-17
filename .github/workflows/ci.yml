@@ -8,16 +8,19 @@ name: CI
 # and apt for the shell checks (see the `shell-qa` job below for why). Keep the
 # checks here in sync with mise.toml's `qa:**` tasks.
 #
-# Neither `shell-qa` nor `python-minor-check` is in the branch ruleset: the four
-# required checks stay python-qa / markdown-lint / secret-scan /
-# link-check-offline, unchanged by this workflow gaining two more jobs.
+# Neither `shell-qa` nor `python-minor-check` is a required check --
+# `dependabot-auto-merge.yml`'s PRECONDITION names the ones that are.
 # `python-minor-check` is also the one job below with no local `qa:**`
-# counterpart: it fails when uv resolves a newer stable CPython minor outside
-# this project than the one `requires-python` admits inside it, so a new
-# interpreter release gets a red job instead of going unnoticed --
-# `scripts/check_python_minor.sh` says how, and the root CLAUDE.md's "Tooling
-# config" section says what to do about it. That job is deliberately not
-# required -- its failure is a reminder, never a merge gate.
+# counterpart, and the only one scoped to `schedule` alone: it fails when uv
+# resolves a newer stable CPython minor outside this project than the one
+# `requires-python` admits inside it, a fact that does not depend on any given
+# PR's diff, so running it there would only repeat the same answer on every
+# open PR until the interpreter range moves. Scoping it to the weekly
+# schedule instead means the maintainer meets it as the failed-run email that
+# schedule already sends, exactly the "reminder, not a gate" the task this job
+# exists for calls for. `scripts/check_python_minor.sh` says how the check
+# works, and the root CLAUDE.md's "Tooling config" section says what to do
+# once it fails.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -173,6 +176,8 @@ jobs:
 
   python-minor-check:
     runs-on: ubuntu-latest
+    # Only on the weekly schedule -- see the header comment.
+    if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v7
       # Pinned to the same full version as the `python-qa` job's, for the same
