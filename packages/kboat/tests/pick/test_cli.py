@@ -100,8 +100,6 @@ def test_candidates_lists_only_active_web_plus_daily_notes(
 def test_a_source_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_gather(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `UnicodeDecodeError` is a `ValueError`, so without it in the boundary a
-    # single bad note escapes and takes the whole candidate gather with it.
     (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
     assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
     out = json.loads(capsys.readouterr().out)
@@ -111,8 +109,6 @@ def test_a_source_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_gather(
 def test_an_unreadable_questions_file_and_daily_note_are_anomalies_not_silence(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Both are interest signals the pick reads; a file that is there and cannot be
-    # read has to say so, where a day with no note legitimately says nothing.
     (vault / "Questions.md").write_bytes(b"- what about \xff\n")
     (vault / "Daily" / "2026-06-11.md").write_bytes(b"\xff\n")
     assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
@@ -200,11 +196,7 @@ def test_set_reports_a_picked_flag_it_could_not_write(
 def test_set_reports_a_note_that_turns_unreadable_between_load_and_write(
     vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `_load_sources` reads every note once to know what is present; `_cmd_set`
-    # reads a note again to rewrite its `picked` flag. The vault lock is advisory,
-    # so Obsidian or iCloud can change a file between the two — this pins that the
-    # second read's own `UnicodeDecodeError` lands as an anomaly rather than
-    # escaping the pass.
+    # The vault lock is advisory, so a note can change between the load's read and the write's.
     real_read_text = Path.read_text
     reads: list[Path] = []
 

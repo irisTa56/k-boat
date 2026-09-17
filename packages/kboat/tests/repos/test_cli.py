@@ -33,10 +33,7 @@ RECORD: dict[str, Any] = {
 
 
 def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
-    # A `TextIOWrapper` over a real `BytesIO`, not a bare `StringIO`: `cli.py` reads
-    # `sys.stdin.buffer`, which only the former has, and `_read_json_record` decodes
-    # that buffer itself rather than trusting `sys.stdin`'s own handler — so a fake
-    # stdin with no `.buffer` would hide the very edge these tests are here to cover.
+    # Not a `StringIO`: `cli.py` reads `sys.stdin.buffer`, which a `StringIO` does not have.
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(text.encode("utf-8"))))
 
 

@@ -53,11 +53,8 @@ def extract_daily_notes(
         d = _parse_date(path.stem)
         if d is None or d > today or d < earliest:
             continue
-        # A daily note is ambient signal, not a work item, so one that cannot be
-        # read costs the pick a note rather than the whole run — but it is reported,
-        # because a day whose note could not be read is not a day with no note, and
-        # nothing else would ever say so. A day with no file never reaches here, and
-        # a file whose body is empty carries no signal and is skipped silently.
+        # Reported rather than skipped: nothing else would tell a note that could not be read
+        # from a day with no note.
         try:
             body = strip_frontmatter(path.read_text(encoding="utf-8")).strip()
         except PLAIN_READ_ERRORS as exc:

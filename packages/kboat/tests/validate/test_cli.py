@@ -82,8 +82,6 @@ def test_parse_error_is_a_violation(tmp_path: Path, capsys: pytest.CaptureFixtur
 def test_a_note_that_is_not_utf8_is_a_violation_and_not_a_dead_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `UnicodeDecodeError` is a `ValueError`, so without it in the boundary it
-    # escapes and one bad note takes the whole vault's report with it.
     vault = _vault(tmp_path, **{"a.md": VALID_SOURCE})
     (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
     assert main(["--vault", str(vault)]) == 0

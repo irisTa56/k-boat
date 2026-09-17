@@ -68,9 +68,6 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
     daily_notes = [{"date": dn.date, "body": dn.body} for dn in days]
     for entry in unreadable_days:
         anomalies.append({"path": f"{DAILY_DIR}/{entry['path']}", "error": entry["error"]})
-    # The backlog is the pick's primary signal, so a file that is there and cannot
-    # be read is reported rather than read as an empty backlog — which is what a
-    # vault with no `Questions.md` at all legitimately produces.
     try:
         questions = [
             {"rank": q.rank, "question": q.question, "note": q.note}

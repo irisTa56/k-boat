@@ -121,10 +121,6 @@ def test_lookback_zero_is_today_only(tmp_path: Path) -> None:
 def test_a_daily_note_that_is_not_utf8_is_reported_rather_than_raised_or_dropped(
     tmp_path: Path,
 ) -> None:
-    # It costs the pick a note rather than the whole run, and it is reported: a day
-    # whose note could not be read is not a day with no note, and nothing else here
-    # would ever say so. `UnicodeDecodeError` is a `ValueError`, so without it named
-    # in the boundary this raises out of the gather instead.
     daily = tmp_path / "Daily"
     _write(daily, "2026-06-04.md", "read up on agents\n")
     (daily / "2026-06-05.md").write_bytes(b"\xff\n")
@@ -134,8 +130,7 @@ def test_a_daily_note_that_is_not_utf8_is_reported_rather_than_raised_or_dropped
 
 
 def test_a_day_with_no_note_is_not_reported(tmp_path: Path) -> None:
-    # Only a file that is there and cannot be read is an anomaly. A day with no
-    # file, and a file whose body is empty, both stay silent.
+    # A day with no file and a file whose body is empty both stay silent.
     daily = tmp_path / "Daily"
     _write(daily, "2026-06-04.md", "---\ntitle: x\n---\n\n")
     days, unreadable = extract_daily_notes(daily, today=date(2026, 6, 5), lookback_days=7)

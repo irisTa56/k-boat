@@ -526,9 +526,7 @@ def migrate(vault: Path, *, apply: bool) -> Report:
                 continue
             try:
                 apply_row(vault, row)
-            # `apply_row` re-reads the note, and this loop already accepts that the
-            # second read can fail where `plan`'s did not — a `failed` row rather
-            # than a traceback that ends the pass and the rows that follow it.
+            # `apply_row` re-reads the note, which can have changed since `plan` read it.
             except NOTE_READ_ERRORS as exc:
                 row.status = "failed"
                 # `plan` names a strand before the move, and this row's move may

@@ -30,10 +30,7 @@ def vault(tmp_path: Path) -> Path:
 def _run(argv: list[str], stdin: str, monkeypatch: pytest.MonkeyPatch) -> int:
     import io
 
-    # A `TextIOWrapper` over a real `BytesIO`, not a bare `StringIO`: `cli.py` reads
-    # `sys.stdin.buffer`, which only the former has, and `_read_json_record` decodes
-    # that buffer itself rather than trusting `sys.stdin`'s own handler — so a fake
-    # stdin with no `.buffer` would hide the very edge these tests are here to cover.
+    # Not a `StringIO`: `cli.py` reads `sys.stdin.buffer`, which a `StringIO` does not have.
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(stdin.encode("utf-8"))))
     return main(argv)
 
@@ -412,10 +409,6 @@ def test_a_vault_root_that_does_not_exist_is_reported_not_created(
 def test_an_existing_note_that_is_not_utf8_fails_with_a_record_not_a_traceback(
     vault: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # This is the one writer every note-writing skill goes through, and the caller
-    # branches on the `status` key of the record it prints. `UnicodeDecodeError` is
-    # a `ValueError`, so without it at this edge the caller gets no record at all —
-    # a status the write contract has no member for.
     (vault / "Sources" / f"{SLUG}.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
     rec = json.dumps(
         {
@@ -433,14 +426,10 @@ def test_an_existing_note_that_is_not_utf8_fails_with_a_record_not_a_traceback(
 
 
 def _run_subprocess(vault: Path, payload: bytes) -> subprocess.CompletedProcess[bytes]:
-    """`kboat-note write` as a real process, whose stdin is the one the routine gives it.
+    """`kboat-note write` as a real process with the locale variables stripped.
 
-    An in-process `sys.stdin` is whatever the test builds it to be, which hides the
-    edge #164 is about: the interpreter's own decode handler depends on the locale
-    (Python enables UTF-8 mode, whose stdin handler is `surrogateescape`, when
-    `LC_CTYPE` is unset or `C`/`POSIX`), and that is the locale an unattended
-    `kboat-routine` shell runs in. Stripping the locale env vars here reproduces it
-    rather than whatever locale happens to be set on the machine running the test.
+    An in-process fake stdin gets `errors="strict"`, so it passes with the CLI still broken
+    under the `C` locale, whose stdin handler is `surrogateescape`.
     """
     env = {k: v for k, v in os.environ.items() if k not in ("LANG", "LC_ALL", "LC_CTYPE")}
     return subprocess.run(
@@ -462,8 +451,6 @@ def _run_subprocess(vault: Path, payload: bytes) -> subprocess.CompletedProcess[
 
 
 def test_stdin_bytes_that_are_not_utf8_are_a_record_to_fix(vault: Path) -> None:
-    # Exit 2, not the exit 1 a caller would read as an environment to retry: no
-    # retry changes what is already sitting on stdin.
     payload = b'{"slug": "abc", "fields": {"type": "source", "title": "T\xff"}}'
     proc = _run_subprocess(vault, payload)
 
@@ -474,10 +461,7 @@ def test_stdin_bytes_that_are_not_utf8_are_a_record_to_fix(vault: Path) -> None:
 
 
 def test_a_lone_surrogate_already_in_the_record_is_a_record_to_fix(vault: Path) -> None:
-    # JSON admits a lone surrogate escape, so this one decodes and parses cleanly
-    # and fails only once the note is written — past every earlier check, which
-    # `run_write`'s `UnicodeEncodeError` arm turns into a record to fix (exit 2)
-    # rather than a traceback with an empty stdout.
+    # JSON's `\u` escape carries a lone surrogate past the strict decode, to the write.
     payload = json.dumps(
         {
             "slug": SLUG,

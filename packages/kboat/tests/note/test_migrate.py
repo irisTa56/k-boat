@@ -142,9 +142,6 @@ def test_a_note_already_at_the_target_name_is_a_conflict_never_an_overwrite(vaul
 
 
 def test_a_note_that_is_not_utf8_is_skipped_not_a_traceback(vault: Path) -> None:
-    # `_read_target`'s own docstring promises this: one bad note costs itself and
-    # not the pass. `UnicodeDecodeError` is a `ValueError`, so without it named in
-    # the boundary the promise is exactly what breaks.
     _source(vault, STALE, STALE_URL)
     (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\nurl: \xff\n---\n")
     rows, skipped = plan(vault)
@@ -309,11 +306,7 @@ def test_a_failed_apply_keeps_the_strand_whose_rename_did_land(
 def test_a_note_that_stops_decoding_under_the_apply_is_a_failed_row(
     vault: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `apply_row` re-reads the note that `plan` already read, and the loop around
-    # it already accepts that the second read can fail where the first did not —
-    # the vault lock is advisory, so iCloud or Obsidian can rewrite the file in
-    # between. Decoding is one of the ways that read fails, and the contract owes
-    # a `failed` row for it, not a traceback and an empty stdout.
+    # `_retarget_reading_link` is where `apply_row` re-reads the note `plan` already read.
     _source(vault, STALE, STALE_URL)
     monkeypatch.setattr(
         migrate_mod,

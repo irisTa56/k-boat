@@ -106,8 +106,6 @@ def test_missing_file_is_empty_backlog(tmp_path: Path) -> None:
 
 
 def test_a_questions_file_that_cannot_be_read_is_not_an_empty_backlog(tmp_path: Path) -> None:
-    # A missing file is a legitimately empty backlog; a file that is there and
-    # cannot be read is not, and the caller has to be able to tell them apart.
     path = tmp_path / "Questions.md"
     path.write_bytes(b"- what about \xff\n")
     with pytest.raises(QuestionsUnreadableError):
