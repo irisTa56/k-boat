@@ -184,6 +184,12 @@ jobs:
       # reason: setup-uv publishes no floating major tag.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
-          enable-cache: true
+          # This job resolves no project dependencies (no `uv sync`), so it has
+          # nothing worth caching -- and setup-uv's cache key has no per-job
+          # component (architecture / OS / Python version / lockfile hash /
+          # optional suffix only), so on a cache miss this job's near-empty
+          # save would win the race and get restored by `python-qa` and
+          # `markdown-lint` too, replacing their real dependency cache.
+          enable-cache: false
       - name: Fail if a newer stable CPython minor exists than requires-python admits
         run: scripts/check_python_minor.sh
