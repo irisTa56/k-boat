@@ -191,5 +191,14 @@ jobs:
           # save would win the race and get restored by `python-qa` and
           # `markdown-lint` too, replacing their real dependency cache.
           enable-cache: false
+          # The newest CPython uv will install is whatever its own release
+          # knows about, so this job needs the newest uv release, not merely
+          # whatever no-`version`'s config-file lookup would otherwise find --
+          # an unrelated future `[tool.uv] required-version` pin (the kind
+          # `dependabot-auto-merge.yml`'s header already anticipates for other
+          # gate tools) would freeze this check's "latest" answer to that
+          # uv's release date, with no error to say so. An explicit `version`
+          # skips that lookup, per setup-uv's own README.
+          version: "latest"
       - name: Fail if a newer stable CPython minor exists than requires-python admits
         run: scripts/check_python_minor.sh

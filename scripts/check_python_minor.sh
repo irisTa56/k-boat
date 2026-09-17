@@ -5,13 +5,19 @@
 #
 # Does not parse any `pyproject.toml`: uv's own resolution is the source for
 # both sides being compared.
-#   - "latest": the newest stable CPython uv installs when run outside any
-#     project -- an empty directory, so no `requires-python` bounds it. Fetched
-#     into a fresh, throwaway UV_PYTHON_INSTALL_DIR made just for this run: a
-#     bare `uv python install` (no version pinned) is a no-op -- and reports
-#     whatever is already there, however old -- once *any* Python already
-#     satisfies it, so reusing an ambient install dir that already holds an
-#     interpreter would silently stop this side from ever seeing a new release.
+#   - "latest": the newest stable CPython the *running uv binary* knows how to
+#     install when run outside any project -- an empty directory, so no
+#     `requires-python` bounds it. That is only as current as uv's own release
+#     (its list of installable Pythons ships inside the binary), so an old uv
+#     under-reports "latest" without erroring -- the CI job pins `version:
+#     "latest"` on its setup-uv step for this reason; a stale local uv can
+#     still under-report for a manual run (`mise upgrade` keeps it current).
+#     Fetched into a fresh, throwaway UV_PYTHON_INSTALL_DIR made just for this
+#     run: a bare `uv python install` (no version pinned) is a no-op -- and
+#     reports whatever is already there, however old -- once *any* Python
+#     already satisfies it, so reusing an ambient install dir that already
+#     holds an interpreter would silently stop this side from ever seeing a
+#     new release.
 #   - "project": the interpreter uv selects inside this repository, which
 #     `requires-python` (owned by packages/kboat/pyproject.toml) does bound.
 # uv excludes pre-releases from "latest" by policy -- a pre-release is only
