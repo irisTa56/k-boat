@@ -1,12 +1,14 @@
 name: Link check (weekly)
 
-# The full networked link check, `mise run check:links`. Kept out of ci.yml on
-# purpose (mirroring why `check:links` is kept out of `qa:**`) -- it is too slow
-# and too flaky on external hosts to gate a PR. Runs weekly instead, and
-# non-blocking (`continue-on-error`): a link some third-party site took down
-# never fails the run. The report goes to this run's GitHub Actions summary page
-# and nowhere else -- no failing status, no email -- so a broken link surfaces
-# only to someone who opens the run.
+# The full networked lychee run: every link in the repo, hitting the network,
+# same scope as `mise run check:links` locally. Kept out of ci.yml on purpose
+# (mirroring why `check:links` is kept out of `qa:**`) -- it is too slow and
+# too flaky on external hosts to gate a PR. Runs weekly instead, and
+# non-blocking (`fail: false`): never a red merge button over a link some
+# third-party site took down. `jobSummary` (the action's default) still writes
+# the results to this run's GitHub Actions summary page -- there is no active
+# notification (no failing status, no email) beyond that page, so a broken
+# link surfaces only to someone who opens the run.
 
 on:
   schedule:
@@ -21,12 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.3.0
+      # Shared settings come from `lychee.toml`. The action, not `mise run
+      # check:links`, because its `failIfEmpty` (on by default) fails the run on a
+      # walk that found no links, which lychee alone exits 0 on.
+      - uses: lycheeverse/lychee-action@v2.9.0
         with:
-          cache: false # for the reason ci.yml's `python-qa` job gives
-      - name: Check every link
-        continue-on-error: true
-        env:
-          # lychee reads this for github.com links, which rate-limit anonymous requests.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mise run check:links -- --format markdown --output "$GITHUB_STEP_SUMMARY"
+          args: --verbose --no-progress --config lychee.toml .
+          fail: false
