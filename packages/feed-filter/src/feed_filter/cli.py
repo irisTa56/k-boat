@@ -63,6 +63,7 @@ from feed_filter.config import (
     DEFAULT_QUERY_RESULTS,
     QUERY_SITE_ID,
     SUMMARY_PREVIEW_CHARS,
+    MissingEnvError,
     db_path,
     sites_path,
     vault_path,
@@ -78,9 +79,11 @@ from feed_filter.forum_pipeline import (
 )
 from feed_filter.forum_store import finalize_poll, record_post, set_op_verdict
 from feed_filter.pipeline import FetchOutcome, fetch_entries, fetch_site, filter_gathered
-from feed_filter.seen import is_seen, open_db, record, snapshot
+from feed_filter.seen import is_environment_failure, is_seen, open_db, record, snapshot
 from feed_filter.sites import (
     SiteConfig,
+    SiteConfigError,
+    UnknownSiteError,
     add_site,
     load_sites,
     set_enabled,
@@ -88,10 +91,84 @@ from feed_filter.sites import (
     validate_article_url_pattern,
 )
 from feed_filter.vault import VaultError, write_feed_note
-from kboat.canonical import canonical_url
+from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.cli import add_today_argument
 from kboat.lock import VaultLockedError
 from kboat.write import BadInputError
+
+
+class BadUrlError(ValueError):
+    """A ``--url`` argument is not a URL ``canonical_url`` can parse.
+
+    ``canonical_url`` (``kboat.canonical``) is a shared helper with no CLI
+    awareness of its own; it raises a bare ``ValueError`` when urllib's
+    ``SplitResult`` cannot parse the URL (a malformed IPv6 literal, a port out
+    of range). Every caller in this module passes operator-typed ``--url``
+    text, so that ``ValueError`` is deliberate input validation, not a bug —
+    wrapped once here, at the boundary that knows the argument came from the
+    operator, rather than at each call site.
+    """
+
+
+def _url_arg(raw: str) -> CanonicalUrl:
+    """``canonical_url(raw)``, or ``BadUrlError`` naming why it could not."""
+    try:
+        return canonical_url(raw)
+    except ValueError as exc:
+        raise BadUrlError(f"--url is not a usable URL: {exc}") from exc
+
+
+class BadArgvError(ValueError):
+    """A CLI argument's text is not valid UTF-8.
+
+    POSIX decodes ``argv`` with the ``surrogateescape`` error handler, so a
+    byte sequence in an argument that is not valid UTF-8 (a shell script
+    assembling ``--title`` from a forum post or a model's summary, a
+    multi-byte character truncated by a length limit upstream) becomes a lone
+    surrogate in the parsed string instead of failing at argv-decode time.
+    Silently carried through this CLI's whole call graph, it fails only on
+    the first re-encode to UTF-8 — a SQLite bind, the vault write, the stdout
+    emit — deep inside whichever handler runs, as a bare
+    ``UnicodeEncodeError`` (a ``ValueError`` subclass). Checked once here,
+    right after ``argparse`` hands back the parsed arguments, rather than at
+    each of those encode sites.
+
+    In ``query-new``, the check runs before any request goes out, so a bad
+    query among several good ones refuses the whole run rather than sending
+    (and billing) the good ones first and losing their results to a crash
+    that follows.
+    """
+
+
+# discover's `url` is this CLI's one positional argument (no `--` spelling —
+# `add_argument("url")`, not `add_argument("--url")`); every other `url` dest
+# here is a `--url` flag. Named explicitly, checked against `args.command`
+# (the dest names collide), rather than introspecting argparse's own actions
+# for what is otherwise the only positional in the whole CLI.
+_POSITIONAL_ARG_COMMAND = {"url": "discover"}
+
+
+def _reject_unencodable_args(args: argparse.Namespace) -> None:
+    """Raise ``BadArgvError`` if any string argument holds an undecodable byte.
+
+    Checks list/tuple-valued arguments too: ``query-new --query`` is
+    repeatable (``action="append"``), so its value is a ``list[str]``, not a
+    plain string, and it would otherwise carry an undecodable query straight
+    into a request Exa bills for before the encode failure ever surfaces.
+    """
+    for name, value in vars(args).items():
+        items = value if isinstance(value, (list, tuple)) else (value,)
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                if _POSITIONAL_ARG_COMMAND.get(name) == args.command:
+                    arg = name
+                else:
+                    arg = f"--{name.replace('_', '-')}"
+                raise BadArgvError(f"{arg} is not valid text: {exc}") from exc
 
 
 def _positive_int(value: str) -> int:
@@ -187,13 +264,13 @@ def _site_from_args(args: argparse.Namespace) -> SiteConfig:
 
 
 def _select_sites(site_id: str | None) -> list[SiteConfig]:
-    """Load the registry, optionally narrowing to one id (KeyError if absent)."""
+    """Load the registry, optionally narrowing to one id (``UnknownSiteError`` if absent)."""
     sites = load_sites(sites_path())
     if site_id is None:
         return sites
     selected = [s for s in sites if s.id == site_id]
     if not selected:
-        raise KeyError(f"no site with id {site_id!r}")
+        raise UnknownSiteError(f"no site with id {site_id!r}")
     return selected
 
 
@@ -517,7 +594,7 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
     variant of that URL would otherwise miss a body that is cached. The emitted
     ``url`` is the canonical form the body was found under.
     """
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
         body = body_cache.get(conn, cu)
     _emit({"url": str(cu), "body": body})
@@ -533,7 +610,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
     — the never-lost half. ``write_feed_note`` falls the note's ``title`` back to
     the URL when blank, so a ``--title ""`` still writes a valid note.
     """
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     result = write_feed_note(
         vault_path(),
         cu,
@@ -552,7 +629,7 @@ def cmd_remind(args: argparse.Namespace) -> int:
 
 def cmd_mark_seen(args: argparse.Namespace) -> int:
     """Record a dropped entry seen (kept=0); no note."""
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
         record(conn, cu, args.site_id, args.title or None, kept=0)
     _emit({"url": str(cu), "kept": False})
@@ -560,19 +637,21 @@ def cmd_mark_seen(args: argparse.Namespace) -> int:
 
 
 def _scrape_site_for(site_id: str, verb: str) -> SiteConfig:
-    """The enabled scrape site ``site_id`` names, or a ``ValueError`` naming ``verb``.
+    """The enabled scrape site ``site_id`` names, or a ``SiteConfigError`` naming ``verb``.
 
     Shared by ``heal-site`` and ``resnapshot-site``, which re-scrape the same way and
     differ only in where the pattern comes from and whether config is written.
     """
-    site = _select_sites(site_id)[0]  # KeyError if id absent — before any side effect
+    site = _select_sites(site_id)[0]  # UnknownSiteError if id absent — before any side effect
     if not site.enabled:
         # A disabled site is inert (new-entries skips it). Re-scraping would run a gather
         # it should not, and would slip past the on-disk Playwright gate (which now
         # ignores disabled sites) into a raw ModuleNotFoundError. Refuse — enable first.
-        raise ValueError(f"{verb} targets enabled sites only (site {site.id!r}); enable it first")
+        raise SiteConfigError(
+            f"{verb} targets enabled sites only (site {site.id!r}); enable it first"
+        )
     if site.kind != "scrape":
-        raise ValueError(f"{verb} targets scrape sites only (site {site.id!r})")
+        raise SiteConfigError(f"{verb} targets scrape sites only (site {site.id!r})")
     return site
 
 
@@ -659,14 +738,14 @@ def cmd_resnapshot_site(args: argparse.Namespace) -> int:
 
 
 def cmd_disable_site(args: argparse.Namespace) -> int:
-    """Stop gathering a site; config and seen-store are preserved (KeyError if absent)."""
+    """Stop gathering a site; config and seen-store are preserved (UnknownSiteError if absent)."""
     set_enabled(sites_path(), args.site_id, False)
     _emit({"site_id": args.site_id, "enabled": False})
     return 0
 
 
 def cmd_enable_site(args: argparse.Namespace) -> int:
-    """Resume gathering a disabled site (KeyError if absent)."""
+    """Resume gathering a disabled site (UnknownSiteError if absent)."""
     set_enabled(sites_path(), args.site_id, True)
     _emit({"site_id": args.site_id, "enabled": True})
     return 0
@@ -702,7 +781,7 @@ def cmd_add_forum(args: argparse.Namespace) -> int:
     eagerly would silently discard every topic that was due for Rule-A judgment on
     the first run — a loss, not a safety measure.
     """
-    site = _forum_site_from_args(args)  # shape validation first (ValueError propagates)
+    site = _forum_site_from_args(args)  # shape validation first (SiteConfigError propagates)
     add_site(sites_path(), site)
     _emit({"site_id": site.id, "kind": site.kind, "forum_url": site.forum_url})
     return 0
@@ -973,7 +1052,7 @@ def cmd_forum_remind(args: argparse.Namespace) -> int:
     ``upsert`` of that note, not a duplicate, so the disposition is recorded on
     every keep without tracking which URLs are already open.
     """
-    cu = canonical_url(args.url)
+    cu = _url_arg(args.url)
     result = write_feed_note(
         vault_path(),
         cu,
@@ -1041,7 +1120,7 @@ def cmd_forum_poll_done(args: argparse.Namespace) -> int:
     Resolves ``poll_offsets_days`` from the site config (per-site override else
     the config default loaded by ``SiteConfig`` at construction time).
     """
-    site = _select_sites(args.site_id)[0]  # KeyError if absent — before any side effect
+    site = _select_sites(args.site_id)[0]  # UnknownSiteError if absent — before any side effect
     offsets = (
         site.poll_offsets_days if site.poll_offsets_days is not None else DEFAULT_POLL_OFFSETS_DAYS
     )
@@ -1248,7 +1327,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse argv, dispatch, and map operational failures to a non-zero exit.
 
     Every expected runtime failure becomes a stderr ``error: …`` line and exit 1
-    — never a traceback, never a silent success:
+    — never a traceback, never a silent success. Each entry below is either a
+    dedicated domain type or a builtin this codebase raises for one specific,
+    named reason and no other, so that a bare ``ValueError``/``KeyError``/
+    ``sqlite3.Error`` raised anywhere else — a bug beneath a handler — is not
+    one of these types and reaches a traceback instead of being reported as a
+    user error.
 
     - ``FetchError`` — network / discover transport failure;
     - ``VaultError`` — a feed note could not be written (the writer refused it);
@@ -1263,31 +1347,54 @@ def main(argv: Sequence[str] | None = None) -> int:
       names are literals), so this is the writer's contract being honoured here
       rather than a case that arises: an exception it can raise is one this CLI
       reports, or the ``error: …`` promise holds only for the failures foreseen;
-    - ``ValueError`` — shape/validation (bad site config, a non-scrape or disabled
-      site given to heal-site / resnapshot-site, an unset ``OBSIDIAN_VAULT_PATH``);
-    - ``KeyError`` — unknown site id;
-    - ``OSError`` — filesystem failures from the config writes / db open
-      (disk full, permission, atomic-rename failure). Caught for the same reason
-      a ``VaultError`` is: a write that can't complete is an operational failure
-      to report, not a stack trace to dump.
+    - ``BadArgvError`` — an argument's text is not valid UTF-8 (a ``ValueError``
+      subclass; see its docstring — checked once, right after ``argparse``
+      parses ``argv``, rather than at each of the several places downstream
+      that would otherwise hit it as a bare ``UnicodeEncodeError``);
+    - ``BadUrlError`` — a ``--url`` argument is not a URL ``canonical_url`` can
+      parse (a ``ValueError`` subclass; see its docstring);
+    - ``SiteConfigError`` — deliberate ``sites.toml`` / CLI-argument shape
+      validation (a ``ValueError`` subclass; see its docstring for why every raise
+      site is operator-facing and none is an internal invariant);
+    - ``UnknownSiteError`` — an operator-supplied ``--site-id`` names no registered
+      site (a ``KeyError`` subclass; see its docstring);
+    - ``MissingEnvError`` — a required environment variable (``OBSIDIAN_VAULT_PATH``)
+      is unset (a ``ValueError`` subclass; see its docstring);
+    - ``OSError`` — the one builtin kept bare. Every raise this CLI's call graph
+      can reach is a real syscall failure (``atomic_write_text``, a config read:
+      disk full, permission, atomic-rename failure) — an operator's environment,
+      never a logic bug, which in Python raises ``TypeError``/``AttributeError``/...
+      instead. Caught for the same reason a ``VaultError`` is: a write that can't
+      complete is an operational failure to report, not a stack trace to dump.
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (the add-site / heal-site / resnapshot-site snapshot), the browser
       analog of ``FetchError``;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
-    - ``sqlite3.Error`` — the seen-store could not be opened or written; the case
-      this exists for is a lock timeout, when two processes opening the store at
-      once serialize on the migration's ``BEGIN IMMEDIATE`` and the loser exceeds
-      the busy timeout. Like ``ValueError`` and ``OSError`` above it, the catch is
-      broader than that one case and will report a SQL bug of ours the same way —
-      accepted, because a CLI whose contract is ``error: …`` + exit 1 should not
-      dump a traceback for a failing statement either.
+    - a ``sqlite3.Error`` where ``is_environment_failure`` (``feed_filter.seen``)
+      is true — two processes racing the seen-store's lock (any write can hit
+      this, not only ``open_db``'s migration ``BEGIN IMMEDIATE``) and this one
+      losing past the busy timeout, or SQLite reporting a permission, memory,
+      disk, or file-corruption failure it attributes to the environment rather
+      than to a statement. SQLite reports the *same* ``OperationalError`` (or
+      ``DatabaseError``) type for those and for a bad statement, so
+      classification is by SQLite's result code (``is_environment_failure``),
+      not by type — checked here, the one place every sqlite3 call in this
+      CLI's graph funnels through, rather than at each call site. Every other
+      ``sqlite3.Error`` (a bad statement, a constraint violation, a binding
+      mismatch) is a SQL bug of ours and reaches a traceback.
     """
     args = build_parser().parse_args(argv)
     try:
+        _reject_unencodable_args(args)
         exit_code: int = args.handler(args)
     except VaultLockedError as exc:
         _emit({"status": "locked", "holder": exc.holder})
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except sqlite3.Error as exc:
+        if not is_environment_failure(exc):
+            raise
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except (
@@ -1295,11 +1402,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         BrowserFetchError,
         VaultError,
         BadInputError,
-        ValueError,
-        KeyError,
+        BadArgvError,
+        BadUrlError,
+        SiteConfigError,
+        UnknownSiteError,
+        MissingEnvError,
         OSError,
         MissingPlaywrightError,
-        sqlite3.Error,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

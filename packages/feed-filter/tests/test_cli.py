@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import pytest
 
 import kboat.lock
-from feed_filter import browser, cli, forum_pipeline
+from feed_filter import browser, cli, forum_pipeline, seen
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.config import (
     DEFAULT_QUERY_RESULTS,
@@ -239,27 +239,334 @@ def test_filesystem_error_surfaces_as_clean_exit(
     assert "error: disk full" in capsys.readouterr().err
 
 
-def test_seen_store_error_surfaces_as_clean_exit(
+def test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A seen-store failure reports like any other operational one, not as a traceback.
+    """A migration-lock timeout reports like any other operational one, not a traceback.
 
-    The case this exists for is a lock timeout: two processes opening the store at
-    once serialize on the migration's ``BEGIN IMMEDIATE``, and the loser can exceed
-    the busy timeout. Every skill parses the ``error: …`` + exit 1 contract, so a
-    traceback there would break the run summary rather than report a retryable run.
+    Two processes opening the store at once serialize on the migration's
+    ``BEGIN IMMEDIATE``, and the loser can exceed the busy timeout —
+    ``cli.main``'s ``is_environment_failure`` check reports that as
+    ``error: …`` + exit 1 (a bare ``sqlite3.Error`` a bug would raise instead
+    reaches a traceback:
+    ``test_forum_new_store_bug_fails_the_run_not_the_site``). This is a stub, not
+    a real race — ``test_seen.py``'s
+    ``test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error``
+    and ``test_seen_store_busy_error_on_an_ordinary_write_surfaces_as_clean_exit``
+    below (both real two-connection contention) establish that a genuine lock
+    timeout actually produces this shape.
     """
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
 
-    def boom(path: Path) -> None:
-        raise sqlite3.OperationalError("database is locked")
+    def boom(path: Path) -> sqlite3.Connection:
+        exc = sqlite3.OperationalError("database is locked")
+        exc.sqlite_errorcode = sqlite3.SQLITE_BUSY
+        raise exc
 
     monkeypatch.setattr(cli, "open_db", boom)
     capsys.readouterr()  # drop the add-site output
 
     assert cli.main(["new-entries"]) == 1
     assert "error: database is locked" in capsys.readouterr().err
+
+
+def test_seen_store_busy_error_on_an_ordinary_write_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lock timeout on an ORDINARY write, not only ``open_db``'s migration, is caught.
+
+    A migration lock is the case the seen-store's own docstring names, but any
+    write can hit the same lock (``record``, ``record_post``, a
+    ``site_health``/``body_cache`` commit) — ``cli.main``'s classification
+    (``is_environment_failure``, which folds in ``is_lock_busy``) is
+    centralized in ``cli.main`` precisely so every one of them is covered
+    without a wrap at each call site (see ``seen.is_lock_busy``'s docstring).
+    Proven here with a *real* two-connection race during ``mark-seen``'s
+    ``record`` call, patched to a short busy timeout so the test does not wait
+    out sqlite3's 5s default.
+    """
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+    with contextlib.closing(open_db(db_path())):
+        pass  # fully migrate the store first, so the race below hits a write, not a migration
+
+    holder = sqlite3.connect(db_path(), timeout=0.05)
+    holder.execute("BEGIN IMMEDIATE")  # take the write lock and never release it here
+
+    real_connect = sqlite3.connect
+
+    def fast_timeout_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        kwargs["timeout"] = 0.05
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(seen.sqlite3, "connect", fast_timeout_connect)
+
+    try:
+        rc = cli.main(
+            ["mark-seen", "--site-id", "a", "--url", "https://a.example.com/x", "--title", "T"]
+        )
+        assert rc == 1
+        assert "error: database is locked" in capsys.readouterr().err
+    finally:
+        holder.rollback()
+        holder.close()
+
+
+def test_a_corrupt_seen_store_file_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A seen-store file that is not a database reports, rather than tracebacks.
+
+    SQLite reports this as ``SQLITE_NOTADB`` (a primary result code
+    ``is_environment_failure`` recognizes), the same "operator's environment,
+    never a logic bug" category ``OSError`` gets — a corrupt or foreign file at
+    ``FEED_FILTER_DB``, not something this codebase's own SQL could cause. Real
+    condition, not a stub: writes non-SQLite bytes to the path and lets
+    ``open_db`` hit the real error.
+    """
+    db_path().write_bytes(b"not a sqlite database")
+    add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
+
+    rc = cli.main(
+        ["mark-seen", "--site-id", "a", "--url", "https://a.example.com/x", "--title", "T"]
+    )
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
+
+
+# --- cli.main's error boundary ---------------------------------------------
+#
+# The tests above each pin one domain type's message through `cli.main`. These
+# pin the boundary's *shape*: that the narrowing itself holds (a bare
+# ValueError/KeyError from a bug is not swallowed), and that a representative
+# sample of `sites.py`/`config.py` raise sites — one per distinct check,
+# spanning `_opt_int`, `_opt_bool`, `_opt_int_list`, `_req_str`, `load_sites`'s
+# own checks, `__post_init__`'s checks, and `_parse_toml` — still renders as
+# `error: …` + exit 1 through `cli.main`, not only through a direct
+# `pytest.raises(ValueError)` on the function, which a plain `ValueError` also
+# satisfies and so cannot tell a `SiteConfigError` apart from a reverted bare
+# builtin. Not every one of `sites.py`'s raise sites has its own case here:
+# `validate_article_url_pattern`, `add_site`'s reserved-id/already-exists
+# checks, and `_scrape_site_for`'s enabled/kind checks already have dedicated
+# `cli.main`-level tests elsewhere in this file (the regex, add-forum
+# reserved-id/duplicate, heal-site/resnapshot-site tests); `update_pattern`'s
+# own scrape-only check is unreached from any CLI command today
+# (`_scrape_site_for` already guarantees the kind before calling it — see its
+# docstring) and is left untested here.
+
+
+def test_a_bare_value_error_from_a_bug_is_not_reported_as_a_user_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``ValueError`` that is not one of the domain subclasses is a bug, not input.
+
+    ``cmd_discover`` is a convenient handler to stub: it takes no vault/db setup.
+    A real ``FetchError`` from the same call site is the CLI's normal, reported
+    failure (``test_discover_transport_error_exits_nonzero``); a bare
+    ``ValueError`` from the same place must propagate instead of being read as
+    the same kind of failure.
+    """
+    _no_client(monkeypatch)
+
+    def boom(url: str, *, client: object) -> DiscoveryResult:
+        raise ValueError("not a domain exception")
+
+    monkeypatch.setattr(cli, "discover", boom)
+    with pytest.raises(ValueError, match="not a domain exception"):
+        cli.main(["discover", "https://e.example.com"])
+
+
+def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``KeyError`` that is not ``UnknownSiteError`` is a bug, not an unknown id."""
+    _no_client(monkeypatch)
+
+    def boom(url: str, *, client: object) -> DiscoveryResult:
+        raise KeyError("not a domain exception")
+
+    monkeypatch.setattr(cli, "discover", boom)
+    with pytest.raises(KeyError, match="not a domain exception"):
+        cli.main(["discover", "https://e.example.com"])
+
+
+@pytest.mark.parametrize(
+    "toml_body",
+    [
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'like_threshold = "6"\n',
+            id="opt_int_wrong_type",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'enabled = "yes"\n',
+            id="opt_bool_wrong_type",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'forum_url = "https://forum.example.com"\n'
+            'poll_offsets_days = "not-a-list"\n',
+            id="opt_int_list_not_a_list",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            'forum_url = "https://forum.example.com"\n'
+            "poll_offsets_days = [1, 2.5, 3]\n",
+            id="opt_int_list_item_not_an_int",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nfeed_url = "https://a.example.com/f.xml"\n',
+            id="req_str_missing_name",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "   "\nfeed_url = "https://a.example.com/f.xml"\n',
+            id="name_blank",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f1.xml"\n'
+            '[[site]]\nid = "a"\nname = "A2"\nfeed_url = "https://a.example.com/f2.xml"\n',
+            id="duplicate_id",
+        ),
+        pytest.param('[[site]]\nid = "a"\nname = "A"\n', id="exactly_one_of"),
+        pytest.param('[[site]]\nid = "a\nname = "A"\n', id="not_valid_toml"),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            "enabled = false\nenabled = false\n",
+            id="duplicate_key_in_one_table",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://[bad/feed"\n',
+            id="feed_url_not_a_usable_url",
+        ),
+    ],
+)
+def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(
+    state_dir: Path, toml_body: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each ``sites.py`` shape-validation raise still renders through ``cli.main``.
+
+    ``test_sites.py`` pins each of these directly against ``load_sites``, but a
+    ``pytest.raises(ValueError)`` there is satisfied by a plain ``ValueError`` too
+    — it cannot tell ``SiteConfigError`` apart from a reverted bare builtin. Only
+    a run through ``cli.main`` proves the type reaching the boundary is still one
+    ``cli.main``'s tuple actually lists.
+    """
+    sites_path().write_text(toml_body, encoding="utf-8")
+    assert cli.main(["list-sites"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_non_utf8_sites_toml_surfaces_as_clean_exit_through_main(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``sites.toml`` that is not UTF-8 also renders through ``cli.main``.
+
+    A distinct case from ``not_valid_toml`` above (a syntax error in otherwise
+    UTF-8 text): this one fails at ``path.read_text``, before ``tomlkit`` ever
+    sees the bytes, and needs bytes rather than a Python string to construct.
+    """
+    sites_path().write_bytes(b'\xff\xfeid = "a"\nname = "A"\n')
+    assert cli.main(["list-sites"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_remind_with_unset_vault_path_surfaces_as_clean_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``OBSIDIAN_VAULT_PATH`` unset must render through ``cli.main``, not only
+    through a direct ``pytest.raises(ValueError)`` on ``vault_path()`` (same
+    reasoning as the ``sites.toml`` cases above).
+
+    Deliberately does not use the ``state_dir`` fixture, which would set the
+    env var; ``isolate_env_secrets`` (autouse, conftest) already clears it.
+    ``vault_path()`` is the first thing ``cmd_remind`` evaluates that can fail,
+    before any db/sites-file access, so this needs no other setup.
+    """
+    rc = cli.main(["remind", "--site-id", "s1", "--url", "https://example.com/a", "--title", "T"])
+    assert rc == 1
+    assert "OBSIDIAN_VAULT_PATH" in capsys.readouterr().err
+
+
+def test_entry_body_with_an_unparseable_url_surfaces_as_clean_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A ``--url`` ``canonical_url`` cannot parse renders through ``cli.main``.
+
+    ``entry-body`` canonicalizes before touching the db, so this needs no other
+    setup. The port is out of range (``> 65535``), which makes
+    ``urllib.parse.SplitResult.port`` raise — one of several shapes
+    ``canonical_url`` cannot parse; a malformed IPv6 literal is another.
+    """
+    rc = cli.main(["entry-body", "--url", "https://example.com:99999/a"])
+    assert rc == 1
+    assert "error: --url is not a usable URL" in capsys.readouterr().err
+
+
+def test_mark_seen_with_undecodable_argv_text_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``--title`` holding a byte argv could not decode renders through ``cli.main``.
+
+    POSIX decodes argv with ``surrogateescape``, so an invalid-UTF-8 byte in an
+    argument (a shell script assembling ``--title`` from a forum post, a
+    truncated multi-byte character) becomes a lone surrogate in the parsed
+    string, exactly as it would arrive here — this passes the same shape
+    directly rather than through a real subprocess. Uncaught, it would fail
+    only much later at the first re-encode (the ``seen.record`` SQLite bind),
+    deep inside the handler; ``_reject_unencodable_args`` catches it once,
+    right after ``argparse`` parses ``argv``.
+    """
+    rc = cli.main(
+        [
+            "mark-seen",
+            "--site-id",
+            "s1",
+            "--url",
+            "https://example.com/a",
+            "--title",
+            "caf\udcc3",
+        ]
+    )
+    assert rc == 1
+    assert "error: --title is not valid text" in capsys.readouterr().err
+
+
+def test_query_new_with_undecodable_query_surfaces_as_clean_exit_before_any_request(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--query`` is repeatable (``action="append"``), so it is a ``list[str]``,
+    not a plain string — ``_reject_unencodable_args`` must check each item, not
+    skip the whole value for not being a ``str``.
+
+    A good query ahead of the bad one must not be sent (and billed) before the
+    crash: the check runs before ``cmd_query_new`` issues any request, so
+    ``search`` here must never be called.
+    """
+    _no_client(monkeypatch)
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "search", lambda *a, **k: calls.append("called"))
+
+    rc = cli.main(["query-new", "--query", "good query", "--query", "caf\udce9 latte"])
+
+    assert rc == 1
+    assert "error: --query is not valid text" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_discover_with_undecodable_url_names_the_positional_argument(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``discover``'s ``url`` is a positional argument (no ``--url`` flag), so the
+    error must not claim a ``--url`` flag exists — other commands' ``--url``
+    shares the same ``dest`` name, so this is disambiguated by ``args.command``.
+    """
+    _no_client(monkeypatch)
+    rc = cli.main(["discover", "https://example.com/\udce9"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error: url is not valid text" in err
+    assert "--url" not in err
 
 
 # --- list-sites -----------------------------------------------------------
@@ -736,6 +1043,56 @@ def test_new_entries_unknown_site_id_exits_nonzero(
 
 
 # --- remind / mark-seen ---------------------------------------------------
+
+
+def test_remind_against_a_broken_existing_note_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-remind that reads a hand-broken existing note reports, not tracebacks.
+
+    ``upsert`` reads the existing note before overwriting it (this is a
+    re-remind, the same URL/slug as before); a broken frontmatter fence makes
+    ``kboat.frontmatter`` raise ``FrontmatterError`` (a ``ValueError``
+    subclass) — an Obsidian note a human broke by hand, not a bug of ours, the
+    same "repair it by hand" case ``VaultError``'s unreadable-``url`` collision
+    already covers. ``vault.write_feed_note`` now wraps it as ``VaultError``.
+    """
+    url = "https://e.example.com/a"
+    feeds_dir = vault_path() / "Feeds"
+    feeds_dir.mkdir(parents=True, exist_ok=True)
+    note_path = feeds_dir / f"{url_slug(str(canonical_url(url)))}.md"
+    note_path.write_text("no fence here\njust text\n", encoding="utf-8")
+
+    rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "repair it by hand" in err
+
+
+def test_remind_against_a_non_utf8_existing_note_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-remind against a non-UTF-8 existing note reports, not tracebacks.
+
+    A separate case from the broken-fence one above: ``upsert``'s
+    ``path.read_text(encoding="utf-8")`` raises ``UnicodeDecodeError`` (also a
+    ``ValueError`` subclass, but a different one) before frontmatter parsing
+    ever runs, so it needs its own test — one that also proves
+    ``write_feed_note``'s wrap covers both exceptions its except tuple names,
+    not only the one the other test happens to exercise.
+    """
+    url = "https://e.example.com/a"
+    feeds_dir = vault_path() / "Feeds"
+    feeds_dir.mkdir(parents=True, exist_ok=True)
+    note_path = feeds_dir / f"{url_slug(str(canonical_url(url)))}.md"
+    note_path.write_bytes(b"---\ntitle: \xff\xfe not utf-8\n---\nbody\n")
+
+    rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "repair it by hand" in err
 
 
 def test_remind_writes_then_records_atomically(
@@ -1561,6 +1918,15 @@ def test_add_forum_duplicate_id_exits_nonzero(
     assert "error:" in capsys.readouterr().err
 
 
+def test_add_forum_reserved_id_exits_nonzero(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """add-forum rejects the query gather's reserved id (``add_site``'s ``SiteConfigError``)."""
+    rc = cli.main(["add-forum", "--id", cli.QUERY_SITE_ID, "--name", "F", "--forum-url", FORUM_URL])
+    assert rc == 1
+    assert "reserved" in capsys.readouterr().err
+
+
 # --- forum-new ---------------------------------------------------------------
 
 
@@ -1916,17 +2282,24 @@ def test_forum_new_per_site_boundary_does_not_absorb_base_exception(
 
 
 @pytest.mark.parametrize("raising_call", ["admit_from_feeds", "gather_forum"])
-def test_forum_new_store_error_fails_the_run_not_the_site(
+def test_forum_new_store_bug_fails_the_run_not_the_site(
     state_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     raising_call: str,
 ) -> None:
-    """A store error is the run's failure, so neither per-site guard absorbs it.
+    """A store bug is the run's failure, so neither per-site guard absorbs it.
 
     ``site_health`` is left intact here on purpose: a breakage scoped to the forum
     tables leaves that write working, so the unguarded write cannot be relied on to
-    surface it and the guards must re-raise themselves.
+    surface it and the guards must re-raise themselves — proven here by the
+    exception reaching ``cli.main``'s caller unchanged, attributed to no site.
+
+    "no such column" is a bad-SQL bug, not an environment failure —
+    ``is_environment_failure`` (``feed_filter.seen``) is false for it, so
+    ``cli.main``'s boundary does not catch it: it propagates out of
+    ``cli.main`` like the ``KeyboardInterrupt`` above (contrast
+    ``test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit``, where the
+    same exception type *is* caught, because it is a lock timeout).
     """
     _no_client(monkeypatch)
     _add_forum_site()
@@ -1943,10 +2316,8 @@ def test_forum_new_store_error_fails_the_run_not_the_site(
     )
     monkeypatch.setattr(cli, raising_call, broken_forum_table)
 
-    assert cli.main(["forum-new"]) == 1
-    err = capsys.readouterr().err
-    assert "no such column" in err
-    assert "ef2" not in err, "the run failed outright, it did not blame each site in turn"
+    with pytest.raises(sqlite3.OperationalError, match="no such column"):
+        cli.main(["forum-new"])
 
 
 def test_forum_new_gather_guard_catches_a_real_due_topics_failure(

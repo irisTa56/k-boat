@@ -18,6 +18,74 @@ from pathlib import Path
 
 from kboat.canonical import CanonicalUrl
 
+
+def is_lock_busy(exc: BaseException) -> bool:
+    """True iff ``exc`` is a SQLite busy condition, plain or extended.
+
+    A busy lock can hit *any* write against this store, not only ``open_db``'s
+    migration ``BEGIN IMMEDIATE`` — ``record``, ``record_post``,
+    ``set_op_verdict``, a ``site_health``/``body_cache`` commit, all reach the
+    same file. Rather than wrap each such call site individually (the same
+    condition, guarded N times), the classification lives here as a plain
+    predicate and ``cli.main`` is the one place that applies it, to every
+    ``sqlite3.Error`` its call graph can raise, regardless of which write hit
+    the lock.
+
+    Checks the *primary* result code (the low byte, ``code & 0xFF``) rather
+    than ``sqlite_errorname``: under WAL, a lock wait can come back as an
+    extended code — ``SQLITE_BUSY_RECOVERY``, ``SQLITE_BUSY_SNAPSHOT``,
+    ``SQLITE_BUSY_TIMEOUT`` — whose name is not the literal string
+    ``"SQLITE_BUSY"`` but whose primary code still is. ``sqlite_errorcode`` is
+    set by the C layer on every exception it actually raises; ``getattr``
+    guards a hand-constructed one (none occur in this codebase today, but the
+    check must not itself raise).
+    """
+    code = getattr(exc, "sqlite_errorcode", None)
+    return code is not None and code & 0xFF == sqlite3.SQLITE_BUSY
+
+
+# Primary SQLite result codes (https://www.sqlite.org/rescode.html) that name a
+# failure of the *environment* — permissions, memory, the disk, the file itself
+# — rather than this codebase's own SQL. Mirrors the split cli.main's docstring
+# already draws for OSError (an operator's environment, never a logic bug), for
+# the sqlite3 result-code space instead of errno. Every other code a
+# sqlite3.Error can carry (SQLITE_ERROR: bad SQL; SQLITE_CONSTRAINT: every
+# insert in this codebase is an idempotent upsert, so a raw constraint
+# violation means the SQL itself is wrong; SQLITE_MISMATCH/MISUSE/RANGE: a
+# parameter-binding bug) is a bug of ours, which cli.main leaves uncaught.
+_ENVIRONMENT_CODES = frozenset(
+    {
+        sqlite3.SQLITE_PERM,
+        sqlite3.SQLITE_NOMEM,
+        sqlite3.SQLITE_READONLY,
+        sqlite3.SQLITE_IOERR,
+        sqlite3.SQLITE_CORRUPT,
+        sqlite3.SQLITE_FULL,
+        sqlite3.SQLITE_CANTOPEN,
+        sqlite3.SQLITE_NOTADB,
+        # A lock-protocol confusion between two connections under WAL — this
+        # store's mode (open_db) — the same two-processes-racing-the-file
+        # category SQLITE_BUSY is, just a rarer path to it.
+        sqlite3.SQLITE_PROTOCOL,
+    }
+)
+
+
+def is_environment_failure(exc: BaseException) -> bool:
+    """True iff ``exc``'s sqlite3 primary result code names an environment failure.
+
+    A lock timeout (``is_lock_busy``) is one such condition; the others are
+    ``_ENVIRONMENT_CODES``. Checked the same way as ``is_lock_busy`` — by the
+    masked primary code, defensively via ``getattr`` — for the same reason: an
+    extended code (e.g. an ``IOERR`` sub-variant) shares its primary byte with
+    the plain one.
+    """
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code is None:
+        return False
+    return is_lock_busy(exc) or code & 0xFF in _ENVIRONMENT_CODES
+
+
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
 # applies every entry past the DB's current ``PRAGMA user_version`` and stamps the
 # new version in the same transaction — so adding a column in a later phase is an
@@ -171,7 +239,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 
 def open_db(path: Path) -> sqlite3.Connection:
-    """Open (creating + migrating) the seen-store at ``path`` in WAL mode."""
+    """Open (creating + migrating) the seen-store at ``path`` in WAL mode.
+
+    A migration-lock timeout and a genuine ``sqlite3.Error`` both propagate as
+    whatever sqlite3 type they actually are; ``cli.main`` is where the two are
+    told apart (``is_environment_failure``), not here — see ``cli.main``'s own
+    docstring for why the classification is centralized there rather than
+    repeated at every sqlite3 call site this store (or any other writer to it)
+    makes.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     try:
