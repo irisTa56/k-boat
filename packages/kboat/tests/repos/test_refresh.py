@@ -162,6 +162,25 @@ def test_an_adopted_rename_names_the_stub_it_strands(tmp_path: Path, monkeypatch
     assert report["adopted"][0]["stranded"] == f"Repos/.{old.stem}.md.icloud"
 
 
+def test_an_adopted_rename_says_so_when_it_cannot_tell_whether_it_strands_a_stub(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A stub probe that cannot answer is a report rather than a refusal, and an
+    # entry without `stranded` would read as a rename that left nothing behind.
+    # A name of 248 bytes makes its `.icloud` sibling exceed 255, so the probe
+    # cannot ask -- the same condition migrate's own test uses.
+    old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
+    old.rename(old.with_name("b" * 248 + ".md"))
+    monkeypatch.setattr(
+        refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
+    )
+
+    report = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["adopted"] == 1
+    assert report["adopted"][0]["stranded"].startswith("unknown: ")
+
+
 def test_an_adopt_that_vacates_nothing_reports_no_stranded_stub(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -371,6 +390,21 @@ def test_a_repos_name_taken_by_a_file_is_an_error_not_an_empty_catalogue(
     report = refresh(tmp_path, today=TODAY)
 
     assert "is not a directory" in report["error"]
+
+
+def test_a_vault_root_that_is_a_regular_file_is_an_error_not_an_empty_catalogue(
+    tmp_path: Path,
+) -> None:
+    # The `NotADirectoryError` arm, which the test above cannot reach: with `Repos`
+    # itself a file its `stat` succeeds and the `S_ISDIR` branch answers. Only a
+    # parent that is a file makes the `stat` raise this, and `list_note_dir` would
+    # read the same path as an empty catalogue.
+    vault = tmp_path / "vault"
+    vault.write_text("not a vault\n", encoding="utf-8")
+
+    report = refresh(vault, today=TODAY)
+
+    assert "no Repos/ directory" in report["error"]
 
 
 def test_refresh_says_so_when_the_catalogue_cannot_be_listed(tmp_path: Path) -> None:

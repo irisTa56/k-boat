@@ -179,6 +179,27 @@ def test_non_source_note_is_an_anomaly(vault: Path, capsys):
     assert out["anomalies"][0]["path"] == "Sources/weird.md"
 
 
+def test_a_source_note_that_does_not_parse_is_an_anomaly(vault: Path, capsys):
+    # Dropped silently, the note would only be missing from every work set.
+    write_note(vault / "Sources", "ok", distill=True)
+    (vault / "Sources" / "broken.md").write_text("no frontmatter here\n", encoding="utf-8")
+    out = run(vault, capsys)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/broken.md"]
+    assert [s["slug"] for s in out["phase_a"]["stamped"]] == ["ok"]
+
+
+def test_a_filed_date_it_could_not_write_is_an_anomaly(vault: Path, capsys):
+    # A note with no `filed_date:` line to rewrite: the stamp refuses, and the
+    # note's cooldown never starts unless the report says so.
+    sources = vault / "Sources"
+    write_note(sources, "a", distill=True)
+    text = (sources / "a.md").read_text(encoding="utf-8").replace("filed_date:\n", "")
+    (sources / "a.md").write_text(text, encoding="utf-8")
+    out = run(vault, capsys)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/a.md"]
+    assert out["anomalies"][0]["error"].startswith("filed_date write failed")
+
+
 def test_missing_kindles_dir_is_empty(vault: Path, capsys):
     # Kindles/ is optional — a sources-only vault must not error.
     out = run(vault, capsys)
@@ -219,6 +240,16 @@ def test_non_kindle_note_is_an_anomaly(vault: Path, capsys):
     (kindles / "weird.md").write_text("---\ntype: source\n---\n", encoding="utf-8")
     out = run(vault, capsys)
     assert any(a["path"] == "Kindles/weird.md" for a in out["anomalies"])
+
+
+def test_a_kindle_note_that_does_not_parse_is_an_anomaly(vault: Path, capsys):
+    kindles = vault / "Kindles"
+    kindles.mkdir()
+    write_kindle(kindles, "B001RIPE", distill=True)
+    (kindles / "broken.md").write_text("no frontmatter here\n", encoding="utf-8")
+    out = run(vault, capsys)
+    assert [a["path"] for a in out["anomalies"]] == ["Kindles/broken.md"]
+    assert [k["slug"] for k in out["kindles"]["ripe"]] == ["B001RIPE"]
 
 
 def test_missing_vault_errors(tmp_path: Path):

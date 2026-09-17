@@ -142,6 +142,37 @@ def test_set_reports_missing_slug(vault: Path, capsys: pytest.CaptureFixture[str
     assert out["missing"] == ["ghost"]
 
 
+def test_candidates_reports_a_source_note_it_cannot_parse(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Dropped silently, the note would only be absent from a pick that reads whole.
+    (vault / "Sources" / "broken.md").write_text("no frontmatter here\n", encoding="utf-8")
+    assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/broken.md"]
+    assert {c["slug"] for c in out["candidates"]} == {"web1", "web2"}
+
+
+def test_set_reports_a_picked_flag_it_could_not_write(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `Sources/` that refuses new files fails the atomic rewrite of both notes whose
+    # flag changes. Unreported, the new pick would be neither picked nor missing,
+    # and the stale one would stand.
+    sources = vault / "Sources"
+    sources.chmod(0o555)
+    try:
+        assert main(["--vault", str(vault), "set", "--slugs", "web1"]) == 0
+    finally:
+        sources.chmod(0o755)
+    out = json.loads(capsys.readouterr().out)
+    assert out["picked"] == []
+    assert out["missing"] == []
+    paths = sorted(a["path"] for a in out["anomalies"])
+    assert paths == ["Sources/reading1.md", "Sources/web1.md"]
+    assert all(a["error"].startswith("picked write failed") for a in out["anomalies"])
+
+
 def test_empty_slugs_clears_all(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
     main(["--vault", str(vault), "set", "--slugs", "web1"])
     capsys.readouterr()
