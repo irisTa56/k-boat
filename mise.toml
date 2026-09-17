@@ -8,6 +8,8 @@ activate_aggressive = true
 gitleaks = "latest"
 lychee = "latest"
 rumdl = "latest"
+shellcheck = "latest"
+shfmt = "latest"
 uv = "latest"
 
 [env]
@@ -87,6 +89,17 @@ uv run python scripts/md_shape.py
 [tasks."qa:secrets"]
 description = "Scan staged changes for secrets"
 run = "gitleaks git --staged -v"
+
+[tasks."qa:sh"]
+description = "Lint and check formatting of shell scripts"
+run = """
+shellcheck scripts/*.sh
+shfmt -i 2 -d scripts/*.sh
+"""
+
+[tasks."fmt:sh"]
+description = "Autofix shell script formatting"
+run = "shfmt -i 2 -w scripts/*.sh"
 
 # Python QA is per-member: each `qa:py:<member>` runs in its own dir so that
 # package's pyproject config applies (ruff selects, ty root, pytest coverage),

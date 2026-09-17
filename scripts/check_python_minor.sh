@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Fail when a newer stable CPython minor exists than the one this workspace
+# runs, so a new interpreter release announces itself instead of staying
+# unnoticed until someone happens to check by hand.
+#
+# Does not parse any `pyproject.toml`: uv's own resolution is the source for
+# both sides being compared.
+#   - "latest": the newest stable CPython uv installs when run outside any
+#     project -- an empty directory, so no `requires-python` bounds it.
+#   - "project": the interpreter uv selects inside this repository, which
+#     `requires-python` (owned by packages/kboat/pyproject.toml) does bound.
+# uv excludes pre-releases from "latest" by policy -- a pre-release is only
+# chosen when no stable release satisfies the request -- so a release
+# candidate such as 3.15.0rc2 never trips this check early. See
+# https://docs.astral.sh/uv/concepts/python-versions/#pre-release-python-versions
+#
+# Run from the repository root, as the other scripts/ tools are. Set
+# UV_PYTHON_INSTALL_DIR before calling this to keep the interpreter it
+# downloads for the "latest" side out of the shared managed-Python install
+# dir -- CI always should, and so should a manual run that wants to avoid
+# adding to it.
+
+set -euo pipefail
+
+# Never fall back to a `python` already on PATH: both sides must be
+# uv-managed CPython builds, or "latest" vs. "project" would compare two
+# different kinds of interpreter.
+export UV_PYTHON_PREFERENCE=only-managed
+
+empty_dir=$(mktemp -d)
+venv_dir=$(mktemp -d)
+trap 'rm -rf "$empty_dir" "$venv_dir"' EXIT
+
+latest=$(
+  cd "$empty_dir" &&
+    uv python install --no-bin -q &&
+    uv run --no-project python -c 'import sys; print(sys.version_info[1])'
+)
+
+# A path outside `.venv`, so this never recreates or disturbs the checkout's
+# own environment -- `uv venv` still reads *this* repository's
+# `requires-python` to pick the interpreter, it just writes the venv
+# somewhere disposable instead of to the default path.
+uv venv -q "$venv_dir/venv"
+project=$("$venv_dir/venv/bin/python" -c 'import sys; print(sys.version_info[1])')
+
+if [ "$latest" -gt "$project" ]; then
+  echo "::error::CPython 3.$latest is out; this workspace's requires-python still tops out at 3.$project -- see the root CLAUDE.md's \"Tooling config\" section for the interpreter-bump procedure." >&2
+  exit 1
+fi

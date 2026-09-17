@@ -3,9 +3,21 @@ name: CI
 # Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
 # to main), but without mise: CI needs neither the notebooklm tool nor a browser.
 # It runs the same ruff / ty / pytest / coverage-floor / rumdl / md-shape /
-# gitleaks / offline-link-check checks -- uv for the Python gates, md-shape
-# among them, and official actions for rumdl, gitleaks, and lychee. Keep the
-# checks here in sync with mise.toml's `qa:**` tasks.
+# shellcheck / shfmt / gitleaks / offline-link-check checks -- uv for the Python
+# gates, md-shape among them; official actions for rumdl, gitleaks, and lychee;
+# and, for the shell checks, apt instead of a third action -- shellcheck ships
+# preinstalled on this runner image, and shfmt installs from Ubuntu noble's
+# `universe` component (https://packages.ubuntu.com/noble/shfmt), since neither
+# is a Python or JS package `uv`/`npm` could hand us. Keep the checks here in
+# sync with mise.toml's `qa:**` tasks.
+#
+# `python-minor-check` is the one job below with no local `qa:**` counterpart:
+# it fails when uv resolves a newer stable CPython minor outside this project
+# than the one `requires-python` admits inside it, so a new interpreter release
+# gets a red job instead of going unnoticed -- `scripts/check_python_minor.sh`
+# says how, and the root CLAUDE.md's "Tooling config" section says what to do
+# about it. It is deliberately not in the branch ruleset (see that file), so
+# its failure reminds the maintainer without blocking a merge.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -134,3 +146,35 @@ jobs:
         with:
           args: --offline --no-progress --config lychee.toml .
           fail: true
+
+  shell-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # shellcheck ships preinstalled on this runner image
+      # (https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
+      # lists it under "Installed apt packages"); shfmt does not, but Ubuntu
+      # noble's `universe` component carries it
+      # (https://packages.ubuntu.com/noble/shfmt), so a plain apt install covers
+      # both without a third-party action to pin and watch.
+      - name: Install shfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shfmt
+      # Matches mise's `qa:sh` task exactly.
+      - name: shellcheck, shfmt
+        run: |
+          shellcheck scripts/*.sh
+          shfmt -i 2 -d scripts/*.sh
+
+  python-minor-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to the same full version as the `python-qa` job's, for the same
+      # reason: setup-uv publishes no floating major tag.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - name: Fail if a newer stable CPython minor exists than requires-python admits
+        run: scripts/check_python_minor.sh

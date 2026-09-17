@@ -96,6 +96,7 @@ The NotebookLM CLI's pin (`tools/notebooklm/pyproject.toml`) defers here for the
 Its bump also falsifies prose: the skills state the CLI's behaviour and the values it emits as the installed version's, so a bump means re-reading every statement that names one — a source type name, say, which a release can add or rename.
 
 The interpreter range (`requires-python`, owned by `packages/kboat/pyproject.toml`) defers here for moving to the next minor, which uv refuses until the range admits it.
+CI's `python-minor-check` job (`.github/workflows/ci.yml`) is the reminder that a new minor is out, failing without blocking a merge so this procedure gets noticed rather than skipped.
 Move both bounds up one minor in all three `pyproject.toml` files that carry it, and `target-version` with them, so that a bare `uv sync` rebuilds each environment on the new interpreter; raising the ceiling alone leaves both where they were.
 Then, before the change lands:
 
