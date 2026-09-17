@@ -9,7 +9,7 @@ description = "Deterministic K-Boat tools over a shared frontmatter core: lifecy
 # `kboat-vault-conventions` states for `Path.glob`, are a minor release's to change:
 # uv will not build an environment on an interpreter outside this range, so the next
 # minor has to be admitted by hand instead of arriving with whatever the machine
-# offers. Widen it only together with the check in the root CLAUDE.md.
+# offers. Move it to the next minor only together with the check in the root CLAUDE.md.
 requires-python = ">=3.14,<3.15"
 # Added only under the rule in CLAUDE.md "Working on it". PyYAML reads the concept
 # notes Basic Memory writes, which fold a long value onto a continuation line that
