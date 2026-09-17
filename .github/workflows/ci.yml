@@ -134,3 +134,24 @@ jobs:
         with:
           args: --offline --no-progress --config lychee.toml .
           fail: true
+
+  # Stays red while a newer CPython minor is out, so it is a reminder and must
+  # never become a required check. Skipped on the schedule, whose run exists to
+  # surface drift no PR exercises and would have that hidden behind this red.
+  python-minor-check:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to the same full version as the `python-qa` job's, for the same
+      # reason: setup-uv publishes no floating major tag.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          # setup-uv's cache key has no per-job part, so this job's near-empty
+          # save (it runs no `uv sync`) could replace the one the others restore.
+          enable-cache: false
+          # uv installs only the CPython releases it knew of when built, and
+          # without `version` setup-uv installs any uv `required-version` pins.
+          version: "latest"
+      - name: Fail if a newer stable CPython minor exists than requires-python admits
+        run: scripts/check_python_minor.sh

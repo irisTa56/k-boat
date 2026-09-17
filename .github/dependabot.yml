@@ -9,7 +9,8 @@
 #   is what this entry exists to announce. See below.
 #
 # The mise-managed tools are out of Dependabot's scope, and can be: gitleaks,
-# lychee, rumdl and uv all track `latest`, so `mise upgrade` covers them.
+# lychee, rumdl, shellcheck, shfmt and uv all track `latest`, so `mise upgrade`
+# covers them.
 #
 # notebooklm-py needs an exact pin instead: no CI job exercises the browser-driven
 # CLI, so each bump has to be checked against the live NotebookLM service by hand,
