@@ -250,23 +250,26 @@ def _raw_run(body: str) -> Any:
 
 
 def test_a_lone_surrogate_in_a_title_or_text_is_substituted() -> None:
+    # Beside it, a BMP character (日) and a valid pair (😀) must come through untouched.
     outcome = _raw_run(
-        '{"results": [{"url": "https://a.example/p", "title": "T\\ud800", "text": "b\\ud800"}]}'
+        '{"results": [{"url": "https://a.example/p",'
+        ' "title": "T\\ud800 \\u65e5\\ud83d\\ude00", "text": "b\\ud800 \\u65e5\\ud83d\\ude00"}]}'
     )
 
     hit = outcome.hits[0]
-    assert (hit.url, hit.title, hit.text) == ("https://a.example/p", "T?", "b?")
+    assert (hit.url, hit.title, hit.text) == ("https://a.example/p", "T? 日😀", "b? 日😀")
 
 
 def test_a_hit_whose_url_holds_a_lone_surrogate_is_dropped() -> None:
     # In the path, a substituted `?` would move the rest of it into the query and
     # file the page under a second note name; the query-string case is dropped too.
+    # A URL with only well-formed non-ASCII is kept.
     outcome = _raw_run(
         '{"results": ['
         '{"url": "https://ex.com/posts/a\\ud83db/7", "title": "path"},'
         '{"url": "https://ex.com/p?q=\\ud800", "title": "query"},'
-        '{"url": "https://ex.com/ok", "title": "ok"}'
+        '{"url": "https://ex.com/\\u65e5/\\ud83d\\ude00", "title": "ok"}'
         "]}"
     )
 
-    assert [h.url for h in outcome.hits] == ["https://ex.com/ok"]
+    assert [h.url for h in outcome.hits] == ["https://ex.com/日/😀"]

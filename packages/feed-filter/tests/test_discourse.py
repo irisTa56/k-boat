@@ -338,25 +338,34 @@ def test_discover_topic_ids_drops_non_topic_links() -> None:
 # ---------------------------------------------------------------------------
 
 # Fed as raw bytes: `json.loads` turns a `\udXXX` escape into a lone surrogate, which
-# building the string in Python would not reproduce the way it arrives.
+# building the string in Python would not reproduce the way it arrives. Each input
+# also carries a BMP character (`日`, 日) and a valid pair (`😀`, 😀),
+# which must come through untouched.
 
 
 def test_a_lone_surrogate_in_a_title_or_post_is_substituted() -> None:
     body = (
-        b'{"id": 7, "slug": "t", "title": "Bug in \\ud83d handling", "post_stream": {"posts": ['
-        b'{"id": 1, "post_number": 1, "cooked": "<p>see \\ud83d here</p>", "actions_summary": []}'
-        b"]}}"
+        b'{"id": 7, "slug": "t", "title": "\\u65e5 \\ud83d \\ud83d\\ude00", "post_stream": {'
+        b'"posts": [{"id": 1, "post_number": 1, "cooked": "<p>\\u65e5 \\ud83d \\ud83d\\ude00</p>",'
+        b' "actions_summary": []}]}}'
     )
 
     topic, posts = parse_topic(body)
 
-    assert topic.title == "Bug in ? handling"
-    assert posts[0].text == "see ? here"
+    assert topic.title == "日 ? 😀"
+    assert posts[0].text == "日 ? 😀"
 
 
-def test_a_lone_surrogate_in_a_slug_drops_the_slug() -> None:
-    body = b'{"id": 7, "slug": "bug-\\ud83d-report", "title": "T", "post_stream": {"posts": []}}'
+@pytest.mark.parametrize(
+    ("slug", "expected"),
+    [
+        (b"bug-\\ud83d-report", ""),
+        (b"\\u65e5-\\ud83d\\ude00-report", "日-😀-report"),
+    ],
+)
+def test_a_slug_is_dropped_only_when_it_holds_a_lone_surrogate(slug: bytes, expected: str) -> None:
+    body = b'{"id": 7, "slug": "' + slug + b'", "title": "T", "post_stream": {"posts": []}}'
 
     topic, _ = parse_topic(body)
 
-    assert topic.slug == ""
+    assert topic.slug == expected
