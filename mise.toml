@@ -50,9 +50,8 @@ description = "Check links in the repo"
 run = "lychee -v --config lychee.toml ."
 
 # In `qa:**` (unlike `check:links` above): offline-only, so it stays fast and
-# network-independent enough to gate every commit -- mirrors CI's
-# `link-check-offline` job so a broken relative link is caught locally, not
-# only in CI. Same shared settings as `check:links`, from the same `lychee.toml`.
+# network-independent enough to gate every commit. Same shared settings as
+# `check:links`, from the same `lychee.toml`.
 [tasks."qa:links:offline"]
 description = "Check markdown links offline (no network)"
 run = "lychee --offline --no-progress --config lychee.toml ."

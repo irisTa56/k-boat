@@ -1,23 +1,21 @@
 name: CI
 
-# Mirrors the local `mise run pre-commit` quality gate on every PR (and on pushes
-# to main), but without mise: CI needs neither the notebooklm tool nor a browser.
-# It runs the same ruff / ty / pytest / coverage-floor / rumdl / md-shape /
-# gitleaks / offline-link-check checks -- uv for the Python gates, md-shape
-# among them, and official actions for rumdl, gitleaks, and lychee. Keep the
-# checks here in sync with mise.toml's `qa:**` tasks.
+# Runs the local `mise run pre-commit` gate's checks on every PR (and on pushes
+# to main) by calling the same `qa:` tasks, so what a check runs is mise.toml's
+# to say. One job per top-level `qa:` family. `pre-commit` picks up a new family
+# through its `qa:**` glob and CI does not: a new family needs its own job here,
+# and a place in the main ruleset's required checks, before a merge waits on it.
+# `qa:secrets` is the one family with no job, since it scans staged changes and
+# `secret-scan` below scans a pull request's commits instead.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
 # the `ubuntu-latest` runner image; `actions/checkout@v7` and
-# `gitleaks/gitleaks-action@v3`, both floating major-version tags; and the
-# `uv` and `rumdl` binaries themselves -- pinning `setup-uv`/`rumdl`'s own
-# *action* tag exactly (as done below) does not also pin the tool version
-# each installs, since neither step sets that action's `version` input, so
-# both resolve to whatever release is current at run time. `uv.lock` keeps
-# dependency resolution reproducible regardless (`UV_FROZEN` below).
-# `lychee-action@v2.9.0` is the one exception that is genuinely immune: its
-# own default `lycheeVersion` is fixed inside that exact tag. GitHub disables
+# `gitleaks/gitleaks-action@v3`, both floating major-version tags; the mise
+# binary, which `mise-action` resolves at run time since no step sets its
+# `version` input; and every tool mise.toml tracks at `latest`, which each run
+# installs afresh (see `cache: false` below). `uv.lock` keeps dependency
+# resolution reproducible regardless (`UV_FROZEN` below). GitHub disables
 # a `schedule` trigger after 60 days with no repository activity, so this
 # canary itself goes quiet on a truly dormant repo -- past the quiet-week
 # case it exists to cover, but worth knowing rather than assuming it always runs.
@@ -52,64 +50,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Pinned to a full version: setup-uv publishes no floating `v8` major tag.
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: jdx/mise-action@v4.3.0
         with:
-          enable-cache: true
-      - name: Sync the workspace venv
-        run: uv sync
-      # Per-member, each in its own dir so that package's pyproject config applies
-      # (ruff selects, ty root, pytest coverage) — matching mise's `qa:py:<member>`.
-      # `pytest` itself writes `coverage.json` (`--cov-report=json:...` in each
-      # member's `addopts`), so the floor check that follows can read it directly.
-      - name: kboat — ruff, ty, pytest, coverage floor
-        working-directory: packages/kboat
-        run: |
-          uv run ruff check
-          uv run ruff format --check
-          uv run ty check
-          uv run pytest
-          uv run python ../../scripts/coverage_floor.py coverage.json
-      - name: feed-filter — ruff, ty, pytest, coverage floor
-        working-directory: packages/feed-filter
-        run: |
-          uv run ruff check
-          uv run ruff format --check
-          uv run ty check
-          uv run pytest
-          uv run python ../../scripts/coverage_floor.py coverage.json
-      # No coverage-floor check for this one: `scripts/` is flat tooling, not a
-      # workspace member with a `--cov-fail-under` of its own.
-      - name: scripts/ tooling — ruff, ty, pytest
-        run: |
-          uv run ruff check scripts
-          uv run ruff format --check scripts
-          uv run ty check scripts
-          uv run pytest scripts/tests
+          # mise resolves a `latest` tool to a version already installed, and the
+          # action's cache key hashes the config rather than the date, so a
+          # restored cache would hold every tool at the release it was first
+          # saved with until mise.toml changed.
+          cache: false
+      - run: mise run qa:py
 
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Official rumdl action (Dependabot-tracked), not `uvx rumdl`: it avoids an
-      # unpinned PyPI install on every run. Pinned to an exact tag, matching the
-      # `setup-uv` pin above -- a reproducible action body, with each bump a
-      # visible, reviewable diff instead of a silent `@v0` re-resolve. This
-      # pins the action's own code, not the `rumdl` binary version it installs
-      # (see the header comment). It auto-detects .rumdl.toml at the root.
-      - uses: rvben/rumdl@v0.2.73
-      # Pinned to the same full version as the `python-qa` job's, for the same
-      # reason: setup-uv publishes no floating major tag.
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: jdx/mise-action@v4.3.0
         with:
-          enable-cache: true
-      - name: Sync the workspace venv
-        run: uv sync
-      # The markdown fault rumdl cannot see, mirroring mise's `qa:md`. The
-      # script parses with `markdown-it-py` rather than answering CommonMark
-      # itself, so it needs the workspace venv the two steps above install --
-      # `qa:md` reaches the same script through the same `uv run python`.
-      - run: uv run python scripts/md_shape.py
+          cache: false # as in `python-qa`
+      - run: mise run qa:md
+
+  shell-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4.3.0
+        with:
+          cache: false # as in `python-qa`
+      - run: mise run qa:sh
 
   secret-scan:
     runs-on: ubuntu-latest
@@ -125,15 +91,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Offline-only: catches broken relative links inside the repo's own
-      # markdown without depending on the network, so it is cheap enough to run
-      # (and block) on every PR -- matching the local `mise run qa:links:offline`
-      # task. Shared settings come from `lychee.toml`. The full networked check runs
-      # separately, non-blocking, in link-check-weekly.yml.
-      - uses: lycheeverse/lychee-action@v2.9.0
+      - uses: jdx/mise-action@v4.3.0
         with:
-          args: --offline --no-progress --config lychee.toml .
-          fail: true
+          cache: false # as in `python-qa`
+      - run: mise run qa:links:offline
 
   # Stays red while a newer CPython minor is out, so it is a reminder and must
   # never become a required check. Skipped on the schedule, whose run exists to
@@ -143,12 +104,9 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v7
-      # Pinned to the same full version as the `python-qa` job's, for the same
-      # reason: setup-uv publishes no floating major tag.
+      # Pinned to a full version: setup-uv publishes no floating major tag.
       - uses: astral-sh/setup-uv@v10.1.0
         with:
-          # setup-uv's cache key has no per-job part, so this job's near-empty
-          # save (it runs no `uv sync`) could replace the one the others restore.
           enable-cache: false
           # uv installs only the CPython releases it knew of when built, and
           # without `version` setup-uv installs any uv `required-version` pins.
