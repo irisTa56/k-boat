@@ -210,10 +210,9 @@ End the run with a summary covering:
   - Count the two PDF-unusable outcomes separately — the upload errored, or it reached `ready` and extracted to empty/garbled text — since they send the human after different things (a re-exported copy versus a text-bearing one) and leave different states: both a readable file, but the errored one no notebook and the empty extraction an unusable notebook kept.
   - Also note any source NotebookLM typed outside the schema's two values (`youtube`, `epub`, …): it ingested fine and is kept as a `web_page`, so this is not an error — only a heads-up that its `source_type` is approximate.
   - For PDFs also count: transient download failures (queue file kept) and titles that fell back to the capture's link text.
-- Captures step 1's de-dup stopped where the human has something to do, since nothing else records that they were made: the queue file is gone and the note is unchanged.
+- Captures step 1's de-dup stopped as already dismissed or already in the DLQ, since nothing else records that they were made: the queue file is gone and the note is unchanged.
   - **Already dismissed**: name each, with the instruction to untick `dismiss` and capture the URL again to read it.
   - **Already in the DLQ**: name each, with `kboat-rescue` as the way on.
-  - A note that already has its notebook needs nothing from the human, so that stop is counted among the items drained and not named.
 - Backfill (the summary/topics retry sweep): candidates seen, backfilled this run, still empty after a retry (guide failed again), any whose original had gone out of its notebook, any whose notebook held something the identification rule could not match, and any whose `notebooklm_id` named no notebook at all.
   - Name all three: the notebook-health step later in the run takes the first two and has no other way to learn of them, and the third only a reactivation settles.
 - Stranded iCloud stubs: every `Queue/.<name>.md.icloud` a capture deletion left behind (step 4).
