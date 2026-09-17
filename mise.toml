@@ -140,6 +140,13 @@ uv run ty check scripts
 uv run pytest scripts/tests
 """
 
+# The NotebookLM CLI's uv project has nothing to lint or test, only a lock. This
+# is the one check that fails on that lock going stale: the postinstall hook that
+# syncs it cannot fail `mise install`.
+[tasks."qa:py:notebooklm"]
+description = "Check the NotebookLM CLI's uv.lock matches its pyproject.toml"
+run = "uv lock --check --project tools/notebooklm"
+
 [tasks."qa:py"]
 description = "Python QA across all packages"
 depends = ["qa:py:*"]

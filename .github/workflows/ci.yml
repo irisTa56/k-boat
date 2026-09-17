@@ -43,8 +43,7 @@ concurrency:
 env:
   # A workspace uv.lock that no longer matches its pyproject.toml fails the run
   # rather than being installed as it stands (which `UV_FROZEN` would do) or
-  # re-resolved. tools/notebooklm/uv.lock is not covered: only the postinstall
-  # hook syncs it, and `mise install` exits 0 when the hook fails.
+  # re-resolved. The NotebookLM CLI's lock is checked by `qa:py:notebooklm`.
   UV_LOCKED: "1"
 
 jobs:
