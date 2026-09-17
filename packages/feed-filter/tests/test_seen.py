@@ -331,6 +331,7 @@ def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expe
         ),
         pytest.param(sqlite3.SQLITE_IOERR_WRITE, True, id="io_error_write_extended_code"),
         pytest.param(sqlite3.SQLITE_CANTOPEN_ISDIR, True, id="cantopen_isdir_extended_code"),
+        pytest.param(sqlite3.SQLITE_PROTOCOL, True, id="lock_protocol_confusion"),
         pytest.param(sqlite3.SQLITE_ERROR, False, id="bad_sql_is_a_bug"),
         pytest.param(sqlite3.SQLITE_CONSTRAINT, False, id="constraint_violation_is_a_bug"),
         pytest.param(sqlite3.SQLITE_MISMATCH, False, id="type_mismatch_is_a_bug"),

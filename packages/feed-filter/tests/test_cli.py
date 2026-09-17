@@ -435,6 +435,10 @@ def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
             "enabled = false\nenabled = false\n",
             id="duplicate_key_in_one_table",
         ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://[bad/feed"\n',
+            id="feed_url_not_a_usable_url",
+        ),
     ],
 )
 def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(

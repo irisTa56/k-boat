@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import tomlkit
 import tomlkit.exceptions
@@ -126,6 +127,26 @@ class SiteConfig:
             raise SiteConfigError("site id must be non-empty")
         if not self.name.strip():
             raise SiteConfigError(f"site name must be non-empty (site {self.id!r})")
+
+        # feed_url/index_url/forum_url are handed to urlsplit() at gather time
+        # (_gather_host_key's host grouping, among other places) with no guard
+        # of its own there — a value urlsplit() itself cannot parse (e.g. an
+        # unterminated IPv6 literal, "https://[bad/feed") raises a bare
+        # ValueError deep in a gather, not at load time. Catch it here instead,
+        # at construction, so a hand-edited sites.toml entry with a broken URL
+        # is the same SiteConfigError as any other malformed row.
+        # article_url_pattern is a regex, not a URL, and has its own guard
+        # (validate_article_url_pattern).
+        for field in ("feed_url", "index_url", "forum_url"):
+            value = getattr(self, field)
+            if value is None:
+                continue
+            try:
+                urlsplit(value)
+            except ValueError as exc:
+                raise SiteConfigError(
+                    f"{field} is not a usable URL (site {self.id!r}): {exc}"
+                ) from exc
 
         has_feed = self.feed_url is not None
         has_pattern = self.article_url_pattern is not None

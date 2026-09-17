@@ -63,6 +63,10 @@ _ENVIRONMENT_CODES = frozenset(
         sqlite3.SQLITE_FULL,
         sqlite3.SQLITE_CANTOPEN,
         sqlite3.SQLITE_NOTADB,
+        # A lock-protocol confusion between two connections under WAL — this
+        # store's mode (open_db) — the same two-processes-racing-the-file
+        # category SQLITE_BUSY is, just a rarer path to it.
+        sqlite3.SQLITE_PROTOCOL,
     }
 )
 
