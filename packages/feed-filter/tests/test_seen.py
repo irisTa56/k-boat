@@ -241,7 +241,7 @@ def test_opener_that_loses_the_migration_race_skips_the_applied_step(tmp_path: P
 def test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A real ``SQLITE_BUSY`` on ``BEGIN IMMEDIATE`` is a lock timeout per ``is_lock_busy``.
+    """A real ``SQLITE_BUSY`` on ``BEGIN IMMEDIATE`` reads as an environment failure.
 
     Unlike the race in the test above, this one holds the write lock across the
     whole migration attempt so the opener genuinely times out.
@@ -268,7 +268,7 @@ def test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error(
         with pytest.raises(sqlite3.OperationalError) as exc_info:
             seen.open_db(path)
         assert "locked" in str(exc_info.value)
-        assert seen.is_lock_busy(exc_info.value)
+        assert seen.is_environment_failure(exc_info.value)
     finally:
         holder.rollback()
         holder.close()
@@ -281,25 +281,6 @@ def test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error(
         pytest.param(sqlite3.SQLITE_BUSY_RECOVERY, True, id="busy_recovery"),
         pytest.param(sqlite3.SQLITE_BUSY_SNAPSHOT, True, id="busy_snapshot"),
         pytest.param(sqlite3.SQLITE_BUSY_TIMEOUT, True, id="busy_timeout_extended_code"),
-        pytest.param(sqlite3.SQLITE_ERROR, False, id="a_bug_not_a_lock"),
-        pytest.param(None, False, id="no_sqlite_errorcode_at_all"),
-    ],
-)
-def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expected: bool) -> None:
-    """``is_lock_busy`` reads the *primary* result code, not the exact name.
-
-    A constructed exception carries no ``sqlite_errorcode``, so the code is set by hand.
-    """
-    exc = sqlite3.OperationalError("x")
-    if code is not None:
-        exc.sqlite_errorcode = code
-    assert seen.is_lock_busy(exc) is expected
-
-
-@pytest.mark.parametrize(
-    ("code", "expected"),
-    [
-        pytest.param(sqlite3.SQLITE_BUSY, True, id="busy_still_counts"),
         pytest.param(sqlite3.SQLITE_PERM, True, id="permission_denied"),
         pytest.param(sqlite3.SQLITE_NOMEM, True, id="out_of_memory"),
         pytest.param(sqlite3.SQLITE_READONLY, True, id="readonly_database"),
@@ -325,7 +306,10 @@ def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expe
 def test_is_environment_failure_covers_busy_and_the_operators_environment(
     code: int | None, expected: bool
 ) -> None:
-    """An environment code, plain or extended, is a failure to report; our own SQL's is not."""
+    """An environment code, plain or extended, is a failure to report; our own SQL's is not.
+
+    A constructed exception carries no ``sqlite_errorcode``, so the code is set by hand.
+    """
     exc = sqlite3.OperationalError("x")
     if code is not None:
         exc.sqlite_errorcode = code

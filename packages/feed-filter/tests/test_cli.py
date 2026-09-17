@@ -409,6 +409,15 @@ def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
             '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://[bad/feed"\n',
             id="feed_url_not_a_usable_url",
         ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nindex_url = "https://[bad/"\n'
+            'article_url_pattern = "/p/"\n',
+            id="index_url_not_a_usable_url",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nforum_url = "https://[bad/"\n',
+            id="forum_url_not_a_usable_url",
+        ),
     ],
 )
 def test_malformed_sites_toml_surfaces_as_clean_exit_through_main(

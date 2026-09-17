@@ -18,19 +18,9 @@ from pathlib import Path
 
 from kboat.canonical import CanonicalUrl
 
-
-def is_lock_busy(exc: BaseException) -> bool:
-    """True iff ``exc`` carries SQLite's busy result code, plain or extended.
-
-    Compared on the primary code, because under WAL a lock wait can come back as an
-    extended code such as ``SQLITE_BUSY_SNAPSHOT``.
-    """
-    code = getattr(exc, "sqlite_errorcode", None)
-    return code is not None and code & 0xFF == sqlite3.SQLITE_BUSY
-
-
 _ENVIRONMENT_CODES = frozenset(
     {
+        sqlite3.SQLITE_BUSY,
         sqlite3.SQLITE_PERM,
         sqlite3.SQLITE_NOMEM,
         sqlite3.SQLITE_READONLY,
@@ -50,11 +40,11 @@ def is_environment_failure(exc: BaseException) -> bool:
     These codes are another process contending for the store's lock (busy, protocol)
     or a permission, memory, disk, or file failure. Any other code (bad SQL, a
     constraint our upserts cannot hit, a binding mismatch) comes from our own SQL.
+    Compared on the primary code, since an extended code such as WAL's
+    ``SQLITE_BUSY_SNAPSHOT`` names the same failure.
     """
     code = getattr(exc, "sqlite_errorcode", None)
-    if code is None:
-        return False
-    return is_lock_busy(exc) or code & 0xFF in _ENVIRONMENT_CODES
+    return code is not None and code & 0xFF in _ENVIRONMENT_CODES
 
 
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
