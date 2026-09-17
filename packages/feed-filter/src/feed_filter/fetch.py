@@ -175,9 +175,11 @@ def fetch(
                 sleep(_retry_after_seconds(exc.response, attempt))
                 continue
             raise FetchError(url, status=status) from exc
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, UnicodeError) as exc:
             # Covers timeouts, connection errors, DNS failures — every non-status
             # httpx failure is a transport error with no meaningful status code.
+            # httpx raises UnicodeError, not an HTTPError, for a host the IDNA codec
+            # rejects (`www..example.com`).
             raise FetchError(url) from exc
         return FetchResult(
             content=resp.content,

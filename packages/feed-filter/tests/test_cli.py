@@ -129,6 +129,20 @@ def test_discover_transport_error_exits_nonzero(
     assert "error:" in capsys.readouterr().err
 
 
+def test_discover_host_the_idna_codec_rejects_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A host the IDNA codec rejects is a fetch failure, not a traceback."""
+
+    class Client:
+        def get(self, url: str, **kwargs: object) -> object:
+            raise UnicodeEncodeError("idna", "www..example.com", 4, 5, "label empty")
+
+    monkeypatch.setattr(cli, "build_client", lambda: contextlib.nullcontext(Client()))
+    assert cli.main(["discover", "https://www..example.com/"]) == 1
+    assert "error: fetch failed" in capsys.readouterr().err
+
+
 # --- add-site -------------------------------------------------------------
 
 
