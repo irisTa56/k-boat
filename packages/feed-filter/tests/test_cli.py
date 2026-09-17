@@ -420,8 +420,26 @@ def test_a_bare_key_error_from_a_bug_is_not_reported_as_a_user_error(
             id="req_str_missing_name",
         ),
         pytest.param(
+            '[[site]]\nid = "  "\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n',
+            id="id_blank",
+        ),
+        pytest.param(
             '[[site]]\nid = "a"\nname = "   "\nfeed_url = "https://a.example.com/f.xml"\n',
             id="name_blank",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\narticle_url_pattern = "/p/"\n',
+            id="index_url_required_with_pattern",
+        ),
+        pytest.param(
+            '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f.xml"\n'
+            "like_threshold = 6\n",
+            id="forum_tuning_field_without_forum_url",
+        ),
+        pytest.param(
+            f'[[site]]\nid = "{cli.QUERY_SITE_ID}"\nname = "A"\n'
+            'feed_url = "https://a.example.com/f.xml"\n',
+            id="reserved_id",
         ),
         pytest.param(
             '[[site]]\nid = "a"\nname = "A"\nfeed_url = "https://a.example.com/f1.xml"\n'
