@@ -52,6 +52,9 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 `mise.toml` is the task list and carries its own reasons; `mise run pre-commit` is the gate, run by the git hook its postinstall generates.
 
+A test for a guard whose failure would pass silently — a narrowed `except`, a report of what could not be read — is seen failing with that guard removed before it is committed.
+Where a test-driven development skill is available, work that red-green loop through it.
+
 ## Architecture (K-Boat)
 
 Each skill carries its own `description`, which is what says when to reach for it.
