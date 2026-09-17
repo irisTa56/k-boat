@@ -169,11 +169,12 @@ def test_failed_migration_rolls_back_so_the_next_open_recovers(
     monkeypatch.setattr(seen.sqlite3, "connect", spy)
     with pytest.raises(sqlite3.OperationalError) as exc_info:
         seen.open_db(path)
-    # A bad statement is SQLITE_ERROR, not SQLITE_BUSY: cli.main's is_lock_busy
-    # check must read this as a bug (not the busy case a real lock timeout gets;
-    # see test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error),
+    # A bad statement is SQLITE_ERROR, not an environment failure: cli.main's
+    # is_environment_failure check must read this as a bug (not the busy case
+    # a real lock timeout gets; see
+    # test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error),
     # so it must reach a traceback, not the `error: …` + exit 1 contract.
-    assert not seen.is_lock_busy(exc_info.value)
+    assert not seen.is_environment_failure(exc_info.value)
     monkeypatch.undo()
 
     # A failed open returns no handle, so nothing else can close one it left behind
@@ -325,6 +326,11 @@ def test_is_lock_busy_recognizes_every_extended_busy_code(code: int | None, expe
         pytest.param(sqlite3.SQLITE_FULL, True, id="disk_full"),
         pytest.param(sqlite3.SQLITE_CANTOPEN, True, id="cannot_open_file"),
         pytest.param(sqlite3.SQLITE_NOTADB, True, id="not_a_database_file"),
+        pytest.param(
+            sqlite3.SQLITE_READONLY_DIRECTORY, True, id="readonly_directory_extended_code"
+        ),
+        pytest.param(sqlite3.SQLITE_IOERR_WRITE, True, id="io_error_write_extended_code"),
+        pytest.param(sqlite3.SQLITE_CANTOPEN_ISDIR, True, id="cantopen_isdir_extended_code"),
         pytest.param(sqlite3.SQLITE_ERROR, False, id="bad_sql_is_a_bug"),
         pytest.param(sqlite3.SQLITE_CONSTRAINT, False, id="constraint_violation_is_a_bug"),
         pytest.param(sqlite3.SQLITE_MISMATCH, False, id="type_mismatch_is_a_bug"),
@@ -339,10 +345,15 @@ def test_is_environment_failure_covers_busy_and_the_operators_environment(
     """``is_environment_failure`` folds in ``is_lock_busy`` plus every other
     SQLite primary result code that names a permissions, memory, disk, or
     file-corruption failure — mirroring the operator's-environment-vs-logic-bug
-    split ``cli.main``'s docstring already draws for bare ``OSError``. A bug in
-    this codebase's own SQL (bad syntax, a constraint our upserts should never
-    hit, a binding mismatch) must read as not-an-environment-failure, so
-    ``cli.main`` lets it reach a traceback instead of reporting it.
+    split ``cli.main``'s docstring already draws for bare ``OSError``. Includes
+    a representative extended code per environment condition (a read-only
+    *directory*, an I/O error on a *write*, "can't open" because the path *is a
+    directory*) since, like ``SQLITE_BUSY``, several of these have variants
+    whose ``sqlite_errorname`` is not their plain name but whose primary code
+    still is. A bug in this codebase's own SQL (bad syntax, a constraint our
+    upserts should never hit, a binding mismatch) must read as
+    not-an-environment-failure, so ``cli.main`` lets it reach a traceback
+    instead of reporting it.
     """
     exc = sqlite3.OperationalError("x")
     if code is not None:

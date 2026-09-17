@@ -246,8 +246,9 @@ def test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit(
 
     Two processes opening the store at once serialize on the migration's
     ``BEGIN IMMEDIATE``, and the loser can exceed the busy timeout —
-    ``cli.main``'s ``is_lock_busy`` check reports that as ``error: …`` + exit 1
-    (a bare ``sqlite3.Error`` a bug would raise instead reaches a traceback:
+    ``cli.main``'s ``is_environment_failure`` check reports that as
+    ``error: …`` + exit 1 (a bare ``sqlite3.Error`` a bug would raise instead
+    reaches a traceback:
     ``test_forum_new_store_bug_fails_the_run_not_the_site``). This is a stub, not
     a real race — ``test_seen.py``'s
     ``test_open_db_propagates_a_genuine_lock_timeout_as_sqlite_operational_error``
@@ -991,6 +992,31 @@ def test_remind_against_a_broken_existing_note_surfaces_as_clean_exit(
     feeds_dir.mkdir(parents=True, exist_ok=True)
     note_path = feeds_dir / f"{url_slug(str(canonical_url(url)))}.md"
     note_path.write_text("no fence here\njust text\n", encoding="utf-8")
+
+    rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "repair it by hand" in err
+
+
+def test_remind_against_a_non_utf8_existing_note_surfaces_as_clean_exit(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-remind against a non-UTF-8 existing note reports, not tracebacks.
+
+    A separate case from the broken-fence one above: ``upsert``'s
+    ``path.read_text(encoding="utf-8")`` raises ``UnicodeDecodeError`` (also a
+    ``ValueError`` subclass, but a different one) before frontmatter parsing
+    ever runs, so it needs its own test — one that also proves
+    ``write_feed_note``'s wrap covers both exceptions its except tuple names,
+    not only the one the other test happens to exercise.
+    """
+    url = "https://e.example.com/a"
+    feeds_dir = vault_path() / "Feeds"
+    feeds_dir.mkdir(parents=True, exist_ok=True)
+    note_path = feeds_dir / f"{url_slug(str(canonical_url(url)))}.md"
+    note_path.write_bytes(b"---\ntitle: \xff\xfe not utf-8\n---\nbody\n")
 
     rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
     assert rc == 1
@@ -2198,11 +2224,12 @@ def test_forum_new_store_bug_fails_the_run_not_the_site(
     surface it and the guards must re-raise themselves — proven here by the
     exception reaching ``cli.main``'s caller unchanged, attributed to no site.
 
-    "no such column" is a bad-SQL bug, not a lock timeout — ``is_lock_busy``
-    (``feed_filter.seen``) is false for it, so ``cli.main``'s boundary does not
-    catch it: it propagates out of ``cli.main`` like the ``KeyboardInterrupt``
-    above (contrast ``test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit``,
-    where the same exception type *is* caught, because it is a lock timeout).
+    "no such column" is a bad-SQL bug, not an environment failure —
+    ``is_environment_failure`` (``feed_filter.seen``) is false for it, so
+    ``cli.main``'s boundary does not catch it: it propagates out of
+    ``cli.main`` like the ``KeyboardInterrupt`` above (contrast
+    ``test_seen_store_busy_error_on_open_db_surfaces_as_clean_exit``, where the
+    same exception type *is* caught, because it is a lock timeout).
     """
     _no_client(monkeypatch)
     _add_forum_site()

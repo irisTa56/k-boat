@@ -239,9 +239,10 @@ def open_db(path: Path) -> sqlite3.Connection:
 
     A migration-lock timeout and a genuine ``sqlite3.Error`` both propagate as
     whatever sqlite3 type they actually are; ``cli.main`` is where the two are
-    told apart (``is_lock_busy``), not here — see that module's docstring for
-    why the classification is centralized rather than repeated at every
-    sqlite3 call site this store makes.
+    told apart (``is_environment_failure``), not here — see ``cli.main``'s own
+    docstring for why the classification is centralized there rather than
+    repeated at every sqlite3 call site this store (or any other writer to it)
+    makes.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
