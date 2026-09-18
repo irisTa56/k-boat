@@ -83,6 +83,10 @@ ENV_EXA_KEY = "EXA_API_KEY"
 ENV_VAULT = "OBSIDIAN_VAULT_PATH"
 
 
+class MissingEnvError(ValueError):
+    """A required environment variable is unset."""
+
+
 def sites_path() -> Path:
     """Path to the site registry. Overridable via ``FEED_FILTER_SITES``."""
     override = os.environ.get(ENV_SITES)
@@ -121,10 +125,10 @@ def vault_path() -> Path:
 
     From ``OBSIDIAN_VAULT_PATH`` (the workspace ``.env``); unlike the local-state
     paths above there is no package-relative default — the vault is a shared,
-    absolute location. Raises ``ValueError`` when unset, which the CLI maps to a
-    reported non-zero exit rather than a traceback.
+    absolute location. Raises ``MissingEnvError`` when unset, which the CLI maps
+    to a reported non-zero exit rather than a traceback.
     """
     override = os.environ.get(ENV_VAULT)
     if not override:
-        raise ValueError(f"{ENV_VAULT} is not set (needed to write feed notes into the vault)")
+        raise MissingEnvError(f"{ENV_VAULT} is not set (needed to write feed notes into the vault)")
     return Path(override).expanduser()

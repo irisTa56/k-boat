@@ -18,6 +18,35 @@ from pathlib import Path
 
 from kboat.canonical import CanonicalUrl
 
+_ENVIRONMENT_CODES = frozenset(
+    {
+        sqlite3.SQLITE_BUSY,
+        sqlite3.SQLITE_PERM,
+        sqlite3.SQLITE_NOMEM,
+        sqlite3.SQLITE_READONLY,
+        sqlite3.SQLITE_IOERR,
+        sqlite3.SQLITE_CORRUPT,
+        sqlite3.SQLITE_FULL,
+        sqlite3.SQLITE_CANTOPEN,
+        sqlite3.SQLITE_NOTADB,
+        sqlite3.SQLITE_PROTOCOL,
+    }
+)
+
+
+def is_environment_failure(exc: BaseException) -> bool:
+    """True iff ``exc``'s SQLite result code blames the environment, not our SQL.
+
+    These codes are another process contending for the store's lock (busy, protocol)
+    or a permission, memory, disk, or file failure. Any other code (bad SQL, a
+    constraint our upserts cannot hit, a binding mismatch) comes from our own SQL.
+    Compared on the primary code, since an extended code such as WAL's
+    ``SQLITE_BUSY_SNAPSHOT`` names the same failure.
+    """
+    code = getattr(exc, "sqlite_errorcode", None)
+    return code is not None and code & 0xFF in _ENVIRONMENT_CODES
+
+
 # Ordered schema migrations, each a tuple of individual statements. ``open_db``
 # applies every entry past the DB's current ``PRAGMA user_version`` and stamps the
 # new version in the same transaction — so adding a column in a later phase is an

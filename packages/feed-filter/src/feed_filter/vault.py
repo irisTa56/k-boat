@@ -30,6 +30,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from kboat.canonical import CanonicalUrl
+from kboat.frontmatter import FrontmatterError
 from kboat.lock import vault_lock
 from kboat.naming import note_slug
 from kboat.schema import FEED
@@ -46,7 +47,8 @@ class VaultError(Exception):
     all — distinguished by the record's `reason`, and both needing a human. Any
     other refusal is raised too rather than read as a write: what makes never-lost
     hold is that nothing is recorded seen unless a note landed, so a status this
-    module does not recognise must not be the one that slips through. An
+    module does not recognise must not be the one that slips through. Also raised
+    when an existing note cannot be read at all, which a human repairs the same way. An
     `OSError` from the atomic write (disk full, permission, an iCloud-evicted
     placeholder) is left to propagate; the CLI maps both to a non-zero exit and
     skips the seen-record, so the entry is retried rather than silently lost.
@@ -73,9 +75,9 @@ def write_feed_note(
     `shelved`, the reader's "read later" flag, which `upsert` defaults to `false`
     on create and preserves on a re-write. A blank `title` falls back to the URL,
     so the note's required `title` is never empty. Returns `upsert`'s
-    `{status, slug, path}`; raises `VaultError` on a write the writer refused, or
-    `VaultLockedError` when the shared wait passes with another run still holding the
-    vault.
+    `{status, slug, path}`; raises `VaultError` on a write the writer refused or an
+    existing note it could not read, or `VaultLockedError` when the shared wait
+    passes with another run still holding the vault.
     """
     slug = note_slug(str(cu))
     record: dict[str, object] = {
@@ -93,7 +95,12 @@ def write_feed_note(
         },
     }
     with vault_lock(vault):
-        result = upsert(FEED, vault, record, today=today)
+        try:
+            result = upsert(FEED, vault, record, today=today)
+        except (FrontmatterError, UnicodeDecodeError) as exc:
+            raise VaultError(
+                f"slug {slug}'s existing note cannot be read ({exc}) — repair it by hand"
+            ) from exc
     status = result.get("status")
     if status in WROTE_A_NOTE:
         return result
