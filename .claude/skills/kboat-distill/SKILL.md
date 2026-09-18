@@ -33,6 +33,7 @@ Probe it once with `search_notes(project="k-boat-knowledge", …)`.
 - If the `k-boat-knowledge` project does not exist, the knowledge layer is not set up: **STOP the whole run** and report (create the project first; see README).
   - Phase B's notebook discards are destructive, so do not run them before the durable store exists.
 - If the project exists but the call fails (Basic Memory runtime down), run Phase A but **skip Phase B and Phase C entirely** and report it.
+  - A call rejected for omitting an argument the tool's schema marks optional (an MCP `-32602` naming that argument) has failed too, since something between here and the server is broken: never pad the omitted arguments with placeholder values to get this or a later Basic Memory call through.
   - Phase B's only destructive act is discarding notebooks, and Phase C only writes concept notes (which needs Basic Memory anyway); deferring both to a healthy day loses nothing, since ingest still runs.
 
 ### Step 3: run the deterministic lifecycle pass
