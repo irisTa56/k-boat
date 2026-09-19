@@ -258,13 +258,15 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - Log merge candidates in the report for `memory-curate` to handle with a human.
 - **Stay idempotent on replay.** A source a partial pass left ripe (Phase B step 6) or a crash interrupted is distilled again from the start, into notes that already hold part of what it yields, so every write here must be one a second pass can repeat.
   - The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
-  - Before inserting, read the note's `## Observations` and write only what it does not already hold:
+  - Before inserting, read the note's `## Observations` and `## Relations` and write only what it does not already hold:
     - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`, naming what it duplicates.
       - Where that is this source's own claim from an earlier pass, say so: a skip is logged for the human to reverse, and reversing this one would write a second copy.
-      - A claim the section holds only as `#dialogue` is not a copy of one this source grounds: write it, tagged `#grounded`, as this reading's claim.
+      - A claim another reading's provenance holds only as `#dialogue` is not a copy of one this source grounds: write it, tagged `#grounded`, as this reading's claim.
+        - This source's own `#dialogue` copy is a duplicate like any other, whatever this pass now judges its grounding.
       - The check only keeps a second copy out; where a claim that is not there yet goes is still the placement judgement above.
     - Follow what a replay does place with this source's provenance line, as "Always record provenance" says, even where the note already carries one from the earlier pass: placed after that line with none of its own, a claim would read as the next reading's.
       - A replay whose claims are all present places nothing, provenance included.
+    - Skip a relation `## Relations` already carries, the same relation to the same target.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
 
 ## Review report (`Reviews/YYYY-MM-DD.md`)
