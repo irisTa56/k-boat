@@ -14,7 +14,8 @@ The step only reads the Daily notes — it never writes one, so they stay human-
 A standing list of questions you are chewing on over weeks, not the next day — kept as a flat bullet list in `Questions.md` at the vault root, parallel to the `Daily/` notes.
 `kboat-pick candidates` parses it and returns the questions in a `questions` array, ordered by list position: each entry is `{rank, question, note}`, where `rank` is 1-based and a smaller one (higher in the list) is a stronger interest — this ordering *is* the priority you set — and `note` is the question's nested sub-bullets joined as free context (`""` when none).
 The list holds only open questions: you resolve one by deleting its line, and that is the whole lifecycle, so there is no separate staleness flag; the routine only reads the file, never adding, resolving, or reordering a question.
-Like the Daily notes it is local-only (the interest signals need no network, and the pick reaches NotebookLM only for the shortlisted candidates' bodies, Stage 2 below), and a missing or question-less file is an empty backlog — no signal this run.
+Like the Daily notes it is local-only (the interest signals need no network, and the pick reaches NotebookLM only for the shortlisted candidates' bodies, Stage 2 below), and a question-less file is an empty backlog — no signal this run.
+Unlike the Daily notes it is required: a file the tool cannot read at all fails `kboat-pick candidates` rather than reading as an empty backlog, and the step makes no pick that run (kboat-vault-conventions "Vault preconditions").
 
 **Look-back — a bounded window.**
 `kboat-pick candidates` walks the Daily notes newest-first (dated on or before today) and returns each note's body (frontmatter stripped) within a look-back window — the last two weeks by default (`--lookback-days`, default 14, inclusive of both ends), so a day with no note is skipped and only the recent notes are used.

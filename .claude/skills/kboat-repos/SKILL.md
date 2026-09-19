@@ -101,8 +101,8 @@ The routine never deletes a note.
     - Under `--dry-run` nothing was renamed, so it says an apply would strand that stub rather than that anything has.
 - `rename_collisions` — a rename blocked because the canonical slug is already spoken for, each entry naming which of four ways in its `reason`.
 - `failed` — a note this run did not refresh.
-- A top-level `error` key in place of the counts means the pass never started: `Repos/` is absent, or its name is taken by something that is not a directory.
-  - Report it and stop — a `Repos/` that is *there* and unreadable is an anomaly instead.
+- An exit 1 carrying the report means `Repos/` itself could not be read: absent, not a directory, or refused, in the `anomalies` entry under the folder's own name (below).
+  - Tell it from the vault lock's refusals by stdout: those carry a `locked` record or nothing, and this one carries the report.
 
 Each `rename_collisions` entry carries a `reason` for why the slug was spoken for — one of four, decided by the pass rather than inferred here.
 Branch on it; never on whether a file happens to be at the `conflict` path, which is empty in two of the four — and in three under `--dry-run`, where nothing has been written yet:
@@ -132,6 +132,7 @@ Do not sort them for the reader; branch on what the entry looks like.
   - One sighting does not settle it: an eviction landing between the listing and the read gives the same error from a cause that clears itself, and its placeholder is not in the snapshot to say so.
     - What tells them apart is the next run — a name that comes back as a placeholder or reads cleanly was the eviction; one that repeats identically is a broken symlink, and that one is a human's.
 - **A `path` that is the `Repos/` directory itself** — the catalogue was never read at all, so the run has nothing to say about any note in it.
+  - Its `error` leads with which of the three it met — `absent`, `not a directory`, or `refused` — and the command exits 1.
   - Unlike a failed read of one file this clears on no later run until a human fixes the vault.
 
 Each `failed` entry carries a `reason` — one of five — and an `error` with the detail.
