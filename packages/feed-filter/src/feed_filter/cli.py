@@ -42,7 +42,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from itertools import zip_longest
-from typing import Any
+from typing import Any, TypedDict
 from urllib.parse import urlsplit
 
 import httpx
@@ -397,6 +397,29 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
     return outcomes
 
 
+class SiteStatus(TypedDict):
+    """One ``sites[]`` entry of a gather's report — the keys ``forum-new`` emits.
+
+    Declared rather than composed as a dict literal at each gather, so the two
+    gathers and the doc-sync gate over the run skills' enumerations of this key
+    set all read one declaration. What each key means is on the command that
+    emits it: ``cmd_new_entries`` and ``cmd_forum_new``.
+    """
+
+    site_id: str
+    error: str | None
+    unexpected_error: bool
+    consecutive_failures: int
+    persistent: bool
+
+
+class ArticleSiteStatus(SiteStatus):
+    """A ``new-entries`` ``sites[]`` entry: the shared keys plus ``zero_links``,
+    the scrape self-heal signal the forum path has no analogue of."""
+
+    zero_links: bool
+
+
 def cmd_new_entries(args: argparse.Namespace) -> int:
     """Gather new entries across non-forum sites, interleave, apply global cap.
 
@@ -440,7 +463,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     # extra is missing, so a misconfigured run errors cleanly up front.
     require_playwright_if_needed(sites_path())
     groups: list[list[dict[str, Any]]] = []
-    site_status: list[dict[str, Any]] = []
+    site_status: list[ArticleSiteStatus] = []
     entries: list[dict[str, Any]] = []
     try:
         with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
@@ -906,7 +929,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     groups: list[list[dict[str, Any]]] = []
     # Finalize worklists: list of (site_id, topic_id, like_count) from gather_forum.
     finalize_worklists: list[tuple[str, int, int]] = []
-    site_status: list[dict[str, Any]] = []
+    site_status: list[SiteStatus] = []
     # Accumulated across sites; emitted as discourse_fetches (see docstring).
     discourse_fetches = 0
 

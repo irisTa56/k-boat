@@ -193,7 +193,8 @@ class WriteStatus(StrEnum):
     `kboat.cli.emit_locked`, and by feed-filter's `main` — for a vault another run
     holds: a write that never reached `upsert`, and a status its caller branches
     on all the same, so it is a member here rather than a bare string where it is
-    composed.
+    composed. `test_doc_value_sets` compares the skills' enumerations of the set
+    against this declaration.
     """
 
     CREATED = "created"
