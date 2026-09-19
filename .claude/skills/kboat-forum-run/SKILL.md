@@ -27,10 +27,11 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 - `OBSIDIAN_VAULT_PATH` must be set (it comes from the workspace `.env`, loaded by `eval "$(mise env)"`).
   - A keep becomes a `Feeds/<slug>.md` note there.
   - If the variable is unset, `forum-remind` exits non-zero — stop and report rather than judging candidates you cannot deliver.
-- Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent.
-  - This file is gitignored local config; if it is absent (a fresh checkout), stop and report that it must be created by copying `prompts/selection.example.md` to `prompts/selection.md` — do not judge with no criteria.
-  - Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
-    - `list-sites` prints a bare JSON array, one object per site, and names the site `id` — the value `forum-new` emits as `site_id`.
+- Resolve the criteria file once with `feed-filter selection-path`, which prints `{path}`: `prompts/selection.md`, or wherever `FEED_FILTER_SELECTION` points.
+  - A non-zero exit means the file is absent (a fresh checkout): stop and report that it must be created at that `path` by copying `prompts/selection.example.md` — do not judge with no criteria.
+  - Each judge reads that file itself (step 2), so the run passes the `path` and has no need to read the criteria.
+- Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
+  - `list-sites` prints a bare JSON array, one object per site, and names the site `id` — the value `forum-new` emits as `site_id`.
   - The same `list-sites` row carries `forum_subject` for the Rule-A native-subject exclusion (step 2).
 
 ## Procedure
@@ -60,10 +61,17 @@ Run `eval "$(mise env)" && feed-filter forum-new`.
 
 ### Step 2: Judge each candidate
 
-**Judge each candidate**, passing `prompts/selection.md` (plus any per-site override from `list-sites`) and the candidate.
+**Judge each candidate**.
 
 - Use a **Sonnet** subagent for Rule A and a **haiku** subagent for Rule B (see the model split above).
 - Judging candidates in parallel is fine, but launch each judge in the foreground (`run_in_background: false`): step 3 needs every result, and a judge started in the background leaves the run with nothing to do but wait for it.
+
+The judge reads its task and not this skill, and the task hands it the criteria by path rather than by content:
+
+- The criteria `path` from `selection-path`, with the instruction to Read the whole file before judging and to judge by it.
+  - Never restate the criteria in the task, in full or in part: a restatement is what the judge would then judge by, and restatements have come out abridged, dropping whole sections of the file.
+- The site's `selection` override word for word when it is set, stated as replacing the file's Topics section.
+- The candidate's fields, and what its rule's bullets below tell the judge to do.
 
 **Rule A** (`rule == "A"`) — cross-domain interest judgment on the OP:
 
