@@ -19,6 +19,7 @@ K-Boat's deterministic mechanical core is the [`kboat`](packages/kboat/) package
 - To call the project CLIs in a shell, first run `eval "$(mise env)"` (it loads `.env` and puts both venvs and the mise tools on `PATH`), then invoke them bare — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
 - `OBSIDIAN_VAULT_PATH` and `KBOAT_KNOWLEDGE_PATH` are read from `.env`. The values in `mise.toml` are only defaults and are overridden by `.env`.
 - Distilled knowledge is a Basic Memory project. Create it once, rooted at `KBOAT_KNOWLEDGE_PATH`, named `k-boat-knowledge`.
+- Claude Code gets Python diagnostics and navigation from the Astral plugin, which `.claude/settings.json` enables for this repo. Once you trust the folder, Claude Code registers the plugin's marketplace; if it then reports the plugin as not installed, run the `claude plugin install` command it shows.
 
 ## Layout
 

@@ -104,6 +104,9 @@ Then, before the change lands:
 - Revert each `kboat.io_utils` boundary to the bare `pathlib` call it replaces, and confirm its test fails on the premise rather than on something else.
 - Run the NotebookLM CLI against the live service, as a bump of its pin requires.
 
+The Astral plugin that `.claude/settings.json` enables runs its ty language server as `ty@latest`, while the gate runs the ty the dev group pins, which Dependabot's cooldown holds behind a fresh release.
+A diagnostic only the plugin reports is advisory until a python-deps PR brings the pin up; the gate's result is the one a change answers to.
+
 ## Tests
 
 A test for a guard whose failure would pass silently — a narrowed `except`, a report of what could not be read — is seen failing with that guard removed before it is committed.
