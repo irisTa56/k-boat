@@ -78,6 +78,7 @@ The routine (kboat-distill) drives the transitions:
   - This check takes precedence over the cooldown branches below.
 - Once `filed_date` is at least 7 days old and the source is unambiguous, the routine acts, branching on the disposition:
   - `distill` (and not `dismiss`) → the source is **ripe**: distil it, stamp `distilled_date`, write the report, then discard the notebook — **unless `keep` is also set**, in which case the notebook is retained.
+    - A pass that leaves any of the source's concepts unwritten — deferred by the run's create cap, or an append that did not land — stamps nothing and discards nothing: the source stays ripe and a later run finishes it (kboat-distill says how the replay avoids writing anything twice).
   - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty.
     - The note and any PDF stay as a de-dup tombstone, excluded from recall.
   - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry.
@@ -93,8 +94,9 @@ An undispositioned active source is the case that needs it most: it never become
 A `blocked` source has no notebook, so it is excluded; `summary` or `topics` empty (either) qualifies, since the guide supplies both at once.
 The cooldown gates only the destructive actions (`distill`, `dismiss`); during it you can still change the disposition — flip `dismiss` → `keep`, or add `distill` — in the Holding view.
 `filed_date` is the *first*-filed time, so adding `distill` to a source kept long ago distils it on the next run (its cooldown has already elapsed) rather than waiting a fresh week.
-States are readable from the disposition flags plus the dates: `distilled_date` set → distilled; `keep` set with `notebooklm_id` present → a retained "read later" source; `dismiss` set with `notebooklm_id` empty → an abandoned tombstone; a `distill` or `dismiss` source with `distilled_date` empty and `notebooklm_id` present → in flight (awaiting the cooldown, or — for `distill` — ripe and retried after a recorded error).
+States are readable from the disposition flags plus the dates: `distilled_date` set → distilled; `keep` set with `notebooklm_id` present → a retained "read later" source; `dismiss` set with `notebooklm_id` empty → an abandoned tombstone; a `distill` or `dismiss` source with `distilled_date` empty and `notebooklm_id` present → in flight (awaiting the cooldown, or — for `distill` — ripe and retried after a recorded error or a partial pass).
 For a ripe source the notebook is discarded last (when it is discarded at all — not under `keep`), after `distilled_date` is stamped and the review report is written, so nothing it holds is destroyed before it is recorded.
+A partial pass discards nothing for the same reason: the claims of a concept it left unwritten have landed nowhere else, and the notebook is their only grounding.
 
 This state machine is purely mechanical — boolean and date predicates over frontmatter — so kboat-distill delegates it to a deterministic tool, `kboat-lifecycle` (in the `kboat` package), which applies Phase A (stamp/clear `filed_date`) and emits the ripe / dismiss / ambiguous work sets plus the `needs_summary` set as JSON.
 The `needs_summary` set is read-only (no writes are tied to it), so `kboat-ingest` reads it from a `kboat-lifecycle --dry-run` invocation.

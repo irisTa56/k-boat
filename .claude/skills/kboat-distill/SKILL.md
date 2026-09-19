@@ -147,9 +147,11 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 ### Step 6: stamp `distilled_date`
 
-Stamp it with today's date on the source note.
+Stamp it with today's date on the source note — **unless step 4 left any of this source's concepts unwritten**: one the create cap deferred, or one whose append was not made (both in the accretion policy below).
 
 - This is the commit point; after it the source leaves the ripe set.
+- A source with an unwritten concept stays ripe instead: stamp nothing, skip step 7, and name the source in the run summary under the reason it stayed.
+  - Those concepts' claims are grounded in the notebook and have landed nowhere else, so the source keeps it until a later run replays the source and writes them, the accretion policy's replay rules keeping what already landed from being written twice.
 
 ### Step 7: discard the notebook
 
@@ -157,7 +159,7 @@ Discard it (see kboat-notes) — **unless `keep` is also set**, in which case re
 
 - When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
 
-A crash anywhere in 1–5 leaves the source ripe and replayable.
+A crash anywhere in 1–5 leaves the source ripe and replayable, as a partial pass does.
 A crash between 6 and 7 leaves a notebook to clean up later, never lost data.
 
 ## Phase C: distil Kindle books
@@ -177,11 +179,11 @@ Process each `kindles.ripe` entry in this order — the same crash-safety logic 
    - Grounding for a Kindle book: passages quoted from the book are `#grounded`; the reader's own commentary or interpretation in the body is external, so give it the same `#dialogue` treatment as a source's dialogue claims (vet it per the accretion policy's dialogue handling — keep as-is, correct, or drop — before accreting; a Kindle book has no notebook, but the reader's marginalia is the same kind of reader signal as saved dialogue).
    - Provenance is the ASIN, not a URL: `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` (the bare ASIN — the note's filename).
 3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same per-run file as Phase B), before the stamp.
-4. **Stamp `distilled_date`** with today's date on the Kindle note.
+4. **Stamp `distilled_date`** with today's date on the Kindle note — unless step 2 left any of the book's concepts unwritten, where the book stays ripe exactly as a source does at Phase B step 6.
    - This is the commit point; after it the book leaves the ripe set.
    - There is no notebook to discard.
 
-A crash anywhere in 1–3 leaves the book ripe and replayable; the idempotency rules in the accretion policy (skip a provenance observation whose ASIN is already present) keep a replay from double-writing.
+A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass does; the accretion policy's replay rules keep the replay from double-writing.
 
 ## Accretion policy (unattended)
 
@@ -213,12 +215,14 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
     - **A note that already carries a `###`, with claims still bare above the first one**, owes those claims a heading too, whatever else this append does to it.
       - They are an insight nothing has named, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
   - **`edit_note` does not raise on a failing anchor** — it returns the failure as an ordinary result, so call it with `output_format="json"` and read a non-null `error` key.
-    - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, since `distilled_date` is stamped whatever any one note did and nothing under that key is retried.
+    - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6), so a later run makes the append again.
+      - A note the writer cannot edit refuses that append on every run, so the source stays ripe until a human repairs the note.
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
   - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title.
-- **Cap creates per run.** Set a hard ceiling on new concept notes per run.
-  - If hit, stop creating, finish appends, log the deferred concepts as uncreated candidates in the report (they are knowledge to promote), and escalate the cap-hit itself — that the ceiling was reached and how many were left — in the run summary.
+- **Cap creates per run.** `create_cap` is **8** new concept notes per run, Phase B and Phase C together; this is the one place the value is set, so adjust it here.
+  - Once the run has created `create_cap` notes, stop creating and finish appends: log each concept left to create under `uncreated candidates:` marked `deferred (create cap reached)`, and report the cap-hit itself — that the ceiling was reached and how many were left — in the run summary.
+  - A deferred concept is not given up: it keeps its source ripe (Phase B step 6), and a later run creates it.
 - **Ground every claim.** Treat the **original** source's `fulltext` (and the source-grounded NotebookLM `summary`) as the authority.
   - Tag each distilled observation by grounding: `#grounded` when the original source supports it, `#dialogue` when it is external knowledge the conversation brought in — a saved dialogue note (an extra notebook source, see Extract) or an uncited Gemini answer in `history`.
   - Never let a `#dialogue` claim read as if it came from the source.
@@ -289,7 +293,7 @@ Source: <url> (for a Kindle book: ASIN:<asin>)
 - `kept from dialogue:` external (`#dialogue`) claims accreted as the dialogue stated them (a dialogue claim you kept as-is that the source grounds needs no dialogue-audit line — it is source knowledge that folds into `created:`/`appended-to:`; a *corrected* claim keeps its `corrected from dialogue:` line either way).
 - `corrected from dialogue:` claims accreted after you fixed an error the fast reading model made — whether the fix lands them `#grounded` (the source now supports it) or `#dialogue` (external) — each with what you changed, so the human can audit the correction.
 - `skipped (dup of):` observations dropped as duplicates.
-- `uncreated candidates:` concepts left for the human to promote — including `#dialogue` claims you could neither confirm nor confidently correct, and a concept whose append could not be made at all, marked `append not made` the way a cap deferral is marked `deferred (create cap reached)`. Nothing here is retried: `distilled_date` is stamped and the notebook discarded whatever any one note did, so this key is the whole of what a human has to promote by hand.
+- `uncreated candidates:` concepts this pass did not write. Two marks are retried by a later run, since either keeps the source ripe: a concept the create cap deferred, marked `deferred (create cap reached)`, and one whose append could not be made at all, marked `append not made`. Everything else here — a vague or broad concept, a `#dialogue` claim you could neither confirm nor confidently correct — is the human's to promote, and nothing retries it.
 - `merge candidates:` pairs flagged for `memory-curate`.
 ```
 
@@ -313,6 +317,13 @@ Everything operational stays out of the report and goes to the run summary only 
 
 ## Run summary
 
-End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, concepts left uncreated because the per-run create cap was hit, ambiguous dispositions left unprocessed, and items left for the next run by errors).
+End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, ambiguous dispositions left unprocessed, and items left for the next run by errors).
 Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, and non-fatal errors on a saved dialogue note, `history`, or `summary`), whether the run stopped because the `k-boat-knowledge` project was missing or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
+
+Name every source and Kindle book a partial pass left ripe (Phase B step 6), under one of two lines:
+
+- **Left ripe by the create cap** — every unwritten concept was a cap deferral; give how many each deferred.
+  - A later run finishes these unaided, so this line asks nothing of anyone.
+- **Left ripe by an append not made** — at least one concept's append failed, whether or not the cap also deferred others; give the concept and the error.
+  - The next run makes the same append, and a note the writer cannot edit refuses it every time, so this line is for a human.
