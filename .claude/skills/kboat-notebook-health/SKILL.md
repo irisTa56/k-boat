@@ -82,7 +82,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
 4. **Restore what step 3 sent on.** Run that procedure from its step 2, giving it the listing step 3 took so it does not repeat the call, and report where each source landed.
    - **Take them one at a time**, each add verified and, where it must be, undone before the next begins.
      - Between the add and the undo the notebook holds a source that would read as the original later, so an interruption should strand one notebook rather than several.
-   - **A transient failure is not a failure to restore** — a rate-limited `source add`, a `source wait` that came back `not_found` or `timeout`, a failed `source guide` on a `wall` verdict's second look.
+   - **A transient failure is not a failure to restore** — a rate-limited `source add`, a `source wait` that came back `not_found` or `timeout`, a failed `source get` on the web-page type check, or a failed `source guide` on a `wall` verdict's second look.
      - Count and report these apart: they ask nothing of the reader, while every ending below costs the notebook to act on.
    - A `url` gone walled since the ingest is the ending to expect, and a source originally rescued from the DLQ reaches it whenever the wall still stands.
      - The unattended run cannot clear a wall, so this ending is always a report.
