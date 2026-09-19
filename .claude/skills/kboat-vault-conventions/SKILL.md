@@ -187,7 +187,15 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - A field name outside the property-key grammar — ASCII letters, digits and `_`, never opening with a digit, which `snake_case` already satisfies — is refused the same way, and the whole record with it.
     - A wrong *value* is kept as a quoted scalar and reported by `kboat-validate`; a name has no such fallback, since quoting it puts the property outside what the reader can decode and so beyond both the next write and the validator.
     - A property a human hand-added under a name of their own is a different matter — the write carries it back untouched (below).
-- **Merge on update.** If the file is absent it is created; if present, the record's `fields` are merged over the existing note — provided keys win, absent keys are preserved — so a partial write (omitting a field, or `body`) preserves what it omits.
+- **What holds the slug decides create versus merge**, asked the way "A name an iCloud placeholder holds is taken, not free" below says and in its order, never by a bare `exists()`.
+  - A file there is merged into (the next bullet), and a slug nothing holds is created.
+  - A slug iCloud has evicted — a placeholder beside it and no file — is refused as `{status: "evicted", slug, path}`, written nowhere.
+    - Taking it for a new note would skip the merge and the collision check and rewrite the note from what the record alone carries, losing every field a human owns, and iCloud would later settle the two copies by suffixing or dropping one.
+    - It clears once the note is downloaded, so a caller leaves the item for a later run rather than marking it done; the eviction itself is the next run's `kboat-doctor` `icloud_notes` finding.
+  - A slug held by something that is not a file — a directory, or a symlink that leads nowhere — raises an `OSError` and writes nothing, which `kboat-note write` and `kboat-repos write` report as `write failed: …` and feed-filter as `error: …`, each with exit 1.
+    - No run frees that name, so it is a human's.
+  - A probe the vault refuses raises the same way, so a refusal is never reported as an eviction.
+- **Merge on update.** If a file is there, the record's `fields` are merged over the existing note — provided keys win, absent keys are preserved — so a partial write (omitting a field, or `body`) preserves what it omits.
   - Omitting a key therefore never clears it; to clear a field, give it as `null`, which writes the field's empty form: a bare `key:` for a string or a date, `[]` for a list.
 - **Always-present defaults on create.** A present field absent from the record is filled with its schema default (a boolean → `false`), so the Base-filter booleans are written on every note from creation.
   - On *update* a field the note has lost is left lost, not backfilled — a write re-renders only what it changes (below), and a writer that filled in blanks it was not asked about would be re-rendering the whole note.
@@ -258,10 +266,8 @@ The two are not interchangeable: a scan needs `list_note_dir` whether or not it 
 Which names a writer has to ask about depends on where each came from: a name a `list_note_dir` listing produced is already answered, and one a record or a slug formula produced is not.
 So a rename driven by a scan asks about its target, while one that derives both names itself asks about both, since either being evicted is a reason not to move.
 That is what `pathlib` will not do for them: from CPython 3.14 `Path.exists` swallows every `OSError`, and `Path.glob` swallows the one `os.scandir` raises on an unlistable directory in every version, so a permission-denied probe comes back as an invitation to write there and an unreadable folder as an empty, clean one.
-**A `created` status is not a claim that the name was free.**
-`upsert`'s create-versus-merge decision is a bare `exists()`, so at an evicted slug it takes the note for a new one: the merge and the collision check above are both skipped and the note is rewritten from what the record alone carries.
-Read it as "the writer found no file there" and nothing further.
-The `kboat-doctor` placeholder scan is a precondition and not a substitute: it runs once, before the phases, and an eviction can land on a vault it passed.
+`upsert` holds itself to this rule for its create-versus-merge decision, so a `created` status says nothing held the slug: no file, no placeholder, and nothing else.
+It asks at write time rather than leaning on the `kboat-doctor` placeholder scan, which is a precondition and not a substitute: it runs once, before the phases, and an eviction can land on a vault it passed.
 
 ## Durability and the vault lock
 
