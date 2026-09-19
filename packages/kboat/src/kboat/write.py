@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection, Mapping, Sequence
+from enum import StrEnum
 from pathlib import Path
 
 from kboat.canonical import canonical_url
@@ -184,11 +185,30 @@ def build_note(
 
 NOTES_HEADING = "## Notes"
 
+
+class WriteStatus(StrEnum):
+    """Every `status` a note write can print, wherever along its path it is composed.
+
+    `upsert` composes the first four. `LOCKED` is composed at the CLI edge — by
+    `kboat.cli.emit_locked`, and by feed-filter's `main` — for a vault another run
+    holds: a write that never reached `upsert`, and a status its caller branches
+    on all the same, so it is a member here rather than a bare string where it is
+    composed. `test_doc_value_sets` compares the skills' enumerations of the set
+    against this declaration.
+    """
+
+    CREATED = "created"
+    UPDATED = "updated"
+    COLLISION = "collision"
+    SLUG_MISMATCH = "slug_mismatch"
+    LOCKED = "locked"
+
+
 # The `upsert` statuses that mean a note is on disk. Every other status is a
 # write that did not happen, so each caller's success test is written against
 # this set rather than against a list of refusals — a refusal added later must
 # not read as success anywhere.
-WROTE_A_NOTE = frozenset({"created", "updated"})
+WROTE_A_NOTE = frozenset({WriteStatus.CREATED, WriteStatus.UPDATED})
 
 
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -364,7 +384,7 @@ def _slug_mismatch(schema: NoteSchema, slug: str, provided: Mapping[str, object]
     if expected == slug:
         return None
     return {
-        "status": "slug_mismatch",
+        "status": WriteStatus.SLUG_MISMATCH,
         "identity": schema.identity,
         "url": url,
         "expected": expected,
@@ -452,7 +472,7 @@ def upsert(
             )
             if unreadable or differs:
                 return {
-                    "status": "collision",
+                    "status": WriteStatus.COLLISION,
                     "reason": "unreadable_identity" if unreadable else "identity_differs",
                     "slug": slug,
                     "identity": schema.identity,
@@ -483,4 +503,5 @@ def upsert(
     supplied = str(body_in) if isinstance(body_in, str) and schema.body != "none" else ""
     body = _compose_body(schema, existing_body, supplied if supplied.strip() else "")
     atomic_write_text(path, build_note(schema, written, body, carried))
-    return {"status": "created" if created else "updated", "slug": slug, "path": rel}
+    status = WriteStatus.CREATED if created else WriteStatus.UPDATED
+    return {"status": status, "slug": slug, "path": rel}

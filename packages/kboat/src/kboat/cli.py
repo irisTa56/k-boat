@@ -31,7 +31,7 @@ from pathlib import Path
 
 from kboat.frontmatter import NOTE_READ_ERRORS
 from kboat.lock import VaultLockedError, VaultLockUnavailableError
-from kboat.write import WROTE_A_NOTE, BadInputError
+from kboat.write import WROTE_A_NOTE, BadInputError, WriteStatus
 
 
 def _iso_date(value: str) -> str:
@@ -110,7 +110,8 @@ def emit_locked(exc: VaultLockedError) -> int:
     nothing was written, so re-run once the holding run finishes.
     """
     sys.stderr.write(f"{exc}\n")
-    json.dump({"status": "locked", "holder": exc.holder}, sys.stdout, ensure_ascii=False, indent=2)
+    record = {"status": WriteStatus.LOCKED, "holder": exc.holder}
+    json.dump(record, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 1
 

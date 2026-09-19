@@ -41,4 +41,5 @@ The keys a console script prints on stdout are one such set.
 Take as few keys, and as few values in any closed set among them, as the prose reading the record actually needs — each one is another site the next sweep has to reach.
 
 Where both sides are structured — a table on one, a field list or an enum on the other — a test can pin that much against drift, which is what `packages/kboat/tests/test_doc_schema_sync.py` does and the pattern to reach for.
+Each member's `tests/test_doc_value_sets.py` does the same for a declared set a skill enumerates whole, and a list you write that enumerates one of its sets is registered there too.
 What a value obliges its reader to do is structured on neither side, so that stays the sweep's work, whatever a test covers.

@@ -34,7 +34,7 @@ from kboat.frontmatter import FrontmatterError
 from kboat.lock import vault_lock
 from kboat.naming import note_slug
 from kboat.schema import FEED
-from kboat.write import WROTE_A_NOTE, upsert
+from kboat.write import WROTE_A_NOTE, WriteStatus, upsert
 
 
 class VaultError(Exception):
@@ -104,7 +104,7 @@ def write_feed_note(
     status = result.get("status")
     if status in WROTE_A_NOTE:
         return result
-    if status == "collision":
+    if status == WriteStatus.COLLISION:
         if result.get("reason") == "unreadable_identity":
             raise VaultError(
                 f"slug {slug} holds a note whose url cannot be read, so it cannot be "
