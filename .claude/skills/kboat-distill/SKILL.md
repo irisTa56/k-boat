@@ -253,7 +253,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
   - Before inserting, read the note's `## Observations` and write only what it does not already hold:
     - Skip a provenance observation whose URL (or, for a Kindle book, ASIN) is already present.
-    - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`.
+    - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`, naming what it duplicates.
+      - Where that is this source's own claim, written by an earlier pass, say so: a skip is logged for the human to reverse, and this one repeats nothing another reading said.
+      - A claim the section holds only as `#dialogue` is not a copy of one this source grounds: write it, tagged `#grounded`, as this reading's claim.
       - The check only keeps a second copy out; where a claim that is not there yet goes is still the placement judgement above.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
 
