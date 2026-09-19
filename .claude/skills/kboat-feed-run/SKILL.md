@@ -62,8 +62,8 @@ Judging the entries in parallel is fine, but launch each judge in the foreground
 - Feeds **must not** be re-fetched with `WebFetch` for their item list — but `entry-body` (the cached body) and a `WebFetch` of an individual article page are exactly what the later stages are for.
 - **`wall == true`** — when a `WebFetch` returns a login wall / paywall / subscribe gate instead of the article, the subagent sets `wall = true` rather than guessing a keep/drop (prompts/selection.md "Walls and unreadable pages").
   - Wall detection is tied to the `WebFetch`: an entry decided from its `title`+preview or from the cached `entry-body` body is never `WebFetch`ed, so it has no wall to flag — only scrape entries (always `WebFetch`ed) and a feed entry that both needs its full body and misses the `entry-body` cache can surface a wall.
-    - The judge reads its task and not this skill, so the task states this rule: a judge that decided from the preview or from the `entry-body` body returns `wall = false`.
-    - A false `wall` is not harmless: step 3 takes the Wall branch before the keep/drop check, so it writes a note even for an entry the judge dropped.
+  - The judge reads its task and not this skill, so the task carries `prompts/selection.md`'s "Walls and unreadable pages" section word for word, and states beside it that `entry-body` returns the cached body rather than fetching the page, so a judge that decided from the preview or from that body returns `wall = false`.
+    - A wrong `wall` is not harmless: step 3 takes the Wall branch before the keep/drop check, so it writes a note even for an entry the judge would have dropped.
   - This is distinct from a hard fetch error (the page would not load at all), handled in step 3.
 - **`requires_browser` site** (the `requires_browser` field from `feed-filter list-sites`) — the browser fetches only the *gather* feed/index, not the per-article body.
   - The feed body it parsed is cached, so `entry-body` still serves the full article for a feed that ships one (e.g. `content:encoded`) with no per-article fetch.
