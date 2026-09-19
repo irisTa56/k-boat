@@ -208,7 +208,7 @@ Collect, per item, at least:
   - The queue file is kept (see Safety).
 - An evicted note or PDF: iCloud holds it behind a placeholder, so nothing was written.
   - Three places meet it, and they are one error: step 1's de-dup finding the source note evicted, the PDF path's check before its download finding the PDF evicted (both per kboat-notes), and the note write returning `status: evicted`, on the source path or the repo route alike.
-  - Keep the queue file and report it by name, saying whether the note or the PDF is evicted: the capture drains on a later run once iCloud has that file back, and the next run's `kboat-doctor` reports the eviction itself.
+  - Keep the queue file and report it by name, saying whether the note or the PDF is evicted and that a human downloading that file in Finder is what lets the capture drain on a later run, since nothing in a run brings it back; the next run's `kboat-doctor` reports the eviction itself.
 - Slug collisions: an existing `Sources/<slug>.md` cannot be shown to be this item — it holds a `url` naming a different page, or holds one in a shape the reader cannot compare (see kboat-notes de-dup).
   - A second link to a page already ingested is **not** this case: it shares the slug by design and is that note's source, which step 1 handles.
   - Stop that item without overwriting, keep its queue file, and report which of the two it was; this is deterministic, so it needs a human to resolve rather than a retry.

@@ -134,7 +134,7 @@ Every web source pays for the `source get` round trip regardless (one call in a 
    - An item the de-dup lets through continues with steps 2–5.
 2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
    - First ask what holds that name, as the [`PDFs/` layout](../SKILL.md#layout) says.
-     - Where iCloud has evicted the file, download nothing and write no note: kboat-ingest keeps the queue file and reports the item by name, and it drains on a later run once iCloud has the file back.
+     - Where iCloud has evicted the file, download nothing and write no note: kboat-ingest keeps the queue file and reports the item by name, and it drains on a later run once a human has downloaded the file in Finder.
      - Where something that is not a file holds the name, download nothing and write no note either, and report it as needing a human.
    - Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check.
      - This same magic-byte check must still hold immediately before the upload — treat download → verify → upload as one uninterrupted sequence — which is why step 5 opens by making it again rather than trusting this one.
