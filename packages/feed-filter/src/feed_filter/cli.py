@@ -95,7 +95,7 @@ from feed_filter.vault import VaultError, write_feed_note
 from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.cli import add_today_argument
 from kboat.lock import VaultLockedError
-from kboat.write import BadInputError
+from kboat.write import BadInputError, WriteStatus
 
 
 class BadUrlError(ValueError):
@@ -1365,7 +1365,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _reject_unencodable_args(args)
         exit_code: int = args.handler(args)
     except VaultLockedError as exc:
-        _emit({"status": "locked", "holder": exc.holder})
+        _emit({"status": WriteStatus.LOCKED, "holder": exc.holder})
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except sqlite3.Error as exc:
