@@ -80,14 +80,15 @@ Create a `Sources/*.md` note (see kboat-notes), using the fetched title.
 
 Create the source's 1:1 notebook (see kboat-notes [create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note)): `create` → `source add` → **verify the type**, then **verify the fetch** (both per kboat-notes, in that order) → capture `summary`/`topics` from the source guide and write them plus `notebooklm_id` and the derived `gemini_url`/`notebooklm_url` back onto the source note.
 
-- Run the verifications in a cheap subagent, like the page fetch in step 1.
+- Run the verifications in a cheap subagent, like the page fetch in step 1, handing it the article check's rules as kboat-notes says.
 - Three outcomes send the source to the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), which sets `blocked: true` and discards any notebook so `kboat-rescue` can supply the content later:
 
   - `source wait --json` says `.status` is `error` → the DLQ, keeping the sniffed type.
     - Its `not_found` and `timeout` are **not** this case: they are transient (notebook discarded, queue file kept, add redone next run), and the exit code cannot tell them apart from `error` — read `.status`.
   - `.source.type` is `pdf` → the DLQ as a `pdf` (step 1's sniff was fooled by a wall, and this is not a web page at all).
     - Any other non-`web_page` type is left alone and reported instead.
-  - The fetched text is a wall, not the article → the DLQ as a `web_page`.
+  - The fetched text is a wall, not the article, and the verdict survived the second look kboat-notes gives it → the DLQ as a `web_page`.
+    - A guide call that fails during that second look is not this case but a transient one.
 
 ### Step 4: delete the queue file
 
@@ -100,7 +101,7 @@ Delete the queue file only after the source note is written, by removing its cap
   - Do not delete the stub: deleting a placeholder is how a file leaves iCloud.
 
 A DLQ note counts as written, and so does the note step 1's de-dup stopped on — the durable note replaces the capture, so delete it.
-Keep the queue file only when no note was written, the write failed, or a **transient** failure left the source without a notebook and the next run could still get it one: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`, a `source wait` `not_found`/`timeout`, a failed `source get`, or a `status: locked` refusal from the note write (another run held the vault — kboat-vault-conventions "Durability and the vault lock").
+Keep the queue file only when no note was written, the write failed, or a **transient** failure left the source without a notebook and the next run could still get it one: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`, a `source wait` `not_found`/`timeout`, a failed `source get`, a failed `source guide` on a `wall` verdict's second look, or a `status: locked` refusal from the note write (another run held the vault — kboat-vault-conventions "Durability and the vault lock").
 The test is whether a retry could succeed, not whether a notebook exists — a PDF whose upload NotebookLM answered with `.status: error` has no notebook either, but the verdict is durable and its file is already on disk, so the queue file goes and the outcome is reported instead of retried for good.
 
 ## Backfill: retry summary/topics capture
@@ -182,9 +183,9 @@ Collect, per item, at least:
   - The source note is kept without a `notebooklm_id`; report it so a later pass or a human can give it a notebook.
 - Chat-persona `configure` failure (rate limit, auth).
   - Non-fatal: the notebook is fully usable without the persona, so keep the notebook and `notebooklm_id` and report it (a later pass or a human can re-run `configure`).
-- Web page that did not fetch successfully — `source wait` reported `.status: error`, or a wall was fetched instead of the article → the DLQ.
+- Web page that did not fetch successfully — `source wait` reported `.status: error`, or a wall was fetched instead of the article and the verdict survived its second look → the DLQ.
   - Record it as `blocked` (note kept, walled notebook discarded) so `kboat-rescue` can supply real content.
-- `source wait` reported `.status: not_found` or `timeout` (on either the web or the PDF path), or the `source get` type check itself failed.
+- `source wait` reported `.status: not_found` or `timeout` (on either the web or the PDF path), the `source get` type check itself failed, or the `source guide` call a `wall` verdict's second look needs failed.
   - Transient, and pointedly **not** the DLQ — none of these says the fetch or the upload failed, so discard the unverified notebook (by the id `create` returned, or it leaks) and keep the queue file for the next run to redo the add.
 - Web page NotebookLM typed `pdf` → the DLQ, as a `pdf` (`source_type` corrected, notebook discarded), so `kboat-rescue` supplies the file.
   - Not a sniff bug to chase: the URL carried no PDF marker and answered our GET with a wall, so nothing before the add could have typed it.
