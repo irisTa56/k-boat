@@ -120,6 +120,7 @@ Errors on the other extractions below — saved dialogue notes, `history`, `summ
 - **Original content (grounded)**: write the full text of the **original** source (the id resolved in step 2) to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <notebooklm_id> -o <tmpfile>`, then read it.
   - Use `-o`, not stdout (which truncates at 2000 chars); avoid `-f markdown` (it needs the `markdownify` package, which is not installed, so it errors out).
   - Confirm the file is a successful fetch (see kboat-notes: the real content — for a web page not empty or a wall, for a PDF not empty or garbled extraction); if not, abort this source as a fetch failure and report it in the run summary.
+    - For a web page that is the article check in step 3 of kboat-notes [Procedure: create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note), whose rules on where to look and on a `wall` verdict's second look apply here — the second look reading the note's stored `summary` as the guide, as that step says.
   - This is the `#grounded` authority.
 - **Saved dialogue notes (dialogue)**: for each *other* source from step 2 (reading-time dialogue you saved into the notebook), `fulltext` it the same way and read it.
   - Its content is dialogue, not the source — treat its claims as dialogue-origin: vet each per the accretion policy's dialogue handling (keep as-is, correct, or drop) before accreting, and key its provenance to the **original** source's `url`.

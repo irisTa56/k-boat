@@ -64,9 +64,26 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
      - If the `source get` call itself fails (rate limit, auth, network), you have no type rather than a `web_page` — take the transient branch above (discard the notebook, no `notebooklm_id`, queue file kept), never the DLQ.
    - Confirm NotebookLM actually **fetched** the article.
      - A **successful fetch** means its text is the real article — not empty, and not a wall (a login / JS-required / Cloudflare / paywall page NotebookLM fetched instead of the content).
+     - Write the text to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile>` and read it — `-o`, not stdout, which truncates at 2000 chars.
      - Judge wall-vs-article by reading, not by keyword: page chrome such as a `Log in` link or a noscript `enable JavaScript` notice alongside the real text is normal.
+     - **Search the extract for the article's body; do not judge it from its head.**
+       - A page's template can put a long run of chrome ahead of the post — a cookie-preference block, navigation, related-post lists, a blog's whole tag index — and more of it inside and after the post, so in a large extract the body can start most of the way down.
+       - An opening that is all links or page chrome is a reason to look further down, never a verdict.
+       - The body is consecutive paragraphs of prose on the subject the title names, usually just after a byline; neither half is enough alone, since listings repeat the title and a cookie notice is written in sentences.
+       - The text is a wall only where the whole extract holds no body: chrome with a sign-in, subscribe, or bot-check prompt, or the article's opening paragraphs cut off by one.
+     - **A `wall` verdict must survive a second look before anything acts on it**: at ingest a false one discards the notebook that held the article and parks a readable source in the DLQ, where both exits are human-initiated.
+       - Read the source guide's `.summary` (`notebooklm --quiet source guide <source_id> --notebook <id> --json 2>/dev/null`).
+       - Where it describes this article's own content — its claims, names, or figures, rather than a sign-in page or the site in general — search the extract again for the body, looking for what the guide names; the verdict stands only if the body is still not found.
+       - The guide never overturns the verdict on its own: a paywall teaser is enough for NotebookLM to write a guide specific to the article.
+       - Distillation's re-check reads the note's stored `summary` as the guide wherever it is non-empty, and calls `source guide` only where it is empty.
+         - That `summary` is this source's guide captured at ingest, and the second look uses a guide only to learn what the article is about and so what to search the extract for, which the stored one says as well as a fresh call would.
+       - A guide call that fails leaves the second look untaken, so do not act on the verdict.
+         - Take the transient branch above, as a failed `source get` does.
+         - Distillation, which has no such branch, aborts the source as it does on a failed check, reporting the guide failure rather than a wall.
      - A source that does not fetch successfully is not ingested — when ingest hits this, record it in the DLQ (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and so does a reactivation, which re-runs this step and takes its endings whole (see [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook)); when distillation re-checks a ripe source and hits it, abort that source (it stays ripe) and report it, discarding nothing — the note already references this notebook, so keeping it leaks nothing, and keeping it is what leaves the source replayable.
      - This verification can run in a cheap subagent.
+       - The subagent reads its task rather than this skill, so the task carries this bullet's rules on where to look and on the second look word for word, with the extract's path and either the ids the guide call needs or, at distillation, the stored `summary`.
+       - A subagent told only to judge the text samples its head, which is where the chrome sits.
    - Capture the summary while the notebook still exists (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
    - Update the note with `kboat-note write --type source` once more — a `{slug, fields}` record carrying `summary`, `topics`, `notebooklm_id`, and the derived `gemini_url`/`notebooklm_url` (derive both from `notebooklm_id`).
      - The tool merges these over the existing note, preserving everything else.
@@ -485,7 +502,8 @@ A wall is what this step expects; a page that turns out to be **gone** rather th
   - Check for the file before fetching: a re-captured entry may already hold one from its earlier ingest (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and there is nothing to pull through the browser if it verifies.
 - **Web page** (`source_type: web_page`): navigate to the `url` and capture the rendered article text once the real content is on screen, writing it to a temp file for step 3.
   - There is no vault file — the reading copy stays the live `url` (the human reads it in the logged-in browser).
-  - Judge the captured text is the real article, not a wall, by reading it (the same wall-vs-article judgement as the ingest fetch).
+  - Judge the captured text is the real article, not a wall, by reading it: the same wall-vs-article judgement as the ingest fetch (step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)), searching the capture for the body as that step says.
+    - That step's second look does not apply: it reads a notebook source's guide, and no notebook exists yet for a `wall` verdict here to cost.
 
 ### Step 3: build the notebook
 

@@ -41,8 +41,8 @@ If nothing clears any tier — no act-early candidate and nothing on-interest �
   - This is the deliberate relaxation: the pick should not stay empty when a genuinely on-topic read is sitting in the inbox.
 
 **Stage 2 — body-read final judgment (NotebookLM).**
-For the shortlist only, read the actual content: resolve each candidate's source id by matching its `url` (then `title`) in `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the original source — see [One notebook per source](source-note.md#one-notebook-per-source-11); `--quiet --json` so the status output does not corrupt the JSON), fetch the body with `source fulltext`, and re-judge genuine relevance from the body rather than the summary — a candidate the summary suggested answers a question but the body does not is demoted or dropped; one that truly delivers is confirmed.
-The body also gives each candidate's length (its character count), used by the long-read tie-breaker below.
+For the shortlist only, read the actual content: resolve each candidate's source id by matching its `url` (then `title`) in `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the original source — see [One notebook per source](source-note.md#one-notebook-per-source-11); `--quiet --json` so the status output does not corrupt the JSON), fetch the extract with `source fulltext` and search it for the body as the ingest fetch check does ([Procedure: create or update a source note](procedures.md#procedure-create-or-update-a-source-note), step 3), and re-judge genuine relevance from the body rather than the summary — a candidate the summary suggested answers a question but the body does not is demoted or dropped; one that truly delivers is confirmed.
+The body also gives each candidate's length, used by the long-read tie-breaker below: the body's character count, not the extract's, which page chrome can make several times as long.
 Then pick at most two from the body-refined ranking, applying the two diversification preferences.
 
 **Fallback — degrade to Stage 1 when NotebookLM is unavailable.**
