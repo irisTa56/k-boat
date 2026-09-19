@@ -65,6 +65,9 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - Confirm NotebookLM actually **fetched** the article.
      - A **successful fetch** means its text is the real article — not empty, and not a wall (a login / JS-required / Cloudflare / paywall page NotebookLM fetched instead of the content).
      - Write the text to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile> --force` and read it — `-o`, not stdout, which truncates at 2000 chars, and `--force`, without which an existing file at that path is kept and the text lands under a renamed one.
+       - `<tmpfile>` is a path unique to this source — name it by the slug or the `source_id`, never a fixed name reused across sources.
+         - With `--force` in play, a write to a shared path clobbers whatever is already there instead of renaming around it, so two callers sharing one name overwrite each other's extract and each judges the other's text.
+         - This binds every site that hands the path to a subagent that can run alongside another working a different source — `kboat-recall`'s per-candidate daily-pick subagent among them.
      - Judge wall-vs-article by reading, not by keyword: page chrome such as a `Log in` link or a noscript `enable JavaScript` notice alongside the real text is normal.
      - **Search the extract for the article's body; do not judge it from its head.**
        - A page's template can put a long run of chrome ahead of the post — a cookie-preference block, navigation, related-post lists, a blog's whole tag index — and more of it inside and after the post, so in a large extract the body can start most of the way down.
@@ -163,8 +166,8 @@ Every web source pays for the `source get` round trip regardless (one call in a 
        - Discard the notebook (passing the id `create` returned) and leave the note without a `notebooklm_id` — the transient shape where kboat-ingest keeps the queue file and the next run redoes the upload.
          - The note and its file are already on disk, which step 1's de-dup allows: a note without a `notebooklm_id` stops there only when it is `blocked`, `dismiss`ed, or already distilled.
    - Once `ready`, verify the extraction.
-     - Write the text to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile>` and read it.
-       - Use `-o`, not stdout, which truncates at 2000 chars and would make a good PDF look empty.
+     - Write the text to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <id> -o <tmpfile> --force` and read it.
+       - Use `-o`, not stdout, which truncates at 2000 chars and would make a good PDF look empty, and `--force` for the reason step 3 of [create or update a source note](#procedure-create-or-update-a-source-note) gives.
      - A direct upload cannot fetch a wall, so the remaining failure mode is **empty or garbled extraction** rather than a login page.
      - This is **not** a DLQ/blocked case: the `PDFs/<slug>.pdf` file downloaded fine and is readable in Obsidian (an image-only scan, say) — only the notebook text is unusable, and re-fetching the same file would extract to nothing again, so `kboat-rescue`'s browser fetch cannot help.
      - Keep the note, file, and notebook (`blocked` stays `false`) and record `notebooklm_id` (via the update below).
@@ -517,7 +520,7 @@ Then wait for the upload to process: `notebooklm --quiet source wait <source_id>
 Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report its own timeout.
 Branch on `.status`, **not** the exit code — it merges `not_found` and `error` into `1`, and here too they want opposite handling.
 
-- `ready` → verify the extraction (`fulltext <source_id> --notebook <id> -o <tmpfile>`) and capture `summary`/`topics` (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
+- `ready` → verify the extraction (`fulltext <source_id> --notebook <id> -o <tmpfile> --force`, `--force` for the reason step 3 of [create or update a source note](#procedure-create-or-update-a-source-note) gives) and capture `summary`/`topics` (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
 - `not_found` or `timeout` → neither says the upload failed: `not_found` is a first-poll race against the source appearing (raised without retry), and `timeout` says only that we stopped waiting.
   - On the ingest paths the fix is to let the next unattended run redo the add, but rescue has no next run and its upload came from a human-assisted capture, so **re-run the same `source wait` once** rather than throw that work away — in a *fresh* Bash call, since two 90s waits in one block exceed the 120s budget and are killed, losing the status the retry exists to get.
   - If the retry is still not `ready`, take the notebook-not-built ending in step 4, where it stays the non-verdict it is.
