@@ -40,7 +40,7 @@ Probe it once with `search_notes(project="k-boat-knowledge", …)`.
 
 Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
 
-- This single tool does the whole mechanical core — what used to be hand-evaluated frontmatter logic — so the model never reads every note or does the date math:
+- This single tool does the whole mechanical core, so the model never reads every note or does the date math:
 
   - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
     - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
@@ -57,7 +57,8 @@ Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
 
 Parse this JSON; it is the work list for the rest of the run.
 The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
-If the tool is unavailable, fall back to evaluating those predicates by hand over `Sources/*.md`.
+If the tool cannot be run at all — not on `PATH`, or it ends with none of the outputs above and none of the vault lock's (kboat-vault-conventions "Durability and the vault lock") — that is an environment failure: **STOP the whole run** and report it.
+Never evaluate the predicates by hand in its place.
 
 ## Phase A: maintain the cooldown clock
 
@@ -330,7 +331,7 @@ Everything operational stays out of the report and goes to the run summary only 
 ## Run summary
 
 End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, ambiguous dispositions left unprocessed, and items left for the next run by errors).
-Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, and non-fatal errors on a saved dialogue note, `history`, or `summary`), whether the run stopped because the `k-boat-knowledge` project was missing or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
+Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, and non-fatal errors on a saved dialogue note, `history`, or `summary`), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
 
 Name every source and Kindle book a partial pass left ripe (Phase B step 6), under one of two lines:
