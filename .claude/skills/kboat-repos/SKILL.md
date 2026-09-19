@@ -180,7 +180,10 @@ Detect and report; do not work around.
   - A `gather` record passed on as it came cannot produce it, since `gather` derives the slug from that same canonical `url` through the function the write recomputes it with; the pair was mangled after `gather`, on this path in the step-3 record the skill rebuilds to carry the judged fields.
   - Retrying the same record is refused identically — report it and stop; the defect is the record, not the vault.
 - `write` or `refresh` printed a `locked` record in place of its usual output — another run held the vault (kboat-vault-conventions "Durability and the vault lock").
-  - Nothing was written, and the next run can do it: report it in the run summary without escalating, and leave the item to that run rather than retrying in this one.
+  - Nothing was written and the record is not at fault, so report it without escalating.
+  - A repo `kboat-ingest` routed here keeps its queue file, so the next run writes the note; leave it to that run.
+  - A repo the user pasted has nothing that retries it: tell them, since the same record can be written once the holding run has finished.
+  - A refused `refresh` changed nothing: the next routine run refreshes the catalogue, and one run by hand can be run again once the holding run has finished.
 - `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the five `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the four `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
 - `gh` not authenticated.
   - Stop and report rather than producing empty records.
