@@ -26,6 +26,7 @@ from typing import get_args
 
 import pytest
 
+from kboat.repos.gather import Verdict
 from kboat.repos.refresh import CollisionReason, Reason
 from kboat.write import WriteStatus
 
@@ -102,6 +103,8 @@ def _bullets(path: str, lead_in: str) -> Callable[[], list[str]]:
     return extract
 
 
+_NOT_OK_VERDICTS = tuple(verdict.value for verdict in Verdict if verdict is not Verdict.OK)
+
 # (the code's set, the site's path, how to read the site's values)
 _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
     "refresh-reason-bullets": (
@@ -123,6 +126,18 @@ _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
         get_args(CollisionReason),
         _NOTES_PROCEDURES,
         _inline(_NOTES_PROCEDURES, r"each entry carrying a `reason` — ([^;]*);"),
+    ),
+    # Both sites enumerate the verdicts that stop the catalogue path, so `ok` is
+    # left out of the set they are held to.
+    "gather-verdict-bullets": (
+        _NOT_OK_VERDICTS,
+        _REPOS_SKILL,
+        _bullets(_REPOS_SKILL, r"^- The non-`ok` verdicts:$"),
+    ),
+    "gather-verdict-inline": (
+        _NOT_OK_VERDICTS,
+        _REPOS_SKILL,
+        _inline(_REPOS_SKILL, r"`gather` returned a non-`ok` verdict — ([^(]*)\("),
     ),
     "write-status-inline": (
         tuple(status.value for status in WriteStatus),

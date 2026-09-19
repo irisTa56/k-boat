@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from datetime import date
+from enum import StrEnum
 
 from kboat.cli import add_today_argument
 
@@ -202,13 +203,27 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # would leave an unattended run with nothing to report at all.
 
 
+class Verdict(StrEnum):
+    """Every `status` a `gather` record carries — the set the skill branches on.
+
+    One declaration, so a verdict added here is one `test_doc_value_sets` compares
+    the skill's enumerations against, rather than a bare string it never sees.
+    """
+
+    OK = "ok"
+    SKIP_NOT_A_REPO = "skip-not-a-repo"
+    SOURCE_FILE = "source-file"
+    ERROR_META = "error-meta"
+    DEFECT_PAYLOAD = "defect-payload"
+
+
 def _fetch_failed(record: dict, exc: BaseException) -> dict:
-    record.update(status="error-meta", error=f"{type(exc).__name__}: {exc}")
+    record.update(status=Verdict.ERROR_META, error=f"{type(exc).__name__}: {exc}")
     return record
 
 
 def _payload_defect(record: dict, exc: BaseException) -> dict:
-    record.update(status="defect-payload", error=f"{type(exc).__name__}: {exc}")
+    record.update(status=Verdict.DEFECT_PAYLOAD, error=f"{type(exc).__name__}: {exc}")
     return record
 
 
@@ -230,7 +245,7 @@ def _mapped(
         "url": canon,
         "slug": canonical_slug(canon),
         "title": f"{owner}/{repo}",
-        "status": "ok",
+        "status": Verdict.OK,
         # The mechanical, ready-to-write GitHub-derived frontmatter (the 10%
         # language rule, `status`, etc.) so the skill never re-derives it —
         # it only adds the judged role/domain/summary on top.
@@ -259,10 +274,10 @@ def gather(url: str, *, today: date) -> dict:
     file_src = github_file_source(url)
     if file_src:
         source_type, src_url = file_src
-        return {"url": src_url, "status": "source-file", "source_type": source_type}
+        return {"url": src_url, "status": Verdict.SOURCE_FILE, "source_type": source_type}
     owner, repo = parse_repo(url)
     if not owner or not repo:
-        return {"url": url, "status": "skip-not-a-repo"}
+        return {"url": url, "status": Verdict.SKIP_NOT_A_REPO}
     # Identity from the queued link, used only if the fetch fails (so the error
     # report names what was queued). A successful fetch overrides it below.
     record: dict = {
@@ -279,7 +294,7 @@ def gather(url: str, *, today: date) -> dict:
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
     if meta is None:
-        record.update(status="error-meta", error=err)
+        record.update(status=Verdict.ERROR_META, error=err)
         return record
     # Re-key off the canonical owner/repo `gh` resolved to (handles renames,
     # transfers, and case), so the note's url/slug/title are authoritative.
@@ -328,4 +343,4 @@ def main(argv: list[str] | None = None) -> int:
     # Every non-`ok` verdict exits non-zero, `defect-payload` included: the exit
     # code says only that no note came of this, and the record says which verdict
     # it was and what the skill owes it.
-    return 0 if record.get("status") == "ok" else 1
+    return 0 if record.get("status") == Verdict.OK else 1
