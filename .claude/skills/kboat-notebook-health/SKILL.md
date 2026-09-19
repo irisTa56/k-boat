@@ -1,6 +1,6 @@
 ---
 name: kboat-notebook-health
-description: Check whether a live source notebook still holds its original source, and add the original back where it has gone. Use when the routine runs its notebook-health step after the daily pick, or when the user asks whether their notebooks are still intact, says a notebook "came up empty", or wants a source restored after NotebookLM dropped it. Restores in place — it never rebuilds a notebook, so saved dialogue survives. Defers to kboat-notes for the source-note schema and for the restore itself.
+description: Check whether a live source notebook still holds its original source, and add the original back where it has gone; also report the notebooks the account lists that no source note references. Use when the routine runs its notebook-health step after the daily pick, or when the user asks whether their notebooks are still intact, says a notebook "came up empty", or wants a source restored after NotebookLM dropped it. Restores in place — it never rebuilds a notebook, so saved dialogue survives. Defers to kboat-notes for the source-note schema and for the restore itself.
 ---
 
 # K-Boat notebook health
@@ -68,6 +68,15 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - The sweep opening already read that frontmatter; the argument opening read one note, so make the vault-wide read here — it is a frontmatter scan against a listing already fetched, not another call.
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
+   - **Then name the notebooks no note references**: every notebook in that listing whose id no `notebooklm_id` in the vault carries, by id and title, for the run summary.
+     - This is where the check costs nothing: the listing and the vault-wide read are already in hand, and every ingest of the run has written its ids by now.
+     - Make the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names; a vault with no stored id at all gives that check nothing to go on, so make none there either.
+     - Leave out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
+     - A note that could not be read (see Errors) may be the one carrying a listed id, so where any could not, say so beside the list.
+     - **The list is a report and nothing more.**
+       - K-Boat names a notebook after its source's `title`, so nothing in the listing tells a notebook K-Boat built and lost track of — an ingest-time discard that failed, an id written over — from one the reader made by hand in the same account.
+       - The account holds none of the second kind today, and nothing keeps it that way.
+       - So never delete a notebook on the strength of this list; which one is a leak is the reader's to judge.
 3. **Ask whether the original is still there.** For each source still in the set, run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11).
    - Redirect stderr per kboat-notes [Environment](../kboat-notes/SKILL.md#environment).
      - The warning it hides fires on exactly the notebooks holding saved dialogue, and reading it as a failure would drop them from the sweep for good.
@@ -124,6 +133,8 @@ No vault write happens in this skill, so no `status: locked` refusal can arise.
 - Counts: sources checked, healthy, restored, left for the next sweep by a transient failure, failed to restore durably, left unrestored as ambiguous, found with no notebook at all, and skipped on a failed check.
   - Keep the transient count out of the durable one — only the durable endings ask the reader for anything.
 - Every source that was not healthy, by slug and title, with its verdict, whether the sweep found it or a phase reported it, and where it ended.
+- **Notebooks no note references** (step 2), by id and title — or that no list was made, and why.
+  - It asks nothing of this run and nothing clears it: the reader decides which, if any, to delete.
 - Errors, each with the source it affected and the cause.
 
 A source found without its original is a loss even where the restore succeeded: the article came back from the `url`, but whatever the reader built on it was built over a gap.
