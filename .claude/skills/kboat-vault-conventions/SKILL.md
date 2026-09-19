@@ -80,7 +80,6 @@ So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a r
   - The vault root is not otherwise swept, so an evicted `Sources.base` is not caught — a Base is Obsidian's view, which no phase reads.
 
 The placeholder check is split by what an eviction actually costs, because a doctor failure stops the whole routine.
-It fails where nothing else in the routine can tell an eviction apart from a file that is simply not there, and warns where something already does, or where all it costs is a reading copy.
 
 - A placeholder under a note directory (`Queue/`, `Reviews/`, and every `DIR_BY_TYPE` folder) **fails**.
   - A run that walks past one silently processes a vault missing content it has no way to know about.
