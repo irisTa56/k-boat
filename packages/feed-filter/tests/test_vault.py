@@ -270,7 +270,7 @@ def test_the_write_is_held_under_the_vault_lock(tmp_path: Path) -> None:
     def upsert_under_lock(*args: object, **kwargs: object) -> dict[str, object]:
         with pytest.raises(VaultLockedError), vault_lock(tmp_path, wait_s=0.0):
             pytest.fail("the write must hold the lock while it runs")
-        return real_upsert(*args, **kwargs)
+        return real_upsert(*args, **kwargs)  # ty: ignore[invalid-argument-type]
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(vault_mod, "upsert", upsert_under_lock)

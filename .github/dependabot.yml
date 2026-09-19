@@ -34,6 +34,14 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+        # uv-build, kboat's build backend, comes to Dependabot with no current
+        # version ("Updating uv-build from  to <version>" in the job log).
+        # Dependabot drops a group change holding such a dependency unless every
+        # dependency in it changes a requirement (`all_have_previous_version?`
+        # in dependabot-core's dependency_change.rb), and an unbounded one such
+        # as playwright changes only the lock. Out of the group, uv-build can
+        # hold back only its own update.
+        exclude-patterns: ["uv-build"]
     pull-request-branch-name:
       prefix: "dependabot-automerge"
 
