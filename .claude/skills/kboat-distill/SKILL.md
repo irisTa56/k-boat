@@ -148,7 +148,7 @@ Follow the accretion policy below.
 Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 - Written before the discard, so the extracted material survives even if the discard fails.
-- A section an earlier pass wrote the same day is replaced, not added to, and a later-day replay that placed nothing writes none (see "Review report").
+- A section an earlier pass wrote the same day is replaced, not added to, and a later-day replay with nothing its earlier sections do not already say writes none (see "Review report").
 
 ### Step 6: stamp `distilled_date`
 
@@ -272,8 +272,8 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
 ## Review report (`Reviews/YYYY-MM-DD.md`)
 
 The review report is the durable, **user-facing** record of what each distillation taught — read for memory consolidation, not a run log.
-So it carries **only the distillation knowledge** below, and is **written only on a run that distilled at least one source or Kindle book** (Phase B/C).
-A run that distilled nothing writes no report: there is nothing to consolidate, and its operational outcome (the Phase A lifecycle counts, dismissed discards and notebook retentions, anomalies, the "nothing ripe" status) lives in the run summary, not the vault.
+So it carries **only the distillation knowledge** below, and is **written only on a run that wrote a section for at least one source or Kindle book** (Phase B/C) — a partial pass that stamped nothing included, since its creates and appends are logged there for the human to reverse.
+A run with no section to write writes no report: there is nothing to consolidate, and its operational outcome (the Phase A lifecycle counts, dismissed discards and notebook retentions, anomalies, the "nothing ripe" status) lives in the run summary, not the vault.
 
 The first write to the day's file **creates it with its frontmatter block** (see kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd)), then appends the first `###` section; every later write appends a section, or replaces one under the rule below.
 
@@ -294,8 +294,10 @@ Before writing a source's section, look in the file for one already carrying thi
 - Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
 - A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did — its Summary drawn from the claims that pass placed — and the earlier day's report stays as it was.
-  - A later-day replay with nothing new to report writes no section: it placed nothing — no create, no claim, no relation — and logs nothing a human acts on, such as a concept to promote or a merge candidate; the run summary's left-ripe lines already name the source.
-    - A concept an earlier pass marked for retry that this pass ends without writing is something to report, so it gets a section.
+  - It writes that section only where it has something this source's earlier sections do not already say — find them in earlier days' reports by the `Source:` line:
+    - it placed something: a create, a claim, or a relation;
+    - or it settled a concept an earlier pass marked for retry some other way, leaving it to the human to promote or dropping it.
+  - A write that failed again, or a candidate an earlier section already logged, stays in the run summary, whose left-ripe lines already name the source.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
