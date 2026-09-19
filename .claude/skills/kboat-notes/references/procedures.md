@@ -646,8 +646,8 @@ This is the same split as source ingest (`kboat-ingest`) and rescue (`kboat-resc
    - This is the de-dup key.
 2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete.
    - The filename, being the ASIN, never changes.
-3. Otherwise create the note with `kboat-note write --type kindle` (it owns the file write, the same split as sources and repos): a `{slug, fields}` record where `slug` = the ASIN and `fields` carry `type: kindle`, `title`, `author` (a list), `reading_link` = the reader URL, `store_link` = `https://www.amazon.co.jp/dp/<ASIN>`, `published`, `publisher`, and `tags: ["kindle"]`.
-   - The tool starts `reading`/`finished`/`distill` `false`, leaves `distilled_date` empty, and stamps `added_date`.
+3. Otherwise create the note with `kboat-note write --type kindle` (it owns the file write, the same split as sources and repos): a `{slug, fields}` record where `slug` = the ASIN and `fields` carry `type: kindle`, `title`, `author` (a list), `reading_link` = the reader URL, `store_link` = `https://www.amazon.co.jp/dp/<ASIN>`, `published`, and `publisher`.
+   - The tool starts `reading`/`finished`/`distill` `false`, leaves `distilled_date` and `tags` empty, and stamps `added_date`.
    - The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads; an update that omits `body` preserves whatever highlights are there.
 
 ## Procedure: create or update a repo note
