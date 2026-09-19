@@ -599,7 +599,7 @@ Used when a source is `dismiss`ed, or as the final step of distilling a source t
    - With neither, the notebook is already gone — nothing to do.
      - Never conclude "already gone" from an empty `notebooklm_id` alone when the caller has an id in hand: nothing else references that notebook, so skipping the delete leaks it where no vault check can ever see it.
 2. Run `notebooklm delete --notebook <id> -y`.
-3. Clear `notebooklm_id`, `gemini_url`, and `notebooklm_url` on the source note (a no-op on an ingest-time discard, where they were never written).
+3. Clear `notebooklm_id`, `gemini_url`, and `notebooklm_url` on the source note (a no-op on an ingest-time discard, where they were never written), each given as `null` (`kboat-vault-conventions`, "The write contract").
 
 ## Procedure: create or update a Kindle note
 
