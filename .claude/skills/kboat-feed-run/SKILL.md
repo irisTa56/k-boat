@@ -23,10 +23,11 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 - `OBSIDIAN_VAULT_PATH` must be set (it comes from the workspace `.env`, loaded by `eval "$(mise env)"`).
   - A keep becomes a `Feeds/<slug>.md` note there; the `Feeds/` folder is created on the first write.
   - If the variable is unset, `remind` exits non-zero — stop and report rather than judging entries you cannot deliver.
-- Read the current criteria from `prompts/selection.md` once at the start of the run and pass them to every judging subagent.
-  - This file is gitignored local config; if it is absent (a fresh checkout), stop and report that it must be created by copying `prompts/selection.example.md` to `prompts/selection.md` — do not judge with no criteria.
-  - Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
-    - `list-sites` prints a bare JSON array, one object per site, and names the site `id` — the value `new-entries` emits as `site_id`.
+- Resolve the criteria file once with `feed-filter selection-path`, which prints `{path}`: `prompts/selection.md`, or wherever `FEED_FILTER_SELECTION` points.
+  - A non-zero exit means the file is absent (a fresh checkout): stop and report that it must be created at that `path` by copying `prompts/selection.example.md` — do not judge with no criteria.
+  - Each judge reads that file itself (step 2), so the run passes the `path` and has no need to read the criteria.
+- Honor a per-site `selection` override (from `feed-filter list-sites`, the `selection` field) when set — it replaces the Topics section for that site.
+  - `list-sites` prints a bare JSON array, one object per site, and names the site `id` — the value `new-entries` emits as `site_id`.
 
 ## Procedure
 
@@ -48,21 +49,28 @@ Run `eval "$(mise env)" && feed-filter new-entries`.
 
 ### Step 2: Judge each entry
 
-**Judge each entry** with a **haiku** subagent, passing `prompts/selection.md` (plus any per-site override) and the entry.
+**Judge each entry** with a **haiku** subagent.
+The judge reads its task and not this skill, and the task hands it the criteria by path rather than by content:
 
-The subagent returns `{keep, wall, title, summary, reason}` (see `prompts/selection.md` "Output").
+- The criteria `path` from `selection-path`, with the instruction to Read the whole file before judging and to judge by it.
+  - Never restate the criteria in the task, in full or in part: a restatement is what the judge would then judge by, and restatements have come out abridged, dropping whole sections of the file.
+- The site's `selection` override word for word when it is set, stated as replacing the file's Topics section.
+- The entry's `site_id`, `kind`, `url`, `title` and preview `summary`.
+- What the bullets below tell the judge to do, including the `entry-body` statement under `wall == true`.
+
+The subagent returns `{keep, wall, title, summary, reason}` (see the criteria file's "Output").
 Judging the entries in parallel is fine, but launch each judge in the foreground (`run_in_background: false`): step 3 needs every result, and a judge started in the background leaves the run with nothing to do but wait for it.
 
 - **`kind == "feed"`** — staged to save cost: give the subagent the `title` and the preview `summary` first.
   - If those already place the entry **outside the Topics**, drop it from the preview alone — no body fetch (prompts/selection.md "Walls and unreadable pages").
   - Otherwise the entry is plausibly in scope, so have the subagent run `feed-filter entry-body --url '<url>'` to load the **full** feed body into its own context and judge depth from that.
-    - Only when `entry-body` returns `body: null` (a cache miss) does it fall back to a `WebFetch` of the page for the full text.
+    - It falls back to a `WebFetch` of the page for the full text when `entry-body` returns `body: null` (a cache miss), or a body too thin to judge depth from — a teaser that stops at a "read more" link.
 - **`kind == "scrape"`** — there is no feed metadata (and no cached body), so the subagent goes straight to a full `WebFetch` of the `url`.
   - The `title` it returns is authoritative — it is the **only** title source for the note.
 - Feeds **must not** be re-fetched with `WebFetch` for their item list — but `entry-body` (the cached body) and a `WebFetch` of an individual article page are exactly what the later stages are for.
 - **`wall == true`** — when a `WebFetch` returns a login wall / paywall / subscribe gate instead of the article, the subagent sets `wall = true` rather than guessing a keep/drop (prompts/selection.md "Walls and unreadable pages").
-  - Wall detection is tied to the `WebFetch`: an entry decided from its `title`+preview or from the cached `entry-body` body is never `WebFetch`ed, so it has no wall to flag — only scrape entries (always `WebFetch`ed) and a feed entry that both needs its full body and misses the `entry-body` cache can surface a wall.
-  - The judge reads its task and not this skill, so the task carries `prompts/selection.md`'s "Walls and unreadable pages" section word for word, and states beside it that `entry-body` returns the cached body rather than fetching the page, so a judge that decided from the preview or from that body returns `wall = false`.
+  - Wall detection is tied to the `WebFetch`: an entry decided from its `title`+preview or from the cached `entry-body` body is never `WebFetch`ed, so it has no wall to flag — only scrape entries (always `WebFetch`ed) and a feed entry that needs its full body and gets none or a teaser from `entry-body` can surface a wall.
+  - The criteria file's "Walls and unreadable pages" section reaches the judge with the rest of the file, but that section cannot say what `entry-body` is, so the task states that `entry-body` returns the cached body rather than fetching the page, so a judge that decided from the preview or from that body returns `wall = false`.
     - A wrong `wall` is not harmless: step 3 takes the Wall branch before the keep/drop check, so it writes a note even for an entry the judge would have dropped.
   - This is distinct from a hard fetch error (the page would not load at all), handled in step 3.
 - **`requires_browser` site** (the `requires_browser` field from `feed-filter list-sites`) — the browser fetches only the *gather* feed/index, not the per-article body.

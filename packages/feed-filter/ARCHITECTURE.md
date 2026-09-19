@@ -115,6 +115,7 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `discover` | find feed/scrape candidates for a URL |
 | `add-site` | register a site (snapshots seen, then writes config) |
 | `list-sites` | list registered sites (with enabled/disabled status) as a bare JSON array, one object per site, naming it `id` where the other commands emit `site_id` |
+| `selection-path` | print the active keep/drop criteria file (`{path}`, honoring `FEED_FILTER_SELECTION`) that each judge reads; exits non-zero when the file is absent |
 | `new-entries` | gather new, unseen entries across non-forum sites (each entry's `summary` is a preview; the full body is cached for `entry-body`) |
 | `query-new` | gather new, unseen pages by neural-searching one or more `--query` descriptions (Exa); same entry shape as `new-entries`, plus `query` provenance. `queries[].new` counts pages that survived both dedupe layers, *before* the global cap, and `cost_dollars` is a floor (a request answered with an unparseable body reports nothing) |
 | `entry-body` | print one gathered entry's full cached body (`{url, body}` with `url` canonicalized; `body` is `null` on a cache miss) for the judge |
@@ -138,7 +139,7 @@ Both filter on `enabled` as well, so a paused site reaches no gather at all and 
 
 `.claude/skills/` holds the four skills that drive the CLI.
 `query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it.
-`prompts/selection.md` is the keep/drop prompt they feed each judging subagent.
+`prompts/selection.md` is the keep/drop prompt each judging subagent reads for itself, from the path `selection-path` prints.
 
 - `kboat-add-feed-site` — main-model registration, one chain per source kind:
   - an article site: discover → pick cluster → `add-site`;

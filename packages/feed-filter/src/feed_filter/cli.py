@@ -65,6 +65,7 @@ from feed_filter.config import (
     SUMMARY_PREVIEW_CHARS,
     MissingEnvError,
     db_path,
+    selection_path,
     sites_path,
     vault_path,
 )
@@ -297,6 +298,24 @@ def cmd_add_site(args: argparse.Namespace) -> int:
 
 def cmd_list_sites(_args: argparse.Namespace) -> int:
     _emit([_site_to_dict(s) for s in load_sites(sites_path())])
+    return 0
+
+
+def cmd_selection_path(_args: argparse.Namespace) -> int:
+    """Emit ``{path}``, the active keep/drop criteria file, for the judges to read.
+
+    Each judging subagent reads the file itself rather than taking the criteria
+    as restated in its task, so the run needs the path ``FEED_FILTER_SELECTION``
+    selects, and cannot assume the package default.
+
+    A missing file exits 1 — a run must not judge with no criteria — and still
+    emits the path, which is where the report says to create it.
+    """
+    path = selection_path().absolute()
+    _emit({"path": str(path)})
+    if not path.is_file():
+        print(f"error: no selection criteria at {path}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -1132,6 +1151,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_list = sub.add_parser("list-sites", help="list registered sites")
     p_list.set_defaults(handler=cmd_list_sites)
+
+    p_selection = sub.add_parser(
+        "selection-path", help="print the active keep/drop criteria file (for the judges)"
+    )
+    p_selection.set_defaults(handler=cmd_selection_path)
 
     p_new = sub.add_parser("new-entries", help="gather new, unseen entries across sites")
     p_new.add_argument("--site-id", dest="site_id")
