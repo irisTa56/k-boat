@@ -85,7 +85,7 @@ The placeholder check is split by what an eviction actually costs, because a doc
   - A run that walks past one silently processes a vault missing content it has no way to know about.
   - Most of those directories hold the run's input; `Reviews/` earns its place differently — the distill pass *appends* to a dated report there, and an evicted one reads as absent, so the append would start a second file and the earlier sections would return as a sync conflict.
 - A placeholder under `PDFs/` is a **warning** that does not fail.
-  - An evicted PDF matters to a run only once its notebook has lost the original, and the restore that then reads it back checks for this placeholder itself and reports the eviction ([Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook)).
+  - An evicted PDF matters to a run only where a phase reaches that one file — the restore that reads it back once its notebook has lost the original ([Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook)), and an ingest about to download it again for a re-captured source — and each checks for this placeholder itself and reports the eviction.
   - Short of that, the eviction costs the human their reading copy, which is not worth stopping a run over.
 
 The report on stdout is a JSON object with `vault`, `ok` (true when nothing failed), `checks`, and `counts`.

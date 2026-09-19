@@ -25,6 +25,7 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
 - **PDF** (`source_type: pdf`): a blocked PDF has a `url` and, where ingest recorded it, no local file yet.
   - Rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it.
   - Check first — a re-captured entry may already hold the file from its earlier ingest, and there is nothing to fetch through the browser if it does.
+    - Ask what holds that name, as kboat-notes [Layout](../kboat-notes/SKILL.md#layout) says for `PDFs/`, before anything is saved or copied there: a file iCloud has evicted is one the entry holds, so the user downloads it in Finder and nothing is written to that name.
 - **Web page** (`source_type: web_page`): a member-only or otherwise walled article.
   - Rescue captures the rendered article text from the logged-in browser and ingests it as a NotebookLM text source.
   - There is no local file — the reading copy stays the live `url`.
@@ -77,7 +78,7 @@ Navigate the user's Chrome to the note's `url`.
 If a CAPTCHA / "Human Verification" / sign-in page appears, ask the user to clear it in their browser, then continue once the real content loads.
 If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
 
-- **PDF**: save it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`.
+- **PDF**: save it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`, only where Scope's check found no file there that verifies and none iCloud has evicted.
   - **Preferred capture — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host (for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`), then run in-page JavaScript that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob.
     - Chrome writes it to `~/Downloads`; move it into the vault.
     - Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable.
@@ -90,7 +91,7 @@ If the page is **gone** instead of walled — a 404, a removed or retracted arti
 
 ### Step 4: Manual fallback
 
-If Claude in Chrome is unavailable or cannot get past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
+If Claude in Chrome is unavailable or cannot get past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` under the same check as step 3, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
 
 ### Step 5: Finish ingestion
 
