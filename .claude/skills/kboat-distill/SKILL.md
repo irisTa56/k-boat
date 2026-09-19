@@ -91,8 +91,11 @@ The tool has already resolved the disposition branching — handling flag co-occ
 Sources that needed no destructive action — ambiguous (`ambiguous`), `keep`-only (`counts.keep_noop`), already distilled (`counts.already_distilled`), or still inside the cooldown (`counts.awaiting_cooldown`) — are not in either set; surface their counts in the summary.
 The ripe predicate the tool applied — `distill`, unambiguous, past the 7-day cooldown, not blocked, not yet distilled — is specified exactly in kboat-notes' [Source lifecycle and state](../kboat-notes/references/source-note.md#source-lifecycle-and-state); this skill does not restate it.
 
-Process each `phase_b.ripe` source in this exact order.
-The order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
+Take the ripe sources oldest `filed_date` first, keeping the tool's order among sources filed the same day.
+The create cap is spent in this order, so a source an earlier partial pass left ripe is finished before newer ones use the cap up.
+
+Take each source through the steps below in their exact order.
+That order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
 ### Step 1: resolve the notebook
 
@@ -170,6 +173,8 @@ Kindle books are distilled from the highlights in their note body, not from a no
 Like Phase B, Phase C runs **only when Basic Memory is healthy** (see preamble) — its `write_note`/`edit_note` calls are the only persistent effect, and there is nothing destructive to gate (no notebook, no cooldown).
 The work set is `kindles.ripe` from the tool: Kindle notes marked `distill` with `distilled_date` empty (see kboat-notes [Kindle note](../kboat-notes/references/kindle-note.md#kindle-note-kindlesmd)).
 Each entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
+
+Take the books in the order the tool lists them, which is by ASIN, since a Kindle note carries no `filed_date`; Phase C follows Phase B, so a book gets whatever of the create cap the sources left.
 
 Process each `kindles.ripe` entry in this order — the same crash-safety logic as Phase B, minus the notebook steps (the `distilled_date` stamp is the commit point, and there is no discard):
 
