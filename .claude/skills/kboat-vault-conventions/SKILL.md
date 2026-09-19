@@ -79,14 +79,14 @@ So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a r
   - The sweep is only as complete as `readable_notes` and `readable_assets`: a directory that could not be listed holds no findings for this check either, so an `icloud_notes` of `ok` beside a failing readability check says nothing was found rather than that nothing is there.
   - The vault root is not otherwise swept, so an evicted `Sources.base` is not caught — a Base is Obsidian's view, which no phase reads.
 
-The placeholder check is split by what an eviction actually costs, because a doctor failure stops the whole routine and must not stop it over a file the routine never reads.
+The placeholder check is split by what an eviction actually costs, because a doctor failure stops the whole routine.
 
 - A placeholder under a note directory (`Queue/`, `Reviews/`, and every `DIR_BY_TYPE` folder) **fails**.
   - A run that walks past one silently processes a vault missing content it has no way to know about.
   - Most of those directories hold the run's input; `Reviews/` earns its place differently — the distill pass *appends* to a dated report there, and an evicted one reads as absent, so the append would start a second file and the earlier sections would return as a sync conflict.
 - A placeholder under `PDFs/` is a **warning** that does not fail.
-  - It is the one directory a run neither reads nor writes: the file is only ever uploaded at ingest, and distillation reads the content back from the notebook.
-  - The eviction costs the human their reading copy, which is not worth stopping a run over.
+  - An evicted PDF matters to a run only once its notebook has lost the original, and the restore that then reads it back checks for this placeholder itself and reports the eviction ([Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook)).
+  - Short of that, the eviction costs the human their reading copy, which is not worth stopping a run over.
 
 The report on stdout is a JSON object with `vault`, `ok` (true when nothing failed), `checks`, and `counts`.
 Each entry in `checks` carries `name`, `status` (`ok`, `warning`, or `failed`), `detail`, `paths`, and `path_count` — every key on every entry, and `counts` likewise carries `total` plus one count per status even at zero, so a reader never has to decide whether an absent key means empty or means nothing.

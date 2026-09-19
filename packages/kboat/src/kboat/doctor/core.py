@@ -29,9 +29,8 @@ from kboat.schema import DIR_BY_TYPE, PDFS_DIR, QUESTIONS_FILE, QUEUE_DIR, REVIE
 # second file and the earlier sections would come back as a sync conflict.
 NOTE_DIRS: tuple[str, ...] = (*sorted(set(DIR_BY_TYPE.values())), QUEUE_DIR, REVIEWS_DIR)
 
-# Directories a run neither reads nor writes. An evicted PDF costs the human
-# their reading copy, not the run: the file is only ever uploaded at ingest, and
-# distillation reads a source's content back from its notebook.
+# Directories where an evicted file only warns rather than failing the whole
+# routine. Rationale in `kboat-vault-conventions` ("Vault preconditions").
 ASSET_DIRS: tuple[str, ...] = (PDFS_DIR,)
 
 REQUIRED_DIRS: tuple[str, ...] = (*NOTE_DIRS, *ASSET_DIRS)
