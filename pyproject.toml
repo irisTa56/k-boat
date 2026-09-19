@@ -9,7 +9,7 @@ dev = [
     "pytest>=9",
     "pytest-cov",
     "ruff>=0.16.0",
-    "ty>=0.0.65",
+    "ty>=0.0.82",
     "playwright",
     # Also a runtime dependency of kboat, which declares it for itself; listed here
     # for two uses that do not go through kboat. In the tests: an independent
