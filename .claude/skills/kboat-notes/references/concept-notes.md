@@ -11,7 +11,7 @@ So a concept title carries none of those characters and no `--`, and neither sta
 A title that breaks this still resolves in Basic Memory, so nothing there reports the links it breaks.
 Nor does a concept title carry `#`, `^`, `[`, or `]`, which Basic Memory leaves in the filename: in a wikilink, [Obsidian](https://obsidian.md/help/links) and [Foam](https://github.com/foambubble/foam/blob/main/docs/user/features/wikilinks.md) read `#` as the start of a heading link and `#^` as the start of a block link, and a bracket ends the link, so `[[C#]]` points at a heading in a note `C`.
 Provenance back to a source is different: the source note lives in the vault, a separate root, so a wikilink to it could not resolve.
-Record provenance instead as an observation carrying the source's canonical URL, e.g. `- [source] <title> — <url>`.
+Record provenance instead as an observation carrying the source note's `url` as the note holds it, e.g. `- [source] <title> — <url>`.
 This is root-independent, stable, and greppable.
 Tag each distilled observation by grounding — `#grounded` for claims the source supports, `#dialogue` for external knowledge the reading-time conversation surfaced — so a chat-derived claim is never mistaken for a source claim (kboat-distill defines how the two are sorted and verified).
 A note's frontmatter facet tags (the snake_case categorisation tags, distinct from the per-observation grounding tags above) come from a controlled vocabulary that lives in the knowledge base itself, as the `meta/Tag vocabulary` note (`memory://k-boat-knowledge/meta/tag-vocabulary`), listing the canonical tags and the variant-to-canonical aliases to avoid.

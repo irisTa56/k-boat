@@ -217,7 +217,7 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
 - **Slug verification.** For a URL-named schema, the record's slug is recomputed from the record's own `url` and a mismatch is refused as `{status: "slug_mismatch", identity, url, expected, got}`, written nowhere.
   - The name and the identity are one fact, so the writer settles it rather than trusting what it was handed; a note filed anywhere else would be a second identity for the same page, and nothing later could tell that from a genuinely different page.
   - It is checked before the file is even located, since a wrong slug names the wrong file and the collision check below would then run against a note the record was never about.
-  - A record that carries no `url` — a later write filling in a summary, or an upload source that has none — makes no claim to check and passes.
+  - A record that carries no `url` — a later write filling in a summary — makes no claim to check and passes.
 - **Collision check.** When the schema declares an `identity` field (e.g. `url`), an existing note at the same slug that cannot be shown to be the same note is a collision — returned as `{status: "collision", reason, …}` and written nowhere.
   - This is the de-dup-by-identity rule the naming section relies on.
   - Two identity URLs are compared the way the slug is made, by their canonical forms: a page reached by a second link lands on the note it already has, so a verbatim comparison would report that as a hash clash and refuse an update that is the same page.
