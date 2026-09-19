@@ -60,10 +60,21 @@ The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#dai
 - `daily_notes` — the recent Daily-note bodies, newest-first, within the look-back window (the last two weeks by default; the window used is echoed as `lookback_days`).
 - `questions` — the open-questions backlog parsed from `Questions.md`, ordered by list position.
   - Each entry is `{rank, question, note}`: `rank` is 1-based and a smaller one (higher in the list) is the stronger interest, and `note` is the question's nested sub-bullets as free context (`""` when none).
-  - An empty or missing file comes back as `[]`, meaning no backlog signal this run — the pick then proceeds on the Daily notes alone, or yields zero picks per step 2 if there are none either.
+  - A file with no questions in it comes back as `[]`, meaning no backlog signal this run — the pick then proceeds on the Daily notes alone, or yields zero picks per step 2 if there are none either.
+    - An `[]` beside an `anomalies` entry for `Questions.md` is not that: the backlog could not be read (below).
 - `candidates` — the active web inbox (undispositioned web pages you have not started, the Web view minus its in-progress (`reading`) reads), each with `summary`/`topics` for the pre-filter, `added_date` for diversification, and `notebooklm_id` for the Stage 2 fulltext fetch.
+- `anomalies` — what the tool could not read, each `{path, error}`; name every one in this mode's report (step 7), however early the mode stops, since an input that could not be read otherwise reads exactly like an empty one.
+  - A `Daily/` path — a Daily note that could not be read or was evicted inside the look-back window, or the `Daily/` folder itself refused — leaves the exit at 0.
+    - The Daily notes are the ambient signal the pick degrades over by design, so carry on with those that were read.
+  - A path to one note under `Sources/` — one that did not parse, or that iCloud evicted — leaves the exit at 0 too: that source is missing from `candidates`, and the pick carries on over the rest.
+  - A `path` of `Sources` or `Questions.md` comes with exit 1: a required input could not be read, and the `error` leads with how (kboat-vault-conventions "Vault preconditions").
+    - Tell it from the vault lock's refusals by stdout: this one carries the report.
+    - Do not pick, and do not run `kboat-pick set`: a pick made without the backlog reads exactly like one steered by it, and one over an unread `Sources/` has nothing to choose from.
+    - Leave `picked` as it stands and report the input as needing a human, since no later run clears it.
 
 ### Step 2: stop early where there is nothing to pick from
+
+If step 1 exited 1, stop here and report what it could not read, as step 1 says.
 
 If there are no `candidates`, run `kboat-pick set --slugs ""` to clear any stale `picked`, then stop and report zero picks.
 
@@ -102,12 +113,14 @@ For each shortlisted candidate (a cheap subagent per candidate, in parallel), re
 
 `kboat-pick set --slugs <slug1>,<slug2>` (the slugs you chose, or fewer) → resets `picked` on every source and sets it on your choices.
 
-- Relay its JSON (`picked`, `missing`, `reset`); a non-empty `missing` is a defect to report.
+- Relay its JSON (`picked`, `missing`, `reset`, `anomalies`); a non-empty `missing` is a defect to report.
+- An exit 1 carrying that JSON means `Sources/` could not be read by the time `set` ran, named by the `anomalies` entry under its own name: nothing was set, so report it as step 1 says for the same entry.
 
 ### Step 7: report the picks
 
 Report the picks — each with what it matched (the open question, the dated note, or the act-early reason: a security advisory, a release, a best-practice worth adopting now), so the inference is visible and checkable — and that they are read in the Today view of the Sources Base (kboat-notes [Sources Base](../kboat-notes/references/bases.md#sources-base)).
 
+- Report every `anomalies` entry steps 1 and 6 returned, by path, each Daily note among them as a day that could not be read rather than a day with no note.
 - Report separately every candidate step 5 found with a notebook that no longer holds its original, and every one whose `notebooklm_id` named no notebook, by slug and by which it was, whether or not it was picked: that report is the whole of this mode's part in the loss, `kboat-notebook-health` has nothing to act on without the first, and nothing but this reaches the second.
 
 This mode never writes the Daily note.

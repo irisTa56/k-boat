@@ -9,18 +9,22 @@ position (`rank` 1 is the top). A question's nested sub-bullets are its `note` �
 context the ranker may use.
 
 Only open questions are listed; the human resolves one by deleting its line, so the
-routine never writes here — it reads the file and nothing else. A missing or
-question-less file is an empty backlog (no signal this run), matching how a missing
-`Daily/` directory yields no daily notes.
+routine never writes here — it reads the file and nothing else. A question-less file
+is an empty backlog (no signal this run). A file that cannot be read at all — absent,
+evicted, not a file, refused, or not UTF-8 — is not: the backlog is the pick's
+deliberate signal and a required input (`kboat-vault-conventions` "Vault
+preconditions"), unlike an absent `Daily/`, which the pick degrades over by design.
 """
 
 from __future__ import annotations
 
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
-from kboat.frontmatter import PLAIN_READ_ERRORS, split_lines, strip_frontmatter
+from kboat.frontmatter import split_lines, strip_frontmatter
+from kboat.io_utils import file_present, icloud_placeholder, name_occupied
 
 # A top-level list item (marker at column 0, no leading indentation): one question.
 _TOP_ITEM = re.compile(r"^[-*+][ \t]+(\S.*)$")
@@ -36,11 +40,31 @@ class Question:
 
 
 class QuestionsUnreadableError(Exception):
-    """The questions file is there and could not be read.
+    """The questions file could not be read, its message saying which way.
 
-    An anomaly to report, where a missing file is an empty backlog: the caller has to tell
-    the two apart.
+    Never an empty backlog, which is what a question-less file is: the caller reports
+    this as the required input it is, and a pick made without it would read exactly
+    like one steered by it.
     """
+
+
+def _missing(questions_file: Path, exc: OSError) -> str:
+    """Why a file whose own `stat` found nothing is not there: evicted, held, or absent.
+
+    Absent and evicted look identical to the `stat` and call for opposite remedies —
+    recreating a file iCloud still holds makes a sync conflict, where the fix is to
+    download it — so the placeholder is asked before "absent" is said, as
+    `kboat-doctor`'s `questions_file` check asks it. A name held without a file
+    behind it (a dangling symlink) is neither, and no download frees it.
+    """
+    try:
+        if file_present(icloud_placeholder(questions_file)):
+            return f"evicted: {questions_file.name} is an iCloud placeholder, not synced locally"
+        if name_occupied(questions_file):
+            return f"not a file: {questions_file}"
+    except OSError as probe:
+        return f"refused: {probe}"
+    return f"absent: {exc}"
 
 
 def extract_questions(questions_file: Path) -> list[Question]:
@@ -51,14 +75,27 @@ def extract_questions(questions_file: Path) -> list[Question]:
     prose — accumulate into that question's `note`, with a leading list marker
     stripped; blank lines are ignored, and a non-indented line that is not a bullet
     (a heading, a stray paragraph) closes the current question so later indented
-    lines do not attach to it. A missing file yields an empty list.
+    lines do not attach to it. A question-less file yields an empty list; a file
+    that cannot be read raises `QuestionsUnreadableError`.
+
+    Asked with `stat` rather than `is_file()`, which swallows a refusal and answers
+    `False` — the same "no file" a missing one gets, so an unreadable backlog read
+    as an absent one.
     """
-    if not questions_file.is_file():
-        return []
+    try:
+        mode = questions_file.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise QuestionsUnreadableError(_missing(questions_file, exc)) from exc
+    except OSError as exc:
+        raise QuestionsUnreadableError(f"refused: {exc}") from exc
+    if not stat.S_ISREG(mode):
+        raise QuestionsUnreadableError(f"not a file: {questions_file}")
     try:
         raw = questions_file.read_text(encoding="utf-8")
-    except PLAIN_READ_ERRORS as exc:
-        raise QuestionsUnreadableError(str(exc)) from exc
+    except UnicodeDecodeError as exc:
+        raise QuestionsUnreadableError(f"not UTF-8: {exc}") from exc
+    except OSError as exc:
+        raise QuestionsUnreadableError(f"refused: {exc}") from exc
     text = strip_frontmatter(raw)
     questions: list[Question] = []
     note_lines: list[str] = []

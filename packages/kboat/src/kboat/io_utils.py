@@ -49,11 +49,11 @@ from pathlib import Path
 ICLOUD_GLOB = ".*.icloud"
 
 # A directory that lists but cannot be opened through — the message this module
-# raises with, and the one `kboat.doctor` tags its own probe with. The two uses
-# are independent: nothing branches on the text raised from here, and `doctor`
-# does not call `list_note_dir`. It is one declaration so the wording a reader
-# meets is the same wherever the condition is reported, not because a severity
-# hangs off this string reaching across the two.
+# raises with, the one `kboat.doctor` tags its own probe with, and the one
+# `kboat.note.migrate` reports a `PDFs/` it cannot probe through with. The uses
+# are independent: nothing branches on the text. It is one declaration so the
+# wording a reader meets is the same wherever the condition is reported, not
+# because a severity hangs off this string reaching across them.
 NOT_TRAVERSABLE = "Permission denied (not traversable)"
 
 
@@ -182,7 +182,7 @@ def evictions(names: Iterable[str], present: Container[str]) -> list[str]:
     return [n for n in names if fnmatch(n, ICLOUD_GLOB) and n[1 : -len(".icloud")] not in present]
 
 
-def list_note_dir(directory: Path) -> tuple[list[Path], list[Path]]:
+def list_note_dir(directory: Path, *, required: bool = False) -> tuple[list[Path], list[Path]]:
     """One note directory's `*.md` files and its iCloud placeholders, both sorted.
 
     One listing rather than two globs, and **raising** rather than coming back
@@ -193,13 +193,19 @@ def list_note_dir(directory: Path) -> tuple[list[Path], list[Path]]:
     report a vault it never read as a vault with nothing in it, which is the same
     silence an eviction produces and the same one this module exists to break.
 
-    A directory that is simply not there is not that: it comes back as two empty
-    lists, since creating it belongs to declaring a note type and its absence is
-    `kboat-doctor`'s to report.
+    A directory that is simply not there, or a name held by something that is not
+    one, comes back as two empty lists unless it is `required`, in which case the
+    `FileNotFoundError` or `NotADirectoryError` is raised like any refusal. A
+    command reading a folder in the vault's required set passes `required`, since
+    for it an absent folder is a vault that has not synced rather than one with
+    nothing in it (`kboat-vault-conventions` "Vault preconditions"); a report-only
+    scan such as `kboat-validate`'s, or one over an optional folder, does not.
     """
     try:
         entries = sorted(directory.iterdir())
     except FileNotFoundError, NotADirectoryError:
+        if required:
+            raise
         return [], []
     # Listable is not usable, and `iterdir` only answers the first. An `r--`
     # directory lists its names and refuses every `read_text` beneath it, so a
@@ -222,6 +228,34 @@ def list_note_dir(directory: Path) -> tuple[list[Path], list[Path]]:
     by_name = {p.name: p for p in entries}
     shadowed = evictions(by_name, by_name)
     return notes, [by_name[n] for n in shadowed if n[1 : -len(".icloud")].endswith(".md")]
+
+
+def unread_dir(exc: OSError) -> str:
+    """Which of the three ways a required folder could not be read, in one wording.
+
+    For the `error` a command reports under the folder's own name when
+    `list_note_dir(..., required=True)` raises. The three read differently to the
+    human who has to act — create or sync the folder, free a name something else
+    holds, or restore a permission — so the report leads with which it was rather
+    than leaving it to an `strerror` deep in the text. Every command shares this so
+    a reader meets one wording for one state whichever report it is reading.
+
+    A name held by a dangling symlink raises `FileNotFoundError` too, and is not
+    absent: `mkdir` there fails, so it is reported as the name something that is not
+    a directory holds, as `kboat-doctor`'s `folders_occupied` files it.
+    """
+    if isinstance(exc, FileNotFoundError):
+        held = False
+        if exc.filename is not None:
+            # Only sharpens the wording, so a probe that cannot answer leaves "absent".
+            with contextlib.suppress(OSError):
+                held = name_occupied(Path(exc.filename))
+        if held:
+            return f"not a directory: {exc.filename} is held by something that is not one"
+        return f"absent: {exc}"
+    if isinstance(exc, NotADirectoryError):
+        return f"not a directory: {exc}"
+    return f"refused: {exc}"
 
 
 def fsync_dir(directory: Path) -> None:

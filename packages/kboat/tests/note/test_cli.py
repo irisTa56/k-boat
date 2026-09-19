@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,7 @@ SLUG = note_slug(URL)
 
 @pytest.fixture
 def vault(tmp_path: Path) -> Path:
-    for sub in ("Sources", "Kindles", "Repos"):
+    for sub in ("Sources", "Kindles", "Repos", "Feeds", "PDFs"):
         (tmp_path / sub).mkdir()
     return tmp_path
 
@@ -258,16 +259,41 @@ def test_migrate_slugs_does_not_count_an_unreadable_directory_as_one_note(
     # it among the notes would put a fixed "1" where the true number is unknown —
     # on the very report an `--apply` is approved from.
     (vault / "Sources" / "broken.md").write_text("no frontmatter here\n", encoding="utf-8")
-    (vault / "Feeds").mkdir(exist_ok=True)
     (vault / "Feeds").chmod(0o111)
     try:
-        assert main(["migrate-slugs", "--vault", str(vault), "--dry-run"]) == 0
+        # Exit 1 for the directory alone, with no row left unresolved: a dry run is
+        # read for its exit code, and a vault part of which was never read is not
+        # a canonical one.
+        assert main(["migrate-slugs", "--vault", str(vault), "--dry-run"]) == 1
     finally:
         (vault / "Feeds").chmod(0o755)
     captured = capsys.readouterr()
 
     assert "1 note(s) skipped" in captured.err
-    assert "1 note director(ies) unreadable, contents unseen" in captured.err
+    assert "1 note director(ies) could not be read, contents unseen" in captured.err
+    assert json.loads(captured.out)["counts"]["unreadable_dirs"] == 1
+
+
+@pytest.mark.parametrize(
+    ("make", "word"),
+    [
+        (lambda feeds: feeds.rmdir(), "absent"),
+        (lambda feeds: (feeds.rmdir(), feeds.write_text("x\n")), "not a directory"),
+    ],
+    ids=["absent", "not-a-directory"],
+)
+def test_migrate_slugs_fails_on_a_note_directory_that_is_not_there(
+    vault: Path,
+    capsys: pytest.CaptureFixture[str],
+    make: Callable[[Path], object],
+    word: str,
+) -> None:
+    # Read as empty, an unsynced `Feeds/` is a vault reported as already
+    # canonical — on the dry run an `--apply` is approved from.
+    make(vault / "Feeds")
+    assert main(["migrate-slugs", "--vault", str(vault), "--dry-run"]) == 1
+    skipped = json.loads(capsys.readouterr().out)["skipped"]
+    assert [(s["path"], s["reason"].split(": ")[1]) for s in skipped] == [("Feeds", word)]
 
 
 def test_migrate_slugs_exits_nonzero_on_a_conflict(

@@ -21,8 +21,10 @@ done rather than as a conflict.
 
 from __future__ import annotations
 
+import errno
 import os
 import re
+import stat
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -37,6 +39,7 @@ from kboat.frontmatter import (
     set_field,
 )
 from kboat.io_utils import (
+    NOT_TRAVERSABLE,
     atomic_write_text,
     file_present,
     fsync_dir,
@@ -45,6 +48,7 @@ from kboat.io_utils import (
     name_occupied,
     name_taken,
     stranded_stub,
+    unread_dir,
 )
 from kboat.naming import note_slug
 from kboat.schema import BY_TYPE, DIR_BY_TYPE, PDFS_DIR, SOURCE
@@ -76,8 +80,8 @@ class Skipped:
     """Something the pass could not decide about, so it is neither moved nor a mismatch.
 
     Two populations, told apart by the reason and reported apart on stderr: a note
-    the oracle has no answer for, and a note *directory* that could not be listed —
-    whose `path` is the directory and whose remedy is the vault rather than any
+    the oracle has no answer for, and a note *directory* that could not be read —
+    absent, not a directory, or refused — whose `path` is the directory and whose remedy is the vault rather than any
     note. One of the second kind stands for however many notes went unseen.
     """
 
@@ -211,32 +215,75 @@ def _pdf_state(vault: Path, current: str, expected: str) -> tuple[str, Path, Pat
     anyone can open. Asking it per name is not the same as asking it last — a
     placeholder at the **target** still blocks the move, since `os.replace` would
     put the file beside it under a name iCloud is still holding.
+
+    Every probe **raises** where the vault refuses the read, and each caller has a
+    boundary for it. `exists()` swallowed the refusal and answered "no file", so
+    with `PDFs/` untraversable every PDF source read as `absent`: an `--apply`
+    renamed the note and retargeted its `reading_link` to a new name while the file
+    stayed at the old one, and reported the row as renamed. A missing `PDFs/` is
+    the same answer from the other side, and `plan` asks about it before this runs.
+
+    The source name asks for a *file*, since that is what the move carries. The
+    target asks whether anything holds the name at all, since `os.replace` would
+    put the file over whatever is there.
     """
     old = vault / PDFS_DIR / f"{current}.pdf"
     new = vault / PDFS_DIR / f"{expected}.pdf"
-    if old.exists():
-        if new.exists():
+    if _file_there(old):
+        if name_occupied(new):
             return "conflict", old, new, None
-        if icloud_placeholder(new).exists():
+        if _file_there(icloud_placeholder(new)):
             return "evicted", old, new, new
         return "moving", old, new, None
-    if icloud_placeholder(old).exists():
+    if _file_there(icloud_placeholder(old)):
         return "evicted", old, new, old
     # Nothing at the source name: the pair is either already across (a `--apply`
     # renames the file first, so a crash between the two leaves exactly this) or
     # there was never a file. An evicted PDF at the target is across too — the
     # note's rename is not blocked by it, and refusing the row would strand a
     # pair that is one rename from done.
-    #
-    # Asked with `exists()` rather than `name_taken`, which raises: every probe in
-    # here answers the same way, and that is one thing, tracked and fixed in one
-    # place. Raising from the middle of a function whose caller has no boundary
-    # for it would abort the whole scan on a refused `PDFs/` read instead, which
-    # `name_taken` would do on every version. The uniformity rests on `exists()`
-    # swallowing every `OSError`, which `requires-python` guarantees, so the
-    # deferred fix starts from two states rather than one.
-    across = new.exists() or icloud_placeholder(new).exists()
+    across = name_occupied(new) or _file_there(icloud_placeholder(new))
     return ("moved" if across else "absent"), old, new, None
+
+
+def _file_there(path: Path) -> bool:
+    """`file_present`, for a name derived from a note's slug — raising where the vault refuses.
+
+    One refusal is an answer rather than a refusal: a name too long for the
+    filesystem. A long title-derived slug produces one twice over — its PDF name
+    once the note's own name is at the limit, and its placeholder's name from 248
+    bytes on. The kernel will not look such a name up, so nothing can be held under
+    it, and "no file" is known rather than guessed. Refusing there would make a
+    permanent conflict of exactly the long names this repair exists to move.
+    """
+    try:
+        return file_present(path)
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            return False
+        raise
+
+
+def _pdfs_unread(vault: Path) -> str | None:
+    """Why `PDFs/` cannot answer for any source's PDF, or `None` when it can.
+
+    Absent, or a name held by something that is not a directory, is what the
+    per-name probes in `_pdf_state` cannot see: each reads it as "no PDF here", the
+    answer a web source with none gets, so a pass trusting it would move a PDF
+    source away from a file that has only not synced. Traversal rather than listing
+    is what those probes need, so a `PDFs/` that lists nothing but can be walked
+    through answers for itself and is not refused here.
+    """
+    directory = vault / PDFS_DIR
+    try:
+        mode = directory.stat().st_mode
+    except OSError as exc:
+        return unread_dir(exc)
+    if not stat.S_ISDIR(mode):
+        return f"not a directory: {directory}"
+    if not os.access(directory, os.X_OK):
+        return f"refused: {NOT_TRAVERSABLE}: {directory}"
+    return None
 
 
 def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
@@ -247,6 +294,7 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
     """
     rows: list[Row] = []
     skipped: list[Skipped] = []
+    pdfs_unread = _pdfs_unread(vault)
     for schema in BY_TYPE.values():
         if not schema.url_named or schema.identity is None:
             continue
@@ -259,11 +307,15 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
         # An evicted note matches no `*.md` glob and a directory the OS will not
         # list globs empty, so either would otherwise scan clean — the one answer
         # this must never give, since it is what the `--apply` is approved from and
-        # "nothing to do" is terminal for a repair that runs once.
+        # "nothing to do" is terminal for a repair that runs once. An absent folder
+        # is the same answer from a vault that has not synced, since every folder
+        # scanned here is in the vault's required set.
         try:
-            found, placeholders = list_note_dir(directory)
+            found, placeholders = list_note_dir(directory, required=True)
         except OSError as exc:
-            skipped.append(Skipped(DIR_BY_TYPE[schema.type], f"{UNREADABLE_DIR}: {exc}"))
+            skipped.append(
+                Skipped(DIR_BY_TYPE[schema.type], f"{UNREADABLE_DIR}: {unread_dir(exc)}")
+            )
             continue
         for placeholder in placeholders:
             skipped.append(Skipped(placeholder.relative_to(vault).as_posix(), "icloud_placeholder"))
@@ -284,7 +336,19 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
             # otherwise read an empty `moves` as a note with no file to strand.
             reasons: list[str] = []
             if schema.type == SOURCE.type:
-                state, _, _, evicted_pdf = _pdf_state(vault, path.stem, expected)
+                state, evicted_pdf = None, None
+                if pdfs_unread is not None:
+                    # Asked of every source, a web page included: whether a note
+                    # has a PDF is what the probe below would have answered.
+                    reasons.append(f"{PDFS_DIR}/ could not be read ({pdfs_unread})")
+                else:
+                    try:
+                        state, _, _, evicted_pdf = _pdf_state(vault, path.stem, expected)
+                    except OSError as exc:
+                        # This row's conflict rather than the pass's failure, as
+                        # the target note's refusal below is: the remedy is the
+                        # vault, and a re-run clears it.
+                        reasons.append(f"this source's PDF could not be looked for: {exc}")
                 if state in ("moving", "conflict"):
                     row.moves.append(f"{PDFS_DIR}/{path.stem}.pdf")
                     # A stub beside the file it names is left where it is — removing
@@ -465,8 +529,11 @@ def apply_row(vault: Path, row: Row) -> None:
     directory = vault / DIR_BY_TYPE[row.note_type]
     path = directory / f"{row.current}.md"
     if row.note_type == SOURCE.type:
-        _retarget_reading_link(path, row.current, row.expected)
+        # Probed before the link is retargeted: the probe can refuse, and a refusal
+        # after the rewrite would leave the note at its old name pointing at a PDF
+        # name nothing moved the file to.
         state, old_pdf, new_pdf, _ = _pdf_state(vault, row.current, row.expected)
+        _retarget_reading_link(path, row.current, row.expected)
         if state == "moving":
             os.replace(old_pdf, new_pdf)
             fsync_dir(new_pdf.parent)

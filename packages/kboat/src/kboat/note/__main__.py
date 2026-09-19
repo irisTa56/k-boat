@@ -147,8 +147,9 @@ def _migrate_slugs(argv: list[str]) -> int:
         # cannot answer for — silence there would pass a vault off as canonical
         # when part of it was never examined. Broken down by reason, since one of
         # them (`no_url`, an upload source) is an expected population and would
-        # otherwise hide the note that actually needs a look. It is not an exit
-        # code: nothing about a skipped note stops the rest of the pass.
+        # otherwise hide the note that actually needs a look. A skipped note is not
+        # an exit code: nothing about one stops the rest of the pass. A skipped
+        # directory is, below.
         by_reason = Counter(s.reason.split(":")[0] for s in report.skipped)
         # A directory entry is counted apart from the notes: one of them stands for
         # however many notes went unseen, so folding it in would put a fixed "1"
@@ -160,9 +161,13 @@ def _migrate_slugs(argv: list[str]) -> int:
             named = ", ".join(f"{n} {reason}" for reason, n in sorted(by_reason.items()))
             parts.append(f"{sum(by_reason.values())} note(s) skipped ({named})")
         if dirs:
-            parts.append(f"{dirs} note director(ies) unreadable, contents unseen")
+            parts.append(f"{dirs} note director(ies) could not be read, contents unseen")
         sys.stderr.write("; ".join(parts) + "\n")
-    return 1 if report.unresolved else 0
+    # A note directory it could not read is an exit of its own even with every row
+    # renamed: the folders scanned are in the vault's required set, and a dry run
+    # read for its exit code would otherwise pass off an unsynced vault as a
+    # canonical one (`kboat-vault-conventions` "Vault preconditions").
+    return 1 if report.unresolved or report.counts()["unreadable_dirs"] else 0
 
 
 _COMMANDS = {"write": _write, "slug": _slug, "migrate-slugs": _migrate_slugs}

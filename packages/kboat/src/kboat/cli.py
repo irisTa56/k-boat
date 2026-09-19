@@ -7,7 +7,9 @@ surface rather than whatever each `main` re-declared. `--today` reaches beyond
 this package: a member CLI that stamps a note takes the flag from here, because
 a date reaching the same writer has to have been through the same validation
 whatever CLI it arrived at. (`--vault` does not — a member resolves the vault
-its own way.)
+its own way.) The report-shaped CLIs that read a folder the vault is required to
+hold share `scan_required_dir` for the same reason: the entry standing for a folder
+they could not read, and the exit it owes, mean one thing whichever CLI reports it.
 
 On top of that, `kboat-note write` and `kboat-repos write` are two contracts over
 one writer and share the shape of their whole transaction: one JSON record on
@@ -30,8 +32,12 @@ from datetime import date, datetime
 from pathlib import Path
 
 from kboat.frontmatter import NOTE_READ_ERRORS
+from kboat.io_utils import list_note_dir, unread_dir
 from kboat.lock import VaultLockedError, VaultLockUnavailableError
 from kboat.write import WROTE_A_NOTE, BadInputError, WriteStatus
+
+# The `error` of the anomaly a scan files under an evicted note's placeholder path.
+EVICTED_NOTE = "iCloud placeholder: the note is evicted, so this pass cannot read it"
 
 
 def _iso_date(value: str) -> str:
@@ -84,6 +90,29 @@ def vault_path(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Pat
     if not args.vault:
         parser.error("no vault: pass --vault or set OBSIDIAN_VAULT_PATH")
     return Path(args.vault).expanduser()
+
+
+def scan_required_dir(vault: Path, folder: str) -> tuple[list[Path], list[dict[str, str]], bool]:
+    """A required folder's notes, the `{path, error}` anomalies for what they leave out,
+    and whether the folder itself could not be read.
+
+    For the report-shaped CLIs that read a folder in the vault's required set, which
+    all carry the same `anomalies` entry and all owe the same exit
+    (`kboat-vault-conventions` "Vault preconditions"): a folder that is absent, not
+    a directory, or refused is one entry under the folder's own name and a `True`
+    the caller turns into exit 1, and each note iCloud evicted is an entry under
+    its placeholder's path. Neither is ever an empty folder: the first is a vault
+    that did not sync or cannot be read, and the second is a note this pass was
+    never shown.
+    """
+    try:
+        found, placeholders = list_note_dir(vault / folder, required=True)
+    except OSError as exc:
+        return [], [{"path": folder, "error": unread_dir(exc)}], True
+    evicted = [
+        {"path": p.relative_to(vault).as_posix(), "error": EVICTED_NOTE} for p in placeholders
+    ]
+    return found, evicted, False
 
 
 def require_readable_payload(record: dict) -> None:

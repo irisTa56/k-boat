@@ -69,12 +69,71 @@ def test_list_reports_a_capture_that_is_not_utf8(
     assert broken["url"] is None and broken["error"]
 
 
-def test_list_missing_folder_is_empty(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    (tmp_path / "Sources").mkdir()  # a vault without a Queue/ folder
-    assert main(["--vault", str(tmp_path), "list"]) == 0
+def _unread(vault: Path, capsys: pytest.CaptureFixture[str]) -> list[tuple[str, str]]:
+    """Run a list that could not read its folder: exit 1, the report still printed."""
+    assert main(["--vault", str(vault), "list"]) == 1
     out = json.loads(capsys.readouterr().out)
     assert out["files"] == []
     assert out["counts"] == {"total": 0, "malformed": 0}
+    return [(a["path"], a["error"].split(":")[0]) for a in out["anomalies"]]
+
+
+def test_an_absent_queue_folder_is_not_a_drained_queue(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `Queue/` is in the vault's required set: its absence is a vault that did not
+    # sync, and an empty `files` alone is what tells ingest there is nothing to do.
+    (tmp_path / "Sources").mkdir()
+    assert _unread(tmp_path, capsys) == [("Queue", "absent")]
+
+
+def test_a_queue_name_held_by_a_file_is_not_a_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "Queue").write_text("not a folder\n", encoding="utf-8")
+    assert _unread(tmp_path, capsys) == [("Queue", "not a directory")]
+
+
+def test_a_queue_name_held_by_a_dangling_symlink_is_not_called_absent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Listing through the link raises the same error an absent folder does, and
+    # "absent" sends the human to a `mkdir` the name makes fail.
+    (tmp_path / "Queue").symlink_to(tmp_path / "gone")
+    assert _unread(tmp_path, capsys) == [("Queue", "not a directory")]
+
+
+def test_a_vault_that_is_a_regular_file_is_not_a_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The parent is the file: the route a `Queue` that is itself a file misses.
+    vault = tmp_path / "vault"
+    vault.write_text("mis-typed --vault\n", encoding="utf-8")
+    assert _unread(vault, capsys) == [("Queue", "not a directory")]
+
+
+def test_a_queue_folder_the_os_will_not_list_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    q = _queue(tmp_path)
+    (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
+    q.chmod(0o000)
+    try:
+        assert _unread(tmp_path, capsys) == [("Queue", "refused")]
+    finally:
+        q.chmod(0o755)
+
+
+def test_an_evicted_capture_is_an_anomaly_not_a_drained_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    q = _queue(tmp_path)
+    (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
+    (q / ".kboat-queue-2.md.icloud").write_bytes(b"")
+    assert main(["--vault", str(tmp_path), "list"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [f["path"] for f in out["files"]] == ["Queue/kboat-queue-1.md"]
+    assert [a["path"] for a in out["anomalies"]] == ["Queue/.kboat-queue-2.md.icloud"]
 
 
 def test_list_custom_folder(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -4,7 +4,10 @@
   JSON for `kboat-ingest` to drain. Read-only: it never deletes a capture (ingest
   removes each file itself at its commit point). A malformed capture (no parseable
   `http(s)` link) comes back with `url: null` and `error: "no_url"` so the caller
-  can report it rather than guess a URL.
+  can report it rather than guess a URL. What never became a capture is in
+  `anomalies`: a queue folder that is absent, not a directory, or refused — which
+  also exits 1, the folder being in the vault's required set — and each capture
+  iCloud evicted to a placeholder.
 
 Defaults the vault to `$OBSIDIAN_VAULT_PATH` and the folder to `Queue`, mirroring the
 other kboat tools.
@@ -17,17 +20,24 @@ import json
 import sys
 from pathlib import Path
 
-from kboat.cli import add_vault_argument, vault_path
+from kboat.cli import add_vault_argument, scan_required_dir, vault_path
 from kboat.frontmatter import PLAIN_READ_ERRORS
 from kboat.schema import QUEUE_DIR
 
 from .parse import parse_capture
 
 
-def _cmd_list(vault: Path, folder: str) -> dict[str, object]:
-    queue_dir = vault / folder
+def _cmd_list(vault: Path, folder: str) -> tuple[dict[str, object], bool]:
+    """The queue report, and whether the queue folder itself could not be read.
+
+    Neither an unlistable folder nor an evicted capture may read as a drained
+    queue, which is what tells ingest there is nothing to do: the first is an
+    `anomalies` entry under the folder's name and exit 1, the second one under the
+    placeholder's path.
+    """
     files: list[dict[str, object]] = []
-    for path in sorted(queue_dir.glob("*.md")) if queue_dir.is_dir() else []:
+    found, anomalies, unread = scan_required_dir(vault, folder)
+    for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
             capture = parse_capture(path.read_text(encoding="utf-8"))
@@ -44,7 +54,8 @@ def _cmd_list(vault: Path, folder: str) -> dict[str, object]:
         "folder": folder,
         "files": files,
         "counts": {"total": len(files), "malformed": malformed},
-    }
+        "anomalies": anomalies,
+    }, unread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,10 +76,10 @@ def main(argv: list[str] | None = None) -> int:
 
     vault = vault_path(parser, args)
 
-    output = _cmd_list(vault, args.folder)
+    output, unread = _cmd_list(vault, args.folder)
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
-    return 0
+    return 1 if unread else 0
 
 
 if __name__ == "__main__":

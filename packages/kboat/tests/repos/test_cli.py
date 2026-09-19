@@ -52,8 +52,11 @@ def test_gather_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_refresh_dispatches(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["refresh", "--vault", str(tmp_path)]) == 1  # no Repos/ under the vault
-    assert "no Repos/ directory" in json.loads(capsys.readouterr().out)["error"]
+    # A dry run, so the lock is not what fails first: no Repos/ under the vault is
+    # exit 1 with the report, the folder named among its anomalies.
+    assert main(["refresh", "--dry-run", "--vault", str(tmp_path)]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert [a["path"] for a in out["anomalies"]] == ["Repos"]
 
 
 def test_write_dispatches_and_creates(

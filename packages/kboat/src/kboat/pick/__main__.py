@@ -14,6 +14,11 @@ LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
 
 Both default the vault to `$OBSIDIAN_VAULT_PATH` and accept `--today` for
 reproducibility, mirroring `kboat-lifecycle`.
+
+A required input either one could not read — `Sources/` absent, not a directory, or
+refused, or for `candidates` a `Questions.md` it could not read — is an `anomalies`
+entry under its own name and exit 1, with the report still printed
+(`kboat-vault-conventions` "Vault preconditions").
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from kboat.cli import (
     add_vault_argument,
     emit_lock_unavailable,
     emit_locked,
+    scan_required_dir,
     vault_path,
 )
 from kboat.io_utils import atomic_write_text
@@ -43,12 +49,13 @@ from .questions import QuestionsUnreadableError, extract_questions
 
 def _load_sources(
     vault: Path,
-) -> tuple[list[tuple[str, str, dict[str, Value]]], list[dict[str, str]]]:
-    """Parse every `Sources/*.md` note. Returns `(notes, anomalies)` where each
-    note is `(slug, rel_path, frontmatter)`."""
+) -> tuple[list[tuple[str, str, dict[str, Value]]], list[dict[str, str]], bool]:
+    """Parse every `Sources/*.md` note. Returns `(notes, anomalies, unread)` where each
+    note is `(slug, rel_path, frontmatter)` and `unread` is whether `Sources/` itself
+    could not be read."""
     notes: list[tuple[str, str, dict[str, Value]]] = []
-    anomalies: list[dict[str, str]] = []
-    for path in sorted((vault / DIR_BY_TYPE["source"]).glob("*.md")):
+    found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["source"])
+    for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -56,18 +63,21 @@ def _load_sources(
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         notes.append((path.stem, rel, fm))
-    return notes, anomalies
+    return notes, anomalies, unread
 
 
-def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, object]:
-    notes, anomalies = _load_sources(vault)
+def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> tuple[dict[str, object], bool]:
+    """The candidates report, and whether a required input — `Sources/` or
+    `Questions.md` — could not be read. `Daily/` never sets it: the pick degrades
+    over its Daily notes by design, so what could not be read there is only reported.
+    """
+    notes, anomalies, unread = _load_sources(vault)
     candidates = [
         candidate_from(slug, rel, fm).to_json() for slug, rel, fm in notes if is_active_web(fm)
     ]
     days, unreadable_days = extract_daily_notes(vault / DAILY_DIR, today, lookback_days)
     daily_notes = [{"date": dn.date, "body": dn.body} for dn in days]
-    for entry in unreadable_days:
-        anomalies.append({"path": f"{DAILY_DIR}/{entry['path']}", "error": entry["error"]})
+    anomalies.extend(unreadable_days)
     try:
         questions = [
             {"rank": q.rank, "question": q.question, "note": q.note}
@@ -76,6 +86,7 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
     except QuestionsUnreadableError as exc:
         questions = []
         anomalies.append({"path": QUESTIONS_FILE, "error": str(exc)})
+        unread = True
     return {
         "today": today.isoformat(),
         "vault": str(vault),
@@ -89,12 +100,12 @@ def _cmd_candidates(vault: Path, today: date, lookback_days: int) -> dict[str, o
             "questions_total": len(questions),
         },
         "anomalies": anomalies,
-    }
+    }, unread
 
 
-def _cmd_set(vault: Path, slugs: list[str]) -> dict[str, object]:
+def _cmd_set(vault: Path, slugs: list[str]) -> tuple[dict[str, object], bool]:
     chosen = set(slugs)
-    notes, anomalies = _load_sources(vault)
+    notes, anomalies, unread = _load_sources(vault)
     present = {slug for slug, _, _ in notes}
     picked: list[str] = []
     reset = 0
@@ -116,10 +127,13 @@ def _cmd_set(vault: Path, slugs: list[str]) -> dict[str, object]:
         "vault": str(vault),
         "requested": sorted(chosen),
         "picked": sorted(picked),
-        "missing": sorted(chosen - present),
+        # A slug is missing only from a `Sources/` that was read: an unread one
+        # holds nothing this pass could look for, and `missing` is read as a slug
+        # the ranker named that the vault does not hold.
+        "missing": [] if unread else sorted(chosen - present),
         "reset": reset,
         "anomalies": anomalies,
-    }
+    }, unread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -157,20 +171,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     vault = vault_path(parser, args)
-    sources_dir = vault / DIR_BY_TYPE["source"]
-    if not sources_dir.is_dir():
-        parser.error(f"no {DIR_BY_TYPE['source']}/ directory under vault: {sources_dir}")
 
+    # No gate on `Sources/` ahead of the scan, for the reason `kboat-lifecycle`
+    # gives at its own: the scan reports absent, not-a-directory and refused
+    # itself, where an `is_dir()` answered "no such directory" for all three and
+    # ended the run with no JSON.
     if args.command == "candidates":
         today = date.fromisoformat(args.today)
         if args.lookback_days < 0:
             parser.error(f"--lookback-days must be >= 0, got {args.lookback_days}")
-        output = _cmd_candidates(vault, today, args.lookback_days)
+        output, unread = _cmd_candidates(vault, today, args.lookback_days)
     else:
         slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
         try:
             with vault_lock(vault):
-                output = _cmd_set(vault, slugs)
+                output, unread = _cmd_set(vault, slugs)
         except VaultLockedError as exc:
             return emit_locked(exc)
         except VaultLockUnavailableError as exc:
@@ -178,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
 
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
-    return 0
+    return 1 if unread else 0
 
 
 if __name__ == "__main__":

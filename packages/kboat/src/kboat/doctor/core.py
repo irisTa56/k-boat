@@ -460,8 +460,7 @@ def _check_icloud(vault: Path) -> list[Check]:
         Check(
             "icloud_assets",
             Status.WARNING if assets else Status.OK,
-            # Not a failure: a doctor failure stops the whole routine, and the
-            # routine never reads these files back.
+            # Not a failure: a doctor failure stops the whole routine.
             f"{len(assets)} asset(s) evicted to an iCloud placeholder" if assets else "",
             assets,
         ),
