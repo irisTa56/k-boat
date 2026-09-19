@@ -30,10 +30,11 @@ from kboat.schema import DIR_BY_TYPE, PDFS_DIR, QUESTIONS_FILE, QUEUE_DIR, REVIE
 NOTE_DIRS: tuple[str, ...] = (*sorted(set(DIR_BY_TYPE.values())), QUEUE_DIR, REVIEWS_DIR)
 
 # An evicted file here costs the human their reading copy, not the run: ingest
-# and the notebook-health restore both read `PDFs/<slug>.pdf` back by name
-# rather than by listing the directory, and each already tells an eviction
-# there apart from a file that is simply missing. Distillation reads a
-# source's content from its notebook, not from here.
+# fails safe on it rather than misreading the placeholder as real bytes and
+# building on it, and the notebook-health restore, which reads
+# `PDFs/<slug>.pdf` back by name to re-add a lost original, already tells an
+# eviction there apart from a file that is simply missing. Distillation reads
+# a source's content from its notebook, not from here.
 ASSET_DIRS: tuple[str, ...] = (PDFS_DIR,)
 
 REQUIRED_DIRS: tuple[str, ...] = (*NOTE_DIRS, *ASSET_DIRS)
