@@ -29,12 +29,9 @@ from kboat.schema import DIR_BY_TYPE, PDFS_DIR, QUESTIONS_FILE, QUEUE_DIR, REVIE
 # second file and the earlier sections would come back as a sync conflict.
 NOTE_DIRS: tuple[str, ...] = (*sorted(set(DIR_BY_TYPE.values())), QUEUE_DIR, REVIEWS_DIR)
 
-# An evicted file here costs the human their reading copy, not the run: ingest
-# fails safe on it rather than misreading the placeholder as real bytes and
-# building on it, and the notebook-health restore, which reads
-# `PDFs/<slug>.pdf` back by name to re-add a lost original, already tells an
-# eviction there apart from a file that is simply missing. Distillation reads
-# a source's content from its notebook, not from here.
+# An evicted file here costs the human their reading copy, not the run, so it
+# only warns rather than failing the whole routine. Rationale in
+# `kboat-vault-conventions` ("Vault preconditions").
 ASSET_DIRS: tuple[str, ...] = (PDFS_DIR,)
 
 REQUIRED_DIRS: tuple[str, ...] = (*NOTE_DIRS, *ASSET_DIRS)
