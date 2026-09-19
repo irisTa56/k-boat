@@ -105,7 +105,7 @@ def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, m
     _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"] == {
         "total": 1,
         "updated": 1,
@@ -130,7 +130,7 @@ def test_refresh_adopts_rename_and_moves_file(tmp_path: Path, monkeypatch) -> No
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"]["adopted"] == 1
     assert not old.exists()  # old slug file removed
     new_path = tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
@@ -156,7 +156,7 @@ def test_an_adopted_rename_names_the_stub_it_strands(tmp_path: Path, monkeypatch
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["adopted"] == 1
     assert report["adopted"][0]["stranded"] == f"Repos/.{old.stem}.md.icloud"
@@ -175,7 +175,7 @@ def test_an_adopted_rename_says_so_when_it_cannot_tell_whether_it_strands_a_stub
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["adopted"] == 1
     assert report["adopted"][0]["stranded"].startswith("unknown: ")
@@ -194,7 +194,7 @@ def test_an_adopt_that_vacates_nothing_reports_no_stranded_stub(
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("security", "thing"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     entry = report["adopted"][0]
     assert entry["from"] == entry["to"], "nothing moved"
@@ -208,7 +208,7 @@ def test_refresh_adopts_case_only_rename(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("DylanBlakemore", "depscheck"), None)
     )
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"]["adopted"] == 1
     assert not old.exists()
     new_path = (
@@ -227,7 +227,7 @@ def test_refresh_rename_collision_keeps_both(tmp_path: Path, monkeypatch) -> Non
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"]["rename_collisions"] == 1
     assert report["counts"]["adopted"] == 0
     assert old.exists()  # not moved; both notes remain for a human to merge
@@ -258,7 +258,7 @@ def test_refresh_rename_collision_when_the_target_is_an_icloud_placeholder(
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["rename_collisions"] == 1
     assert report["counts"]["adopted"] == 0
@@ -278,7 +278,7 @@ def test_refresh_reports_an_evicted_note_as_an_anomaly(tmp_path: Path, monkeypat
     (tmp_path / "Repos" / ".0123456789ab.md.icloud").write_bytes(b"")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["anomalies"] == 1
     assert report["anomalies"][0]["path"] == "Repos/.0123456789ab.md.icloud"
@@ -301,7 +301,7 @@ def test_a_broken_symlink_at_the_target_collides_and_files_an_anomaly(
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     conflict = report["rename_collisions"][0]["conflict"]
     assert conflict == f"Repos/{taken_slug}.md"
@@ -330,7 +330,7 @@ def test_a_broken_symlink_with_a_stale_stub_beside_it_is_not_reported_as_evicted
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["rename_collisions"][0]["reason"] == "held_by_non_note"
     assert old.exists()
@@ -351,7 +351,7 @@ def test_a_file_beside_its_own_placeholder_reports_taken_not_evicted(
         refresh_mod, "gh_repo_view", lambda o, r: (_meta("a2aproject", "A2A"), None)
     )
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     collision = next(
         c for c in report["rename_collisions"] if c["conflict"] == f"Repos/{taken_slug}.md"
@@ -371,40 +371,68 @@ def test_a_repos_directory_whose_own_stat_is_refused_is_an_anomaly_not_an_absenc
     (tmp_path / "Repos").symlink_to(walled / "Repos")
     walled.chmod(0o000)
     try:
-        report = refresh(tmp_path, today=TODAY)
+        report, unread = refresh(tmp_path, today=TODAY)
     finally:
         walled.chmod(0o755)
 
-    assert "error" not in report
+    assert unread
     assert report["counts"]["anomalies"] == 1
     assert report["anomalies"][0]["path"] == "Repos"
+    assert report["anomalies"][0]["error"].startswith("refused: ")
 
 
-def test_a_repos_name_taken_by_a_file_is_an_error_not_an_empty_catalogue(
+# Every way `Repos/` cannot be read gets the report's usual shape — counts, every
+# list empty, one anomaly under the folder's name — so the whole-report escalation
+# rule ("updated nothing while reporting anomalies") fires on it as on any other
+# catalogue that refreshed nothing, and no reader branches on a second shape.
+_UNREAD_COUNTS = {
+    "total": 0,
+    "updated": 0,
+    "adopted": 0,
+    "rename_collisions": 0,
+    "failed": 0,
+    "anomalies": 1,
+}
+
+
+def test_an_absent_repos_folder_is_the_catalogue_unread_not_an_empty_one(
     tmp_path: Path,
 ) -> None:
-    # `list_note_dir` reads a non-directory as empty, so dropping the gate outright
-    # would turn this into a green report over a catalogue that cannot exist.
+    report, unread = refresh(tmp_path, today=TODAY)
+
+    assert unread
+    assert report["counts"] == _UNREAD_COUNTS
+    assert report["anomalies"][0]["path"] == "Repos"
+    assert report["anomalies"][0]["error"].startswith("absent: ")
+
+
+def test_a_repos_name_taken_by_a_file_is_not_a_directory_not_an_empty_catalogue(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "Repos").write_text("not a directory\n", encoding="utf-8")
 
-    report = refresh(tmp_path, today=TODAY)
+    report, unread = refresh(tmp_path, today=TODAY)
 
-    assert "is not a directory" in report["error"]
+    assert unread
+    assert report["counts"] == _UNREAD_COUNTS
+    assert report["anomalies"][0]["error"].startswith("not a directory: ")
 
 
-def test_a_vault_root_that_is_a_regular_file_is_an_error_not_an_empty_catalogue(
+def test_a_vault_root_that_is_a_regular_file_is_not_a_directory_not_an_empty_catalogue(
     tmp_path: Path,
 ) -> None:
-    # The `NotADirectoryError` arm, which the test above cannot reach: with `Repos`
-    # itself a file its `stat` succeeds and the `S_ISDIR` branch answers. Only a
-    # parent that is a file makes the `stat` raise this, and `list_note_dir` would
-    # read the same path as an empty catalogue.
+    # The `NotADirectoryError` route through the *parent*, which the test above
+    # cannot reach: there `Repos` is itself the file. A listing that read this path
+    # as empty would turn a mis-typed `--vault` into a clean refresh of nothing.
     vault = tmp_path / "vault"
     vault.write_text("not a vault\n", encoding="utf-8")
 
-    report = refresh(vault, today=TODAY)
+    report, unread = refresh(vault, today=TODAY)
 
-    assert "no Repos/ directory" in report["error"]
+    assert unread
+    assert report["counts"] == _UNREAD_COUNTS
+    assert report["anomalies"][0]["path"] == "Repos"
+    assert report["anomalies"][0]["error"].startswith("not a directory: ")
 
 
 def test_refresh_says_so_when_the_catalogue_cannot_be_listed(tmp_path: Path) -> None:
@@ -413,20 +441,14 @@ def test_refresh_says_so_when_the_catalogue_cannot_be_listed(tmp_path: Path) -> 
     _write_note(tmp_path, "https://github.com/acme/good", "acme/good")
     (tmp_path / "Repos").chmod(0o111)
     try:
-        report = refresh(tmp_path, today=TODAY)
+        report, unread = refresh(tmp_path, today=TODAY)
     finally:
         (tmp_path / "Repos").chmod(0o755)
 
-    assert report["counts"] == {
-        "total": 0,
-        "updated": 0,
-        "adopted": 0,
-        "rename_collisions": 0,
-        "failed": 0,
-        "anomalies": 1,
-    }
+    assert unread
+    assert report["counts"] == _UNREAD_COUNTS
     assert report["anomalies"][0]["path"] == "Repos"
-    assert "could not be listed" in report["anomalies"][0]["error"]
+    assert report["anomalies"][0]["error"].startswith("refused: ")
 
 
 def test_refresh_dryrun_reports_same_target_collapse_consistently(
@@ -438,7 +460,7 @@ def test_refresh_dryrun_reports_same_target_collapse_consistently(
     _write_note(tmp_path, "https://github.com/acme/old-b", "acme/old-b")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta("acme", "merged"), None))
 
-    report = refresh(tmp_path, today=TODAY, dry_run=True)
+    report, _ = refresh(tmp_path, today=TODAY, dry_run=True)
     assert report["counts"]["adopted"] == 1
     assert report["counts"]["rename_collisions"] == 1
     # This run claimed the slug, so no file is at the conflict path in a dry run —
@@ -452,7 +474,7 @@ def test_refresh_dryrun_reports_same_target_collapse_consistently(
 def test_refresh_reports_failed_repo(tmp_path: Path, monkeypatch) -> None:
     _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, "not found"))
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"]["failed"] == 1
     assert report["failed"][0]["owner_repo"] == "acme/gone"
     # `fetch` is the escalation switch's off position, and this is its commonest
@@ -495,7 +517,7 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
     )
     monkeypatch.setattr(refresh_mod, "github_fields", flaky)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"] == {
         "total": 2,
@@ -532,7 +554,7 @@ def test_refresh_isolates_a_note_that_is_not_utf8(tmp_path: Path, monkeypatch) -
     broken.write_bytes(b"---\ntype: repo\nurl: https://github.com/a/b\n---\n\n\xff\xfe\n")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["anomalies"] == 1
     assert report["anomalies"][0]["path"] == broken.relative_to(tmp_path).as_posix()
@@ -559,7 +581,7 @@ def test_refresh_never_writes_an_unrecognised_payload_over_a_good_note(
 
     monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed())
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["updated"] == 0
     assert report["failed"][0]["reason"] == "payload"
@@ -582,7 +604,7 @@ def test_refresh_does_not_escalate_a_gh_that_failed_without_a_message(
 
     monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: _Completed())
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["failed"][0]["reason"] == "fetch"
     assert report["failed"][0]["error"]  # never an empty string for a human to read
@@ -600,7 +622,7 @@ def test_refresh_treats_an_unusable_gh_answer_as_the_payload_class(
 
     monkeypatch.setattr(refresh_mod, "gh_repo_view", unusable)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["failed"][0]["reason"] == "payload"
     assert "unparseable JSON" in report["failed"][0]["error"]
@@ -627,7 +649,7 @@ def test_refresh_leaves_a_slug_free_when_the_rename_that_wanted_it_failed(
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta("acme", "merged"), None))
     monkeypatch.setattr(refresh_mod, "atomic_write_text", failing_first_write)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["failed"] == 1
     assert report["counts"]["adopted"] == 1
@@ -650,7 +672,7 @@ def test_refresh_isolates_a_gh_call_that_raises(tmp_path: Path, monkeypatch) -> 
 
     monkeypatch.setattr(refresh_mod, "gh_repo_view", fake_gh)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["total"] == 2
     assert report["counts"]["failed"] == 1
@@ -687,7 +709,7 @@ def test_refresh_names_the_vault_when_the_rename_probe_cannot_be_read(
     )
     monkeypatch.setattr(Path, "lstat", refusing_lstat)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["failed"] == 1
     assert report["failed"][0]["reason"] == "vault"  # not "payload", so no escalation
@@ -711,7 +733,7 @@ def test_refresh_reports_a_rename_that_left_both_files(tmp_path: Path, monkeypat
     )
     monkeypatch.setattr(Path, "unlink", undeletable)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     new_path = tmp_path / "Repos" / f"{canonical_slug('https://github.com/a2aproject/A2A')}.md"
     assert old.exists() and new_path.exists()  # the state the report has to describe
@@ -747,7 +769,7 @@ def test_refresh_reports_a_collision_even_when_the_rewrite_then_fails(
     )
     monkeypatch.setattr(refresh_mod, "atomic_write_text", unwritable)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     rel = collided.relative_to(tmp_path).as_posix()
     assert [c["path"] for c in report["rename_collisions"]] == [rel]
@@ -773,7 +795,7 @@ def test_refresh_escalates_a_note_with_no_line_to_rewrite(tmp_path: Path, monkey
     )
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["failed"] == 1
     assert report["failed"][0]["reason"] == "note"  # not `write`, which promises a retry
@@ -793,7 +815,7 @@ def test_a_dry_run_surfaces_a_note_with_no_line_to_rewrite(tmp_path: Path, monke
     before = note.read_text(encoding="utf-8")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
 
-    report = refresh(tmp_path, today=TODAY, dry_run=True)
+    report, _ = refresh(tmp_path, today=TODAY, dry_run=True)
 
     assert report["counts"]["updated"] == 0
     assert report["failed"][0]["reason"] == "note"
@@ -818,7 +840,7 @@ def test_refresh_counts_a_rename_whose_old_file_vanished_as_healed(
     )
     monkeypatch.setattr(refresh_mod, "atomic_write_text", write_then_vanish)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["adopted"] == 1
     assert report["counts"]["failed"] == 0
@@ -848,7 +870,7 @@ def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
     monkeypatch.setattr(Path, "read_text", flaky_read_text)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"] == {
         "total": 1,
@@ -876,7 +898,7 @@ def test_refresh_does_not_report_a_rename_it_failed_to_write(tmp_path: Path, mon
     )
     monkeypatch.setattr(refresh_mod, "atomic_write_text", unwritable)
 
-    report = refresh(tmp_path, today=TODAY)
+    report, _ = refresh(tmp_path, today=TODAY)
 
     assert report["counts"]["failed"] == 1
     assert report["counts"]["adopted"] == 0

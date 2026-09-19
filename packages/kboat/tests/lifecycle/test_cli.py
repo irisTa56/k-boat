@@ -96,7 +96,10 @@ def write_kindle(kindles: Path, slug: str, *, distill=False, distilled_date=None
 
 @pytest.fixture
 def vault(tmp_path: Path) -> Path:
+    # Both folders this CLI reads are in the vault's required set, so a vault
+    # holding only sources still has an empty `Kindles/`.
     (tmp_path / "Sources").mkdir()
+    (tmp_path / "Kindles").mkdir()
     return tmp_path
 
 
@@ -225,22 +228,104 @@ def test_a_note_that_turns_unreadable_between_load_and_stamp_is_an_anomaly(
 
 def test_a_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_pass(vault: Path, capsys):
     (vault / "Sources" / "bad.md").write_bytes(b"---\ntype: source\ntitle: \xff\n---\n")
-    (vault / "Kindles").mkdir(exist_ok=True)
     (vault / "Kindles" / "B0BAD.md").write_bytes(b"---\ntype: kindle\ntitle: \xff\n---\n")
     out = run(vault, capsys)
     assert sorted(a["path"] for a in out["anomalies"]) == ["Kindles/B0BAD.md", "Sources/bad.md"]
 
 
-def test_missing_kindles_dir_is_empty(vault: Path, capsys):
-    # Kindles/ is optional — a sources-only vault must not error.
-    out = run(vault, capsys)
-    assert out["kindles"]["ripe"] == []
-    assert out["counts"]["kindles_total"] == 0
+def run_unread(vault: Path, capsys, *extra: str) -> dict:
+    """A run that could not read a required folder: exit 1, and the report still printed."""
+    rc = main(["--vault", str(vault), "--today", "2026-06-15", *extra])
+    assert rc == 1
+    return json.loads(capsys.readouterr().out)
+
+
+def test_an_absent_kindles_dir_fails_the_run_and_the_sources_are_still_worked(vault: Path, capsys):
+    # Read as "no Kindle notes", an unsynced vault would be distilled as though
+    # whole. The source half is decided from its own notes, so it is still done.
+    (vault / "Kindles").rmdir()
+    write_note(vault / "Sources", "a", distill=True)
+    out = run_unread(vault, capsys)
+    [entry] = out["anomalies"]
+    assert entry["path"] == "Kindles"
+    assert entry["error"].startswith("absent: ")
+    assert [s["slug"] for s in out["phase_a"]["stamped"]] == ["a"]
+    assert "filed_date: 2026-06-15" in (vault / "Sources" / "a.md").read_text()
+
+
+def test_an_absent_sources_dir_is_reported_in_the_json_not_by_argparse(vault: Path, capsys):
+    (vault / "Sources").rmdir()
+    out = run_unread(vault, capsys, "--dry-run")
+    assert [(a["path"], a["error"].split(":")[0]) for a in out["anomalies"]] == [
+        ("Sources", "absent")
+    ]
+    assert out["counts"]["sources_total"] == 0
+
+
+def test_a_sources_name_held_by_a_file_is_not_a_directory(vault: Path, capsys):
+    (vault / "Sources").rmdir()
+    (vault / "Sources").write_text("not a folder\n", encoding="utf-8")
+    out = run_unread(vault, capsys, "--dry-run")
+    [entry] = out["anomalies"]
+    assert entry["path"] == "Sources"
+    assert entry["error"].startswith("not a directory: ")
+
+
+def test_a_vault_that_is_a_regular_file_reports_every_folder_as_not_a_directory(
+    tmp_path: Path, capsys
+):
+    # The `NotADirectoryError` route: the *parent* is the file. A `Sources` that is
+    # itself a file is the case above, and would pass whether or not this one is
+    # handled.
+    vault = tmp_path / "vault"
+    vault.write_text("mis-typed --vault\n", encoding="utf-8")
+    out = run_unread(vault, capsys, "--dry-run")
+    assert [(a["path"], a["error"].split(":")[0]) for a in out["anomalies"]] == [
+        ("Sources", "not a directory"),
+        ("Kindles", "not a directory"),
+    ]
+
+
+def test_a_sources_dir_the_os_will_not_list_is_refused(vault: Path, capsys):
+    kindles = vault / "Kindles"
+    write_kindle(kindles, "B001RIPE", distill=True)
+    sources = vault / "Sources"
+    sources.chmod(0o000)
+    try:
+        out = run_unread(vault, capsys, "--dry-run")
+    finally:
+        sources.chmod(0o755)
+    [entry] = out["anomalies"]
+    assert entry["path"] == "Sources"
+    assert entry["error"].startswith("refused: ")
+    assert [k["slug"] for k in out["kindles"]["ripe"]] == ["B001RIPE"]
+
+
+def test_an_unreadable_vault_root_is_not_reported_as_a_missing_sources(vault: Path, capsys):
+    # `Sources/` is there; the root above it will not be traversed. An `is_dir()`
+    # gate answered "no Sources/ directory" here and ended the run with no JSON.
+    vault.chmod(0o000)
+    try:
+        out = run_unread(vault, capsys, "--dry-run")
+    finally:
+        vault.chmod(0o755)
+    assert [(a["path"], a["error"].split(":")[0]) for a in out["anomalies"]] == [
+        ("Sources", "refused"),
+        ("Kindles", "refused"),
+    ]
+
+
+def test_an_evicted_source_note_is_an_anomaly_not_a_note_that_is_not_there(vault: Path, capsys):
+    # iCloud placeholders are fabricated: none exists on a test machine.
+    write_note(vault / "Sources", "a", distill=True)
+    (vault / "Sources" / ".b.md.icloud").write_bytes(b"")
+    out = run(vault, capsys, "--dry-run")
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/.b.md.icloud"]
+    assert [s["slug"] for s in out["phase_a"]["stamped"]] == ["a"]
 
 
 def test_kindle_ripe_selection(vault: Path, capsys):
     kindles = vault / "Kindles"
-    kindles.mkdir()
     write_kindle(kindles, "B001RIPE", distill=True)
     write_kindle(kindles, "B002IDLE")  # distill unchecked
     write_kindle(kindles, "B003DONE", distill=True, distilled_date="2026-06-10")
@@ -258,7 +343,6 @@ def test_kindle_ripe_selection(vault: Path, capsys):
 def test_kindle_no_disk_writes(vault: Path, capsys):
     # Kindle has no cooldown clock; the tool must never rewrite a Kindle note.
     kindles = vault / "Kindles"
-    kindles.mkdir()
     write_kindle(kindles, "B001RIPE", distill=True)
     before = (kindles / "B001RIPE.md").read_text()
     run(vault, capsys)
@@ -267,7 +351,6 @@ def test_kindle_no_disk_writes(vault: Path, capsys):
 
 def test_non_kindle_note_is_an_anomaly(vault: Path, capsys):
     kindles = vault / "Kindles"
-    kindles.mkdir()
     (kindles / "weird.md").write_text("---\ntype: source\n---\n", encoding="utf-8")
     out = run(vault, capsys)
     assert any(a["path"] == "Kindles/weird.md" for a in out["anomalies"])
@@ -275,7 +358,6 @@ def test_non_kindle_note_is_an_anomaly(vault: Path, capsys):
 
 def test_a_kindle_note_that_does_not_parse_is_an_anomaly(vault: Path, capsys):
     kindles = vault / "Kindles"
-    kindles.mkdir()
     write_kindle(kindles, "B001RIPE", distill=True)
     (kindles / "broken.md").write_text("no frontmatter here\n", encoding="utf-8")
     out = run(vault, capsys)
@@ -283,10 +365,14 @@ def test_a_kindle_note_that_does_not_parse_is_an_anomaly(vault: Path, capsys):
     assert [k["slug"] for k in out["kindles"]["ripe"]] == ["B001RIPE"]
 
 
-def test_missing_vault_errors(tmp_path: Path):
-    with pytest.raises(SystemExit) as exc:
-        main(["--vault", str(tmp_path / "nope"), "--today", "2026-06-15"])
-    assert exc.value.code != 0
+def test_a_missing_vault_is_the_lock_that_cannot_be_taken(tmp_path: Path, capsys):
+    # An applying run takes the lock before it reads, so a root that is not there
+    # is the lock's own failure: stderr, and nothing on stdout to parse.
+    rc = main(["--vault", str(tmp_path / "nope"), "--today", "2026-06-15"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "vault lock unavailable" in captured.err
+    assert captured.out == ""
 
 
 def test_refuses_a_locked_vault_without_writing(vault: Path, capsys, brief_lock_wait: None):

@@ -14,10 +14,15 @@ retries (re-fetch the source guide while the notebook still exists). It is a
 read-only listing — no writes are tied to it — so `kboat-ingest` reads it from a
 `--dry-run` invocation without triggering any `filed_date` change.
 
-It also scans `Kindles/*.md` (if present) and emits the ripe Kindle set under
+It also scans `Kindles/*.md` and emits the ripe Kindle set under
 `kindles.ripe`. Kindle notes have no cooldown and no notebook, so the tool makes
 no on-disk writes for them — it only selects which are ripe (`distill` &&
 `distilled_date` empty).
+
+`Sources/` and `Kindles/` are both in the vault's required set, so either one
+absent, not a directory, or refused is an `anomalies` entry under the folder's own
+name and exit 1, with the rest of the report still printed and acted on
+(`kboat-vault-conventions` "Vault preconditions").
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from kboat.cli import (
     add_vault_argument,
     emit_lock_unavailable,
     emit_locked,
+    scan_required_dir,
     vault_path,
 )
 from kboat.io_utils import atomic_write_text
@@ -68,10 +74,11 @@ def _kindle_json(k: Kindle) -> dict[str, object]:
     }
 
 
-def _load_sources(sources_dir: Path, vault: Path) -> tuple[list[Source], list[dict[str, str]]]:
+def _load_sources(vault: Path) -> tuple[list[Source], list[dict[str, str]], bool]:
+    """Scan `Sources/*.md`; the flag is whether `Sources/` itself could not be read."""
     sources: list[Source] = []
-    anomalies: list[dict[str, str]] = []
-    for path in sorted(sources_dir.glob("*.md")):
+    found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["source"])
+    for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -82,17 +89,20 @@ def _load_sources(sources_dir: Path, vault: Path) -> tuple[list[Source], list[di
             anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'source'"})
             continue
         sources.append(Source.from_frontmatter(path.stem, rel, fm))
-    return sources, anomalies
+    return sources, anomalies, unread
 
 
-def _load_kindles(kindles_dir: Path, vault: Path) -> tuple[list[Kindle], list[dict[str, str]]]:
-    """Scan `Kindles/*.md`. The directory is optional — an absent one yields no
-    Kindle notes and no anomalies (a vault may have only sources)."""
+def _load_kindles(vault: Path) -> tuple[list[Kindle], list[dict[str, str]], bool]:
+    """Scan `Kindles/*.md`; the flag is whether `Kindles/` itself could not be read.
+
+    A vault with no Kindle books still has the folder, empty: it is in the vault's
+    required set, so an absent one is a vault that has not synced rather than one
+    holding only sources, and reading it as no Kindle notes is how that vault
+    would be distilled as though it were whole.
+    """
     kindles: list[Kindle] = []
-    anomalies: list[dict[str, str]] = []
-    if not kindles_dir.is_dir():
-        return kindles, anomalies
-    for path in sorted(kindles_dir.glob("*.md")):
+    found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["kindle"])
+    for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
             fm = parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -103,7 +113,7 @@ def _load_kindles(kindles_dir: Path, vault: Path) -> tuple[list[Kindle], list[di
             anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'kindle'"})
             continue
         kindles.append(Kindle.from_frontmatter(path.stem, rel, fm))
-    return kindles, anomalies
+    return kindles, anomalies, unread
 
 
 def _apply_phase_a(
@@ -123,20 +133,24 @@ def _apply_phase_a(
     return anomalies
 
 
-def _run(vault: Path, today: date, *, dry_run: bool) -> dict[str, object]:
+def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object], bool]:
     """Read the vault, compute the plan, apply Phase A unless `dry_run`, and
-    return the JSON output.
+    return the JSON output with whether a required folder could not be read.
 
     The read and the write are one step so that they happen under one hold of
     the vault lock: a plan computed before another run's writes would stamp
     dates the notes no longer call for.
+
+    One unread folder does not stop the other: each work set is decided from its
+    own notes alone, so what was read is reported and acted on, and the folder
+    that was not is its own anomaly and the exit code.
     """
-    sources, anomalies = _load_sources(vault / DIR_BY_TYPE["source"], vault)
+    sources, anomalies, sources_unread = _load_sources(vault)
     plan = compute_plan(sources, today)
 
-    # Kindle notes (Kindles/ is optional). No on-disk writes — Kindle has no
-    # cooldown clock — only ripe selection.
-    kindles, kindle_anomalies = _load_kindles(vault / DIR_BY_TYPE["kindle"], vault)
+    # No on-disk writes for Kindle notes — Kindle has no cooldown clock — only
+    # ripe selection.
+    kindles, kindle_anomalies, kindles_unread = _load_kindles(vault)
     anomalies += kindle_anomalies
     ripe_kindles = select_ripe_kindles(kindles)
 
@@ -169,7 +183,7 @@ def _run(vault: Path, today: date, *, dry_run: bool) -> dict[str, object]:
         },
         "counts": counts,
         "anomalies": anomalies,
-    }
+    }, sources_unread or kindles_unread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -188,19 +202,21 @@ def main(argv: list[str] | None = None) -> int:
 
     vault = vault_path(parser, args)
     today = date.fromisoformat(args.today)
-    sources_dir = vault / DIR_BY_TYPE["source"]
-    if not sources_dir.is_dir():
-        parser.error(f"no {DIR_BY_TYPE['source']}/ directory under vault: {sources_dir}")
 
+    # No gate on `Sources/` ahead of the scan: an `is_dir()` there answered "no
+    # such directory" for one that is there and unreadable — its `stat` goes
+    # through the parent — and ended the run with no JSON before the scan that
+    # would have said which it was. The scan reports all three states itself.
+    #
     # A `--dry-run` writes nothing, so it takes no lock and reads a vault
     # another run is writing; an applying run holds the lock over read and write
     # alike, and reports rather than waits when another run already has it.
     if args.dry_run:
-        output = _run(vault, today, dry_run=True)
+        output, unread = _run(vault, today, dry_run=True)
     else:
         try:
             with vault_lock(vault):
-                output = _run(vault, today, dry_run=False)
+                output, unread = _run(vault, today, dry_run=False)
         except VaultLockedError as exc:
             return emit_locked(exc)
         except VaultLockUnavailableError as exc:
@@ -208,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
 
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
-    return 0
+    return 1 if unread else 0
 
 
 if __name__ == "__main__":

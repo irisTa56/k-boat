@@ -101,13 +101,61 @@ def test_empty_file_is_empty_backlog(tmp_path: Path) -> None:
     assert extract_questions(_write(tmp_path / "Questions.md", "\n\n")) == []
 
 
-def test_missing_file_is_empty_backlog(tmp_path: Path) -> None:
-    assert extract_questions(tmp_path / "Questions.md") == []
+def test_a_missing_file_is_not_an_empty_backlog(tmp_path: Path) -> None:
+    # The backlog is a required input: its absence is a vault that did not sync,
+    # never a reader with nothing open.
+    with pytest.raises(QuestionsUnreadableError, match=r"^absent: "):
+        extract_questions(tmp_path / "Questions.md")
 
 
 def test_a_questions_file_that_cannot_be_read_is_not_an_empty_backlog(tmp_path: Path) -> None:
     path = tmp_path / "Questions.md"
     path.write_bytes(b"- what about \xff\n")
-    with pytest.raises(QuestionsUnreadableError):
+    with pytest.raises(QuestionsUnreadableError, match=r"^not UTF-8: "):
         extract_questions(path)
-    assert extract_questions(tmp_path / "Absent.md") == []
+
+
+def test_an_evicted_file_is_named_as_evicted_not_absent(tmp_path: Path) -> None:
+    # The two call for opposite remedies: recreating a file iCloud still holds
+    # makes a sync conflict, where the fix is to download it.
+    (tmp_path / ".Questions.md.icloud").write_bytes(b"")
+    with pytest.raises(QuestionsUnreadableError, match=r"^evicted: "):
+        extract_questions(tmp_path / "Questions.md")
+
+
+def test_a_name_held_by_a_dangling_symlink_is_not_a_file(tmp_path: Path) -> None:
+    (tmp_path / "Questions.md").symlink_to(tmp_path / "gone.md")
+    with pytest.raises(QuestionsUnreadableError, match=r"^not a file: "):
+        extract_questions(tmp_path / "Questions.md")
+
+
+def test_a_link_into_a_tree_that_refuses_is_refused_not_a_non_file(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    # The one place the file's own `stat` answers differently from the probes
+    # beside it: the link itself is there, so asked by name alone it reads as a
+    # name held by something that is not a file — sending a human to clear a
+    # name, when the remedy is the permission behind it.
+    walled = tmp_path_factory.mktemp("walled")
+    _write(walled / "Questions.md", "- a question\n")
+    (tmp_path / "Questions.md").symlink_to(walled / "Questions.md")
+    walled.chmod(0o000)
+    try:
+        with pytest.raises(QuestionsUnreadableError, match=r"^refused: "):
+            extract_questions(tmp_path / "Questions.md")
+    finally:
+        walled.chmod(0o755)
+
+
+def test_a_vault_root_that_will_not_be_traversed_is_refused_not_absent(tmp_path: Path) -> None:
+    # `is_file()` swallowed this refusal and answered "no file", the answer a
+    # missing backlog gets.
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _write(vault / "Questions.md", "- a question\n")
+    vault.chmod(0o000)
+    try:
+        with pytest.raises(QuestionsUnreadableError, match=r"^refused: "):
+            extract_questions(vault / "Questions.md")
+    finally:
+        vault.chmod(0o755)

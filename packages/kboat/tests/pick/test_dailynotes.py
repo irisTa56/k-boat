@@ -126,7 +126,32 @@ def test_a_daily_note_that_is_not_utf8_is_reported_rather_than_raised_or_dropped
     (daily / "2026-06-05.md").write_bytes(b"\xff\n")
     days, unreadable = extract_daily_notes(daily, today=date(2026, 6, 5), lookback_days=7)
     assert [n.date for n in days] == ["2026-06-04"]
-    assert [u["path"] for u in unreadable] == ["2026-06-05.md"]
+    assert [u["path"] for u in unreadable] == ["Daily/2026-06-05.md"]
+
+
+def test_an_evicted_note_is_judged_on_the_name_it_will_have_again(tmp_path: Path) -> None:
+    # The same date-name test and window as a readable note: the oldest notes are
+    # the first iCloud evicts, and reporting one the pick would never have read
+    # makes a permanent anomaly out of the back of the folder.
+    daily = tmp_path / "Daily"
+    _write(daily, "2026-06-04.md", "read up on agents\n")
+    for name in ("2026-06-05.md", "2026-05-01.md", "2026-06-20.md", "scratch.md"):
+        (daily / f".{name}.icloud").write_bytes(b"")
+    days, unreadable = extract_daily_notes(daily, today=date(2026, 6, 12), lookback_days=14)
+    assert [n.date for n in days] == ["2026-06-04"]
+    assert [u["path"] for u in unreadable] == ["Daily/.2026-06-05.md.icloud"]
+
+
+def test_a_daily_dir_that_cannot_be_listed_is_one_entry_for_the_folder(tmp_path: Path) -> None:
+    daily = tmp_path / "Daily"
+    _write(daily, "2026-06-04.md", "read up on agents\n")
+    daily.chmod(0o000)
+    try:
+        days, unreadable = extract_daily_notes(daily, today=date(2026, 6, 12))
+    finally:
+        daily.chmod(0o755)
+    assert days == []
+    assert [(u["path"], u["error"].split(":")[0]) for u in unreadable] == [("Daily", "refused")]
 
 
 def test_a_day_with_no_note_is_not_reported(tmp_path: Path) -> None:

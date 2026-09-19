@@ -21,12 +21,20 @@ It is read-only apart from one probe file it creates and removes again.
 The root, folder, readability, and placeholder checks are vault-wide: they assert the shared vault is present, readable, and fully local, `Feeds/` included, because a member's folder missing, unreadable, or half-synced means the vault is, whoever reads it.
 Only `Questions.md` and the K-Boat-owned `Queue/`, `Reviews/`, and `PDFs/` narrow the set to the K-Boat routine, which is why the set as it stands is that routine's precondition and a second member wanting one needs its own.
 
-The check is stricter than any single phase, on purpose.
-A phase tolerates a folder that is not there — the lifecycle CLI reads an absent `Kindles/` as no Kindle notes, the validator as nothing to validate — and that tolerance is exactly how a vault that failed to sync gets processed as though it were complete.
-So a folder in the set is required even where a phase would have shrugged, and creating it belongs to declaring the note type rather than to the run.
+The check runs once, before the phases, and an eviction or a permission change can land on a vault it passed.
+So a command that reads an input in the set holds it to the same rule rather than leaning on the check: tolerating a folder that is not there is exactly how a vault that failed to sync gets processed as though it were complete.
+
+- A required folder that is **absent, not a directory, or refused** makes the command that reads it exit 1, and so does a `Questions.md` the daily pick cannot read — absent, evicted, not a file, refused, or not UTF-8, each of which loses the whole backlog.
+  - It still prints its JSON report, naming the path and which of these it met in the entry the report already keeps for what it could not read, and it still processes and reports whatever else it could read.
+  - It does so the first time, with no threshold, since none of these clears itself.
+  - The commands are `kboat-lifecycle`, `kboat-pick` (`candidates` and `set`), `kboat-queue list`, `kboat-repos refresh`, and `kboat-note migrate-slugs`; the skill that reads each one names the entry and says what to do with the rest of the report.
+- A reader tells that exit from the vault lock's two by what is on stdout: the lock's are a `{"status": "locked", …}` record and an empty stdout ("Durability and the vault lock"), and this one is the command's own report.
+- `kboat-validate` is the exception: it is report-only by design, and `--strict` already exits 1 on its `unreadable_dir` violation.
+- Creating a missing folder belongs to declaring the note type rather than to the run.
 
 The set is what a run cannot proceed without, not everything the vault holds.
 An input a phase degrades over by design is deliberately out — the daily pick's `Daily/` notes are its ambient signal and it ranks without them, so their absence is not a precondition failure, whereas `Questions.md` below is the deliberate signal the pick is steered by.
+So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a refused one, or an evicted note in the look-back window, as an anomaly without failing.
 
 - **The root exists** and is a directory.
   - Absent, or a name held by something that is not one, short-circuits the rest: every other check would only restate the same fact.
@@ -44,15 +52,14 @@ An input a phase degrades over by design is deliberately out — the daily pick'
 - **Every scanned directory can be read**, as `readable_notes` and `readable_assets`.
   - No scan can stand in for this.
     - A directory the OS refuses to list is what a scan reads as an empty one unless it was written not to: `Path.glob` swallows the refusal, and `is_dir()` still answers `True` because that `stat` goes through the parent.
-  - Within the scanned set, it is the only place an unreadable folder is reported at all for the scans not yet under the rule, and what stops the run before each of the others reports it separately.
-  - Outside that set nothing reports one.
-    - `Daily/` is the case — globbed by the daily pick and deliberately no precondition of it — so an unreadable `Daily/` costs exactly what an absent one does, and a scan there cannot lean on this check.
+  - Within the scanned set, it is what stops the run before each phase's own scan reports the folder separately.
+  - Outside that set only the phase's own scan reports one.
+    - `Daily/` is the case — read by the daily pick and deliberately no precondition of it — so `kboat-pick candidates` reports an unreadable `Daily/` itself, since this check never will.
   - The pair splits by cost on the same rule as the placeholder pair below, and by what a refusal actually costs rather than by which directory it is in.
     - A note directory **fails** however it is unreadable: its listing is a phase's input.
     - An asset directory that is unlistable but still **traversable** only warns.
       - No phase lists `PDFs/` — ingest writes one path and the slug migration probes one by name — so nothing is affected, and a failure would stop the routine over it.
-    - The **asset directory itself** failing to be traversable is the exception, because there the per-name probes do answer wrongly: they read "absent" for a file that is there, so the slug migration moves a note away from a PDF it takes for gone, with `reading_link` retargeted at nothing.
-      - That is `_pdf_state`'s refusal-blindness, which is not this check's to fix — but it is why this one state is not a warning.
+    - The **asset directory itself** failing to be traversable is the exception, because there every access by name fails: ingest cannot write a source's PDF, and the slug migration cannot tell where one is, so it moves no source at all.
     - A directory *below* it warns whatever its mode: the probes name `PDFs/<slug>.pdf` at the top level, so nothing there is affected, and failing would stop the whole routine over a folder no phase reads.
   - The scan is recursive and the failure deliberately wider than a phase's input: a subfolder under a note directory is one nothing lists, and it fails all the same, because what the check establishes is that the vault can be read rather than that today's phases happened to reach everything in it.
   - A directory that goes away mid-scan is not a refusal and only **warns**: the walk listed a parent and the child was gone by the time it descended, which clears itself before anyone can act.
@@ -126,12 +133,12 @@ They group by who clears them, which is what a reader triaging a dry run needs, 
   - An evicted PDF at the target with **nothing** at the source is not a conflict: the pair is already across and one rename from done, so refusing the row would strand it for good.
 - **A human merges the two**: an existing note or PDF at a target name, or a slug two notes both want.
 - **A human repairs the note**: a `reading_link` that names the note's PDF in a shape the tool cannot rewrite, which would dangle if the pair moved.
-- **The vault is what needs looking at**: a target name it refuses to let the pass read at all, or one held by something that is not a note — a dangling symlink being the one that occurs, which nothing frees on its own.
+- **The vault is what needs looking at**: a target name it refuses to let the pass read at all, a source's PDF it cannot look for because `PDFs/` is absent, not a directory, or refused, or a name held by something that is not a note — a dangling symlink being the one that occurs, which nothing frees on its own.
 
-A note the pass could not read at all is not a row but a `skipped` entry, and a note directory it could not list is one too — reported under the directory's own name, because "nothing to migrate" and "nothing I could see" are the same JSON otherwise, and this report is what an `--apply` is approved from.
+A note the pass could not read at all is not a row but a `skipped` entry, and a note directory it could not read — absent, not a directory, or refused, the entry saying which — is one too, reported under the directory's own name, because "nothing to migrate" and "nothing I could see" are the same JSON otherwise, and this report is what an `--apply` is approved from.
 The counts keep the two apart: `unreadable_dirs` counts the directories and `skipped` counts only the notes, so `counts.skipped` is deliberately smaller than the `skipped` array when a directory is in it.
 One directory entry stands for however many notes went unseen, which is why folding it into a note count would put a fixed number where the true one is unknown.
-A non-zero exit says a pass left work behind, not that a human must move a file: where the pass renamed the note that was in the way, a re-run clears the conflict on its own.
+A non-zero exit says a pass left work behind or could not read a directory it had to ("Vault preconditions"), not that a human must move a file: where the pass renamed the note that was in the way, a re-run clears the conflict on its own.
 What no pass can clear is two notes each holding the name the other wants — that one is a human's to break.
 A missing vault root is refused in both modes rather than reported as a vault with nothing to migrate, since the dry run is what an `--apply` is approved from.
 The tool takes the vault lock for `--apply` and none for `--dry-run`, and it is a repair a human runs, not a routine phase.

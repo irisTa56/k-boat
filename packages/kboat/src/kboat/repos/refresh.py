@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import stat
 import sys
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +44,7 @@ from kboat.cli import (
     add_vault_argument,
     emit_lock_unavailable,
     emit_locked,
+    scan_required_dir,
     vault_path,
 )
 from kboat.frontmatter import (
@@ -58,7 +58,6 @@ from kboat.io_utils import (
     atomic_write_text,
     file_present,
     icloud_placeholder,
-    list_note_dir,
     name_occupied,
     name_taken,
     stranded_stub,
@@ -169,25 +168,14 @@ def set_fields(text: str, updates: Mapping[str, object]) -> str:
     return _set_rendered_fields(text, rendered)
 
 
-def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dict[str, str]]]:
+def _load_repo_notes(vault: Path) -> tuple[list[dict], list[dict[str, str]], bool]:
     notes: list[dict] = []
-    anomalies: list[dict[str, str]] = []
     # One listing, and it can refuse: a directory the OS will not list would
     # otherwise come back empty and the pass would report a catalogue it never
     # read as one with nothing to say. An evicted note is the other half of the
     # same silence — it matches no `*.md` glob, so a half-synced catalogue scans
     # clean and the pass reports a full refresh of the part that was local.
-    try:
-        found, placeholders = list_note_dir(repos_dir)
-    except OSError as exc:
-        return [], [{"path": DIR_BY_TYPE["repo"], "error": f"could not be listed: {exc}"}]
-    for placeholder in placeholders:
-        anomalies.append(
-            {
-                "path": placeholder.relative_to(vault).as_posix(),
-                "error": "iCloud placeholder: the note is evicted, so this pass cannot read it",
-            }
-        )
+    found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["repo"])
     for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
@@ -205,7 +193,7 @@ def _load_repo_notes(repos_dir: Path, vault: Path) -> tuple[list[dict], list[dic
             anomalies.append({"path": rel, "error": f"unparseable github url: {url!r}"})
             continue
         notes.append({"path": path, "rel": rel, "owner": owner, "repo": repo})
-    return notes, anomalies
+    return notes, anomalies, unread
 
 
 def _fetch(note: dict) -> dict:
@@ -345,30 +333,19 @@ def _apply(plan: _NotePlan, *, dry_run: bool) -> str:
 
 def refresh(
     vault: Path, *, today: date, max_workers: int = MAX_WORKERS, dry_run: bool = False
-) -> dict:
-    repos_dir = vault / DIR_BY_TYPE["repo"]
-    # Not `is_dir()`: it swallows a refusal on 3.14 and raises on 3.13, so this gate
-    # answered "no such directory" for a `Repos/` that is there and unreadable —
-    # a report with no counts and no anomalies, which neither whole-report
-    # escalation rule can fire on — or aborted with no JSON at all. A refused stat
-    # is left to `_load_repo_notes`, whose `list_note_dir` reports it as the
-    # directory's own anomaly; only absent and not-a-directory belong here, and
-    # both of those are the vault's shape rather than its readability.
-    try:
-        listable = repos_dir.stat()
-    except FileNotFoundError, NotADirectoryError:
-        # `NotADirectoryError` belongs here, not with the refusals: it is what a
-        # vault root that is a regular file raises, and `list_note_dir` reads a
-        # non-directory as empty — so letting it fall through turned a mis-typed
-        # `--vault` into a clean, exit-0 refresh of an empty catalogue that neither
-        # escalation rule can see.
-        return {"error": f"no {DIR_BY_TYPE['repo']}/ directory under vault: {repos_dir}"}
-    except OSError:
-        listable = None
-    if listable is not None and not stat.S_ISDIR(listable.st_mode):
-        return {"error": f"{DIR_BY_TYPE['repo']}/ is not a directory: {repos_dir}"}
+) -> tuple[dict, bool]:
+    """The refresh report, and whether `Repos/` itself could not be read.
 
-    notes, anomalies = _load_repo_notes(repos_dir, vault)
+    `Repos/` absent, not a directory, or refused is one `anomalies` entry under its
+    own name and the flag the CLI exits 1 on, with the report in its usual shape
+    around it — counts, and every list empty — so the whole-report escalation rule
+    ("updated nothing while reporting anomalies") fires on it as on any catalogue
+    that refreshed nothing. There is no gate ahead of the scan: one on `is_dir()`
+    swallowed a refusal and called a `Repos/` that is there "no such directory",
+    and a report of a different shape was one more for every reader to branch on.
+    """
+    repos_dir = vault / DIR_BY_TYPE["repo"]
+    notes, anomalies, unread = _load_repo_notes(vault)
     today_iso = today.isoformat()
     updated: list[str] = []
     adopted: list[dict[str, str]] = []
@@ -487,7 +464,7 @@ def refresh(
         "rename_collisions": rename_collisions,
         "failed": failed,
         "anomalies": anomalies,
-    }
+    }, unread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -507,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
         with ExitStack() as stack:
             if not args.dry_run:
                 stack.enter_context(vault_lock(vault))
-            report = refresh(vault, today=today, dry_run=args.dry_run)
+            report, unread = refresh(vault, today=today, dry_run=args.dry_run)
     except VaultLockedError as exc:
         return emit_locked(exc)
     except VaultLockUnavailableError as exc:
@@ -515,4 +492,4 @@ def main(argv: list[str] | None = None) -> int:
 
     json.dump(report, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
-    return 1 if report.get("error") else 0
+    return 1 if unread else 0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -611,6 +612,105 @@ def test_a_pdf_source_moves_with_its_file_and_its_reading_link(vault: Path) -> N
     assert f"[[{FRESH}.pdf]]" in (vault / "Sources" / f"{FRESH}.md").read_text()
 
 
+def _pdf_source(vault: Path) -> tuple[Path, Path]:
+    note = _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
+    pdf = vault / "PDFs" / f"{STALE}.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n")
+    return note, pdf
+
+
+def test_a_pdfs_folder_that_cannot_be_walked_through_holds_the_pair(vault: Path) -> None:
+    # Measured before the fix: at `0o444` every probe read "no PDF", the apply
+    # renamed the note and retargeted `reading_link` while the file stayed at the
+    # old name, and the row said `renamed`. `0o444` lists but does not traverse,
+    # so it is the per-name probe that meets the refusal, not a listing.
+    note, pdf = _pdf_source(vault)
+    before = note.read_text(encoding="utf-8")
+    (vault / "PDFs").chmod(0o444)
+    try:
+        report = migrate(vault, apply=True)
+    finally:
+        (vault / "PDFs").chmod(0o755)
+
+    row = report.rows[0]
+    assert row.status == "conflict"
+    assert "PDFs/ could not be read (refused: " in row.detail
+    assert note.read_text(encoding="utf-8") == before, "the link is not retargeted"
+    assert pdf.exists()
+    assert report.unresolved == 1
+
+
+def test_a_pdf_probe_refused_by_name_is_the_rows_conflict(
+    vault: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    # Past `PDFs/` itself: the directory walks through, and the one name the probe
+    # asks about is what refuses. A probe that swallowed this read "no PDF".
+    note, _ = _pdf_source(vault)
+    linked = tmp_path_factory.mktemp("walled")
+    (vault / "PDFs" / f"{STALE}.pdf").unlink()
+    (vault / "PDFs" / f"{STALE}.pdf").symlink_to(linked / "inside" / "x.pdf")
+    linked.chmod(0o000)
+    try:
+        rows, _ = plan(vault)
+    finally:
+        linked.chmod(0o755)
+
+    assert rows[0].status == "conflict"
+    assert "this source's PDF could not be looked for" in rows[0].detail
+    assert note.exists()
+
+
+@pytest.mark.parametrize(
+    ("make", "word"),
+    [
+        (lambda pdfs: pdfs.rmdir(), "absent"),
+        (lambda pdfs: (pdfs.rmdir(), pdfs.write_text("x\n")), "not a directory"),
+    ],
+    ids=["absent", "not-a-directory"],
+)
+def test_a_pdfs_folder_that_is_not_there_holds_every_source(
+    vault: Path, make: Callable[[Path], object], word: str
+) -> None:
+    # What the per-name probes cannot see: each reads a missing `PDFs/` as "no PDF
+    # here", the answer a web source gets, so the pair would move away from a file
+    # that has only not synced.
+    _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
+    make(vault / "PDFs")
+
+    report = migrate(vault, apply=True)
+
+    row = report.rows[0]
+    assert row.status == "conflict"
+    assert f"PDFs/ could not be read ({word}: " in row.detail
+    assert (vault / "Sources" / f"{STALE}.md").exists()
+
+
+def test_a_pdf_probe_refused_at_apply_leaves_the_link_where_the_file_is(
+    vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plan saw a readable `PDFs/`; by the apply's own probe it refuses. Asked
+    # after the link was rewritten, that left the note at its old name naming a PDF
+    # nothing moved the file to.
+    note, pdf = _pdf_source(vault)
+    before = note.read_text(encoding="utf-8")
+    real = migrate_mod._pdf_state
+    calls: list[int] = []
+
+    def refuse_on_apply(*args: object) -> object:
+        calls.append(1)
+        if len(calls) > 1:
+            raise PermissionError(13, "Permission denied")
+        return real(*args)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(migrate_mod, "_pdf_state", refuse_on_apply)
+
+    report = migrate(vault, apply=True)
+
+    assert report.rows[0].status == "failed"
+    assert note.read_text(encoding="utf-8") == before
+    assert pdf.exists()
+
+
 @pytest.mark.parametrize(
     "shape",
     [
@@ -817,10 +917,19 @@ def test_a_rename_that_cannot_land_costs_its_own_row(vault: Path) -> None:
     assert (vault / "Sources" / f"{STALE}.md").exists()
 
 
-def test_a_missing_folder_is_not_an_error(vault: Path) -> None:
-    # A vault without one of the note folders yields nothing for it rather than
-    # raising; `kboat-doctor` is what insists the folders are there.
-    for sub in ("Sources", "Repos", "Feeds"):
+def test_a_missing_folder_is_a_directory_entry_not_an_empty_one(vault: Path) -> None:
+    # Every folder scanned is in the vault's required set, so an absent one is a
+    # vault that did not sync — "nothing to migrate" there would be approved as a
+    # canonical vault. Not raised either: the other folders are still scanned.
+    _source(vault, STALE, STALE_URL)
+    for sub in ("Repos", "Feeds"):
         (vault / sub).rmdir()
 
-    assert migrate(vault, apply=False).rows == []
+    report = migrate(vault, apply=False)
+
+    assert [r.current for r in report.rows] == [STALE]
+    assert [(s.path, s.reason.split(": ")[:2]) for s in report.skipped] == [
+        ("Repos", ["unreadable_dir", "absent"]),
+        ("Feeds", ["unreadable_dir", "absent"]),
+    ]
+    assert report.counts()["unreadable_dirs"] == 2

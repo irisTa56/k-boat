@@ -106,15 +106,167 @@ def test_a_source_note_that_is_not_utf8_is_an_anomaly_and_not_a_dead_gather(
     assert [a["path"] for a in out["anomalies"]] == ["Sources/bad.md"]
 
 
-def test_an_unreadable_questions_file_and_daily_note_are_anomalies_not_silence(
+def _candidates(vault: Path, capsys: pytest.CaptureFixture[str], rc: int) -> dict:
+    assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == rc
+    return json.loads(capsys.readouterr().out)
+
+
+def _where(out: dict) -> list[tuple[str, str]]:
+    """Each anomaly as its path and the word its error leads with."""
+    return [(a["path"], a["error"].split(":")[0]) for a in out["anomalies"]]
+
+
+def test_an_unreadable_daily_note_is_an_anomaly_and_the_pick_still_runs(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (vault / "Questions.md").write_bytes(b"- what about \xff\n")
+    # Daily notes are the ambient signal the pick degrades over, so one that could
+    # not be read is reported without failing the run.
     (vault / "Daily" / "2026-06-11.md").write_bytes(b"\xff\n")
-    assert main(["--vault", str(vault), "candidates", "--today", "2026-06-12"]) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert sorted(a["path"] for a in out["anomalies"]) == ["Daily/2026-06-11.md", "Questions.md"]
+    out = _candidates(vault, capsys, 0)
+    assert [a["path"] for a in out["anomalies"]] == ["Daily/2026-06-11.md"]
+
+
+@pytest.mark.parametrize(
+    ("make", "word"),
+    [
+        (lambda q: q.unlink(), "absent"),
+        (lambda q: q.write_bytes(b"- what about \xff\n"), "not UTF-8"),
+        (lambda q: (q.unlink(), q.mkdir()), "not a file"),
+        (lambda q: (q.unlink(), (q.parent / ".Questions.md.icloud").write_bytes(b"")), "evicted"),
+        (lambda q: q.chmod(0o000), "refused"),
+    ],
+    ids=["absent", "not-utf8", "not-a-file", "evicted", "refused"],
+)
+def test_a_questions_file_the_pick_cannot_read_fails_the_run_with_the_report(
+    vault: Path, capsys: pytest.CaptureFixture[str], make: Callable[[Path], object], word: str
+) -> None:
+    # The backlog is the pick's deliberate signal: a pick made without it would
+    # read exactly like one steered by it, so no way of losing it is an empty one.
+    questions = vault / "Questions.md"
+    make(questions)
+    try:
+        out = _candidates(vault, capsys, 1)
+    finally:
+        if questions.is_file():
+            questions.chmod(0o644)
+    assert _where(out) == [("Questions.md", word)]
     assert out["questions"] == []
+    assert {c["slug"] for c in out["candidates"]} == {"web1", "web2"}
+
+
+def test_an_absent_daily_dir_is_silent_and_does_not_fail(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for note in (vault / "Daily").iterdir():
+        note.unlink()
+    (vault / "Daily").rmdir()
+    out = _candidates(vault, capsys, 0)
+    assert out["anomalies"] == []
+    assert out["daily_notes"] == []
+
+
+def test_a_daily_dir_the_os_will_not_list_is_reported_without_failing(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    daily = vault / "Daily"
+    daily.chmod(0o000)
+    try:
+        out = _candidates(vault, capsys, 0)
+    finally:
+        daily.chmod(0o755)
+    assert _where(out) == [("Daily", "refused")]
+
+
+def test_an_evicted_daily_note_is_reported_only_inside_the_look_back_window(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    daily = vault / "Daily"
+    (daily / ".2026-06-10.md.icloud").write_bytes(b"")  # in the window
+    (daily / ".2026-05-01.md.icloud").write_bytes(b"")  # older than the window
+    (daily / ".scratch.md.icloud").write_bytes(b"")  # not a daily note at all
+    out = _candidates(vault, capsys, 0)
+    assert [a["path"] for a in out["anomalies"]] == ["Daily/.2026-06-10.md.icloud"]
+
+
+@pytest.mark.parametrize("command", [["candidates", "--today", "2026-06-12"], ["set"]])
+def test_an_absent_sources_dir_is_reported_in_the_json_not_by_argparse(
+    vault: Path, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    for note in (vault / "Sources").iterdir():
+        note.unlink()
+    (vault / "Sources").rmdir()
+    assert main(["--vault", str(vault), *command]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert _where(out) == [("Sources", "absent")]
+
+
+@pytest.mark.parametrize("command", [["candidates", "--today", "2026-06-12"], ["set"]])
+def test_a_vault_that_is_a_regular_file_reports_sources_as_not_a_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    # The parent is the file — the route a `Sources` that is itself a file misses.
+    # `set` meets it at the lock, which cannot be taken under a file.
+    vault = tmp_path / "vault"
+    vault.write_text("mis-typed --vault\n", encoding="utf-8")
+    assert main(["--vault", str(vault), *command]) == 1
+    captured = capsys.readouterr()
+    if command == ["set"]:
+        assert "vault lock unavailable" in captured.err
+        assert captured.out == ""
+        return
+    out = json.loads(captured.out)
+    assert _where(out)[0] == ("Sources", "not a directory")
+
+
+def test_a_sources_name_held_by_a_file_is_not_a_directory_to_set(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sources = vault / "Sources"
+    for note in sources.iterdir():
+        note.unlink()
+    sources.rmdir()
+    sources.write_text("not a folder\n", encoding="utf-8")
+    assert main(["--vault", str(vault), "set", "--slugs", "web1"]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert _where(out) == [("Sources", "not a directory")]
+    # Not "missing": nothing was read to be missing from.
+    assert out["missing"] == []
+
+
+@pytest.mark.parametrize("command", [["candidates", "--today", "2026-06-12"], ["set"]])
+def test_a_sources_dir_the_os_will_not_list_is_refused(
+    vault: Path, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    sources = vault / "Sources"
+    sources.chmod(0o000)
+    try:
+        assert main(["--vault", str(vault), *command]) == 1
+    finally:
+        sources.chmod(0o755)
+    out = json.loads(capsys.readouterr().out)
+    assert _where(out) == [("Sources", "refused")]
+
+
+def test_an_unreadable_vault_root_is_not_reported_as_a_missing_sources(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `Sources/` is there and the root above it will not be traversed: an `is_dir()`
+    # gate answered "no Sources/ directory" and ended the run with no JSON.
+    vault.chmod(0o000)
+    try:
+        out = _candidates(vault, capsys, 1)
+    finally:
+        vault.chmod(0o755)
+    assert ("Sources", "refused") in _where(out)
+    assert ("Questions.md", "refused") in _where(out)
+
+
+def test_an_evicted_source_note_is_an_anomaly_not_a_note_that_is_not_there(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (vault / "Sources" / ".web3.md.icloud").write_bytes(b"")
+    out = _candidates(vault, capsys, 0)
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/.web3.md.icloud"]
 
 
 def test_candidates_lookback_window_drops_stale_notes(
