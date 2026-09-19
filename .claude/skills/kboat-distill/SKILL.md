@@ -144,6 +144,7 @@ Follow the accretion policy below.
 Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 - Written before the discard, so the extracted material survives even if the discard fails.
+- A section an earlier pass wrote the same day is replaced, not added to (see "Review report").
 
 ### Step 6: stamp `distilled_date`
 
@@ -247,8 +248,12 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - This keeps the boundary of what is a formula explicit rather than leaving a bare expression to read as running text.
 - **Never auto-merge.** Merging concept notes is destructive and hard to reverse unattended.
   - Log merge candidates in the report for `memory-curate` to handle with a human.
-- **Stay idempotent on replay.** The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
-  - Before inserting, check the section text and skip a provenance observation whose URL (or, for a Kindle book, ASIN) is already present, so a replay after a mid-run crash does not double-write.
+- **Stay idempotent on replay.** A source a partial pass left ripe (Phase B step 6) or a crash interrupted is distilled again from the start, into notes that already hold part of what it yields, so every write here must be one a second pass can repeat.
+  - The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
+  - Before inserting, read the note's `## Observations` and write only what it does not already hold:
+    - Skip a provenance observation whose URL (or, for a Kindle book, ASIN) is already present.
+    - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`.
+      - The check only keeps a second copy out; where a claim that is not there yet goes is still the placement judgement above.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
 
 ## Review report (`Reviews/YYYY-MM-DD.md`)
@@ -257,7 +262,7 @@ The review report is the durable, **user-facing** record of what each distillati
 So it carries **only the distillation knowledge** below, and is **written only on a run that distilled at least one source or Kindle book** (Phase B/C).
 A run that distilled nothing writes no report: there is nothing to consolidate, and its operational outcome (the Phase A lifecycle counts, dismissed discards and notebook retentions, anomalies, the "nothing ripe" status) lives in the run summary, not the vault.
 
-The first write of the run **creates the file with its frontmatter block** (see kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd)), then appends the first `###` section; later writes in the same run append further sections only.
+The first write to the day's file **creates it with its frontmatter block** (see kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd)), then appends the first `###` section; every later write appends a section, or replaces one under the rule below.
 
 ```yaml
 ---
@@ -268,7 +273,14 @@ read: false
 ```
 
 The block is **mandatory** and its fields are defined in kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd) (`type: review` keeps the report in `Reviews.base`, `read: false` is the human's read-tracking flag); set `date` to the run date (the same as the filename).
-On a **replay** where the file already exists (a crash left it after the first section was written), append sections only — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
+Where the file already exists — a later write of the run, a crash that left it after a section was written, a second run the same day — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
+
+**One section per source in a day's report.**
+Before writing a source's section, look in the file for one already carrying this source's `Source:` line.
+
+- Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next `###` heading or the end of the file.
+  - The replacement records what the day's passes did together: keep the entries the replaced section carried and add this pass's, without listing under `skipped (dup of):` a claim the day's earlier pass wrote.
+- A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did, and the earlier day's report stays as it was.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
