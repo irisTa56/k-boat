@@ -229,34 +229,35 @@ def _pdf_state(vault: Path, current: str, expected: str) -> tuple[str, Path, Pat
     """
     old = vault / PDFS_DIR / f"{current}.pdf"
     new = vault / PDFS_DIR / f"{expected}.pdf"
-    if file_present(old):
+    if _file_there(old):
         if name_occupied(new):
             return "conflict", old, new, None
-        if _placeholder_present(new):
+        if _file_there(icloud_placeholder(new)):
             return "evicted", old, new, new
         return "moving", old, new, None
-    if _placeholder_present(old):
+    if _file_there(icloud_placeholder(old)):
         return "evicted", old, new, old
     # Nothing at the source name: the pair is either already across (a `--apply`
     # renames the file first, so a crash between the two leaves exactly this) or
     # there was never a file. An evicted PDF at the target is across too — the
     # note's rename is not blocked by it, and refusing the row would strand a
     # pair that is one rename from done.
-    across = name_occupied(new) or _placeholder_present(new)
+    across = name_occupied(new) or _file_there(icloud_placeholder(new))
     return ("moved" if across else "absent"), old, new, None
 
 
-def _placeholder_present(pdf: Path) -> bool:
-    """Whether a placeholder stands beside `pdf` — raising where the vault refuses.
+def _file_there(path: Path) -> bool:
+    """`file_present`, for a name derived from a note's slug — raising where the vault refuses.
 
     One refusal is an answer rather than a refusal: a name too long for the
-    filesystem, which is what the placeholder of a 248-byte-or-longer slug is. The
-    kernel will not look such a name up, so nothing can be held under it, and "none"
-    is known rather than guessed. Refusing there would make a conflict of exactly
-    the long title-derived names this repair exists to move.
+    filesystem. A long title-derived slug produces one twice over — its PDF name
+    once the note's own name is at the limit, and its placeholder's name from 248
+    bytes on. The kernel will not look such a name up, so nothing can be held under
+    it, and "no file" is known rather than guessed. Refusing there would make a
+    permanent conflict of exactly the long names this repair exists to move.
     """
     try:
-        return file_present(icloud_placeholder(pdf))
+        return file_present(path)
     except OSError as exc:
         if exc.errno == errno.ENAMETOOLONG:
             return False

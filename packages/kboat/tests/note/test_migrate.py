@@ -389,6 +389,22 @@ def test_a_stub_probe_that_cannot_answer_does_not_refuse_the_rename(vault: Path)
     assert (vault / "Sources" / f"{note_slug('https://example.com/long-one/')}.md").exists()
 
 
+def test_a_note_name_at_the_limit_still_moves_though_its_pdf_name_cannot_exist(
+    vault: Path,
+) -> None:
+    # A 252-byte stem is a 255-byte note name and a 256-byte PDF name. The kernel
+    # refuses to look the PDF name up, so no file can be there — and a probe that
+    # refused the row over it would leave the longest names unmigrated for good.
+    long_slug = "c" * 252
+    _source(vault, long_slug, "https://example.com/long-two/")
+
+    report = migrate(vault, apply=True)
+
+    row = next(r for r in report.rows if r.current == long_slug)
+    assert row.status == "renamed"
+    assert (vault / "Sources" / f"{note_slug('https://example.com/long-two/')}.md").exists()
+
+
 def test_a_failed_apply_keeps_the_strand_account_it_was_given(vault: Path, monkeypatch) -> None:
     # `fsync_dir` raises *after* its rename has landed, so this row is one whose
     # move happened — the strand is real, nothing is at the old name for a later
@@ -665,8 +681,9 @@ def test_a_pdf_probe_refused_by_name_is_the_rows_conflict(
     [
         (lambda pdfs: pdfs.rmdir(), "absent"),
         (lambda pdfs: (pdfs.rmdir(), pdfs.write_text("x\n")), "not a directory"),
+        (lambda pdfs: (pdfs.rmdir(), pdfs.symlink_to(pdfs.parent / "gone")), "not a directory"),
     ],
-    ids=["absent", "not-a-directory"],
+    ids=["absent", "not-a-directory", "dangling-symlink"],
 )
 def test_a_pdfs_folder_that_is_not_there_holds_every_source(
     vault: Path, make: Callable[[Path], object], word: str

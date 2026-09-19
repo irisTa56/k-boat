@@ -94,6 +94,15 @@ def test_a_queue_name_held_by_a_file_is_not_a_directory(
     assert _unread(tmp_path, capsys) == [("Queue", "not a directory")]
 
 
+def test_a_queue_name_held_by_a_dangling_symlink_is_not_called_absent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Listing through the link raises the same error an absent folder does, and
+    # "absent" sends the human to a `mkdir` the name makes fail.
+    (tmp_path / "Queue").symlink_to(tmp_path / "gone")
+    assert _unread(tmp_path, capsys) == [("Queue", "not a directory")]
+
+
 def test_a_vault_that_is_a_regular_file_is_not_a_directory(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -239,8 +239,19 @@ def unread_dir(exc: OSError) -> str:
     holds, or restore a permission — so the report leads with which it was rather
     than leaving it to an `strerror` deep in the text. Every command shares this so
     a reader meets one wording for one state whichever report it is reading.
+
+    A name held by a dangling symlink raises `FileNotFoundError` too, and is not
+    absent: `mkdir` there fails, so it is reported as the name something that is not
+    a directory holds, as `kboat-doctor`'s `folders_occupied` files it.
     """
     if isinstance(exc, FileNotFoundError):
+        held = False
+        if exc.filename is not None:
+            # Only sharpens the wording, so a probe that cannot answer leaves "absent".
+            with contextlib.suppress(OSError):
+                held = name_occupied(Path(exc.filename))
+        if held:
+            return f"not a directory: {exc.filename} is held by something that is not one"
         return f"absent: {exc}"
     if isinstance(exc, NotADirectoryError):
         return f"not a directory: {exc}"
