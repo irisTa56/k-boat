@@ -249,17 +249,23 @@ def test_a_directory_at_the_slug_is_not_written(vault: Path) -> None:
 
 
 def test_a_refused_probe_is_raised_not_reported_as_an_eviction(vault: Path) -> None:
-    # A placeholder is there, and the vault will not answer about the note's own
-    # name either: the refusal is what the caller has to hear, since reading it as
-    # an eviction would tell a human to wait on a download that fixes nothing.
-    (vault / "Sources" / f".{S}.md.icloud").write_bytes(b"placeholder")
-    (vault / "Sources").chmod(0o600)  # listable, not traversable: every `stat` beneath fails
+    # The slug is a link into a tree the vault will not let the writer into, with a
+    # stale stub beside it. Only asking whether a *file* is there meets the refusal:
+    # a probe that swallowed it would report a non-note holding the name, or an
+    # eviction, and send a human after something that is not the problem.
+    walled = vault / "walled"
+    walled.mkdir()
+    (walled / "note.md").write_text("x\n")
+    (vault / "Sources" / f"{S}.md").symlink_to(walled / "note.md")
+    (vault / "Sources" / f".{S}.md.icloud").write_bytes(b"stale")
+    walled.chmod(0o000)
     try:
+        before = _snapshot(vault)
         with pytest.raises(PermissionError):
             upsert(SOURCE, vault, _RECORD, today="2026-09-20")
+        assert _snapshot(vault) == before
     finally:
-        (vault / "Sources").chmod(0o755)
-    assert sorted(p.name for p in (vault / "Sources").iterdir()) == [f".{S}.md.icloud"]
+        walled.chmod(0o755)
 
 
 @pytest.mark.parametrize(
