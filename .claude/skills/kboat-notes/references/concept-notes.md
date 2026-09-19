@@ -31,6 +31,7 @@ The section takes one of two shapes, and a write that half-landed leaves a third
 
 A group is a unit of **insight, not of reading**.
 So a group carries two readings' provenance wherever both landed on the same point, and a note whose second reading only deepened the first's insight stays flat rather than being split.
+One reading can carry more than one provenance line: a later pass over the same source that places claims the note lacked follows them with that source's line again, so no claim ever sits under another reading's provenance.
 Groups run oldest insight first, so a new one is appended at the end of the section, immediately above `## Relations`.
 A reading that opens a new group on a flat note is what makes that note grouped, and it owes the claims already there a heading of their own in the same append: leaving them bare would make the earliest insight the one thing in the note that nothing names.
 That append is two edits, so a failure or a crash between them can leave the note in the third state — a `###` group with claims still bare above the first heading.
