@@ -148,7 +148,7 @@ Follow the accretion policy below.
 Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 - Written before the discard, so the extracted material survives even if the discard fails.
-- A section an earlier pass wrote the same day is replaced, not added to (see "Review report").
+- A section an earlier pass wrote the same day is replaced, not added to, and a later-day replay that placed nothing writes none (see "Review report").
 
 ### Step 6: stamp `distilled_date`
 
@@ -291,9 +291,10 @@ Where the file already exists — a later write of the run, a crash that left it
 **One section per source in a day's report.**
 Before writing a source's section, look in the file for one already carrying this source's `Source:` line.
 
-- Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next `###` heading or the end of the file.
+- Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
-- A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did, and the earlier day's report stays as it was.
+- A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did — its Summary drawn from the claims that pass placed — and the earlier day's report stays as it was.
+  - A later-day replay that placed nothing — no create, no claim, no relation — writes no section; the run summary's left-ripe lines already name the source.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
