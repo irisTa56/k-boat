@@ -294,7 +294,8 @@ Before writing a source's section, look in the file for one already carrying thi
 - Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
 - A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did — its Summary drawn from the claims that pass placed — and the earlier day's report stays as it was.
-  - A later-day replay that placed nothing — no create, no claim, no relation — writes no section; the run summary's left-ripe lines already name the source.
+  - A later-day replay with nothing new to report writes no section: it placed nothing — no create, no claim, no relation — and logs nothing a human acts on, such as a concept to promote or a merge candidate; the run summary's left-ripe lines already name the source.
+    - A concept an earlier pass marked for retry that this pass ends without writing is something to report, so it gets a section.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
