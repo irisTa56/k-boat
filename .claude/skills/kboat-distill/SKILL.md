@@ -149,7 +149,7 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 ### Step 6: stamp `distilled_date`
 
-Stamp it with today's date on the source note — **unless step 4 left any of this source's concepts unwritten**: one the create cap deferred, or one whose append was not made (both in the accretion policy below).
+Stamp it with today's date on the source note — **unless step 4 left any of this source's concepts unwritten**: one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
 
 - This is the commit point; after it the source leaves the ripe set.
 - A source with an unwritten concept stays ripe instead: stamp nothing, skip step 7, and name the source in the run summary under the reason it stayed.
@@ -221,6 +221,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
       - A note the writer cannot edit refuses that append on every run, so the source stays ripe until a human repairs the note.
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
+  - A create that did not land — the `write_note` call failed or returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
   - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title.
 - **Cap creates per run.** `create_cap` is **8** new concept notes per run, Phase B and Phase C together; this is the one place the value is set, so adjust it here.
   - Once the run has created `create_cap` notes, stop creating and finish appends: log each concept left to create under `uncreated candidates:` marked `deferred (create cap reached)`, and report the cap-hit itself — that the ceiling was reached and how many were left — in the run summary.
@@ -252,9 +253,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
 - **Stay idempotent on replay.** A source a partial pass left ripe (Phase B step 6) or a crash interrupted is distilled again from the start, into notes that already hold part of what it yields, so every write here must be one a second pass can repeat.
   - The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
   - Before inserting, read the note's `## Observations` and write only what it does not already hold:
-    - Skip a provenance observation whose URL (or, for a Kindle book, ASIN) is already present.
-    - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`, naming what it duplicates.
-      - Where that is this source's own claim, written by an earlier pass, say so: a skip is logged for the human to reverse, and this one repeats nothing another reading said.
+    - **A note already carrying this source's provenance observation** — its URL, or for a Kindle book its ASIN — took this reading on an earlier pass, so write nothing more to it, and log it under the report's `skipped (dup of):` as this source's earlier pass.
+      - That pass landed its claims and the provenance line in one insert, and a claim added now would land after the line, where the next reading's provenance would claim it.
+    - **Otherwise skip a claim the section already states** — the same assertion, in whatever words and under whichever `###` group — and log it under `skipped (dup of):`, naming what it duplicates.
       - A claim the section holds only as `#dialogue` is not a copy of one this source grounds: write it, tagged `#grounded`, as this reading's claim.
       - The check only keeps a second copy out; where a claim that is not there yet goes is still the placement judgement above.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
@@ -282,7 +283,7 @@ Where the file already exists — a later write of the run, a crash that left it
 Before writing a source's section, look in the file for one already carrying this source's `Source:` line.
 
 - Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next `###` heading or the end of the file.
-  - The replacement records what the day's passes did together: keep the entries the replaced section carried and add this pass's, without listing under `skipped (dup of):` a claim the day's earlier pass wrote.
+  - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
 - A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did, and the earlier day's report stays as it was.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
@@ -308,7 +309,7 @@ Source: <url> (for a Kindle book: ASIN:<asin>)
 - `kept from dialogue:` external (`#dialogue`) claims accreted as the dialogue stated them (a dialogue claim you kept as-is that the source grounds needs no dialogue-audit line — it is source knowledge that folds into `created:`/`appended-to:`; a *corrected* claim keeps its `corrected from dialogue:` line either way).
 - `corrected from dialogue:` claims accreted after you fixed an error the fast reading model made — whether the fix lands them `#grounded` (the source now supports it) or `#dialogue` (external) — each with what you changed, so the human can audit the correction.
 - `skipped (dup of):` observations dropped as duplicates.
-- `uncreated candidates:` concepts this pass did not write. Two marks are retried by a later run, since either keeps the source ripe: a concept the create cap deferred, marked `deferred (create cap reached)`, and one whose append could not be made at all, marked `append not made`. Everything else here — a vague or broad concept, a `#dialogue` claim you could neither confirm nor confidently correct — is the human's to promote, and nothing retries it.
+- `uncreated candidates:` concepts this pass did not write. Three marks are retried by a later run, since each keeps the source ripe: a concept the create cap deferred, marked `deferred (create cap reached)`, and one whose create or append did not land, marked `create not made` or `append not made`. Everything else here — a vague or broad concept, a `#dialogue` claim you could neither confirm nor confidently correct — is the human's to promote, and nothing retries it.
 - `merge candidates:` pairs flagged for `memory-curate`.
 ```
 
@@ -340,5 +341,5 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
 
 - **Left ripe by the create cap** — every unwritten concept was a cap deferral; give how many each deferred.
   - A later run finishes these unaided, so this line asks nothing of anyone.
-- **Left ripe by an append not made** — at least one concept's append failed, whether or not the cap also deferred others; give the concept and the error.
-  - The next run makes the same append, and a note the writer cannot edit refuses it every time, so this line is for a human.
+- **Left ripe by a write not made** — at least one concept's create or append did not land, whether or not the cap also deferred others; give the concept and the error.
+  - The next run makes the same write, and one refused for a reason in the knowledge base rather than the call — a note the writer cannot edit — fails every time, so this line is for a human.
