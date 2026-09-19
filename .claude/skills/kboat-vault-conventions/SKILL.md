@@ -85,7 +85,11 @@ The placeholder check is split by what an eviction actually costs, because a doc
   - A run that walks past one silently processes a vault missing content it has no way to know about.
   - Most of those directories hold the run's input; `Reviews/` earns its place differently — the distill pass *appends* to a dated report there, and an evicted one reads as absent, so the append would start a second file and the earlier sections would return as a sync conflict.
 - A placeholder under `PDFs/` is a **warning** that does not fail.
-  - It is the one directory a run neither reads nor writes: the file is only ever uploaded at ingest, and distillation reads the content back from the notebook.
+  - The file is read as well as written.
+    - Ingest reads it back to verify what it just wrote.
+    - The notebook-health restore reads it again, by name rather than by listing, to re-add an original a notebook has lost.
+      - [Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) already probes for this same placeholder there and reports an eviction rather than failing.
+    - Distillation still reads a source's content from the notebook, not from here.
   - The eviction costs the human their reading copy, which is not worth stopping a run over.
 
 The report on stdout is a JSON object with `vault`, `ok` (true when nothing failed), `checks`, and `counts`.
