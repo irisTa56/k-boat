@@ -629,6 +629,18 @@ def test_selection_path_emits_the_overridden_criteria_file(
     assert _out(capsys) == {"path": str(criteria)}
 
 
+def test_selection_path_resolves_a_relative_override_to_an_absolute_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The judge's Read takes only an absolute path, whatever the env holds."""
+    (tmp_path / "selection.md").write_text("# Selection criteria\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FEED_FILTER_SELECTION", "selection.md")
+
+    assert cli.main(["selection-path"]) == 0
+    assert _out(capsys) == {"path": str(tmp_path / "selection.md")}
+
+
 def test_selection_path_without_the_file_exits_nonzero_naming_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
