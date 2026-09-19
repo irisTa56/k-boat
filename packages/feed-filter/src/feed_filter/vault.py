@@ -44,15 +44,32 @@ class VaultError(Exception):
     collision: a different `url` already occupies this slug (an astronomically
     unlikely 48-bit SHA-256 clash between two canonical URLs), or the note holds
     a `url` the reader cannot decode, so it cannot be shown to be this page at
-    all — distinguished by the record's `reason`, and both needing a human. Any
+    all — distinguished by the record's `reason`, and both needing a human. A note
+    iCloud has evicted is refused as the subclass `VaultEvictedError` below. Any
     other refusal is raised too rather than read as a write: what makes never-lost
     hold is that nothing is recorded seen unless a note landed, so a status this
     module does not recognise must not be the one that slips through. Also raised
     when an existing note cannot be read at all, which a human repairs the same way. An
-    `OSError` from the atomic write (disk full, permission, an iCloud-evicted
-    placeholder) is left to propagate; the CLI maps both to a non-zero exit and
+    `OSError` from the writer (disk full, permission, a slug held by something that
+    is not a note) is left to propagate; the CLI maps both to a non-zero exit and
     skips the seen-record, so the entry is retried rather than silently lost.
     """
+
+
+class VaultEvictedError(VaultError):
+    """The note at this entry's slug is evicted: iCloud holds it behind a placeholder.
+
+    A refusal like any other `VaultError` — nothing written, nothing recorded seen —
+    and the one of them that clears on its own once the note is downloaded, and
+    concerns this one note rather than the vault. So the CLI reports it apart,
+    the way it reports a held vault, for a run skill to carry on past it rather
+    than stop reminding.
+    """
+
+    def __init__(self, slug: str, path: str) -> None:
+        super().__init__(f"{path} is evicted to an iCloud placeholder — nothing was written")
+        self.slug = slug
+        self.path = path
 
 
 def write_feed_note(
@@ -104,6 +121,8 @@ def write_feed_note(
     status = result.get("status")
     if status in WROTE_A_NOTE:
         return result
+    if status == WriteStatus.EVICTED:
+        raise VaultEvictedError(slug, str(result.get("path")))
     if status == WriteStatus.COLLISION:
         if result.get("reason") == "unreadable_identity":
             raise VaultError(

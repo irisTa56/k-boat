@@ -5,7 +5,8 @@
   (`upsert`): frontmatter order, YAML quoting, the always-present fields, body
   preservation, slug de-dup, and the `added_date`/`refreshed_date` stamps are all
   guaranteed by the package, so the agent never hand-writes frontmatter. Prints
-  the result (`{status, slug, path}`, or a `collision`/`slug_mismatch`) as JSON.
+  the result (`{status, slug, path}` — `created`, `updated`, or an `evicted`
+  refusal — or a `collision`/`slug_mismatch`) as JSON.
   The write is held under the vault lock, so a refused vault prints a `locked`
   record and exits non-zero instead of racing the run that holds it.
 - `slug <url>` — the slug oracle: `{url, canonical_url, slug}` for one URL. Every

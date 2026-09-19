@@ -97,6 +97,25 @@ def test_write_collision_exits_nonzero(
     assert json.loads(capsys.readouterr().out)["status"] == "collision"
 
 
+def test_write_refuses_an_evicted_note_and_reports_no_dropped_fields(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # iCloud holds the repo's note behind a placeholder: nothing is written, the
+    # exit is the refusal's, and `dropped_fields` stays off a record that wrote nothing.
+    (tmp_path / "Repos").mkdir()
+    stub = tmp_path / "Repos" / f".{SLUG}.md.icloud"
+    stub.write_bytes(b"placeholder")
+    _stdin(
+        monkeypatch, json.dumps({**RECORD, "fields": {**RECORD["fields"], "descrption": "typo"}})
+    )
+
+    assert write_main(["--vault", str(tmp_path), "--today", "2026-06-06"]) == 1
+
+    out = json.loads(capsys.readouterr().out)
+    assert out == {"status": "evicted", "slug": SLUG, "path": f"Repos/{SLUG}.md"}
+    assert sorted(p.name for p in (tmp_path / "Repos").iterdir()) == [stub.name]
+
+
 @pytest.mark.parametrize(
     ("stdin", "diagnostic"),
     [

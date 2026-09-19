@@ -16,7 +16,7 @@ import pytest
 
 import feed_filter.vault as vault_mod
 import kboat.lock
-from feed_filter.vault import VaultError, write_feed_note
+from feed_filter.vault import VaultError, VaultEvictedError, write_feed_note
 from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.frontmatter import Value, parse_frontmatter
 from kboat.lock import VaultLockedError, vault_lock
@@ -223,6 +223,23 @@ def test_collision_raises_vault_error(tmp_path: Path) -> None:
             wall=False,
             today="2026-07-19",
         )
+
+
+def test_an_evicted_note_raises_its_own_refusal_and_is_left_alone(tmp_path: Path) -> None:
+    # The note is behind an iCloud placeholder: recreating it would drop the
+    # reader's `shelved` and put a second copy beside the first, so it is refused
+    # as the one refusal a run carries on past.
+    slug = url_slug(str(CU))
+    (tmp_path / "Feeds").mkdir()
+    stub = tmp_path / "Feeds" / f".{slug}.md.icloud"
+    stub.write_bytes(b"placeholder")
+
+    with pytest.raises(VaultEvictedError) as raised:
+        _write(tmp_path)
+
+    assert (raised.value.slug, raised.value.path) == (slug, f"Feeds/{slug}.md")
+    assert isinstance(raised.value, VaultError)  # every VaultError boundary still holds
+    assert sorted(p.name for p in (tmp_path / "Feeds").iterdir()) == [stub.name]
 
 
 def test_a_refusal_this_module_does_not_know_still_raises(

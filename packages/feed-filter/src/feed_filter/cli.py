@@ -91,7 +91,7 @@ from feed_filter.sites import (
     update_pattern,
     validate_article_url_pattern,
 )
-from feed_filter.vault import VaultError, write_feed_note
+from feed_filter.vault import VaultError, VaultEvictedError, write_feed_note
 from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.cli import add_today_argument
 from kboat.lock import VaultLockedError
@@ -1355,10 +1355,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     - ``VaultError`` — a feed note could not be written (the writer refused it);
     - ``VaultLockedError`` — a K-Boat run held the vault for longer than the write was
       willing to wait, so the note was not written and the entry stays unseen. This
-      one also prints ``{"status": "locked", …}`` on stdout, because it is the only
-      failure in this list that will *not* recur: the holder finishes. A run skill
-      needs to tell it apart from a refused write or a disk error, which recur and
-      mean stop, so it can leave this entry for the next run and keep reminding;
+      one also prints ``{"status": "locked", …}`` on stdout, because it will *not*
+      recur: the holder finishes. A run skill needs to tell it apart from a refused
+      write or a disk error, which recur and mean stop, so it can leave this entry
+      for the next run and keep reminding;
+    - ``VaultEvictedError`` — the ``VaultError`` for a note iCloud has evicted, which
+      prints ``{"status": "evicted", "slug", "path"}`` on stdout for the same reason:
+      it concerns this one note and clears once the note is downloaded, so a run
+      skill leaves the entry for a later run and keeps reminding the others;
     - ``BadInputError`` — the shared writer refused the record itself. Nothing
       feed-filter assembles can trip it (its slug is a URL hash and its field
       names are literals), so this is the writer's contract being honoured here
@@ -1389,6 +1393,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         exit_code: int = args.handler(args)
     except VaultLockedError as exc:
         _emit({"status": WriteStatus.LOCKED, "holder": exc.holder})
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except VaultEvictedError as exc:
+        _emit({"status": WriteStatus.EVICTED, "slug": exc.slug, "path": exc.path})
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except sqlite3.Error as exc:

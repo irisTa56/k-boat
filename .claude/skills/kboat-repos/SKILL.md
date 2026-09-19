@@ -65,9 +65,9 @@ Otherwise a thin classification reads as a thorough one, and it is permanent: th
 Take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`).
 
 - The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
-- It prints `{status: created|updated|collision|slug_mismatch|locked, ...}`, and the last three are refusals, written nowhere.
+- It prints `{status: created|updated|collision|slug_mismatch|evicted|locked, ...}`, and the last four are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
-  - A `locked` is the vault's — another run held it — and clears once that run finishes (see Errors).
+  - An `evicted` (iCloud holds the note at this slug behind a placeholder) and a `locked` (another run held the vault) are the vault's, and clear on their own (see Errors).
 - A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
 This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
@@ -180,6 +180,10 @@ Detect and report; do not work around.
 - `write` returned `status: slug_mismatch` — the record's `slug` is not the one its own `url` names (`expected` and `got` carry the two), so the record is not internally consistent and nothing was written.
   - A `gather` record passed on as it came cannot produce it, since `gather` derives the slug from that same canonical `url` through the function the write recomputes it with; the pair was mangled after `gather`, on this path in the step-3 record the skill rebuilds to carry the judged fields.
   - Retrying the same record is refused identically — report it and stop; the defect is the record, not the vault.
+- `write` returned `status: evicted` — iCloud holds the note at this slug behind a placeholder, so nothing was written (kboat-vault-conventions "The write contract").
+  - The record is not at fault and the note's own fields are still in iCloud, so report it by name without escalating: it clears once the note is downloaded, and the next run's `kboat-doctor` reports the eviction.
+  - A repo `kboat-ingest` routed here keeps its queue file, so a later run writes the note; leave it to that run.
+  - A repo the user pasted has nothing that retries it: tell them the record can be written once the note is downloaded.
 - `write` or `refresh` printed a `locked` record in place of its usual output — another run held the vault (kboat-vault-conventions "Durability and the vault lock").
   - Nothing was written and the record is not at fault, so report it without escalating.
   - A repo `kboat-ingest` routed here keeps its queue file, so the next run writes the note; leave it to that run.

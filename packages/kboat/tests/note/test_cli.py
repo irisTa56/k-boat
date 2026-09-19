@@ -93,6 +93,44 @@ def test_collision_exits_nonzero(
     assert json.loads(capsys.readouterr().out)["status"] == "collision"
 
 
+def test_an_evicted_note_exits_nonzero_with_the_refusal_on_stdout(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # What `kboat-ingest` reads to keep the capture queued: exit 1 and an
+    # `evicted` record, with the placeholder left exactly where it was.
+    stub = vault / "Sources" / f".{SLUG}.md.icloud"
+    stub.write_bytes(b"placeholder")
+    rec = json.dumps({"slug": SLUG, "fields": {"type": "source", "title": "T", "url": URL}})
+
+    assert _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch) == 1
+
+    out = json.loads(capsys.readouterr().out)
+    assert out == {"status": "evicted", "slug": SLUG, "path": f"Sources/{SLUG}.md"}
+    assert sorted(p.name for p in (vault / "Sources").iterdir()) == [stub.name]
+    assert stub.read_bytes() == b"placeholder"
+
+
+@pytest.mark.parametrize("holder", ["link", "directory"])
+def test_a_slug_held_by_a_non_file_is_a_failed_write(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, holder: str
+) -> None:
+    # No status for this one: it takes the path any write that could not happen
+    # takes, `write failed: …` and exit 1, with nothing on stdout.
+    at = vault / "Sources" / f"{SLUG}.md"
+    if holder == "link":
+        at.symlink_to(vault / "nowhere.md")
+    else:
+        at.mkdir()
+    rec = json.dumps({"slug": SLUG, "fields": {"type": "source", "title": "T", "url": URL}})
+
+    assert _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("write failed: ")
+    assert at.is_symlink() == (holder == "link")
+
+
 def test_bad_input_and_usage(
     vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
