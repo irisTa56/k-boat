@@ -110,6 +110,35 @@ def test_source_update_preserves_human_fields(vault: Path) -> None:
     assert fm["added_date"] == "2026-06-10"  # created-stamp not bumped
 
 
+def test_a_null_field_clears_what_the_note_held(vault: Path) -> None:
+    # An omitted key is preserved, so `null` is the only way a record empties a
+    # field — the discard procedure clears a source's notebook coordinates so.
+    upsert(
+        SOURCE,
+        vault,
+        {
+            "slug": S,
+            "fields": {
+                "type": "source",
+                "url": SOURCE_URL,
+                "notebooklm_id": "nb1",
+                "filed_date": "2026-06-01",
+                "topics": ["a"],
+            },
+        },
+        today="2026-06-10",
+    )
+    upsert(
+        SOURCE,
+        vault,
+        {"slug": S, "fields": {"notebooklm_id": None, "filed_date": None, "topics": None}},
+        today="2026-06-20",
+    )
+    text = (vault / "Sources" / f"{S}.md").read_text(encoding="utf-8")
+    assert "\nnotebooklm_id:\n" in text and "\nfiled_date:\n" in text
+    assert "\ntopics: []\n" in text
+
+
 def test_collision_never_overwrites(vault: Path) -> None:
     # Two URLs hashing to one slug is what this refuses, and no pair of URLs can
     # be found that does — so the clash is staged: the note for A is moved to the
