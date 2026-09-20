@@ -34,13 +34,13 @@ The queue is filled by the capture bookmarklet (run `kboat-bookmarklet` to print
 
 **Route by kind first.**
 Hand every URL on `github.com` to the `kboat-repos` skill's "Procedure: catalogue a repo", whose step 1 runs `kboat-repos gather` on it.
-Which GitHub link is a repository, which is a file to read as a source, and which is neither is `gather`'s call through `kboat.repos.identity`, the authority kboat-notes [Naming and de-dup](../kboat-notes/references/repo-note.md#naming-and-de-dup) summarizes, so do not decide it here from the URL's shape.
+Which GitHub link is a repository, which is a file to read as a source, and which is neither is `gather`'s call, made through `kboat.repos.identity` for what the URL settles and its own `gh` probe for the rest — the authority kboat-notes [Naming and de-dup](../kboat-notes/references/repo-note.md#naming-and-de-dup) summarizes, so do not decide it here from the URL's shape.
 
 - A **repository** is catalogued by that procedure (per kboat-notes [Procedure: create or update a repo note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-repo-note)); delete the queue file once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below).
   - A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it.
 - A **source** comes back here: follow the source path below with the `url` that step returns, and where it returns a `source_type`, take the type from it rather than re-deciding it (the PDF magic-byte check and the web path's step-3 verifications still apply).
-- **Neither** — a bare profile, a gist, one of GitHub's own routes — also comes back here, and the same way: the source path with the `url` that step returns.
-  - Which GitHub link that covers is the module's answer and not this skill's, so a URL it does not know as a non-repository reaches `gh` instead and ends the item where `kboat-repos` step 1 says an unanswered fetch ends it, with its queue file kept.
+- **Neither** — a bare profile, a gist, one of GitHub's own routes (`skip-not-a-repo`), or an `owner/repo` GitHub has no repository at (`skip-no-such-repo`) — also comes back here, and the same way: the source path with the `url` that step returns.
+  - Which GitHub link each of those covers is `gather`'s answer and not this skill's, so do not sort them here; a capture drained from the queue takes the source path on either verdict (`kboat-repos` step 1, which also says why a URL the user pasted parts from that).
 
 For every other URL, follow the source path.
 
@@ -221,6 +221,10 @@ End the run with a summary covering:
   - Count the two PDF-unusable outcomes separately — the upload errored, or it reached `ready` and extracted to empty/garbled text — since they send the human after different things (a re-exported copy versus a text-bearing one) and leave different states: both a readable file, but the errored one no notebook and the empty extraction an unusable notebook kept.
   - Also note any source NotebookLM typed outside the schema's two values (`youtube`, `epub`, …): it ingested fine and is kept as a `web_page`, so this is not an error — only a heads-up that its `source_type` is approximate.
   - For PDFs also count: transient download failures (queue file kept) and titles that fell back to the capture's link text.
+- **GitHub URLs `gh` answered with no repository at** (`skip-no-such-repo`): name each by its URL.
+  - This account is shown no repository at that URL, so it took the source path rather than the repo path, and whatever came of it there is reported by that path's own lines above.
+  - That route is what a capture of one of GitHub's own content pages wanted and not what a capture of a repository wanted, and nothing in `gh`'s answer separates them — so this line is the only thing that lets the reader tell which they got.
+    - `gh auth status` is a next look beside the URL, since a credential no longer shown this account's private repositories answers the same way for a repository that did not change.
 - Captures step 1's de-dup stopped as already in the DLQ, already dismissed, or already distilled, since nothing else records that they were made: the queue file is gone and the note is unchanged.
   - **Already in the DLQ**: name each, with `kboat-rescue` as the way on.
   - **Already dismissed**: name each, with the instruction to untick `dismiss` and capture the URL again to read it.

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -55,8 +56,12 @@ def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | 
     A non-zero `gh` (no such repo, not authenticated, rate limit) is the return
     value rather than an exception — the caller wants the stderr text to put in
     its `error`, and always gets one, since `gh` can exit non-zero saying nothing.
-    A zero exit whose stdout is not a usable repo view is the other kind, and
-    raises `PayloadError`.
+    That one code covers both a repository that is not there and a call that did
+    not land, and this function does not part them. `gather` asks `gh_repo_exists`
+    which it was, rather than reading the stderr; `refresh`, the other caller,
+    does not, so a repo deleted upstream is a `fetch` failure there and relayed
+    as retryable. A zero exit whose stdout is not a usable repo view is the other
+    kind, and raises `PayloadError`.
     """
     cmd = [_gh(), "repo", "view", f"{owner}/{repo}", "--json", _VIEW_FIELDS]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
@@ -77,6 +82,42 @@ def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | 
     if not meta["owner"].get("login") or not meta.get("name"):
         raise PayloadError(f"gh returned a payload with no repo identity: {sorted(meta)[:8]}")
     return meta, None
+
+
+# The status line `gh api -i` prints ahead of the response headers, e.g.
+# `HTTP/2.0 404 Not Found`. It is `gh`'s own rendering of the HTTP status and is
+# there whichever way the call went, which is why the probe below reads it rather
+# than `gh`'s exit code (non-zero for every 4xx alike) or its stderr (prose, and
+# it echoes back the `owner/repo` the queued URL supplied).
+_STATUS_LINE_RE = re.compile(r"^HTTP/[\d.]+\s+(\d{3})")
+
+
+def gh_repo_exists(owner: str, repo: str, *, timeout: float = 30) -> bool | None:
+    """Whether GitHub has a repository at `owner/repo`, or None if it did not say.
+
+    A 404 is False and a 2xx True; every other status, and a call that reached
+    `gh` and produced no status line (a network failure), is None — the probe
+    answers or abstains, and never guesses from an exit code that cannot tell a
+    rate limit from a missing repository.
+
+    An OS error does **not** come back as None: a `gh` missing from `PATH` or one
+    that outruns `timeout` raises out of here, as `subprocess.run` raises it, and
+    containing that is the caller's. `gather` does it with a blind boundary at the
+    call site; a caller that omits one takes the raise.
+
+    False means only that this authenticated account is shown no repository there:
+    GitHub answers 404 for a private one it will not reveal exactly as it does for
+    one that never existed, and nothing in the response separates them.
+    """
+    cmd = [_gh(), "api", "-i", "--silent", f"repos/{owner}/{repo}"]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+    status = _STATUS_LINE_RE.match(r.stdout.lstrip())
+    if not status:
+        return None
+    code = int(status.group(1))
+    if code == 404:
+        return False
+    return True if 200 <= code < 300 else None
 
 
 def gh_readme(owner: str, repo: str, *, timeout: float = 30) -> tuple[str | None, str | None]:
@@ -196,6 +237,14 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # a "keep the queue file and retry" reflex, and a name in the same family would
 # extend that reflex to the one failure no retry ever clears.
 #
+# The two `skip-*` verdicts are two because the code already decides them apart —
+# `parse_repo` from the URL alone, `gh_repo_exists` from what GitHub answered —
+# and only one record could carry the difference. What parts them is how it was
+# settled, not what is at the URL: a 404 says this account is shown no repository
+# and nothing about whether the page reads, which is why `github.com/resources/…`
+# (an article GitHub serves, whose `owner/repo` is a 404) and a typo land on the
+# same one.
+#
 # The boundaries below are several narrow ones rather than one wrapper around the
 # body, because the two classes interleave: `gh_repo_view` can fail either way,
 # and the identity mapping sits between it and the README fetch. All of them are
@@ -212,6 +261,7 @@ class Verdict(StrEnum):
 
     OK = "ok"
     SKIP_NOT_A_REPO = "skip-not-a-repo"
+    SKIP_NO_SUCH_REPO = "skip-no-such-repo"
     SOURCE_FILE = "source-file"
     ERROR_META = "error-meta"
     DEFECT_PAYLOAD = "defect-payload"
@@ -294,6 +344,20 @@ def gather(url: str, *, today: date) -> dict:
     except Exception as exc:  # noqa: BLE001
         return _fetch_failed(record, exc)
     if meta is None:
+        # `gh` exited non-zero, which says only that no repo view came back. Ask
+        # GitHub the narrower question before settling on a verdict: a URL it has
+        # no repository for is not a repository, however repository-shaped the
+        # path looked, and `error-meta` would hand it a retry that never succeeds
+        # and never escalates — its capture repeating in `Queue/` for good. This
+        # is also what catches the owners `parse_repo`'s denylist does not know.
+        try:
+            exists = gh_repo_exists(owner, repo)
+        except Exception:  # noqa: BLE001
+            # The probe is a second chance at classifying, never a new way to
+            # fail: an unanswered probe leaves the verdict where it already was.
+            exists = None
+        if exists is False:
+            return {"url": url, "status": Verdict.SKIP_NO_SUCH_REPO}
         record.update(status=Verdict.ERROR_META, error=err)
         return record
     # Re-key off the canonical owner/repo `gh` resolved to (handles renames,

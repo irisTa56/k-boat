@@ -107,9 +107,10 @@ SOURCE = NoteSchema(
         _bool("keep"),
         _bool("dismiss"),
         Field("source_type", Kind.ENUM, enum=("web_page", "pdf")),
-        # Every ingest path writes the queued URL, a PDF's included; the empty
-        # value stays admissible, and `web_missing_url` reports it on a web page.
-        Field("url", Kind.STR, empty_ok=True),
+        # Every ingest path writes the queued URL, a PDF's included, and the slug
+        # is that URL's hash — so a source with no `url` is a note nothing can
+        # show to be about anything. Not `empty_ok`, on either type.
+        Field("url", Kind.STR),
         Field("summary", Kind.STR, empty_ok=True),
         Field("topics", Kind.STR_LIST, empty_ok=True),
         Field("added_date", Kind.DATE, stamp="created"),

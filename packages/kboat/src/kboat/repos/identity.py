@@ -27,9 +27,27 @@ from kboat.naming import note_slug
 _REPO_RE = re.compile(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)", re.IGNORECASE)
 
 # First path segments that are GitHub's own routes, never a user/org. A denylist
-# is inherently partial, so it is only a cheap pre-filter: a non-repo URL that
-# slips through still fails the `gh` fetch (`error-meta`) and is reported, never
-# silently written. These are the common reserved top-level paths.
+# is inherently partial, so it is only a cheap pre-filter, and the list is not
+# what stops an unlisted route being catalogued: one that slips through reaches
+# the `gh` fetch, which finds no repository there (`gather`, the `gh_repo_exists`
+# branch), and no note is written either way.
+#
+# What the list decides is which of the two skip verdicts the route gets, and
+# they are not interchangeable. A listed route is `skip-not-a-repo`, settled by
+# the URL, and every caller ingests it. An unlisted one is `skip-no-such-repo`,
+# settled by a 404 that says nothing about whether the page is readable — so a
+# user who pasted the URL is told rather than having it ingested for them. A
+# readable content path met in the queue therefore belongs on this list: that is
+# what gets `github.com/readme/…` the verdict `github.com/torvalds` already has,
+# instead of the one `github.com/resources/…` gets for want of being listed.
+#
+# Listing one also saves both `gh` calls per capture per run, and settles the
+# route without `gh` having to answer at all: an unlisted one meeting a rate
+# limit gets a status the probe abstains on, and one meeting an outage gets no
+# status at all, so either way the verdict falls back to the retryable one that
+# keeps the capture — the stall, for as long as that lasts.
+#
+# These are the common reserved top-level paths.
 _RESERVED_OWNERS = frozenset(
     {
         "orgs",

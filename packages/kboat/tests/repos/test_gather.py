@@ -190,16 +190,165 @@ def test_gather_injects_today_into_status(monkeypatch) -> None:
 
 
 def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
-    # `gh` answering non-zero (rate limit, auth, a repo that does not resolve) is a
-    # record, not an exception: the skill reads `error-meta` as "keep the queue file
-    # and retry", and the identity from the queued link names what failed.
+    # `gh` answering non-zero (rate limit, auth, network) and the probe then not
+    # answering "no repository there" is a record, not an exception: the skill reads
+    # `error-meta` as "keep the queue file and retry", and the identity from the
+    # queued link names what failed. A call that gives out instead of answering is
+    # the other way to this verdict and never reaches the probe at all — that one is
+    # `test_gather_reports_a_subprocess_failure_as_error_meta`, below.
     monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, "HTTP 403: rate limited"))
+    monkeypatch.setattr(gather_mod, "gh_repo_exists", lambda o, r: None)
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
     assert out["status"] == "error-meta"
     assert out["error"] == "HTTP 403: rate limited"
     assert out["url"] == "https://github.com/acme/tool"
+
+
+def test_gather_routes_a_github_url_gh_has_no_repository_for_to_the_source_path(
+    monkeypatch,
+) -> None:
+    # `github.com/resources/...` is one of GitHub's own content paths, read by the
+    # URL's shape as owner `resources`. The denylist in `identity` does not know it
+    # and no denylist can know them all, so it reaches `gh` — which answers that
+    # there is no such repository. Classed with the failed calls it would be
+    # `error-meta`, whose answer is "keep the queue file and let the next run try":
+    # that run meets the same 404, and the verdict is the one that deliberately
+    # does not escalate, so the capture repeats in `Queue/` for good with nothing
+    # said. The caller has to get the verdict that hands the URL to the source
+    # path, with the queued URL to fetch rather than a canonical repo one.
+    gh = _GhStub(
+        view=_Completed("", returncode=1, stderr="GraphQL: Could not resolve to a Repository"),
+        api=_Completed("HTTP/2.0 404 Not Found\n", returncode=1, stderr="gh: Not Found"),
+    )
+    monkeypatch.setattr(gather_mod.subprocess, "run", gh)
+
+    out = gather("https://github.com/resources/articles/ai/what-is-ai", today=TODAY)
+
+    assert gh.asked == ["repos/resources/articles"]
+    assert out == {
+        "status": "skip-no-such-repo",
+        "url": "https://github.com/resources/articles/ai/what-is-ai",
+    }
+
+
+def test_gather_keeps_the_two_skip_verdicts_apart(monkeypatch) -> None:
+    # What parts them is how each was settled, not what is at the URL: the URL
+    # alone for a reserved route, a 404 for the rest — and that 404 says nothing
+    # about whether the page reads, `github.com/resources/…` serving an article
+    # whose `owner/repo` is absent. One verdict for both would leave the caller
+    # unable to tell a decision `gh` never entered from one it did, which is what
+    # the pasted-URL branch acts on. Nothing is stubbed for the shape case because
+    # nothing has to be: `gather` returns on the `parse_repo` branch before it
+    # reaches a subprocess at all. Nothing here would stop a call that did escape —
+    # the suite installs no subprocess guard, and `gather`'s blind boundary would
+    # turn even a missing `gh` into an `error-meta` record rather than an error.
+    reserved = gather("https://github.com/readme/stories/a-maintainer", today=TODAY)
+
+    assert reserved["status"] == "skip-not-a-repo"
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, "no such repo"))
+    monkeypatch.setattr(gather_mod, "gh_repo_exists", lambda o, r: False)
+
+    absent = gather("https://github.com/acme/typoed", today=TODAY)
+
+    assert absent["status"] == "skip-no-such-repo"
+
+
+def test_gather_keeps_a_gh_failure_that_is_not_a_missing_repository_retryable(monkeypatch) -> None:
+    # The other side of the same branch. A rate limit says nothing about whether
+    # the repository is there, so the probe abstains and the retryable verdict
+    # stands — sending a rate-limited repo down the source path would catalogue it
+    # as a web page and lose it to the repo catalogue for good.
+    gh = _GhStub(
+        view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
+        api=_Completed("HTTP/2.0 403 Forbidden\n", returncode=1, stderr="gh: Forbidden"),
+    )
+    monkeypatch.setattr(gather_mod.subprocess, "run", gh)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert gh.asked == ["repos/acme/tool"]
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
+
+
+def test_gather_keeps_a_repo_the_probe_found_retryable(monkeypatch) -> None:
+    # The probe answering `True` is the case that separates this branch from a
+    # blanket "the fetch failed, so skip it". GitHub meters REST and GraphQL
+    # apart, so `gh repo view` (GraphQL) can be rate-limited while
+    # `gh api repos/…` (REST) answers 200 for the same repo — and a repo routed
+    # down the source path on that answer is catalogued as a web page, its queue
+    # file deleted after the note, with nothing left to retry it. Widening the
+    # branch to `exists is not None` passes every other test in this file.
+    gh = _GhStub(
+        view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
+        api=_Completed("HTTP/2.0 200 OK\n", returncode=0),
+    )
+    monkeypatch.setattr(gather_mod.subprocess, "run", gh)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert gh.asked == ["repos/acme/tool"]
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
+
+
+def test_gather_reports_error_meta_when_the_existence_probe_raises(monkeypatch) -> None:
+    # The probe is a second chance at classifying, never a new way to fail. Without
+    # the boundary around it, a `gh` that gives out while probing replaces the
+    # record the failed fetch already earned with a traceback — at an unattended
+    # run, which is exactly the case the CLI edge promises a record for. TimeoutError
+    # shares no base with a missing-repository answer, so a narrowed `except` fails here.
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, "HTTP 403: rate limited"))
+
+    def boom(_owner: str, _repo: str) -> bool | None:
+        raise TimeoutError("gh timed out")
+
+    monkeypatch.setattr(gather_mod, "gh_repo_exists", boom)
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
+
+
+@pytest.mark.parametrize(
+    ("stdout", "returncode", "expected"),
+    [
+        # The premise `-i` is there for: `gh` exits non-zero on every 4xx alike, so
+        # the status line on stdout is the only thing that separates them.
+        ("HTTP/2.0 404 Not Found\nContent-Type: application/json\n\n", 1, False),
+        ("HTTP/2.0 200 OK\nContent-Type: application/json\n\n", 0, True),
+        ("HTTP/1.1 403 Forbidden\n\n", 1, None),
+        ("HTTP/2.0 500 Internal Server Error\n\n", 1, None),
+        # No status line at all: the call never reached GitHub.
+        ("", 1, None),
+        ("dial tcp: lookup api.github.com: no such host\n", 1, None),
+    ],
+)
+def test_gh_repo_exists_answers_from_the_status_line_not_the_exit_code(
+    monkeypatch, stdout: str, returncode: int, expected: bool | None
+) -> None:
+    seen: list[object] = []
+
+    def run(*a: object, **_kw: object) -> _Completed:
+        seen.append(a[0])
+        return _Completed(stdout, returncode=returncode)
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", run)
+
+    assert gather_mod.gh_repo_exists("acme", "tool") is expected
+    # `--silent` prints no body, so `-i` is the only reason there is anything on
+    # stdout to read. Dropped, every call comes back with no status line, the probe
+    # abstains for all of them, and every 404 falls back to the verdict that keeps
+    # the queue file and never escalates — the defect this function exists to end,
+    # returning with nothing in a test run, an exit code or a run summary to say so.
+    argv = seen[0]
+    assert isinstance(argv, list)
+    assert "-i" in argv
+    assert argv[-1] == "repos/acme/tool"
 
 
 def test_gather_never_reports_a_failure_with_an_empty_error(monkeypatch) -> None:
@@ -368,6 +517,40 @@ class _Completed:
 
     def __init__(self, stdout: str, returncode: int = 0, stderr: str = "") -> None:
         self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+class _GhStub:
+    """A `subprocess.run` stub answering by which `gh` subcommand was invoked.
+
+    `gh repo view` is the metadata fetch; `gh api` is the existence probe (and, on
+    a run that gets that far, the README). Driving both through the real functions
+    keeps a test about the verdict from assuming how the probe reads `gh`.
+
+    `asked` records the endpoint each `gh api` call named, for the caller to assert
+    on **after** `gather` returns. It is recorded rather than asserted in here
+    because `gather` wraps the probe in a blind boundary: an `AssertionError`
+    raised inside the stub is caught there and becomes the `error-meta` record two
+    of these tests expect, so the check would pass by being swallowed.
+
+    Without it the branch's *answer* is pinned and its *subject* is not, and
+    `gather` asking about the wrong repository 404s for nearly every one — so a
+    rate-limited repo that really exists becomes `skip-no-such-repo`, is written as
+    a web-page source, and has its queue file deleted with nothing to retry it.
+    That is the ending `test_gather_keeps_a_repo_the_probe_found_retryable` exists
+    to prevent, reached from the other side.
+    """
+
+    def __init__(self, *, view: _Completed, api: _Completed) -> None:
+        self.view, self.api = view, api
+        self.asked: list[str] = []
+
+    def __call__(self, *a: object, **_kw: object) -> _Completed:
+        argv = a[0]
+        assert isinstance(argv, list)
+        if argv[1] != "api":
+            return self.view
+        self.asked.append(str(argv[-1]))
+        return self.api
 
 
 # A minimal payload `gh repo view --json name,owner,…` can actually return.
