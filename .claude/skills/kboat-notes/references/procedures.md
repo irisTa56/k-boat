@@ -152,10 +152,11 @@ Every web source pays for the `source get` round trip regardless (one call in a 
      - It earns its place on the re-runs: [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) runs this step alone, on a file this run never downloaded and a human may have just replaced, so this is the only gate between an iCloud-evicted `.icloud` placeholder — where `PDFs/<slug>.pdf` is simply gone — and a `source add` that would take the path string for a text source and succeed at it.
      - If it fails, build nothing and report it.
        - On an ingest the note is already on disk (step 4 was the commit point), so it stays and the queue file is kept for the next run — the transient shape the `not_found`/`timeout` branch below takes, minus the notebook that branch has to discard.
-       - On a reactivation, ask what holds the name before saying what failed, as the [`PDFs/` layout](../SKILL.md#layout) says.
+       - On a reactivation, ask what holds the name before saying what failed, as the [`PDFs/` layout](../SKILL.md#layout) says; four answers, each wanting its own report.
          - A file there is one that is not a usable PDF, and a replacement copy is what helps.
-         - An eviction is not a missing file: the human downloads it in Finder, and a copy put there instead lands beside the placeholder.
          - Anything else at the name is a human's to clear, and nothing goes there either.
+         - An eviction is not a missing file: the human downloads it in Finder, and a copy put there instead lands beside the placeholder.
+         - A name nothing holds is the file genuinely gone, which is the one answer a copy put at `PDFs/<slug>.pdf` by hand fixes, as [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source)'s dead-`url` route has the human do.
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
      - Non-fatal — on failure, report it and continue.
