@@ -156,7 +156,8 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 Stamp it with today's date on the source note — **unless step 4 left any of this source's concepts unwritten**: one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
 
 - This is the commit point; after it the source leaves the ripe set.
-- A source with an unwritten concept stays ripe instead: stamp nothing, skip step 7, and name the source in the run summary under the reason it stayed.
+- A source with an unwritten concept stays ripe instead: stamp nothing, discard nothing at step 7, and name the source in the run summary under the reason it stayed.
+  - Step 7 is still taken for a `keep` source, whose notebook is retained either way and whose retention the run summary reports as on any other run.
   - A **relation** that did not land is not one of these: both concepts it would join are in the knowledge base, so nothing about it is grounded in the notebook — report it in the run summary as a link for `memory-curate` to make.
     - It weighs nothing in the stamp either way: on its own it does not keep the source ripe, and it never lets a source stamp over a concept the rule above left unwritten.
   - Those concepts' claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
@@ -368,7 +369,7 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
 
 **Both lines need a human's attention**, whatever the call returned: the concept named there is one no run is bound to write.
 A later run distils the source again, but its judgement re-derives the concepts from the source, and only the reader can say whether an important one may go on waiting.
-Say what they can do about it, since a source nothing settles is ripe again on every run and writes a section on every one: promote the concept from the report themselves on the cap line, or clear whatever refused the write on the other.
+Say what they can do about it, since a source nothing settles is ripe again on every run: promote the concept named here themselves on the cap line, or clear whatever refused the write on the other.
 Once its claims are in the knowledge base, however they got there, the next run's replay finds them, leaves nothing unwritten, and stamps.
 
 Where a source's unwritten concepts fall under both lines, name it under the write line, with all of its concepts.
