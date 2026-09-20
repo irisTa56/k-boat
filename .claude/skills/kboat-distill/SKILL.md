@@ -144,16 +144,12 @@ Errors on the other extractions below — saved dialogue notes, `history`, `summ
 
 Follow the accretion policy below.
 
-- **On a replay, start from what the earlier pass left undone.** Find this source's sections in earlier days' reports by their `Source:` line, as step 5 does, and take the concepts marked `deferred (create cap reached)`, `create not made`, or `append not made` first.
-  - A replay re-distills from the extract, and nothing makes its judgement land on the same concepts twice, so a deferral nobody carries forward is one no run ever writes and the report told the reader not to promote by hand.
-  - Where this pass no longer sees a marked concept in the source at all, say so in its section, which is what settles it "some other way" for the report rule at step 5.
-
 ### Step 5: write the review report
 
 Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 - Written before the discard, so the extracted material survives even if the discard fails.
-- A section an earlier pass wrote the same day is replaced, not added to, and a later-day replay with nothing its earlier sections do not already say writes none (see "Review report").
+- A replay writes a section only where it has something this source's earlier sections do not already say, and a section an earlier pass wrote the same day is replaced rather than added to (see "Review report").
 
 ### Step 6: stamp `distilled_date`
 
@@ -191,7 +187,7 @@ Process each `kindles.ripe` entry in this order — the same crash-safety logic 
 2. **Distill into Basic Memory** following the accretion policy below (`project="k-boat-knowledge"`).
    - Grounding for a Kindle book: passages quoted from the book are `#grounded`; the reader's own commentary or interpretation in the body is external, so give it the same `#dialogue` treatment as a source's dialogue claims (vet it per the accretion policy's dialogue handling — keep as-is, correct, or drop — before accreting; a Kindle book has no notebook, but the reader's marginalia is the same kind of reader signal as saved dialogue).
    - Provenance is the ASIN, not a URL: `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` (the bare ASIN — the note's filename).
-3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same per-run file as Phase B), before the stamp, under the "Review report" section's rules — one section per book in a day's report, and a later-day replay writing one only where it has something the book's earlier sections do not already say.
+3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same per-run file as Phase B), before the stamp, under the "Review report" section's rules — one section per book in a day's report, and a replay writing one only where it has something the book's earlier sections do not already say.
 4. **Stamp `distilled_date`** with today's date on the Kindle note — unless step 2 left any of the book's concepts unwritten, where the book stays ripe exactly as a source does at Phase B step 6.
    - This is the commit point; after it the book leaves the ripe set.
    - There is no notebook to discard.
@@ -265,6 +261,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
 - **Never auto-merge.** Merging concept notes is destructive and hard to reverse unattended.
   - Log merge candidates in the report for `memory-curate` to handle with a human.
 - **Stay idempotent on replay.** A source a partial pass left ripe (Phase B step 6) or a crash interrupted is distilled again from the start, into notes that already hold part of what it yields, so every write here must be one a second pass can repeat.
+  - **Start from what the earlier pass left undone.** Read this source's own sections in `Reviews/`, today's file included, finding them by the `Source:` line (`ASIN:<asin>` for a book), and take the concepts they mark `deferred (create cap reached)`, `create not made`, or `append not made` first.
+    - A replay distils the extract again and nothing makes its judgement land on the same concepts twice, so a deferral nobody carries forward is one no run ever writes, while the report told the reader not to promote it by hand.
+    - Where this pass no longer sees a marked concept in the source at all, say so in its section — that is what settles it "some other way" for the report rule below.
   - The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
   - Before inserting, read the note's `## Observations` and `## Relations` and write only what it does not already hold:
     - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`, naming what it duplicates.
@@ -300,19 +299,23 @@ The block is **mandatory** and its fields are defined in kboat-notes [Review not
 Where the file already exists — a later write of the run, a crash that left it after a section was written, a second run the same day — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
 
 **One section per source in a day's report.**
-Before writing a source's section, look in the file for one already carrying this source's `Source:` line.
+Find this source's sections by their `Source:` line, the day's own file first.
 
-- Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
+A pass writes a section at all only where it has something this source's earlier sections — in any day's report, today's included — do not already say:
+
+- it placed something: a create, a claim, or a relation;
+- or it settled a concept an earlier pass marked for retry some other way, leaving it to the human to promote or dropping it.
+
+A write that failed again, or a candidate an earlier section already logged, stays in the run summary, whose left-ripe lines already name the source.
+Where the pass has something to say, the day decides how it lands.
+
+- Where the day's file already holds this source's section, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
   - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: compose the whole file, write it to a sibling temp path in `Reviews/` whose name does not end in `.md`, and move that into place, which is the durable write every `kboat` tool makes (kboat-vault-conventions "Durability and the vault lock") and the one this file gets from nowhere else.
     - The suffix matters because everything that reads `Reviews/` globs `*.md`: a temp file left by a crash under that name is a second report for the day, in the Base and among the earlier sections a later replay reads.
     - Nothing rewrites those other sections if a half-written file loses them — their sources carry `distilled_date`, and a `distill`-only source's notebook is already gone.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
     - A cap hit a later pass of the day resolved goes with its deferrals: the `(create cap reached)` suffix stands only while `uncreated candidates:` still lists a concept the cap deferred.
 - A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did — its Summary drawn from the claims that pass placed — and the earlier day's report stays as it was.
-  - It writes that section only where it has something this source's earlier sections do not already say — find them in earlier days' reports by the `Source:` line:
-    - it placed something: a create, a claim, or a relation;
-    - or it settled a concept an earlier pass marked for retry some other way, leaving it to the human to promote or dropping it.
-  - A write that failed again, or a candidate an earlier section already logged, stays in the run summary, whose left-ripe lines already name the source.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
