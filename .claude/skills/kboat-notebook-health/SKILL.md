@@ -69,7 +69,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
    - **Then name the notebooks no note references**: every notebook in that listing whose id no `notebooklm_id` in the vault carries, by id and title, for the run summary.
-     - This is where the check costs nothing: the listing and the vault-wide read are already in hand, and every ingest of the run has written its ids by now.
+     - This is where the check costs nothing: the listing and the vault-wide read are already in hand.
+     - Make it on the **sweep opening only**, whose run has already ingested and written its ids; the argument opening answers one source a human named, and a notebook an ingest elsewhere made moments ago would sit on its list as one no note references.
      - Make the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names; a vault with no stored id at all gives that check nothing to go on, so make none there either.
      - Leave out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
      - A note that could not be read (see Errors) may be the one carrying a listed id, so where any could not, say so beside the list.
