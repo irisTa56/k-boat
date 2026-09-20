@@ -240,9 +240,10 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # The two `skip-*` verdicts are two because the code already decides them apart —
 # `parse_repo` from the URL alone, `gh_repo_exists` from what GitHub answered —
 # and only one record could carry the difference. What parts them is how it was
-# settled, not what is at the URL: a 404 says there is no repository and nothing
-# about whether the page reads, which is why `github.com/resources/…` (an article
-# GitHub serves, whose `owner/repo` is a 404) and a typo land on the same one.
+# settled, not what is at the URL: a 404 says this account is shown no repository
+# and nothing about whether the page reads, which is why `github.com/resources/…`
+# (an article GitHub serves, whose `owner/repo` is a 404) and a typo land on the
+# same one.
 #
 # The boundaries below are several narrow ones rather than one wrapper around the
 # body, because the two classes interleave: `gh_repo_view` can fail either way,
