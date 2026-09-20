@@ -95,10 +95,15 @@ _STATUS_LINE_RE = re.compile(r"^HTTP/[\d.]+\s+(\d{3})")
 def gh_repo_exists(owner: str, repo: str, *, timeout: float = 30) -> bool | None:
     """Whether GitHub has a repository at `owner/repo`, or None if it did not say.
 
-    A 404 is False and a 2xx True; every other status, and a call that produced no
-    status line at all (a network failure, an OS error), is None — the probe
+    A 404 is False and a 2xx True; every other status, and a call that reached
+    `gh` and produced no status line (a network failure), is None — the probe
     answers or abstains, and never guesses from an exit code that cannot tell a
     rate limit from a missing repository.
+
+    An OS error does **not** come back as None: a `gh` missing from `PATH` or one
+    that outruns `timeout` raises out of here, as `subprocess.run` raises it, and
+    containing that is the caller's. `gather` does it with a blind boundary at the
+    call site; a caller that omits one takes the raise.
 
     False means only that this authenticated account is shown no repository there:
     GitHub answers 404 for a private one it will not reveal exactly as it does for

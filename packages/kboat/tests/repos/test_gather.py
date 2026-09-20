@@ -5,7 +5,6 @@ monkeypatched."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from datetime import date
 
 import pytest
@@ -216,17 +215,15 @@ def test_gather_routes_a_github_url_gh_has_no_repository_for_to_the_source_path(
     # does not escalate, so the capture repeats in `Queue/` for good with nothing
     # said. The caller has to get the verdict that hands the URL to the source
     # path, with the queued URL to fetch rather than a canonical repo one.
-    monkeypatch.setattr(
-        gather_mod.subprocess,
-        "run",
-        _gh_stub(
-            view=_Completed("", returncode=1, stderr="GraphQL: Could not resolve to a Repository"),
-            api=_Completed("HTTP/2.0 404 Not Found\n", returncode=1, stderr="gh: Not Found"),
-        ),
+    gh = _GhStub(
+        view=_Completed("", returncode=1, stderr="GraphQL: Could not resolve to a Repository"),
+        api=_Completed("HTTP/2.0 404 Not Found\n", returncode=1, stderr="gh: Not Found"),
     )
+    monkeypatch.setattr(gather_mod.subprocess, "run", gh)
 
     out = gather("https://github.com/resources/articles/ai/what-is-ai", today=TODAY)
 
+    assert gh.asked == ["repos/resources/articles"]
     assert out == {
         "status": "skip-no-such-repo",
         "url": "https://github.com/resources/articles/ai/what-is-ai",
@@ -261,17 +258,15 @@ def test_gather_keeps_a_gh_failure_that_is_not_a_missing_repository_retryable(mo
     # the repository is there, so the probe abstains and the retryable verdict
     # stands — sending a rate-limited repo down the source path would catalogue it
     # as a web page and lose it to the repo catalogue for good.
-    monkeypatch.setattr(
-        gather_mod.subprocess,
-        "run",
-        _gh_stub(
-            view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
-            api=_Completed("HTTP/2.0 403 Forbidden\n", returncode=1, stderr="gh: Forbidden"),
-        ),
+    gh = _GhStub(
+        view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
+        api=_Completed("HTTP/2.0 403 Forbidden\n", returncode=1, stderr="gh: Forbidden"),
     )
+    monkeypatch.setattr(gather_mod.subprocess, "run", gh)
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
+    assert gh.asked == ["repos/acme/tool"]
     assert out["status"] == "error-meta"
     assert out["error"] == "HTTP 403: rate limited"
 
@@ -284,17 +279,15 @@ def test_gather_keeps_a_repo_the_probe_found_retryable(monkeypatch) -> None:
     # down the source path on that answer is catalogued as a web page, its queue
     # file deleted after the note, with nothing left to retry it. Widening the
     # branch to `exists is not None` passes every other test in this file.
-    monkeypatch.setattr(
-        gather_mod.subprocess,
-        "run",
-        _gh_stub(
-            view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
-            api=_Completed("HTTP/2.0 200 OK\n", returncode=0),
-        ),
+    gh = _GhStub(
+        view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
+        api=_Completed("HTTP/2.0 200 OK\n", returncode=0),
     )
+    monkeypatch.setattr(gather_mod.subprocess, "run", gh)
 
     out = gather("https://github.com/acme/tool", today=TODAY)
 
+    assert gh.asked == ["repos/acme/tool"]
     assert out["status"] == "error-meta"
     assert out["error"] == "HTTP 403: rate limited"
 
@@ -523,20 +516,38 @@ class _Completed:
         self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
 
 
-def _gh_stub(*, view: _Completed, api: _Completed) -> Callable[..., _Completed]:
+class _GhStub:
     """A `subprocess.run` stub answering by which `gh` subcommand was invoked.
 
     `gh repo view` is the metadata fetch; `gh api` is the existence probe (and, on
     a run that gets that far, the README). Driving both through the real functions
     keeps a test about the verdict from assuming how the probe reads `gh`.
+
+    `asked` records the endpoint each `gh api` call named, for the caller to assert
+    on **after** `gather` returns. It is recorded rather than asserted in here
+    because `gather` wraps the probe in a blind boundary: an `AssertionError`
+    raised inside the stub is caught there and becomes the `error-meta` record two
+    of these tests expect, so the check would pass by being swallowed.
+
+    Without it the branch's *answer* is pinned and its *subject* is not, and
+    `gather` asking about the wrong repository 404s for nearly every one — so a
+    rate-limited repo that really exists becomes `skip-no-such-repo`, is written as
+    a web-page source, and has its queue file deleted with nothing to retry it.
+    That is the ending `test_gather_keeps_a_repo_the_probe_found_retryable` exists
+    to prevent, reached from the other side.
     """
 
-    def run(*a: object, **_kw: object) -> _Completed:
+    def __init__(self, *, view: _Completed, api: _Completed) -> None:
+        self.view, self.api = view, api
+        self.asked: list[str] = []
+
+    def __call__(self, *a: object, **_kw: object) -> _Completed:
         argv = a[0]
         assert isinstance(argv, list)
-        return api if argv[1] == "api" else view
-
-    return run
+        if argv[1] != "api":
+            return self.view
+        self.asked.append(str(argv[-1]))
+        return self.api
 
 
 # A minimal payload `gh repo view --json name,owner,…` can actually return.
