@@ -30,13 +30,15 @@ Run `kboat-repos gather "<url>"`.
 - A `status` other than `ok` means this is not a repo to catalogue — report it and stop; do not write a note.
 - The non-`ok` verdicts:
 
-  - `skip-not-a-repo` — a non-repo GitHub URL (profile, gist, reserved route): fall through to the source/web path (`kboat-ingest`), not the repo path.
+  - `skip-not-a-repo` — a GitHub URL that is not a repository (a profile, a gist, a reserved route, or an `owner/repo` GitHub answers for with no repository): fall through to the source/web path (`kboat-ingest`), not the repo path.
+    - The last of those is how a content path nobody listed — `github.com/resources/…`, read by shape as owner `resources` — stops being a capture that repeats forever, and `gh` is asked rather than the URL's shape guessed at.
+    - It covers a deleted, renamed-away, or private repository too, GitHub answering 404 for all of them alike: what the source path then fetches may be GitHub's own "not found" page, which is a source note to dismiss rather than a queue file nothing drains.
   - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
-  - `error-meta` — `gh` did not answer: it exited non-zero (rate limit, auth, network, a `github.com/owner/repo` that does not resolve), or the call gave out (a timeout, an OS error).
+  - `error-meta` — `gh` did not answer, for something other than a missing repository: it exited non-zero (rate limit, auth, network), or the call gave out (a timeout, an OS error).
     - **Left to the next run** — keep the queue file.
-    - Not every one of these will ever clear: a repo that has been deleted, or a typo'd URL, exits non-zero every day, and `gh`'s exit code does not separate that from a rate limit — so a run cannot tell the two apart, and this verdict does not escalate.
+    - Not every one of these will ever clear: a credential that has lapsed, or an account GitHub refuses this repository to, fails the same way every day, and nothing in the exit code separates that from a rate limit — so a run cannot tell the two apart, and this verdict does not escalate.
       - What the run owes is legibility: name the URL and the `error` in the report, so a human reading successive run summaries can see the same one failing and fix or drop the queue file.
   - `defect-payload` — `gh` answered, and its answer cannot be used: stdout that will not parse (a banner ahead of the JSON), an answer that is not a repo view, or a shape the mapping cannot read.
     - **Not to be retried** — the fetch worked, so tomorrow's run meets the same answer and fails the same way.

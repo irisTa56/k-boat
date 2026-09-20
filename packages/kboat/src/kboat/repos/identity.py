@@ -27,9 +27,11 @@ from kboat.naming import note_slug
 _REPO_RE = re.compile(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)", re.IGNORECASE)
 
 # First path segments that are GitHub's own routes, never a user/org. A denylist
-# is inherently partial, so it is only a cheap pre-filter: a non-repo URL that
-# slips through still fails the `gh` fetch (`error-meta`) and is reported, never
-# silently written. These are the common reserved top-level paths.
+# is inherently partial, so it is only a cheap pre-filter, and the list is not
+# where an unlisted route is caught: one that slips through reaches the `gh`
+# fetch, which finds no repository there and answers with the same verdict this
+# list produces (`gather`, the `gh_repo_exists` branch). Widening the list saves
+# that round trip and nothing else. These are the common reserved top-level paths.
 _RESERVED_OWNERS = frozenset(
     {
         "orgs",
