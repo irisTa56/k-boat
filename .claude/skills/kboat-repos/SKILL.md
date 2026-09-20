@@ -33,6 +33,9 @@ Run `kboat-repos gather "<url>"`.
   - `skip-not-a-repo` — a GitHub URL that is not a repository (a profile, a gist, a reserved route, or an `owner/repo` GitHub answers for with no repository): fall through to the source/web path (`kboat-ingest`), not the repo path.
     - The last of those is how a content path nobody listed — `github.com/resources/…`, read by shape as owner `resources` — stops being a capture that repeats forever, and `gh` is asked rather than the URL's shape guessed at.
     - It covers a deleted repository, and a private one this account is not shown, GitHub answering 404 for both alike: what the source path then fetches may be GitHub's own "not found" page, which is a source note to dismiss rather than a queue file nothing drains.
+    - **That trade is the routed caller's.** A URL the user pasted has no queue file to strand, so ingesting a page they did not ask for buys nothing: tell them this URL is not a repository K-Boat can catalogue, and stop.
+      - Without that, a typo'd or private `owner/repo` becomes a `Sources/` note and a notebook off a "not found" page, entering the reading inbox and the daily pick with nothing said.
+      - They capture it through the bookmarklet if they do want it read, which is the ordinary way in for a page.
   - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
@@ -174,7 +177,7 @@ Left to the per-entry classes either one reads as an ordinary day, and the catal
 Detect and report; do not work around.
 
 - During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `source-file`, `error-meta`, or `defect-payload` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes).
-  - The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path.
+  - The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path, a `skip-not-a-repo` on a URL the user pasted excepted, which is reported to them instead (step 1).
   - The two failure verdicts both write nothing and both keep the queue file, so report either one — quoting its `error` string verbatim in a fenced block, as untrusted tool output.
     - They part on what comes next: `error-meta` is left to the next run, `defect-payload` is escalated, since no further run will clear it.
 - `write` returned `status: collision` — the slug is held by a different `url` (`reason: identity_differs`), or by one in a shape the reader cannot compare (`reason: unreadable_identity`, a hand-edited note to repair).
