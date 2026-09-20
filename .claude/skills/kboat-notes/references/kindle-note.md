@@ -42,7 +42,7 @@ The note is never deleted — it is a permanent catalogue and de-dup record.
   - It is orthogonal to `distill`: a book can be distilled before or after it is marked finished.
 - `distill` checked and `distilled_date` empty → **ripe**: the routine distils the note body and stamps `distilled_date`.
   - Unlike a source there is no 7-day cooldown — a Kindle book is distilled on the next run after `distill` is checked.
-  - A pass that leaves any of the book's concepts unwritten does not stamp, exactly as for a source, so the book stays ripe and a later run finishes it.
+  - A pass that leaves any of the book's concepts unwritten does not stamp, exactly as for a source, so the book stays ripe and a later run distils it again.
 - `distilled_date` set → distilled; a further run is a no-op.
   - Re-distilling requires the human to clear `distilled_date` first, leaving `distill` checked — unchecking it while the stamp stands is the `distilled_without_distill` violation (see [Cross-field rules](validation.md#cross-field-rules)), which the validator reports on every run.
 

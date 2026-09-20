@@ -78,7 +78,7 @@ The routine (kboat-distill) drives the transitions:
   - This check takes precedence over the cooldown branches below.
 - Once `filed_date` is at least 7 days old and the source is unambiguous, the routine acts, branching on the disposition:
   - `distill` (and not `dismiss`) → the source is **ripe**: distil it, stamp `distilled_date`, write the report, then discard the notebook — **unless `keep` is also set**, in which case the notebook is retained.
-    - A pass that leaves any of the source's concepts unwritten — deferred by the create cap on what one source may create, or a create or append that did not land — stamps nothing and discards nothing: the source stays ripe and a later run finishes it (kboat-distill says how the replay avoids writing anything twice).
+    - A pass that leaves any of the source's concepts unwritten — deferred by the create cap on what one source may create, or a create or append that did not land — stamps nothing and discards nothing: the source stays ripe, so the notebook still grounds the claims that never landed, and a later run distils it again (kboat-distill says how the replay avoids writing anything twice, and why the unwritten concept goes to a human rather than to that run).
   - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty.
     - The note and any PDF stay as a de-dup tombstone, excluded from recall.
   - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry.
