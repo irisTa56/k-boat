@@ -158,8 +158,10 @@ Stamp it with today's date on the source note — **unless step 4 left any of th
 - This is the commit point; after it the source leaves the ripe set.
 - A source with an unwritten concept stays ripe instead: stamp nothing, discard nothing at step 7, and name the source in the run summary under the reason it stayed.
   - Step 7 is still taken for a `keep` source, whose notebook is retained either way and whose retention the run summary reports as on any other run.
-  - A **relation** that did not land is not one of these: both concepts it would join are in the knowledge base, so nothing about it is grounded in the notebook — report it in the run summary as a link for `memory-curate` to make.
-    - It weighs nothing in the stamp either way: on its own it does not keep the source ripe, and it never lets a source stamp over a concept the rule above left unwritten.
+  - Two writes that did not land are none of these, neither being grounded in the notebook — report each in the run summary, and let neither weigh in the stamp:
+    - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `memory-curate` to make;
+    - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
+    - Neither keeps the source ripe on its own, and neither ever lets a source stamp over a concept the rule above left unwritten.
   - Those concepts' claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
     - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
 
@@ -275,6 +277,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
       - A replay whose claims are all present places nothing, provenance included, its line being there already.
     - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
       - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
+      - Where that one insert does not land, the source is not held ripe for it (Phase B step 6): report it in the run summary instead, since the source note still carries the title and URL the line would have said.
     - Skip a relation `## Relations` already carries, the same relation to the same target.
       - This keeps a replay from doubling a relation; it is not a retry path for one that did not land, since that on its own does not keep the source ripe (below), so usually no replay comes back for it.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
@@ -356,8 +359,9 @@ Everything operational stays out of the report and goes to the run summary only 
 ## Run summary
 
 End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, ambiguous dispositions left unprocessed, and items left for the next run by errors).
-Name every relation that did not land, with the two concepts it would have joined and what came back: on its own it does not keep the source ripe, so a source with nothing else unwritten stamps and no run comes back for it, which is what makes this line the route to `memory-curate`.
-It asks nothing of the run it is reported in, so it is a line to read rather than one to escalate.
+Name every relation that did not land, with the two concepts it would have joined, and every provenance line that did not land, with the note and the reading it would have named — each with what came back.
+Neither keeps the source ripe on its own (Phase B step 6), so a source with nothing else unwritten stamps and no run comes back for either, which is what makes these the only route to `memory-curate` and to the reader's own hand.
+They ask nothing of the run they are reported in, so they are lines to read rather than ones to escalate.
 Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, carrying this pass's decision log as "Review report" says), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
 The one crossing runs the other way: a pass the report's anomaly rule refused a section reports its decision log here too, because that is the only place left for it.
