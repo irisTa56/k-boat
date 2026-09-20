@@ -43,9 +43,9 @@ _REPO_RE = re.compile(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)", re.IG
 #
 # Listing one also saves both `gh` calls per capture per run, and settles the
 # route without `gh` having to answer at all: an unlisted one meeting a rate
-# limit or an outage gets no status line, the probe abstains, and the verdict
-# falls back to the retryable one that keeps the capture — the stall, for as long
-# as that lasts.
+# limit gets a status the probe abstains on, and one meeting an outage gets no
+# status at all, so either way the verdict falls back to the retryable one that
+# keeps the capture — the stall, for as long as that lasts.
 #
 # These are the common reserved top-level paths.
 _RESERVED_OWNERS = frozenset(

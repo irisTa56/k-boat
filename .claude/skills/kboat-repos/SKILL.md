@@ -47,7 +47,7 @@ Run `kboat-repos gather "<url>"`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
   - `error-meta` — `gh` did not answer, for something other than a missing repository: it exited non-zero (rate limit, auth, network), or the call gave out (a timeout, an OS error).
     - **Left to the next run** — keep the queue file.
-    - Not every one of these will ever clear: a credential that has lapsed fails the same way every day, and nothing in the exit code separates that from a rate limit — so a run cannot tell the two apart, and this verdict does not escalate.
+    - Not every one of these will ever clear: a credential that has lapsed fails the same way every day, and the record carries nothing that separates it from a rate limit — so nothing reading the record can tell the two apart, and this verdict does not escalate.
       - What the run owes is legibility: name the URL and the `error` in the report, so a human reading successive run summaries can see the same one failing and fix or drop the queue file.
   - `defect-payload` — `gh` answered, and its answer cannot be used: stdout that will not parse (a banner ahead of the JSON), an answer that is not a repo view, or a shape the mapping cannot read.
     - **Not to be retried** — the fetch worked, so tomorrow's run meets the same answer and fails the same way.
