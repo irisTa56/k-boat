@@ -23,6 +23,9 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - This is the de-dup key, and the only name the note write will accept.
    - Run this step before anything fetches the `url` — ahead of the type sniff in [ingest a PDF source](#procedure-ingest-a-pdf-source), whichever path that sniff then picks.
      - The sniff sends a blocked PDF straight to [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq), whose write merges `blocked: true` onto whatever note stands at the slug, so only a de-dup that has already run keeps a wall met on a re-capture from landing on a note that already has its notebook.
+   - Ask what holds `Sources/<slug>.md` before reading it, in the order `kboat-vault-conventions` gives ("A name an iCloud placeholder holds is taken, not free"): a `Sources/.<slug>.md.icloud` placeholder with nothing at the name itself is a note iCloud has evicted, not an absent one.
+     - Stop the item there, with nothing fetched, built, or written: the note cannot be read to de-dup against, and the note write would refuse it as `status: evicted` anyway, after the PDF path had already downloaded.
+     - The caller keeps the queue file for a later run and reports it by name, as it does that refusal.
    - If `Sources/<slug>.md` already exists, read its `url`: when it names the same page, this is the same source, so any write goes to that note rather than a new one (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes).
    - Compare the two URLs canonically, never as raw strings: run `kboat-note slug` on the note's stored `url` as well and compare the two `.canonical_url` values.
      - A page linked twice — with a trailing slash, or with a feed's tracking parameter — is one source, which is why both links reach this slug at all, and a raw-string comparison would read the second one as a different page and report a collision that is not there.
@@ -42,7 +45,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - Pipe a `{slug, fields}` JSON record whose `fields` carry what is known now: `type: source`, `title`, `source_type: web_page`, `url`, and `reading_link` = the `url`.
    - The tool starts `reading`/`distill`/`keep`/`dismiss`/`blocked`/`picked` at `false`, leaves `summary`/`topics`/`filed_date`/`distilled_date` empty, and stamps `added_date`; step 3 fills `summary`/`topics`.
    - This write is the commit point.
-   - (The tool also re-makes step 1's checks and refuses rather than writing: `status: slug_mismatch` when the slug is not the one the `url` names — always a bug in how the record was assembled, since step 1's oracle is what to use — and `status: collision` with a `reason` of `identity_differs` or `unreadable_identity` when the note at that slug cannot be shown to be this page — and `status: evicted` when iCloud holds the note at that slug behind a placeholder, which this step's read took for no note at all; kboat-ingest keeps the queue file for a later run.)
+   - (The tool also re-makes step 1's checks and refuses rather than writing: `status: slug_mismatch` when the slug is not the one the `url` names — always a bug in how the record was assembled, since step 1's oracle is what to use — and `status: collision` with a `reason` of `identity_differs` or `unreadable_identity` when the note at that slug cannot be shown to be this page — and `status: evicted` when iCloud holds the note at that slug behind a placeholder, which step 1 stops first unless the eviction lands after it; kboat-ingest keeps the queue file for a later run.)
 3. Create the 1:1 notebook and record its coordinates:
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
@@ -130,6 +133,9 @@ Every web source pays for the `source get` round trip regardless (one call in a 
    - What differs is only *which* URL the note stores: the queued one, even when it points straight at the PDF.
    - An item the de-dup lets through continues with steps 2–5.
 2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
+   - First ask what holds that name, as the [`PDFs/` layout](../SKILL.md#layout) says.
+     - Where iCloud has evicted the file, download nothing and write no note: kboat-ingest keeps the queue file and reports the item by name, and it drains on a later run once a human has downloaded the file in Finder.
+     - Where something that is not a file holds the name, download nothing and write no note either, and report it as needing a human.
    - Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check.
      - This same magic-byte check must still hold immediately before the upload — treat download → verify → upload as one uninterrupted sequence — which is why step 5 opens by making it again rather than trusting this one.
      - A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the queue file.
@@ -146,7 +152,11 @@ Every web source pays for the `source get` round trip regardless (one call in a 
      - It earns its place on the re-runs: [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) runs this step alone, on a file this run never downloaded and a human may have just replaced, so this is the only gate between an iCloud-evicted `.icloud` placeholder — where `PDFs/<slug>.pdf` is simply gone — and a `source add` that would take the path string for a text source and succeed at it.
      - If it fails, build nothing and report it.
        - On an ingest the note is already on disk (step 4 was the commit point), so it stays and the queue file is kept for the next run — the transient shape the `not_found`/`timeout` branch below takes, minus the notebook that branch has to discard.
-       - On a reactivation it means the file is missing or is not a PDF at all.
+       - On a reactivation, ask what holds the name before saying what failed, as the [`PDFs/` layout](../SKILL.md#layout) says; four answers, each wanting its own report.
+         - A file there is one that is not a usable PDF, and a replacement copy is what helps.
+         - Anything else at the name is a human's to clear, and nothing goes there either.
+         - An eviction is not a missing file: the human downloads it in Finder, and a copy put there instead lands beside the placeholder.
+         - A name nothing holds is the file genuinely gone, which is the one answer a copy put at `PDFs/<slug>.pdf` by hand fixes, as [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source)'s dead-`url` route has the human do.
    - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
      - Non-fatal — on failure, report it and continue.
@@ -504,6 +514,8 @@ A wall is what this step expects; a page that turns out to be **gone** rather th
   - Verify it starts with `%PDF-`.
   - This is the durable reading copy.
   - Check for the file before fetching: a re-captured entry may already hold one from its earlier ingest (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and there is nothing to pull through the browser if it verifies.
+    - Ask what holds the name as the [`PDFs/` layout](../SKILL.md#layout) says, rather than only whether a file is there, and ask it again before placing a copy the human supplies.
+    - A file iCloud has evicted is one the entry holds: save nothing to that name, have the human download it in Finder, then verify it as the file that was there.
 - **Web page** (`source_type: web_page`): navigate to the `url` and capture the rendered article text once the real content is on screen, writing it to a temp file for step 3.
   - There is no vault file — the reading copy stays the live `url` (the human reads it in the logged-in browser).
   - Judge the captured text is the real article, not a wall, by reading it: the same wall-vs-article judgement as the ingest fetch (step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)), searching the capture for the body as that step says.
@@ -603,6 +615,7 @@ Re-queueing the URL while it still stands gets nothing back: ingest's de-dup sto
 - A **web page** goes on to [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook), which re-fetches the `url`.
   - For a genuinely dead one that re-fetch records the source blocked again.
 - A **PDF** takes one of three routes, and `PDFs/<slug>.pdf` picks between them — check for the file first, since reactivation rebuilds from it and step 5 of [Procedure: ingest a PDF source](#procedure-ingest-a-pdf-source) builds nothing when it is missing.
+  - Ask what holds the name as the [`PDFs/` layout](../SKILL.md#layout) says: a file iCloud has evicted takes the first route once the human downloads it in Finder, never a "no file" one.
   - **The file is there** — the entry recorded over a note whose file an earlier ingest had downloaded. Set `reading_link` = `[[<slug>.pdf]]` in the record that unticks `dismiss` (recording the DLQ entry overwrote it with the `url`, and nothing on this route writes it back), then reactivate.
   - **No file, live `url`** — the entry ingest recorded. Re-queue the URL: ingest downloads and files the PDF where the wall has dropped, and where it still stands records the DLQ entry again, putting the source back within `kboat-rescue`'s reach.
   - **No file, dead `url`** — put the file at `PDFs/<slug>.pdf` by hand, set `reading_link` = `[[<slug>.pdf]]` in the same record that unticks `dismiss`, then reactivate.

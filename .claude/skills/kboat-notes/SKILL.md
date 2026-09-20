@@ -45,6 +45,10 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `PDFs/` — the downloaded file for each PDF source, named `<slug>.pdf` by the same URL-hash slug as its note.
   - Only PDF sources have one; web-page sources do not.
   - It is the reading copy (opened in Obsidian) and the file uploaded to NotebookLM.
+  - Whatever writes `PDFs/<slug>.pdf` — ingest's download, rescue's save, a copy the human supplies that the agent puts there — first asks what holds that name, in the order `kboat-vault-conventions` gives ("A name an iCloud placeholder holds is taken, not free"): a file, then anything else at the name, then a `PDFs/.<slug>.pdf.icloud` placeholder beside it.
+    - A placeholder with nothing at the name itself is a file iCloud has evicted, so write nothing there: the file is not gone, and a copy written beside the placeholder is one iCloud later settles by suffixing or dropping one of the two.
+    - Anything else at the name — a directory, a symlink leading nowhere — is no run's to free, so write nothing there either and report it for a human.
+    - What a caller does instead is its procedure's to say.
 - `Reviews/` — one `YYYY-MM-DD.md` per run that distilled something, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary.
   - A run that distilled nothing writes no file.
   - Covers both source and Kindle distillation.
