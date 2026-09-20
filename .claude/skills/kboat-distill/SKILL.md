@@ -266,7 +266,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
         - This source's own `#dialogue` copy is a duplicate like any other, whatever this pass now judges its grounding.
       - The check only keeps a second copy out; where a claim that is not there yet goes is still the placement judgement above.
     - Follow what a replay does place with this source's provenance line, as "Always record provenance" says, even where the note already carries one from the earlier pass: placed after that line with none of its own, a claim would read as the next reading's.
-      - A replay whose claims are all present places nothing, provenance included.
+      - A replay whose claims are all present places nothing, provenance included, its line being there already.
+    - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
+      - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
     - Skip a relation `## Relations` already carries, the same relation to the same target.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
 
