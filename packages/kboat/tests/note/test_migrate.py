@@ -507,7 +507,7 @@ def test_a_url_the_reader_cannot_read_is_reported_as_such_not_as_absent(
 def test_a_source_whose_url_is_empty_has_no_name_to_check(vault: Path) -> None:
     # The other side of the same split: a bare `url:` is a value the reader can
     # model and there is no slug it could name, so the pass skips rather than moves it.
-    (vault / "Sources" / "upload.md").write_text(
+    (vault / "Sources" / "empty-url.md").write_text(
         "---\ntype: source\ntitle: T\nurl:\n---\n", encoding="utf-8"
     )
 
