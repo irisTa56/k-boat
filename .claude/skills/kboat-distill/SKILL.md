@@ -149,7 +149,8 @@ Follow the accretion policy below.
 Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 - Written before the discard, so the extracted material survives even if the discard fails.
-- One section per source in a day's report, appended; a day's report already holding this source's section is the anomaly the "Review report" rules cover.
+- One section per source in a day's report, appended; a day's report already holding this source's section is the anomaly the "Review report" rules cover, and the run summary takes that section instead.
+- A section that did not land at all — an I/O error, an eviction at the day's file — is not that: nothing holds what this pass extracted, so step 6 writes no stamp and the notebook stays.
 
 ### Step 6: stamp `distilled_date`
 
@@ -157,8 +158,9 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 So step 7's discard acts on the stamp and on nothing else: where the stamp is not on the note, the notebook stays, whatever else the pass managed.
 Stamp it with today's date on the source note, and read what the write returned rather than taking it for made.
 
-- **Write no stamp at all where step 4 left any of this source's concepts unwritten** — one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
-  - Their claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
+- **Write no stamp at all where anything this pass drew from the notebook has not landed durably** — the test is what the notebook alone still holds, not which step it was.
+  - Today that is a concept step 4 left unwritten (one the create cap deferred, or one whose create or append did not land, all in the accretion policy below) and a section step 5 could not write; a step added later answers to the same test rather than to a list.
+  - Whatever it is, it is grounded in the notebook and has landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
   - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
 - **Anything but the note written back leaves it exactly as no attempt would**, every refusal and every failure of `kboat-note write` alike (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)); what came back decides only what the run summary says and whether the phase goes on.
   - A `status: locked` record is the vault held by another writer, which the next run recovers from on its own.
@@ -377,7 +379,7 @@ The one crossing runs the other way: a pass the report's anomaly rule refused a 
 Name every source and Kindle book a partial pass left ripe (Phase B step 6), under the line its reason belongs to, and name the concepts each one left undone:
 
 - **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
-- **Left ripe by a write that did not land** — a create or append that failed or came back an error; name the concept and what came back.
+- **Left ripe by a write that did not land** — a create or append that failed or came back an error, or the review-report section this pass could not write; name the concept, or the section, and what came back.
 - **Left ripe by a stamp the vault refused** — the `distilled_date` write came back a refusal rather than the written note (Phase B step 6); name the source and what came back, and no concept, since nothing here went unwritten.
   - What the refusal asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
   - An answer that is neither stopped the phase rather than reaching this line, so a source behind it is among the ones the phase never got to.
