@@ -196,9 +196,9 @@ Process each `kindles.ripe` entry in this order — the same crash-safety logic 
    - Grounding for a Kindle book: passages quoted from the book are `#grounded`; the reader's own commentary or interpretation in the body is external, so give it the same `#dialogue` treatment as a source's dialogue claims (vet it per the accretion policy's dialogue handling — keep as-is, correct, or drop — before accreting; a Kindle book has no notebook, but the reader's marginalia is the same kind of reader signal as saved dialogue).
    - Provenance is the ASIN, not a URL: `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` (the bare ASIN — the note's filename).
 3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same day's file as Phase B), before the stamp, under the "Review report" section's rules — one section per book in a day's report, appended.
-4. **Stamp `distilled_date`** with today's date on the Kindle note — unless step 2 left any of the book's concepts unwritten, where the book stays ripe exactly as a source does at Phase B step 6.
-   - This is the commit point; after it the book leaves the ripe set.
-   - There is no notebook to discard.
+4. **Stamp `distilled_date`** with today's date on the Kindle note, under Phase B step 6 whole: write no stamp where step 2 left any of the book's concepts unwritten, and read what the write returned, since a Kindle note takes the same `locked` and `evicted` refusals.
+   - The stamp is the commit point; after it the book leaves the ripe set, and a book left ripe either way is named in the run summary under its line there.
+   - There is no notebook, so nothing turns on the stamp beyond that.
 
 A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass does; the accretion policy's replay rules keep the replay from double-writing.
 
@@ -375,11 +375,13 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
 
 - **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
 - **Left ripe by a write that did not land** — a create or append that failed or came back an error; name the concept and what came back.
+- **Left ripe by a stamp the vault refused** — the `distilled_date` write came back `locked` or `evicted` (Phase B step 6); name the source and which, and no concept, since nothing here went unwritten.
+  - What each asks is the vault's to say, not this skill's: a `locked` refusal is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
 
-**Both lines need a human's attention**, whatever the call returned: the concept named there is one no run is bound to write.
+**The two concept lines need a human's attention**, whatever the call returned: the concept named there is one no run is bound to write.
 A later run distils the source again, but its judgement re-derives the concepts from the source, and only the reader can say whether an important one may go on waiting.
 Say what they can do about it, since a source nothing settles is ripe again on every run: promote the concept named here themselves on the cap line, or clear whatever refused the write on the other.
 Once its claims are in the knowledge base, however they got there, the next run's replay finds them, leaves nothing unwritten, and stamps.
 
-Where a source's unwritten concepts fall under both lines, name it under the write line, with all of its concepts.
+Where a source's unwritten concepts fall under both concept lines, name it under the write line, with all of its concepts.
 Whether any of this becomes a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
