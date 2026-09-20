@@ -59,6 +59,7 @@ Parse this JSON; it is the work list for the rest of the run.
 The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
 If the tool cannot be run at all — not on `PATH`, or it ends with none of the outputs above and none of the vault lock's (kboat-vault-conventions "Durability and the vault lock") — that is an environment failure: **STOP the whole run** and report it.
 Never evaluate the predicates by hand in its place.
+A `locked` refusal is not that failure: the tool ran and read nothing, so report the holder it names and end the phase there — no Phase A counts, no "nothing ripe" — and leave the work to the next run (kboat-vault-conventions "Durability and the vault lock").
 
 ## Phase A: maintain the cooldown clock
 
@@ -155,6 +156,7 @@ Stamp it with today's date on the source note — **unless step 4 left any of th
 
 - This is the commit point; after it the source leaves the ripe set.
 - A source with an unwritten concept stays ripe instead: stamp nothing, skip step 7, and name the source in the run summary under the reason it stayed.
+  - A **relation** that did not land is not one of these: both concepts it would join are in the knowledge base, so nothing about it is grounded in the notebook — report it in the run summary as a link for `memory-curate` to make, and stamp as usual.
   - Those concepts' claims are grounded in the notebook and have landed nowhere else, so the source keeps it until a later run replays the source and writes them, the accretion policy's replay rules keeping what already landed from being written twice.
 
 ### Step 7: discard the notebook
@@ -270,6 +272,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
     - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
       - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
     - Skip a relation `## Relations` already carries, the same relation to the same target.
+      - This keeps a replay from doubling a relation; it is not a retry path, since a relation that did not land does not keep its source ripe (below).
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
 
 ## Review report (`Reviews/YYYY-MM-DD.md`)
@@ -295,6 +298,8 @@ Where the file already exists — a later write of the run, a crash that left it
 Before writing a source's section, look in the file for one already carrying this source's `Source:` line.
 
 - Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
+  - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: replace the section with your editing tool, or compose the whole file and write it in one write, never by streaming a rewrite over the file in place.
+    - Nothing rewrites those other sections if a half-written file loses them — their sources carry `distilled_date`, and a `distill`-only source's notebook is already gone.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
 - A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did — its Summary drawn from the claims that pass placed — and the earlier day's report stays as it was.
   - It writes that section only where it has something this source's earlier sections do not already say — find them in earlier days' reports by the `Source:` line:
