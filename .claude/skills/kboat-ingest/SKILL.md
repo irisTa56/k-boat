@@ -223,7 +223,8 @@ End the run with a summary covering:
   - For PDFs also count: transient download failures (queue file kept) and titles that fell back to the capture's link text.
 - **GitHub URLs `gh` answered with no repository at** (`skip-no-such-repo`): name each by its URL.
   - This account is shown no repository at that URL, so it took the source path rather than the repo path, and whatever came of it there is reported by that path's own lines above.
-  - That route is what a capture of one of GitHub's own content pages wanted and not what a capture of a repository deleted or made private since wanted, and nothing in `gh`'s answer separates them — so this line is the only thing that lets the reader tell which they got.
+  - That route is what a capture of one of GitHub's own content pages wanted and not what a capture of a repository wanted, and nothing in `gh`'s answer separates them — so this line is the only thing that lets the reader tell which they got.
+    - `gh auth status` is a next look beside the URL, since a credential no longer shown this account's private repositories answers the same way for a repository that did not change.
 - Captures step 1's de-dup stopped as already in the DLQ, already dismissed, or already distilled, since nothing else records that they were made: the queue file is gone and the note is unchanged.
   - **Already in the DLQ**: name each, with `kboat-rescue` as the way on.
   - **Already dismissed**: name each, with the instruction to untick `dismiss` and capture the URL again to read it.
