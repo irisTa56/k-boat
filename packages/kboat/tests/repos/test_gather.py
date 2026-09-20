@@ -289,11 +289,24 @@ def test_gather_reports_error_meta_when_the_existence_probe_raises(monkeypatch) 
 def test_gh_repo_exists_answers_from_the_status_line_not_the_exit_code(
     monkeypatch, stdout: str, returncode: int, expected: bool | None
 ) -> None:
-    monkeypatch.setattr(
-        gather_mod.subprocess, "run", lambda *a, **kw: _Completed(stdout, returncode=returncode)
-    )
+    seen: list[object] = []
+
+    def run(*a: object, **_kw: object) -> _Completed:
+        seen.append(a[0])
+        return _Completed(stdout, returncode=returncode)
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", run)
 
     assert gather_mod.gh_repo_exists("acme", "tool") is expected
+    # `--silent` prints no body, so `-i` is the only reason there is anything on
+    # stdout to read. Dropped, every call comes back with no status line, the probe
+    # abstains for all of them, and every 404 falls back to the verdict that keeps
+    # the queue file and never escalates — the defect this function exists to end,
+    # returning with nothing in a test run, an exit code or a run summary to say so.
+    argv = seen[0]
+    assert isinstance(argv, list)
+    assert "-i" in argv
+    assert argv[-1] == "repos/acme/tool"
 
 
 def test_gather_never_reports_a_failure_with_an_empty_error(monkeypatch) -> None:
