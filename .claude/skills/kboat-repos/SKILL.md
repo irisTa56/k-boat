@@ -39,9 +39,10 @@ Run `kboat-repos gather "<url>"`.
     - Which of those a given URL is, the record cannot say and neither can the reader: nothing in the 404 separates them.
     - This is how a content path nobody listed stops being a capture that repeats forever, `gh` being asked rather than the URL's shape guessed at.
     - A **queued** capture falls through to the source path like the verdict above, rather than stalling on `error-meta`, and what becomes of it there is that path's own to decide and to report.
-    - A URL the user **pasted** has no queue file to strand, so nothing is taken down the source path unasked: tell them GitHub has no repository at that URL, say that the page may still be readable, and stop.
+    - A URL the user **pasted** has no queue file to strand, so nothing is taken down the source path unasked: tell them this account is shown no repository at that URL, say that the page may still be readable, and stop.
+      - Name the access reading beside the typo, since a repository this account is not shown answers the same way one that never existed does: what they check next may be `gh auth status` rather than the URL.
       - They capture it through the bookmarklet if they want it read, which is the ordinary way in for a page.
-      - Never tell them there is nothing there, which you do not know and which is false for a GitHub content path.
+      - Never tell them the repository does not exist, or that there is nothing at the page: you know neither, and the second is false for a GitHub content path.
   - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
