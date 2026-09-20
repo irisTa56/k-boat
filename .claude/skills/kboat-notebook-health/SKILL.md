@@ -73,7 +73,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Make it on the **sweep opening only**, whose run has already ingested and written its ids; the argument opening answers one source a human named, and a notebook an ingest elsewhere made moments ago would sit on its list as one no note references.
      - Make the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names; a vault with no stored id at all gives that check nothing to go on, so make none there either.
      - Leave out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
-     - A note that could not be read (see Errors) may be the one carrying a listed id, so where any could not, say so beside the list.
+     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how.
+       - One that could not be read (see Errors) is the visible case; an evicted one is the quiet case, leaving only a `Sources/.<slug>.md.icloud` placeholder, which the glob does not match (see Errors) — count those in the listing this step already walks.
      - **The list is a report and nothing more.**
        - K-Boat names a notebook after its source's `title`, so nothing in the listing tells a notebook K-Boat built and lost track of — an ingest-time discard that failed, an id written over — from one the reader made by hand in the same account.
        - The account holds none of the second kind today, and nothing keeps it that way.

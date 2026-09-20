@@ -112,7 +112,7 @@ Which URL a note type *stores* is still that type's own decision; only the step 
 - A source stores the URL it was queued with — for a GitHub blob or raw link, normalized to the rendered page or the download URL (`kboat-notes`).
 - A repo note stores the constructed `https://github.com/<owner>/<repo>` that `kboat.repos.identity` derives from whatever was linked, and it always holds that constructed URL rather than the link that was queued.
   - That construction is **routing**, not naming: it answers which repo a URL is about, and the slug then follows from the stored `url` like any other note's.
-  - The two must stay apart, because the routing deliberately collapses a `/blob/<ref>/README.md` link onto its repository — right for cataloguing the repo, and wrong for a file inside it, which is ingested as a source of its own.
+  - The two must stay apart, because the routing deliberately collapses a deep link onto its repository — right for cataloguing the repo, and wrong for a readable file inside it, which is ingested as a source of its own; which links that covers is `kboat.repos.identity`'s answer, summarized in kboat-notes [Naming and de-dup](../kboat-notes/references/repo-note.md#naming-and-de-dup).
 - A feed note stores the canonical URL its gather deduped on.
 
 The slug names a file inside one note type's folder, so the namespace is per folder rather than vault-wide.

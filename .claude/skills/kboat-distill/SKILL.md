@@ -168,8 +168,9 @@ Stamp it with today's date on the source note, and read what the write returned 
 - A source left unstamped stays ripe: name it in the run summary under its line, discard nothing, and let a later run distil it again, the accretion policy's replay rules keeping what already landed from being written twice.
   - Nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
   - Step 7's other branch runs as ever: a `keep` source's notebook is retained whatever this pass did, and the run summary reports that retention as on any other run.
-- A stamp write that came back neither the note nor one of those two refusals — an empty stdout with a `write failed: …` on stderr — is the vault lock unavailable or a name nothing can write over: no later run clears either, so **STOP the whole run** and report it as needing a human, as the preamble's step 3 does for the same ending (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
-  - Stopping the phase alone would leave Phase C to extract a book, write it into the knowledge base and write its section, and meet the same unusable lock at its own stamp.
+- A stamp write that came back neither the note nor one of those two refusals — an empty stdout with a `write failed: …` on stderr — leaves the source ripe like the rest, and **needs a human**: no later run clears it.
+  - Do not name a cause for it. `kboat-note write` reports that way for an unusable vault lock, a name held by something it cannot write over, a note it cannot parse or decode, and an ordinary I/O error alike (`kboat.cli`'s `NOTE_READ_ERRORS`), so relay what it reported and let the reader tell them apart.
+  - Go on to the next source rather than ending the phase: nothing is lost where no stamp lands, and all but one of those causes is that one note's.
 - Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
   - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `memory-curate` to make;
   - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
@@ -286,7 +287,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
       - A replay whose claims are all present places nothing, provenance included, its line being there already.
     - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
       - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
-      - Where that one insert does not land, the source is not held ripe for it (Phase B step 6), since the source note still carries the title and URL the line would have said: report the note under `appended-to:` all the same, saying its provenance line was not made, and name it in the run summary too.
+      - Where that one insert does not land, the source is not held ripe for it (Phase B step 6), since the source note still carries the title and URL the line would have said: report it in the run summary, as a relation that did not land is, and leave `appended-to:` to the notes that grew.
     - Skip a relation `## Relations` already carries, the same relation to the same target.
       - This keeps a replay from doubling a relation; it is not a retry path for one that did not land, since that on its own does not keep the source ripe (below), so usually no replay comes back for it.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
@@ -379,13 +380,12 @@ Report how the run ended where it did not run through:
 - stopped because the `k-boat-knowledge` project was missing (Step 2);
 - stopped because `kboat-lifecycle` could not be run, or could not operate the vault lock (Step 3);
 - ended the phase on the tool's `locked` refusal, naming the holder (Step 3);
-- stopped the whole run on a stamp write that came back neither the note nor a refusal (Phase B step 6), naming the source it stopped at and what was left untouched behind it;
 - skipped Phase B and C for a Basic Memory outage or a rejected call (Step 2).
 
 Name every source and Kindle book a partial pass left ripe (Phase B step 6), under the line its reason belongs to, and name the concepts each one left undone:
 
 - **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
-- **Left ripe by a write that did not land** — a create or append that failed or came back an error, the review-report section this pass could not write, or the `distilled_date` stamp the vault refused; name the concept, or the section, or the stamp, and what came back.
+- **Left ripe by a write that did not land** — a create or append that failed or came back an error, the review-report section this pass could not write, or a `distilled_date` stamp the write refused or could not make; name the concept, or the section, or the stamp, and what came back.
   - What a refused stamp asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
 
 **Both lines need a human's attention**, whatever came back: nothing here is a write a run is bound to make on its own.
