@@ -108,7 +108,9 @@ SOURCE = NoteSchema(
         _bool("dismiss"),
         Field("source_type", Kind.ENUM, enum=("web_page", "pdf")),
         # Every ingest path writes the queued URL, a PDF's included; the empty
-        # value stays admissible, and `web_missing_url` reports it on a web page.
+        # value stays admissible here, and `source_missing_url` reports it —
+        # a cross-field rule rather than `empty_required`, so the report says
+        # which invariant broke rather than only that a field is blank.
         Field("url", Kind.STR, empty_ok=True),
         Field("summary", Kind.STR, empty_ok=True),
         Field("topics", Kind.STR_LIST, empty_ok=True),

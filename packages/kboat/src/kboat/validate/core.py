@@ -36,7 +36,7 @@ class CrossFieldCode(StrEnum):
     DISTILLED_WITHOUT_DISTILL = "distilled_without_distill"
     BLOCKED_HAS_NOTEBOOK = "blocked_has_notebook"
     PICKED_NON_WEB = "picked_non_web"
-    WEB_MISSING_URL = "web_missing_url"
+    SOURCE_MISSING_URL = "source_missing_url"
     STATUS_ARCHIVED_MISMATCH = "status_archived_mismatch"
 
 
@@ -143,8 +143,10 @@ def _source_rules(fm: dict[str, Value], path: str) -> list[Violation]:
         out.append(Violation(path, "notebooklm_id", CrossFieldCode.BLOCKED_HAS_NOTEBOOK))
     if fm.get("picked") is True and fm.get("source_type") != "web_page":
         out.append(Violation(path, "picked", CrossFieldCode.PICKED_NON_WEB))
-    if fm.get("source_type") == "web_page" and _is_empty(fm.get("url")):
-        out.append(Violation(path, "url", CrossFieldCode.WEB_MISSING_URL))
+    # Not gated on `source_type`: the URL is the note's identity whichever type it
+    # carries, and the PDF half is the one no later run can re-derive it for.
+    if _is_empty(fm.get("url")):
+        out.append(Violation(path, "url", CrossFieldCode.SOURCE_MISSING_URL))
     return out
 
 

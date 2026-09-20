@@ -43,8 +43,8 @@ def test_valid_source_is_clean() -> None:
     assert check_note("source", _source(), "p") == []
 
 
-def test_pdf_source_with_null_url_is_clean() -> None:
-    assert check_note("source", _source(source_type="pdf", url=None), "p") == []
+def test_pdf_source_with_a_url_is_clean() -> None:
+    assert check_note("source", _source(source_type="pdf", url="https://x/p.pdf"), "p") == []
 
 
 def test_empty_required_bool() -> None:
@@ -151,10 +151,15 @@ def test_picked_is_web_only() -> None:
     assert "picked_non_web" not in _codes("source", _source(picked=True))
 
 
-def test_web_page_needs_a_url() -> None:
-    assert "web_missing_url" in _codes("source", _source(url=None))
-    # A blank url is as missing as a null one for a web page.
-    assert "web_missing_url" in _codes("source", _source(url="  "))
+def test_a_source_of_either_type_needs_a_url() -> None:
+    assert "source_missing_url" in _codes("source", _source(url=None))
+    # A blank url is as missing as a null one.
+    assert "source_missing_url" in _codes("source", _source(url="  "))
+    # The PDF half is the point: gated on `source_type: web_page`, a PDF note whose
+    # `url` is empty was reported by nothing at all — not by this rule, and not by
+    # the per-field pass, which the schema's `empty_ok` sends past it.
+    assert "source_missing_url" in _codes("source", _source(source_type="pdf", url=None))
+    assert "source_missing_url" in _codes("source", _source(source_type="pdf", url=""))
 
 
 def test_blank_string_in_required_field_is_empty() -> None:
