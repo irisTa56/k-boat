@@ -38,7 +38,6 @@ Run `kboat-repos gather "<url>"`.
     - **That answer is about the repository, not about the page.** GitHub's own content paths are exactly what falls here — `github.com/resources/articles/…` serves an article and `repos/resources/articles` is a 404 — and so, identically, do a typo, a deleted repository, and a private one this account is not shown.
     - Which of those a given URL is, the record cannot say and neither can the reader: nothing in the 404 separates them.
     - This is how a content path nobody listed stops being a capture that repeats forever, `gh` being asked rather than the URL's shape guessed at.
-      - Where such a path turns up more than once, put its first segment on `kboat.repos.identity`'s reserved list, which moves every later URL under it to `skip-not-a-repo`.
     - A **queued** capture falls through to the source path like the verdict above, which is what drains it: a real article is ingested as one, and a page with nothing in it ends wherever that path ends such a page — a note on disk either way, rather than a queue file nothing drains.
     - A URL the user **pasted** has no queue file to strand, so nothing is taken down the source path unasked: tell them GitHub has no repository at that URL, say that the page may still be readable, and stop.
       - They capture it through the bookmarklet if they want it read, which is the ordinary way in for a page.
