@@ -149,8 +149,8 @@ Follow the accretion policy below.
 Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 - Written before the discard, so the extracted material survives even if the discard fails.
-- One section per source in a day's report, appended; a day's report already holding this source's section is the anomaly the "Review report" rules cover, and the run summary takes that section instead.
-- A section that did not land at all — an I/O error, an eviction at the day's file — is not that: nothing holds what this pass extracted, so step 6 writes no stamp and the notebook stays.
+- Always appended, never in place of another — a day's report already holding this source's section is an anomaly to report, not a reason to write none (see "Review report").
+- A section that did not land at all — an I/O error, an eviction at the day's file — leaves this pass unfinished, so step 6 writes no stamp and the notebook stays.
 
 ### Step 6: stamp `distilled_date`
 
@@ -158,16 +158,15 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 So step 7's discard acts on the stamp and on nothing else: where the stamp is not on the note, the notebook stays, whatever else the pass managed.
 Stamp it with today's date on the source note, and read what the write returned rather than taking it for made.
 
-- **Write no stamp at all where anything this pass drew from the notebook has not landed durably** — the test is what the notebook alone still holds, not which step it was.
-  - Today that is a concept step 4 left unwritten (one the create cap deferred, or one whose create or append did not land, all in the accretion policy below) and a section step 5 could not write; a step added later answers to the same test rather than to a list.
-  - Whatever it is, it is grounded in the notebook and has landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
-  - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
-- **Anything but the note written back leaves it exactly as no attempt would**, every refusal and every failure of `kboat-note write` alike (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)); what came back decides only what the run summary says and whether the phase goes on.
-  - A `status: locked` record is the vault held by another writer, which the next run recovers from on its own.
-  - A `status: evicted` record is iCloud holding this note behind a placeholder, which only a human in Finder frees.
-  - **Anything else, an empty stdout with a `write failed: …` on stderr included, is the vault lock unavailable or a name nothing can write over**: no later run clears either, so stop the phase and report it as needing a human, the ending step 3 stops on (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
-- A source the first two left unstamped stays ripe: name it in the run summary under its line, and discard nothing.
+- **Write no stamp where this pass did not finish with the source** — where something it set out to write is not written, the stamp included:
+  - a concept the create cap deferred, or one whose create or append did not land (both in the accretion policy below);
+  - a section step 5 could not write;
+  - the stamp itself, where `kboat-note write` came back a `status: locked` record (the vault held by another writer) or `status: evicted` (iCloud holding this note behind a placeholder) in place of the written note (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)).
+- **What the pass judged and is done with is not that**: a concept the accretion policy left uncreated on purpose — too vague or broad to name, or a `#dialogue` claim it could neither confirm nor correct — is settled, logged for the human, and no bar to the stamp.
+- A source left unstamped stays ripe: name it in the run summary under its line, discard nothing, and let a later run distil it again, the accretion policy's replay rules keeping what already landed from being written twice.
+  - Nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
   - Step 7's other branch runs as ever: a `keep` source's notebook is retained whatever this pass did, and the run summary reports that retention as on any other run.
+- A stamp write that came back neither the note nor one of those two refusals — an empty stdout with a `write failed: …` on stderr — is the vault lock unavailable or a name nothing can write over: no later run clears either, so stop the phase and report it as needing a human, the ending step 3 stops on (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
 - Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
   - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `memory-curate` to make;
   - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
@@ -200,9 +199,9 @@ Process each `kindles.ripe` entry in this order — the same crash-safety logic 
 2. **Distill into Basic Memory** following the accretion policy below (`project="k-boat-knowledge"`).
    - Grounding for a Kindle book: passages quoted from the book are `#grounded`; the reader's own commentary or interpretation in the body is external, so give it the same `#dialogue` treatment as a source's dialogue claims (vet it per the accretion policy's dialogue handling — keep as-is, correct, or drop — before accreting; a Kindle book has no notebook, but the reader's marginalia is the same kind of reader signal as saved dialogue).
    - Provenance is the ASIN, not a URL: `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` (the bare ASIN — the note's filename).
-3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same day's file as Phase B), before the stamp, under the "Review report" section's rules — one section per book in a day's report, appended.
-4. **Stamp `distilled_date`** with today's date on the Kindle note, under Phase B step 6 whole: write no stamp where step 2 left any of the book's concepts unwritten, and read what the write returned, since a Kindle note takes the same `locked` and `evicted` refusals.
-   - The stamp is the commit point; after it the book leaves the ripe set, and a book left ripe either way is named in the run summary under its line there.
+3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same day's file as Phase B), before the stamp, under the "Review report" section's rules — always appended, with a section already there for this book reported as an anomaly.
+4. **Stamp `distilled_date`** with today's date on the Kindle note, under Phase B step 6 whole: write no stamp where this pass did not finish with the book, the stamp write's own `locked` and `evicted` refusals included, since a Kindle note takes them the same way.
+   - The stamp is the commit point; after it the book leaves the ripe set, and a book left ripe is named in the run summary under its line there.
    - There is no notebook, so nothing turns on the stamp beyond that.
 
 A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass does; the accretion policy's replay rules keep the replay from double-writing.
@@ -211,7 +210,6 @@ A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass
 
 The `memory-ingest` skill assumes a human approves each new entity before it is created.
 This pass is unattended, so the approval gate becomes an **after-the-fact review gate**: every create, append, and skip decision is logged in the report for the human to reverse later.
-Where the "Review report" rules refuse this pass a section, the whole section goes to the run summary instead — the gate moves with it, and nothing this pass wrote or taught goes unrecorded.
 Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this skill).
 
 - **Append first.** Before creating a concept note, `search_notes` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
@@ -309,16 +307,14 @@ read: false
 The block is **mandatory** and its fields are defined in kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd) (`type: review` keeps the report in `Reviews.base`, `read: false` is the human's read-tracking flag); set `date` to the run date (the same as the filename).
 Where the file already exists — a later write of the run, a crash that left it after a section was written, a second run the same day — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
 
-**One section per source in a day's report**, and the report is only ever appended to — nothing here rewrites a section or a file.
-Every pass writes its own section, carrying what that pass did; a replay on a later day appends one to that day's file and leaves the earlier day's report as it was.
+**Every pass writes its own section, carrying what that pass did**, and the report is only ever appended to — nothing here rewrites a section or a file.
+A replay on a later day appends its section to that day's file and leaves the earlier day's report as it was; a second pass the same day appends below the first, which stands untouched as the record a human may already have read.
 
 Before writing, look for this source's section in the day's own file, by its `Source:` line (`ASIN:<asin>` for a book) — and only there, since no earlier day's report bears on what this pass writes.
-Finding one is an **anomaly**, not a section to merge into: the day already has an account of this source and this pass is a second one.
-Say that much and no more about why — a pass the first left ripe and a source whose `distilled_date` a human cleared to ask for it again both arrive here with the stamp empty, and nothing on hand tells them apart.
+Finding one is an **anomaly** to report, never a reason to write no section: the reader gets both accounts, and the run summary tells them the day's report holds two for one source.
 
-- Write no second section and leave the one there untouched — it is a record a human may already have read, and the pass that wrote it is not this pass.
-- Report in the run summary the whole section this pass would have written, its Summary as much as its Basic Memory Report, since both the review gate and the consolidation move there for this pass and the section in the file is the earlier pass's account, not this one's.
-  - The reader then has both passes, knows the day's report holds only the first, and can reverse this pass's writes and read what it taught from the summary as they would from a section.
+- Name the source in the run summary as an anomaly.
+- Write this pass's section as any other, and say nothing in it about the earlier one; comparing the two is the reader's, and the pass knows nothing about why the day has both.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
@@ -371,23 +367,28 @@ End the run with counts — most come straight from the tool's `counts` block (P
 Name every relation that did not land, with the two concepts it would have joined, and every provenance line that did not land, with the note and the reading it would have named — each with what came back.
 Neither keeps the source ripe on its own (Phase B step 6), so a source with nothing else unwritten stamps and no run comes back for either, which is what makes these the only route to `memory-curate` and to the reader's own hand.
 They ask nothing of the run they are reported in, so they are lines to read rather than ones to escalate.
-Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, carrying the section this pass would have written, as "Review report" says), and every error with the source or book it affected and the cause.
-Report how the run ended where it did not run through: stopped because NotebookLM auth was unusable (Step 1), because the `k-boat-knowledge` project was missing (Step 2), or because `kboat-lifecycle` could not be run or could not operate the vault lock (Step 3); ended the phase on the tool's `locked` refusal, naming the holder (Step 3), or on a stamp write that came back neither the note nor a refusal (Phase B step 6), naming the source it stopped at and what was left untouched behind it; or skipped Phase B and C for a Basic Memory outage or a rejected call (Step 2).
+Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, which this pass appended below), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
-The one crossing runs the other way: a pass the report's anomaly rule refused a section reports that whole section here, its Summary included, because that is the only place left for it.
+
+Report how the run ended where it did not run through:
+
+- stopped because NotebookLM auth was unusable (Step 1);
+- stopped because the `k-boat-knowledge` project was missing (Step 2);
+- stopped because `kboat-lifecycle` could not be run, or could not operate the vault lock (Step 3);
+- ended the phase on the tool's `locked` refusal, naming the holder (Step 3);
+- ended the phase on a stamp write that came back neither the note nor a refusal (Phase B step 6), naming the source it stopped at and what was left untouched behind it;
+- skipped Phase B and C for a Basic Memory outage or a rejected call (Step 2).
 
 Name every source and Kindle book a partial pass left ripe (Phase B step 6), under the line its reason belongs to, and name the concepts each one left undone:
 
 - **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
-- **Left ripe by a write that did not land** — a create or append that failed or came back an error, or the review-report section this pass could not write; name the concept, or the section, and what came back.
-- **Left ripe by a stamp the vault refused** — the `distilled_date` write came back a refusal rather than the written note (Phase B step 6); name the source and what came back, and no concept, since nothing here went unwritten.
-  - What the refusal asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
-  - An answer that is neither stopped the phase rather than reaching this line, so a source behind it is among the ones the phase never got to.
+- **Left ripe by a write that did not land** — a create or append that failed or came back an error, the review-report section this pass could not write, or the `distilled_date` stamp the vault refused; name the concept, or the section, or the stamp, and what came back.
+  - What a refused stamp asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
 
-**The two concept lines need a human's attention**, whatever the call returned: the concept named there is one no run is bound to write.
+**Both lines need a human's attention**, whatever came back: nothing here is a write a run is bound to make on its own.
 A later run distils the source again, but its judgement re-derives the concepts from the source, and only the reader can say whether an important one may go on waiting.
-Say what they can do about it, since a source nothing settles is ripe again on every run: promote the concept named here themselves on the cap line, or clear whatever refused the write on the other.
-Once its claims are in the knowledge base, however they got there, the next run's replay finds them, leaves nothing unwritten, and stamps.
+Say what they can do about it, since a source nothing settles is ripe again on every run: promote the concept named here themselves on the cap line, or clear whatever stopped the write on the other.
+Once what the pass could not write is in place, however it got there, the next run's replay finds it, leaves nothing unwritten, and stamps.
 
-Where a source's unwritten concepts fall under both concept lines, name it under the write line, with all of its concepts.
+Where a source falls under both lines, name it under the write line, with everything it left undone.
 Whether any of this becomes a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
