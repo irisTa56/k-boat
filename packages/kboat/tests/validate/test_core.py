@@ -152,14 +152,23 @@ def test_picked_is_web_only() -> None:
 
 
 def test_a_source_of_either_type_needs_a_url() -> None:
-    assert "source_missing_url" in _codes("source", _source(url=None))
-    # A blank url is as missing as a null one.
-    assert "source_missing_url" in _codes("source", _source(url="  "))
-    # The PDF half is the point: gated on `source_type: web_page`, a PDF note whose
-    # `url` is empty was reported by nothing at all — not by this rule, and not by
-    # the per-field pass, which the schema's `empty_ok` sends past it.
-    assert "source_missing_url" in _codes("source", _source(source_type="pdf", url=None))
-    assert "source_missing_url" in _codes("source", _source(source_type="pdf", url=""))
+    # One invariant, one code each way: the schema makes `url` required, so a blank
+    # value is `empty_required` and a missing line is `missing_field` (below).
+    assert "empty_required" in _codes("source", _source(url=None))
+    assert "empty_required" in _codes("source", _source(url="  "))
+    # The PDF half is the point: while the rule that carried this named `web_page`,
+    # a PDF note whose `url` was empty was reported by nothing at all, the schema's
+    # `empty_ok` having sent it past the per-field pass too.
+    assert "empty_required" in _codes("source", _source(source_type="pdf", url=None))
+    assert "empty_required" in _codes("source", _source(source_type="pdf", url=""))
+
+
+def test_a_source_with_no_url_line_reports_once() -> None:
+    # Not twice: the schema is the only place the invariant is declared, so the
+    # note that has lost its identity is named by `missing_field` alone.
+    fm = _source()
+    del fm["url"]
+    assert _codes("source", fm) == {"missing_field"}
 
 
 def test_blank_string_in_required_field_is_empty() -> None:

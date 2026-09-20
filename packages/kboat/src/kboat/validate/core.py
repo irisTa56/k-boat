@@ -36,7 +36,6 @@ class CrossFieldCode(StrEnum):
     DISTILLED_WITHOUT_DISTILL = "distilled_without_distill"
     BLOCKED_HAS_NOTEBOOK = "blocked_has_notebook"
     PICKED_NON_WEB = "picked_non_web"
-    SOURCE_MISSING_URL = "source_missing_url"
     STATUS_ARCHIVED_MISMATCH = "status_archived_mismatch"
 
 
@@ -143,10 +142,10 @@ def _source_rules(fm: dict[str, Value], path: str) -> list[Violation]:
         out.append(Violation(path, "notebooklm_id", CrossFieldCode.BLOCKED_HAS_NOTEBOOK))
     if fm.get("picked") is True and fm.get("source_type") != "web_page":
         out.append(Violation(path, "picked", CrossFieldCode.PICKED_NON_WEB))
-    # Not gated on `source_type`: the URL is the note's identity whichever type it
-    # carries, and the PDF half is the one no later run can re-derive it for.
-    if _is_empty(fm.get("url")):
-        out.append(Violation(path, "url", CrossFieldCode.SOURCE_MISSING_URL))
+    # No rule here for an empty `url`. It is one invariant and the schema declares
+    # it: `url` is not `empty_ok`, so the per-field pass reports a missing line as
+    # `missing_field` and a blank value as `empty_required`, one code each. A rule
+    # beside that would report the same note twice under two names.
     return out
 
 
