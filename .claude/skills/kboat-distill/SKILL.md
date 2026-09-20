@@ -153,24 +153,25 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 ### Step 6: stamp `distilled_date`
 
-Stamp it with today's date on the source note — **unless step 4 left any of this source's concepts unwritten**: one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
+`distilled_date` is the commit point, and the record that this reading is safe to lose the notebook for.
+So step 7's discard acts on the stamp and on nothing else: where the stamp is not on the note, the notebook stays, whatever else the pass managed.
+Stamp it with today's date on the source note, then read what the write returned.
 
-- This is the commit point; after it the source leaves the ripe set — so read what the write returned and go to step 7 only on a stamp that landed.
-  - `kboat-note write` refuses without writing when another run holds the vault (`status: locked`) or iCloud holds the source note behind a placeholder (`status: evicted`), both in kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract).
-  - Either way the source is still ripe: discard nothing, and name it in the run summary with what came back, since a discard here would take the notebook off a reading nothing has recorded as distilled.
-- A source with an unwritten concept stays ripe instead: stamp nothing, discard nothing at step 7, and name the source in the run summary under the reason it stayed.
-  - Step 7 is still taken for a `keep` source, whose notebook is retained either way and whose retention the run summary reports as on any other run.
-  - Two writes that did not land are none of these, neither being grounded in the notebook — report each in the run summary, and let neither weigh in the stamp:
-    - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `memory-curate` to make;
-    - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
-    - Neither keeps the source ripe on its own, and neither ever lets a source stamp over a concept the rule above left unwritten.
-  - Those concepts' claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
-    - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
+- **Write no stamp at all where step 4 left any of this source's concepts unwritten** — one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
+  - Their claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
+  - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
+- **A stamp that did not land leaves the note exactly as one never attempted.** `kboat-note write` refuses without writing when another run holds the vault (`status: locked`) or iCloud holds the source note behind a placeholder (`status: evicted`), both in kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract).
+- Either way the source stays ripe: name it in the run summary, under the reason it stayed or with what the write returned, and discard nothing.
+  - Step 7's other branch runs as ever: a `keep` source's notebook is retained whatever this pass did, and the run summary reports that retention as on any other run.
+- Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
+  - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `memory-curate` to make;
+  - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
 
 ### Step 7: discard the notebook
 
 Discard it (see kboat-notes) — **unless `keep` is also set**, in which case retain it and note the retention in the run summary instead.
 
+- Discard only where step 6's stamp is on the note; a source it left ripe keeps its notebook, and the retention branch above is all this step does for one.
 - When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
 
 A crash anywhere in 1–5 leaves the source ripe and replayable, as a partial pass does.
