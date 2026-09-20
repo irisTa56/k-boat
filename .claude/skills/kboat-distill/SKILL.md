@@ -155,7 +155,9 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 Stamp it with today's date on the source note — **unless step 4 left any of this source's concepts unwritten**: one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
 
-- This is the commit point; after it the source leaves the ripe set.
+- This is the commit point; after it the source leaves the ripe set — so read what the write returned and go to step 7 only on a stamp that landed.
+  - `kboat-note write` refuses without writing when another run holds the vault (`status: locked`) or iCloud holds the source note behind a placeholder (`status: evicted`), both in kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract).
+  - Either way the source is still ripe: discard nothing, and name it in the run summary with what came back, since a discard here would take the notebook off a reading nothing has recorded as distilled.
 - A source with an unwritten concept stays ripe instead: stamp nothing, discard nothing at step 7, and name the source in the run summary under the reason it stayed.
   - Step 7 is still taken for a `keep` source, whose notebook is retained either way and whose retention the run summary reports as on any other run.
   - Two writes that did not land are none of these, neither being grounded in the notebook — report each in the run summary, and let neither weigh in the stamp:
@@ -203,7 +205,7 @@ A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass
 
 The `memory-ingest` skill assumes a human approves each new entity before it is created.
 This pass is unattended, so the approval gate becomes an **after-the-fact review gate**: every create, append, and skip decision is logged in the report for the human to reverse later.
-Where the "Review report" rules refuse this pass a section, that log goes to the run summary instead — the gate moves with it, and nothing this pass wrote goes unrecorded.
+Where the "Review report" rules refuse this pass a section, the whole section goes to the run summary instead — the gate moves with it, and nothing this pass wrote or taught goes unrecorded.
 Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this skill).
 
 - **Append first.** Before creating a concept note, `search_notes` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
@@ -305,11 +307,12 @@ Where the file already exists — a later write of the run, a crash that left it
 Every pass writes its own section, carrying what that pass did; a replay on a later day appends one to that day's file and leaves the earlier day's report as it was.
 
 Before writing, look for this source's section in the day's own file, by its `Source:` line (`ASIN:<asin>` for a book) — and only there, since no earlier day's report bears on what this pass writes.
-Finding one is an **anomaly**, not a section to merge into: two passes of the same day have distilled a source the first left ripe.
+Finding one is an **anomaly**, not a section to merge into: the day already has an account of this source and this pass is a second one.
+Say that much and no more about why — a pass the first left ripe and a source whose `distilled_date` a human cleared to ask for it again both arrive here with the stamp empty, and nothing on hand tells them apart.
 
 - Write no second section and leave the one there untouched — it is a record a human may already have read, and the pass that wrote it is not this pass.
-- Report it in the run summary, naming the source and this pass's whole decision log — what it created, what it appended to, what it skipped, what it left undone — since the report's review gate moves there for this pass and the section already in the file is the earlier pass's account, not this one's.
-  - The reader then has both passes, knows the day's report holds only the first, and can reverse this pass's writes from the summary as they would from a section.
+- Report in the run summary the whole section this pass would have written, its Summary as much as its Basic Memory Report, since both the review gate and the consolidation move there for this pass and the section in the file is the earlier pass's account, not this one's.
+  - The reader then has both passes, knows the day's report holds only the first, and can reverse this pass's writes and read what it taught from the summary as they would from a section.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
@@ -362,10 +365,10 @@ End the run with counts — most come straight from the tool's `counts` block (P
 Name every relation that did not land, with the two concepts it would have joined, and every provenance line that did not land, with the note and the reading it would have named — each with what came back.
 Neither keeps the source ripe on its own (Phase B step 6), so a source with nothing else unwritten stamps and no run comes back for either, which is what makes these the only route to `memory-curate` and to the reader's own hand.
 They ask nothing of the run they are reported in, so they are lines to read rather than ones to escalate.
-Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, carrying this pass's decision log as "Review report" says), and every error with the source or book it affected and the cause.
+Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, carrying the section this pass would have written, as "Review report" says), and every error with the source or book it affected and the cause.
 Report how the run ended where it did not run through: stopped because NotebookLM auth was unusable (Step 1), because the `k-boat-knowledge` project was missing (Step 2), or because `kboat-lifecycle` could not be run or could not operate the vault lock (Step 3); ended the phase on the tool's `locked` refusal, naming the holder (Step 3); or skipped Phase B and C for a Basic Memory outage or a rejected call (Step 2).
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
-The one crossing runs the other way: a pass the report's anomaly rule refused a section reports its decision log here too, because that is the only place left for it.
+The one crossing runs the other way: a pass the report's anomaly rule refused a section reports that whole section here, its Summary included, because that is the only place left for it.
 
 Name every source and Kindle book a partial pass left ripe (Phase B step 6), under the line its reason belongs to, and name the concepts each one left undone:
 
