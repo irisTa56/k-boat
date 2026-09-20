@@ -146,9 +146,9 @@ def _migrate_slugs(argv: list[str]) -> int:
         # Said on stderr as well as in the report, because a dry run is read for
         # its exit code before its JSON, and a skipped note is one the oracle
         # cannot answer for — silence there would pass a vault off as canonical
-        # when part of it was never examined. Broken down by reason, since one of
-        # them (`no_url`, an upload source) is an expected population and would
-        # otherwise hide the note that actually needs a look. A skipped note is not
+        # when part of it was never examined. Broken down by reason, since they
+        # ask for different answers: a note with no `url` at all has no name to
+        # check against, while a `url` nothing can read is a name to repair. A skipped note is not
         # an exit code: nothing about one stops the rest of the pass. A skipped
         # directory is, below.
         by_reason = Counter(s.reason.split(":")[0] for s in report.skipped)

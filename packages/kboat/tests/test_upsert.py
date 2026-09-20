@@ -352,8 +352,8 @@ def test_a_stale_slug_is_refused_before_the_note_at_it_is_read(vault: Path) -> N
 
 
 def test_a_record_that_names_no_url_asks_nothing_about_identity(vault: Path) -> None:
-    # A later write filling in `summary` carries no `url`, and an uploaded PDF
-    # has none at all — neither makes a claim the writer could check.
+    # A later write filling in `summary` carries no `url`, so it makes no claim
+    # about identity the writer could check.
     upsert(SOURCE, vault, {"slug": "handmade", "fields": {"type": "source"}}, today="2026-07-25")
 
     result = upsert(

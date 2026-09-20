@@ -362,7 +362,7 @@ def _slug_mismatch(schema: NoteSchema, slug: str, provided: Mapping[str, object]
     Only a URL-named schema has an answer to check against; a Kindle note's ASIN
     is an id, derived from nothing. And only a record that *carries* the URL is
     checked: an update omitting it (a later write filling in `summary`) asks
-    nothing about identity, and an upload source legitimately has none.
+    nothing about identity.
 
     Checked before the file is even located, because a wrong slug names the wrong
     file — reading it first would run the collision check against a note this

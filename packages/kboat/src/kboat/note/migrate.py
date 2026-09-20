@@ -156,10 +156,10 @@ def _read_target(path: Path, identity: str) -> tuple[_Target | None, str]:
     value = fm.get(identity)
     if value is None:
         # The reader hands back `None` both for an empty value and for one it
-        # cannot model, and the two are opposite findings: an upload source
-        # carries no `url` (`kboat-notes`) and is right to sit where it does,
-        # while a note holding one in a shape nothing can read is a stale name
-        # that would go unreported. `modelled` is the write contract's own word
+        # cannot model, and the two are opposite findings: a note
+        # carrying no `url` at all names no page to hash, so there is no slug to
+        # check it against, while a note holding one in a shape nothing can read
+        # is a stale name that would go unreported. `modelled` is the write contract's own word
         # for the difference, asked here of the last entry naming the key.
         held = _held(entries, identity)
         readable = held is None or held.modelled

@@ -69,7 +69,7 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 - The NotebookLM source id is never stored, only resolved on demand.
 - The DLQ is exactly the durably un-ingestable set, and both its exits are human-initiated.
 - Reading state is one informational checkbox plus three dispositions, acted on after a cooldown from `filed_date`.
-- A ripe source's notebook is discarded last, so a crash cannot lose an undistilled reading.
+- A ripe source's notebook is discarded last, and only where `distilled_date` is on the note, so nothing that leaves the stamp off — a crash, a partial pass, a write the vault refused — loses an undistilled reading.
 - `summary` and `topics`, captured at ingest, are what stays searchable once the notebook is gone.
 - The daily pick is a routine step rather than a disposition, and reads its signals read-only.
 - A concept note's `## Observations` divides into per-reading groups; which group a claim joins is the writer's judgement, never the tool's.

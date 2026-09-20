@@ -398,7 +398,7 @@ With the dispositions cleared the source is momentarily back in the inbox, which
 If the source still carries a `notebooklm_id`, discard that notebook first (see [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook)) — whatever has become of the notebook it names, and whichever population put it there: an ordinary post-ingest discard, reading the id off the note and clearing the coordinates with it.
 Do it before the rebuild rather than after, because the rebuild overwrites that id with the new notebook's.
 Discarding afterwards would then read the new id and delete the notebook just built — recoverable, since re-running gets another.
-What is not is the notebook the old id pointed at: overwritten, it is referenced by nothing and no vault check can ever see it again, the leak this procedure guards against everywhere else.
+What is not is the notebook the old id pointed at: overwritten, it is referenced by nothing, the leak this procedure guards against everywhere else — and nothing names it again but `kboat-notebook-health`'s list of notebooks no note references, which cannot tell it from one the reader made by hand.
 Discarding first leaves every source here with no notebook, which is what the rest of this step takes for granted.
 Then re-run the matching ingest procedure's notebook step on the stored source — **step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)** for a web page, **step 5 of [ingest a PDF source](#procedure-ingest-a-pdf-source)** for a PDF — and run it whole.
 The note already holds everything that step reads (the `url`, the `title`, and for a PDF the file), and its write-back merges over the note, so nothing it does needs changing here.
@@ -632,7 +632,7 @@ Used when a source is `dismiss`ed, or as the final step of distilling a source t
      - The ingest and rescue procedures carry three such sites: the DLQ and transient branches of [create or update a source note](#procedure-create-or-update-a-source-note) (step 3), the `error` and transient branches of [ingest a PDF source](#procedure-ingest-a-pdf-source) (step 5), and the post-wait discard in step 3 of [rescue a blocked source](#procedure-rescue-a-blocked-source) (whose note is a DLQ entry, so its `notebooklm_id` is empty by definition).
      - Reactivation adds no fourth: it re-runs those same ingest steps, and its premise holds there too — by the time it does, the source's `notebooklm_id` is empty, cleared by the discard that ended its last life, cleared by its own step 2 (a source that arrives still holding one, discarded there by the note's id like any post-ingest discard), or never written at all — so the caller's id is again the only reference to the new notebook.
    - With neither, the notebook is already gone — nothing to do.
-     - Never conclude "already gone" from an empty `notebooklm_id` alone when the caller has an id in hand: nothing else references that notebook, so skipping the delete leaks it where no vault check can ever see it.
+     - Never conclude "already gone" from an empty `notebooklm_id` alone when the caller has an id in hand: nothing else references that notebook, so skipping the delete leaks it, and nothing names it again but `kboat-notebook-health`'s list of notebooks no note references, which cannot tell it from one the reader made by hand.
 2. Run `notebooklm delete --notebook <id> -y`.
 3. Clear `notebooklm_id`, `gemini_url`, and `notebooklm_url` on the source note (a no-op on an ingest-time discard, where they were never written), each given as `null` (`kboat-vault-conventions`, "The write contract").
 
@@ -646,8 +646,8 @@ This is the same split as source ingest (`kboat-ingest`) and rescue (`kboat-resc
    - This is the de-dup key.
 2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete.
    - The filename, being the ASIN, never changes.
-3. Otherwise create the note with `kboat-note write --type kindle` (it owns the file write, the same split as sources and repos): a `{slug, fields}` record where `slug` = the ASIN and `fields` carry `type: kindle`, `title`, `author` (a list), `reading_link` = the reader URL, `store_link` = `https://www.amazon.co.jp/dp/<ASIN>`, `published`, `publisher`, and `tags: ["kindle"]`.
-   - The tool starts `reading`/`finished`/`distill` `false`, leaves `distilled_date` empty, and stamps `added_date`.
+3. Otherwise create the note with `kboat-note write --type kindle` (it owns the file write, the same split as sources and repos): a `{slug, fields}` record where `slug` = the ASIN and `fields` carry `type: kindle`, `title`, `author` (a list), `reading_link` = the reader URL, `store_link` = `https://www.amazon.co.jp/dp/<ASIN>`, `published`, and `publisher`.
+   - The tool starts `reading`/`finished`/`distill` `false`, leaves `distilled_date` and `tags` empty, and stamps `added_date`.
    - The body starts empty — it is filled later with reading highlights (by hand or via `organize-reading-note`), which is what distillation reads; an update that omits `body` preserves whatever highlights are there.
 
 ## Procedure: create or update a repo note

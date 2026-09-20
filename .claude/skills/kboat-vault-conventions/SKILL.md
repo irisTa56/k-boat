@@ -112,7 +112,7 @@ Which URL a note type *stores* is still that type's own decision; only the step 
 - A source stores the URL it was queued with — for a GitHub blob or raw link, normalized to the rendered page or the download URL (`kboat-notes`).
 - A repo note stores the constructed `https://github.com/<owner>/<repo>` that `kboat.repos.identity` derives from whatever was linked, and it always holds that constructed URL rather than the link that was queued.
   - That construction is **routing**, not naming: it answers which repo a URL is about, and the slug then follows from the stored `url` like any other note's.
-  - The two must stay apart, because the routing deliberately collapses a `/blob/<ref>/README.md` link onto its repository — right for cataloguing the repo, and wrong for a file inside it, which is ingested as a source of its own.
+  - The two must stay apart, because the routing deliberately collapses a deep link onto its repository — right for cataloguing the repo, and wrong for a readable file inside it, which is ingested as a source of its own; which links that covers is `kboat.repos.identity`'s answer, summarized in kboat-notes [Naming and de-dup](../kboat-notes/references/repo-note.md#naming-and-de-dup).
 - A feed note stores the canonical URL its gather deduped on.
 
 The slug names a file inside one note type's folder, so the namespace is per folder rather than vault-wide.
@@ -217,7 +217,7 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
 - **Slug verification.** For a URL-named schema, the record's slug is recomputed from the record's own `url` and a mismatch is refused as `{status: "slug_mismatch", identity, url, expected, got}`, written nowhere.
   - The name and the identity are one fact, so the writer settles it rather than trusting what it was handed; a note filed anywhere else would be a second identity for the same page, and nothing later could tell that from a genuinely different page.
   - It is checked before the file is even located, since a wrong slug names the wrong file and the collision check below would then run against a note the record was never about.
-  - A record that carries no `url` — a later write filling in a summary, or an upload source that has none — makes no claim to check and passes.
+  - A record that carries no `url` — a later write filling in a summary — makes no claim to check and passes.
 - **Collision check.** When the schema declares an `identity` field (e.g. `url`), an existing note at the same slug that cannot be shown to be the same note is a collision — returned as `{status: "collision", reason, …}` and written nowhere.
   - This is the de-dup-by-identity rule the naming section relies on.
   - Two identity URLs are compared the way the slug is made, by their canonical forms: a page reached by a second link lands on the note it already has, so a verbatim comparison would report that as a hash clash and refuse an update that is the same page.
