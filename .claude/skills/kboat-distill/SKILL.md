@@ -298,7 +298,7 @@ Where the file already exists — a later write of the run, a crash that left it
 Before writing a source's section, look in the file for one already carrying this source's `Source:` line.
 
 - Where there is one, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
-  - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: replace the section with your editing tool, or compose the whole file and write it in one write, never by streaming a rewrite over the file in place.
+  - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: compose the whole file, write it to a sibling temp path in `Reviews/`, and move that into place, which is the durable write every `kboat` tool makes (kboat-vault-conventions "Durability and the vault lock") and the one this file gets from nowhere else.
     - Nothing rewrites those other sections if a half-written file loses them — their sources carry `distilled_date`, and a `distill`-only source's notebook is already gone.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
     - A cap hit a later pass of the day resolved goes with its deferrals: the `(create cap reached)` suffix stands only while `uncreated candidates:` still lists a concept the cap deferred.
