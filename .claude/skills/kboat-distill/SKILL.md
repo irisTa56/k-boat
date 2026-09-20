@@ -222,12 +222,12 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
       - They are an insight nothing has named, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
   - **`edit_note` does not raise on a failing anchor** — it returns the failure as an ordinary result, so call it with `output_format="json"` and read a non-null `error` key.
     - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6), so a later run makes the append again.
-      - Read what came back here too, by the same split as a failed create: a timeout is retried, a refusal the note itself causes repeats on every run until a human repairs it.
+      - Read what came back here too, by the same split as a failed create: a timeout or a transport error is retried, and every other answer is one that comes back the same tomorrow.
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
   - A create that did not land — the `write_note` call failed or returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
     - Read the note back before marking it: a `write_note` that timed out can still have created the note, and one that exists carrying this source's claims was created.
-    - Read what came back, since the run summary reports the two apart: a timeout or a transport error is a write the next run simply makes, while a refusal the knowledge base repeats — an `Errno 1` on a note the writer has no access to, say — will not land on any run until a human clears it.
+    - Read what came back, since the run summary reports the two apart: a timeout or a transport error is a write the next run simply makes, and every other answer — a refusal the note causes, such as an `Errno 1` on one the writer has no access to, a rejected call, or anything the pass cannot place — is one that will come back the same tomorrow.
   - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title.
 - **Cap creates per source.** `create_cap` is **5** new concept notes for each ripe source or Kindle book, counting the notes this pass creates for that one source; this skill is the one place the value is set, so adjust it here.
   - Once a source has had `create_cap` notes created for it, stop creating for that source and finish its appends; the next source or book starts with the whole cap again.
@@ -338,7 +338,7 @@ Each key holds **one line**, its top-level items separated by `; `, so a `、` i
 - `kept from dialogue:`, `corrected from dialogue:`, `uncreated candidates:`, `skipped (dup of):`, `merge candidates:` — short, self-contained Japanese phrases.
 
 Write `none` for any of these keys when there is nothing to report.
-Annotate a create-cap hit in the section of the source that reached it: suffix that section's `created:` **once** with `(N created, create cap reached)`, N being the notes this pass created for this source, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
+Annotate a create-cap hit in the section of the source that reached it: suffix that section's `created:` **once** with `(N created, create cap reached)`, N being the notes that section's `created:` lists, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
 
 When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in: invoke a matching writing skill for that language up front if the environment offers one, and follow its conventions rather than drafting from memory of the rules.
 Then, before finalizing the prose you just drafted, re-read it once against that skill's own self-check as a distinct pass, rather than trusting that you kept the rules in mind while drafting.
@@ -360,8 +360,9 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
   - A later run creates them unaided, which is the safety net under that reading and not a reason to leave it unsaid.
 - **Left ripe by a write the next run retries** — a create or append that came back a timeout or a transport error; name the concept and what came back.
   - The next run simply makes the write, so this line asks nothing of anyone.
-- **Left ripe by a write the knowledge base refused** — a create or append refused for a reason in the note rather than the call, an `Errno 1` on a note the writer cannot edit among them; name the concept and what came back.
+- **Left ripe by a write that will come back the same** — every other create or append that did not land, from an `Errno 1` on a note the writer cannot edit to an answer the pass could not place; name the concept and what came back.
   - **This needs a human's attention**: no run lands that write until they clear it, so the source would otherwise stay ripe for good.
+  - An answer the pass could not read as a timeout or a transport error belongs here and not on the retry line, since telling the reader there is nothing to do is what would strand the source.
 
-Where a source's unwritten concepts fall under more than one line, name it under the line that asks the most of the reader — a refusal before a cap deferral, a cap deferral before a retry — with all of its concepts.
+Where a source's unwritten concepts fall under more than one line, name it under the line that asks the most of the reader — a write that will come back the same before a cap deferral, a cap deferral before a retry — with all of its concepts.
 Whether any of this becomes a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
