@@ -46,9 +46,10 @@ Run `kboat-repos gather "<url>"`.
   - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
-  - `error-meta` — `gh` did not answer, for something other than a missing repository: it exited non-zero (rate limit, auth, network), or the call gave out (a timeout, an OS error).
+  - `error-meta` — `gh` exited non-zero (rate limit, auth, network) or the call gave out (a timeout, an OS error), **and the probe did not come back with "no repository there"** — either because it got a different answer or because it could not answer at all.
     - **Left to the next run** — keep the queue file.
-    - Not every one of these will ever clear: a credential that has lapsed fails the same way every day, and the record carries nothing that separates it from a rate limit — so nothing reading the record can tell the two apart, and this verdict does not escalate.
+    - It is not a promise that the repository exists. A repository that is genuinely gone lands here whenever the probe abstained — a rate limit or a 5xx on the second call, an outage between the two — so the verdict says what was learned, not what is true of GitHub.
+    - Not every one of these will ever clear: a credential that has lapsed, and a repository that is gone and keeps meeting an abstention, both fail the same way every day, and the record carries nothing separating either from a rate limit — so nothing reading the record can tell them apart, and this verdict does not escalate.
       - What the run owes is legibility: name the URL and the `error` in the report, so a human reading successive run summaries can see the same one failing and fix or drop the queue file.
   - `defect-payload` — `gh` answered, and its answer cannot be used: stdout that will not parse (a banner ahead of the JSON), an answer that is not a repo view, or a shape the mapping cannot read.
     - **Not to be retried** — the fetch worked, so tomorrow's run meets the same answer and fails the same way.
