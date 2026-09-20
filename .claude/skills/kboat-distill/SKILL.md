@@ -155,13 +155,16 @@ Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
 
 `distilled_date` is the commit point, and the record that this reading is safe to lose the notebook for.
 So step 7's discard acts on the stamp and on nothing else: where the stamp is not on the note, the notebook stays, whatever else the pass managed.
-Stamp it with today's date on the source note, then read what the write returned.
+Stamp it with today's date on the source note, and read what the write returned rather than taking it for made.
 
 - **Write no stamp at all where step 4 left any of this source's concepts unwritten** — one the create cap deferred, or one whose create or append did not land (all in the accretion policy below).
   - Their claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
   - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
-- **A stamp that did not land leaves the note exactly as one never attempted.** `kboat-note write` refuses without writing when another run holds the vault (`status: locked`) or iCloud holds the source note behind a placeholder (`status: evicted`), both in kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract).
-- Either way the source stays ripe: name it in the run summary, under the reason it stayed or with what the write returned, and discard nothing.
+- **Anything but the note written back leaves it exactly as no attempt would**, every refusal and every failure of `kboat-note write` alike (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)); what came back decides only what the run summary says and whether the phase goes on.
+  - A `status: locked` record is the vault held by another writer, which the next run recovers from on its own.
+  - A `status: evicted` record is iCloud holding this note behind a placeholder, which only a human in Finder frees.
+  - **Anything else, an empty stdout with a `write failed: …` on stderr included, is the vault lock unavailable or a name nothing can write over**: no later run clears either, so stop the phase and report it as needing a human, the ending step 3 stops on (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
+- A source the first two left unstamped stays ripe: name it in the run summary under its line, and discard nothing.
   - Step 7's other branch runs as ever: a `keep` source's notebook is retained whatever this pass did, and the run summary reports that retention as on any other run.
 - Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
   - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `memory-curate` to make;
@@ -367,7 +370,7 @@ Name every relation that did not land, with the two concepts it would have joine
 Neither keeps the source ripe on its own (Phase B step 6), so a source with nothing else unwritten stamps and no run comes back for either, which is what makes these the only route to `memory-curate` and to the reader's own hand.
 They ask nothing of the run they are reported in, so they are lines to read rather than ones to escalate.
 Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, carrying the section this pass would have written, as "Review report" says), and every error with the source or book it affected and the cause.
-Report how the run ended where it did not run through: stopped because NotebookLM auth was unusable (Step 1), because the `k-boat-knowledge` project was missing (Step 2), or because `kboat-lifecycle` could not be run or could not operate the vault lock (Step 3); ended the phase on the tool's `locked` refusal, naming the holder (Step 3); or skipped Phase B and C for a Basic Memory outage or a rejected call (Step 2).
+Report how the run ended where it did not run through: stopped because NotebookLM auth was unusable (Step 1), because the `k-boat-knowledge` project was missing (Step 2), or because `kboat-lifecycle` could not be run or could not operate the vault lock (Step 3); ended the phase on the tool's `locked` refusal, naming the holder (Step 3), or on a stamp write that came back neither the note nor a refusal (Phase B step 6), naming the source it stopped at and what was left untouched behind it; or skipped Phase B and C for a Basic Memory outage or a rejected call (Step 2).
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
 The one crossing runs the other way: a pass the report's anomaly rule refused a section reports that whole section here, its Summary included, because that is the only place left for it.
 
@@ -375,8 +378,9 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
 
 - **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
 - **Left ripe by a write that did not land** — a create or append that failed or came back an error; name the concept and what came back.
-- **Left ripe by a stamp the vault refused** — the `distilled_date` write came back `locked` or `evicted` (Phase B step 6); name the source and which, and no concept, since nothing here went unwritten.
-  - What each asks is the vault's to say, not this skill's: a `locked` refusal is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
+- **Left ripe by a stamp the vault refused** — the `distilled_date` write came back a refusal rather than the written note (Phase B step 6); name the source and what came back, and no concept, since nothing here went unwritten.
+  - What the refusal asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
+  - An answer that is neither stopped the phase rather than reaching this line, so a source behind it is among the ones the phase never got to.
 
 **The two concept lines need a human's attention**, whatever the call returned: the concept named there is one no run is bound to write.
 A later run distils the source again, but its judgement re-derives the concepts from the source, and only the reader can say whether an important one may go on waiting.
