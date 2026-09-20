@@ -45,6 +45,7 @@ Then:
 One carve-out before the repo path: a `blob`/`raw` link to a readable file — a `.pdf` or a `.md` — is a **source**, not the repo.
 `gather` (via `kboat.repos.identity.github_file_source`) detects it and returns `status: "source-file"` with a `source_type` and the URL to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, since the blob page is HTML; a `.md` normalized to its rendered blob page, read as an article — both canonical, so a `refs/heads/…` permalink and the plain link de-dup to one source), and `kboat-ingest` routes it to the source path instead.
 Every other deep link (`/tree`, `/issues`, another file extension) still collapses to the repo below.
+A link the module reads as no repository at all — a bare profile, a reserved route — is neither, and `kboat-ingest` takes it down the source path.
 
 1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
 2. Slug = `kboat-note slug "<canonical-url>"`, the same oracle as a source. The file is `Repos/<slug>.md`.

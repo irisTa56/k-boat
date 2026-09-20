@@ -39,6 +39,8 @@ Which GitHub link is a repository, which is a file to read as a source, and whic
 - A **repository** is catalogued by that procedure (per kboat-notes [Procedure: create or update a repo note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-repo-note)); delete the queue file once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below).
   - A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it.
 - A **source** comes back here: follow the source path below with the `url` that step returns, and where it returns a `source_type`, take the type from it rather than re-deciding it (the PDF magic-byte check and the web path's step-3 verifications still apply).
+- **Neither** — a bare profile, a gist, one of GitHub's own routes — also comes back here, and the same way: the source path with the `url` that step returns.
+  - Which GitHub link that covers is the module's answer and not this skill's, so a URL it does not know as a non-repository reaches `gh` instead and ends the item where `kboat-repos` step 1 says an unanswered fetch ends it, with its queue file kept.
 
 For every other URL, follow the source path.
 
