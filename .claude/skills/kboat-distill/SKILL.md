@@ -301,6 +301,7 @@ Before writing a source's section, look in the file for one already carrying thi
   - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: replace the section with your editing tool, or compose the whole file and write it in one write, never by streaming a rewrite over the file in place.
     - Nothing rewrites those other sections if a half-written file loses them — their sources carry `distilled_date`, and a `distill`-only source's notebook is already gone.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
+    - A cap hit a later pass of the day resolved goes with its deferrals: the `(create cap reached)` suffix stands only while `uncreated candidates:` still lists a concept the cap deferred.
 - A **replay on a later day** finds no such section in its own day's file, so it appends one carrying only what that pass did — its Summary drawn from the claims that pass placed — and the earlier day's report stays as it was.
   - It writes that section only where it has something this source's earlier sections do not already say — find them in earlier days' reports by the `Source:` line:
     - it placed something: a create, a claim, or a relation;
@@ -343,7 +344,7 @@ Each key holds **one line**, its top-level items separated by `; `, so a `、` i
 - `kept from dialogue:`, `corrected from dialogue:`, `uncreated candidates:`, `skipped (dup of):`, `merge candidates:` — short, self-contained Japanese phrases.
 
 Write `none` for any of these keys when there is nothing to report.
-Annotate a create-cap hit in the section of the source that reached it: suffix that section's `created:` **once** with `(N created, create cap reached)`, N being the notes that section's `created:` lists, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
+Annotate a create-cap hit in the section of the source that reached it: suffix that section's `created:` **once** with `(create cap reached)` — the count is the cap itself, since that is where the pass stopped — and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
 
 When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in: invoke a matching writing skill for that language up front if the environment offers one, and follow its conventions rather than drafting from memory of the rules.
 Then, before finalizing the prose you just drafted, re-read it once against that skill's own self-check as a distinct pass, rather than trusting that you kept the rules in mind while drafting.
@@ -355,6 +356,7 @@ Everything operational stays out of the report and goes to the run summary only 
 ## Run summary
 
 End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, ambiguous dispositions left unprocessed, and items left for the next run by errors).
+Name every relation that did not land, with the two concepts it would have joined and what came back: nothing retries it and the source stamps as usual, so this line is what reaches `memory-curate`.
 Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, and non-fatal errors on a saved dialogue note, `history`, or `summary`), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
 

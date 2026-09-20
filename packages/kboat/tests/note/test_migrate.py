@@ -467,7 +467,7 @@ def test_two_notes_wanting_one_slug_collide_in_the_dry_run_too(vault: Path) -> N
 
 
 def test_a_source_with_no_url_is_skipped_not_moved(vault: Path) -> None:
-    # An uploaded PDF carries no `url`, so its slug answers to nothing.
+    # A note carrying no `url` names no page to hash, so its slug answers to nothing.
     path = _source(vault, "handmade", "")
 
     report = migrate(vault, apply=True)
@@ -491,9 +491,9 @@ def test_a_source_with_no_url_is_skipped_not_moved(vault: Path) -> None:
 def test_a_url_the_reader_cannot_read_is_reported_as_such_not_as_absent(
     vault: Path, held: str
 ) -> None:
-    # `no_url` is what an upload source looks like, and the operator is told to
-    # pass over it — so a note whose url is merely unreadable must not land
-    # there, or its stale name goes unreported and a later capture for the same
+    # `no_url` is what a note with no identity at all looks like, and the
+    # operator is told to pass over it — so a note whose url is merely unreadable
+    # must not land there, or its stale name goes unreported and a later capture for the same
     # page writes a second note.
     path = vault / "Sources" / "unreadable.md"
     path.write_text(f"---\ntype: source\ntitle: T\n{held}\n---\n", encoding="utf-8")
@@ -504,9 +504,9 @@ def test_a_url_the_reader_cannot_read_is_reported_as_such_not_as_absent(
     assert path.exists()
 
 
-def test_a_source_whose_url_is_empty_is_the_upload_case(vault: Path) -> None:
-    # The other side of the same split: a bare `url:` is an upload source, which
-    # is where it belongs and is not a finding.
+def test_a_source_whose_url_is_empty_has_no_name_to_check(vault: Path) -> None:
+    # The other side of the same split: a bare `url:` is a value the reader can
+    # model and there is no slug it could name, so the pass skips rather than moves it.
     (vault / "Sources" / "upload.md").write_text(
         "---\ntype: source\ntitle: T\nurl:\n---\n", encoding="utf-8"
     )
