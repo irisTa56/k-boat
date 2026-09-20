@@ -57,9 +57,10 @@ Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
 
 Parse this JSON; it is the work list for the rest of the run.
 The predicates it implements (ripe, dismiss, ambiguous, the 7-day cooldown) are specified in kboat-notes — the tool is an implementation of that spec, not a second source of truth.
-If the tool cannot be run at all — not on `PATH`, or it ends with none of the outputs above and none of the vault lock's (kboat-vault-conventions "Durability and the vault lock") — that is an environment failure: **STOP the whole run** and report it.
+If the tool cannot be run at all — not on `PATH`, or it ends with neither the outputs above nor a `locked` record — that is an environment failure: **STOP the whole run** and report it.
 Never evaluate the predicates by hand in its place.
-A `locked` refusal is not that failure: the tool ran and read nothing, so report the holder it names and end the phase there — no Phase A counts, no "nothing ripe" — and leave the work to the next run (kboat-vault-conventions "Durability and the vault lock").
+A lock the tool could not operate at all ends that way too, on stderr and with an empty stdout, and it belongs in the STOP: unlike a refusal it clears on no later run (kboat-vault-conventions "Durability and the vault lock").
+A `locked` refusal is the one that is not the failure: the tool ran and read nothing, so report the holder it names and end the phase there — no Phase A counts, no "nothing ripe" — and leave the work to the next run.
 
 ## Phase A: maintain the cooldown clock
 
@@ -142,6 +143,10 @@ Errors on the other extractions below — saved dialogue notes, `history`, `summ
 ### Step 4: distill into Basic Memory
 
 Follow the accretion policy below.
+
+- **On a replay, start from what the earlier pass left undone.** Find this source's sections in earlier days' reports by their `Source:` line, as step 5 does, and take the concepts marked `deferred (create cap reached)`, `create not made`, or `append not made` first.
+  - A replay re-distills from the extract, and nothing makes its judgement land on the same concepts twice, so a deferral nobody carries forward is one no run ever writes and the report told the reader not to promote by hand.
+  - Where this pass no longer sees a marked concept in the source at all, say so in its section, which is what settles it "some other way" for the report rule at step 5.
 
 ### Step 5: write the review report
 

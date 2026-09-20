@@ -15,5 +15,6 @@ read: false
   - It is also what keeps a report *in* the Base: the Base's top filter is `type == "review"`, so a report written without this block drops out of the Base entirely (not just the `read` column) — which is why the block is mandatory, see kboat-distill "Review report".
 - `date` — the run date, the same value as the filename; the Base's sort key (the filename is already a date, so date and filename order are identical, but a typed property is the explicit, robust key).
 - `read` — the **human's** read-tracking flag, the always-present boolean here.
-  - The routine writes it `false` and never reads or rewrites it; you toggle it (inline in the Base or in the note) once you have read the report.
+  - The routine writes it `false` when it creates the file and carries it through unchanged afterwards; you toggle it (inline in the Base or in the note) once you have read the report.
+    - A second distillation pass the same day rewrites the whole file to replace a section (kboat-distill "Review report"), copying the block as it found it — so a `read: true` toggled between that read and the write is lost, the lost update `kboat-vault-conventions` ("What is outside") describes.
   - It is always present so the Base can filter `read != true` for an unread view, the same always-present-boolean rule the other Bases follow.

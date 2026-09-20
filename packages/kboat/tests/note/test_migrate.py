@@ -491,8 +491,8 @@ def test_a_source_with_no_url_is_skipped_not_moved(vault: Path) -> None:
 def test_a_url_the_reader_cannot_read_is_reported_as_such_not_as_absent(
     vault: Path, held: str
 ) -> None:
-    # `no_url` is what a note with no identity at all looks like, and the
-    # operator is told to pass over it — so a note whose url is merely unreadable
+    # `no_url` is what a note with no identity at all looks like, and the two
+    # reasons want different answers — so a note whose url is merely unreadable
     # must not land there, or its stale name goes unreported and a later capture for the same
     # page writes a second note.
     path = vault / "Sources" / "unreadable.md"
