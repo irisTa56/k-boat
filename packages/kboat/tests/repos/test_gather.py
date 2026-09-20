@@ -253,6 +253,29 @@ def test_gather_keeps_a_gh_failure_that_is_not_a_missing_repository_retryable(mo
     assert out["error"] == "HTTP 403: rate limited"
 
 
+def test_gather_keeps_a_repo_the_probe_found_retryable(monkeypatch) -> None:
+    # The probe answering `True` is the case that separates this branch from a
+    # blanket "the fetch failed, so skip it". GitHub meters REST and GraphQL
+    # apart, so `gh repo view` (GraphQL) can be rate-limited while
+    # `gh api repos/…` (REST) answers 200 for the same repo — and a repo routed
+    # down the source path on that answer is catalogued as a web page, its queue
+    # file deleted after the note, with nothing left to retry it. Widening the
+    # branch to `exists is not None` passes every other test in this file.
+    monkeypatch.setattr(
+        gather_mod.subprocess,
+        "run",
+        _gh_stub(
+            view=_Completed("", returncode=1, stderr="HTTP 403: rate limited"),
+            api=_Completed("HTTP/2.0 200 OK\n", returncode=0),
+        ),
+    )
+
+    out = gather("https://github.com/acme/tool", today=TODAY)
+
+    assert out["status"] == "error-meta"
+    assert out["error"] == "HTTP 403: rate limited"
+
+
 def test_gather_reports_error_meta_when_the_existence_probe_raises(monkeypatch) -> None:
     # The probe is a second chance at classifying, never a new way to fail. Without
     # the boundary around it, a `gh` that gives out while probing replaces the

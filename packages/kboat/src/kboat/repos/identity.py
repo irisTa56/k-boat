@@ -30,8 +30,15 @@ _REPO_RE = re.compile(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)", re.IG
 # is inherently partial, so it is only a cheap pre-filter, and the list is not
 # where an unlisted route is caught: one that slips through reaches the `gh`
 # fetch, which finds no repository there and answers with the same verdict this
-# list produces (`gather`, the `gh_repo_exists` branch). Widening the list saves
-# that round trip and nothing else. These are the common reserved top-level paths.
+# list produces (`gather`, the `gh_repo_exists` branch).
+#
+# Listing one is still worth doing where a route turns up in the queue. It saves
+# both `gh` calls per capture per run, and it settles the route without `gh`
+# having to answer at all: an unlisted one meeting a rate limit or an outage gets
+# no status line, the probe abstains, and the verdict falls back to the retryable
+# one that keeps the capture — the stall, for as long as that lasts.
+#
+# These are the common reserved top-level paths.
 _RESERVED_OWNERS = frozenset(
     {
         "orgs",

@@ -11,7 +11,8 @@ Its **spec** is split (both at the repo-root `.claude/skills/`): the shared vaul
 ## Working on it
 
 - Change the spec first. Edit the owning spec — `kboat-vault-conventions` for a shared convention, `kboat-notes` for a K-Boat note type or lifecycle — then the code (`src/kboat/`) and its tests (`tests/`), then reconcile the schema tables (the `test_doc_schema_sync` gate checks them against `kboat.schema`).
-  - GitHub routing runs the other way: `kboat.repos.identity` is the authority on which link is a repository, a file to read as a source, or neither, so change it and its tests first and bring `kboat-notes`' summary after.
+  - GitHub routing runs the other way: the code is the authority on which link is a repository, a file to read as a source, or neither, so change it and its tests first and bring `kboat-notes`' summary after.
+    - It is in two places, and "neither" is decided in both: `kboat.repos.identity` reads the URL, and `gather`'s existence probe asks `gh` about everything the URL rule does not already settle.
 - `kboat.lock` and `kboat.io_utils` are the vault's concurrency and durability floor.
   - Take the lock at a CLI edge, never inside a writer: an `flock` is per open file description, so a nested acquisition waits out its own hold.
   - Never add a second file-writing path beside `atomic_write_text`.
