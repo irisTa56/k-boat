@@ -30,7 +30,7 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Kindles/` — one note per Kindle book, named by ASIN; no notebook, with reading highlights in the body.
 - `Repos/` — one note per GitHub repository, named by a URL hash; no notebook, a metadata catalogue entry.
 - `PDFs/` — the downloaded file for each PDF source, read in Obsidian and uploaded to its notebook.
-- `Reviews/` — one report per run that distilled something, read for memory consolidation (the distillation knowledge only; operational detail stays in the run summary). Each carries a `read` flag you tick once you have read it.
+- `Reviews/` — one report per date on which a run distilled something, read for memory consolidation (the distillation knowledge only; operational detail stays in the run summary); a second run the same day appends to the report already there. Each carries a `read` flag you tick once you have read it.
 - `Feeds/` — one note per item the upstream feed-filter kept from your registered feeds, forums, and saved queries.
 - `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority; the daily pick reads it to infer what you are chewing on.
 - `Daily/` — your Obsidian daily notes, if you keep them. The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.

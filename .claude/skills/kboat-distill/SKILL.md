@@ -157,7 +157,8 @@ Stamp it with today's date on the source note — **unless step 4 left any of th
 
 - This is the commit point; after it the source leaves the ripe set.
 - A source with an unwritten concept stays ripe instead: stamp nothing, skip step 7, and name the source in the run summary under the reason it stayed.
-  - A **relation** that did not land is not one of these: both concepts it would join are in the knowledge base, so nothing about it is grounded in the notebook — report it in the run summary as a link for `memory-curate` to make, and stamp as usual.
+  - A **relation** that did not land is not one of these: both concepts it would join are in the knowledge base, so nothing about it is grounded in the notebook — report it in the run summary as a link for `memory-curate` to make.
+    - It weighs nothing in the stamp either way: on its own it does not keep the source ripe, and it never lets a source stamp over a concept the rule above left unwritten.
   - Those concepts' claims are grounded in the notebook and have landed nowhere else, so the source keeps the notebook rather than trading that grounding for a stamp.
     - A later run distils the source again, the accretion policy's replay rules keeping what already landed from being written twice; nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
 
@@ -273,7 +274,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
     - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
       - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
     - Skip a relation `## Relations` already carries, the same relation to the same target.
-      - This keeps a replay from doubling a relation; it is not a retry path, since a relation that did not land does not keep its source ripe (below).
+      - This keeps a replay from doubling a relation; it is not a retry path for one that did not land, since that on its own does not keep the source ripe (below), so usually no replay comes back for it.
   - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
 
 ## Review report (`Reviews/YYYY-MM-DD.md`)
@@ -327,7 +328,7 @@ Source: <url> (for a Kindle book: ASIN:<asin>)
 - `kept from dialogue:` external (`#dialogue`) claims accreted as the dialogue stated them (a dialogue claim you kept as-is that the source grounds needs no dialogue-audit line — it is source knowledge that folds into `created:`/`appended-to:`; a *corrected* claim keeps its `corrected from dialogue:` line either way).
 - `corrected from dialogue:` claims accreted after you fixed an error the fast reading model made — whether the fix lands them `#grounded` (the source now supports it) or `#dialogue` (external) — each with what you changed, so the human can audit the correction.
 - `skipped (dup of):` observations dropped as duplicates.
-- `uncreated candidates:` concepts this pass did not write. Three marks keep the source ripe, their claims being grounded in the notebook and nowhere else: a concept the create cap deferred, marked `deferred (create cap reached)`, and one whose create or append did not land, marked `create not made` or `append not made`. The run summary names all three for a human, as it does everything else here — a vague or broad concept, a `#dialogue` claim you could neither confirm nor confidently correct — which is the human's to promote.
+- `uncreated candidates:` concepts this pass did not write. Three marks keep the source ripe, their claims being grounded in the notebook and nowhere else: a concept the create cap deferred, marked `deferred (create cap reached)`, and one whose create or append did not land, marked `create not made` or `append not made`. The run summary names those three for a human. Everything else here — a vague or broad concept, a `#dialogue` claim you could neither confirm nor confidently correct — is the human's to promote from this report.
 - `merge candidates:` pairs flagged for `memory-curate`.
 ```
 
@@ -352,7 +353,7 @@ Everything operational stays out of the report and goes to the run summary only 
 ## Run summary
 
 End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, ambiguous dispositions left unprocessed, and items left for the next run by errors).
-Name every relation that did not land, with the two concepts it would have joined and what came back: nothing retries it and the source stamps as usual, so this line is what reaches `memory-curate`.
+Name every relation that did not land, with the two concepts it would have joined and what came back: on its own it does not keep the source ripe, so a source with nothing else unwritten stamps and no run comes back for it, which is what makes this line the route to `memory-curate`.
 It asks nothing of the run it is reported in, so it is a line to read rather than one to escalate.
 Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, with what this pass did), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
