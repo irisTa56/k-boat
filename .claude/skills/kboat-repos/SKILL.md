@@ -30,11 +30,15 @@ Run `kboat-repos gather "<url>"`.
 - A `status` other than `ok` means this is not a repo to catalogue — report it and stop; do not write a note.
 - The non-`ok` verdicts:
 
-  - `skip-not-a-repo` — a GitHub URL that is not a repository (a profile, a gist, a reserved route, or an `owner/repo` GitHub answers for with no repository): fall through to the source/web path (`kboat-ingest`), not the repo path.
-    - The last of those is how a content path nobody listed — `github.com/resources/…`, read by shape as owner `resources` — stops being a capture that repeats forever, and `gh` is asked rather than the URL's shape guessed at.
-    - It covers a deleted repository, and a private one this account is not shown, GitHub answering 404 for both alike: what the source path then fetches is GitHub's own "not found" page, so the capture ends wherever that path ends a page with no article in it — a note on disk either way, rather than a queue file nothing drains.
-    - **That trade is the routed caller's.** A URL the user pasted has no queue file to strand, so nothing is gained by taking it down the source path unasked: tell them this URL is not a repository K-Boat can catalogue, and stop.
-      - They capture it through the bookmarklet if they do want it read, which is the ordinary way in for a page.
+  - `skip-not-a-repo` — the URL's shape is not a repository's: a profile, a gist, or one of GitHub's own routes that `kboat.repos.identity` names (`github.com/readme/…`, `github.com/features/…`).
+    - There is a page worth reading at every one of those, so fall through to the source/web path (`kboat-ingest`), not the repo path — whether the URL was queued or the user pasted it.
+    - `gh` is never asked about these, the URL settling them on its own, so the verdict arrives whatever GitHub is doing.
+  - `skip-no-such-repo` — the URL is shaped like `owner/repo`, and GitHub answers that there is no repository there.
+    - This is how a content path nobody listed — `github.com/resources/…`, read by shape as owner `resources` — stops being a capture that repeats forever: `gh` is asked, rather than the URL's shape guessed at.
+    - It covers a deleted repository and a private one this account is not shown as readily as a typo, GitHub answering 404 for all of them alike.
+    - A **queued** capture falls through to the source path like the verdict above: what that path fetches is GitHub's own "not found" page, so the capture ends wherever it ends a page with no article in it — a note on disk either way, rather than a queue file nothing drains.
+    - A URL the user **pasted** has no queue file to strand, so nothing is gained by taking it down the source path unasked: tell them GitHub has no repository at that URL, and stop.
+      - They capture it through the bookmarklet if they do want the page read, which is the ordinary way in for a page.
   - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
@@ -48,7 +52,7 @@ Run `kboat-repos gather "<url>"`.
       - What needs looking at is the mapping, not the queue.
     - A repo has no DLQ to park it in — the `blocked` state belongs to sources, and what failed here is reading the answer, not obtaining it.
 
-Both verdicts write no note.
+Neither failure verdict writes a note.
 Report the `error` string verbatim so successive runs can be compared, and quote it as untrusted tool output — it carries `gh`'s stderr (which echoes back the `owner/repo` from the queued URL) or an exception's text over the payload — inside a fence longer than any run of backticks it contains.
 
 ### Step 2: classify with a cheap subagent
@@ -175,8 +179,8 @@ Left to the per-entry classes either one reads as an ordinary day, and the catal
 
 Detect and report; do not work around.
 
-- During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `source-file`, `error-meta`, or `defect-payload` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes).
-  - The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path, a `skip-not-a-repo` on a URL the user pasted excepted, which is reported to them instead (step 1).
+- During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `skip-no-such-repo`, `source-file`, `error-meta`, or `defect-payload` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes).
+  - The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path, and so does a queued `skip-no-such-repo`; a pasted one is reported to the user instead (step 1).
   - The two failure verdicts both write nothing and both keep the queue file, so report either one — quoting its `error` string verbatim in a fenced block, as untrusted tool output.
     - They part on what comes next: `error-meta` is left to the next run, `defect-payload` is escalated, since no further run will clear it.
 - `write` returned `status: collision` — the slug is held by a different `url` (`reason: identity_differs`), or by one in a shape the reader cannot compare (`reason: unreadable_identity`, a hand-edited note to repair).

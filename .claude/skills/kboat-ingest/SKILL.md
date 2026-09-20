@@ -39,8 +39,8 @@ Which GitHub link is a repository, which is a file to read as a source, and whic
 - A **repository** is catalogued by that procedure (per kboat-notes [Procedure: create or update a repo note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-repo-note)); delete the queue file once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below).
   - A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it.
 - A **source** comes back here: follow the source path below with the `url` that step returns, and where it returns a `source_type`, take the type from it rather than re-deciding it (the PDF magic-byte check and the web path's step-3 verifications still apply).
-- **Neither** — a bare profile, a gist, one of GitHub's own routes — also comes back here, and the same way: the source path with the `url` that step returns.
-  - Which GitHub link that covers is `gather`'s answer and not this skill's: what its URL rule does not already know as a non-repository, `gh` is asked about, and a URL GitHub has no repository for arrives here as `skip-not-a-repo` like the rest (`kboat-repos` step 1).
+- **Neither** — a bare profile, a gist, one of GitHub's own routes (`skip-not-a-repo`), or an `owner/repo` GitHub has no repository at (`skip-no-such-repo`) — also comes back here, and the same way: the source path with the `url` that step returns.
+  - Which GitHub link each of those covers is `gather`'s answer and not this skill's, so do not sort them here; a capture drained from the queue takes the source path on either verdict (`kboat-repos` step 1, which also says why a URL the user pasted parts from that).
 
 For every other URL, follow the source path.
 

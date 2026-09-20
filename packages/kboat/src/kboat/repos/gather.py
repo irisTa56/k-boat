@@ -230,6 +230,13 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # a "keep the queue file and retry" reflex, and a name in the same family would
 # extend that reflex to the one failure no retry ever clears.
 #
+# The two `skip-*` verdicts are two because the code already decides them apart —
+# `parse_repo` from the URL's shape, `gh_repo_exists` from what GitHub answered —
+# and only one record could carry the difference. It matters to the reader: a URL
+# whose shape is not a repository names a page there is something to read at
+# (`github.com/readme/…` is an article, a profile is a profile), while a 404 names
+# one there is not.
+#
 # The boundaries below are several narrow ones rather than one wrapper around the
 # body, because the two classes interleave: `gh_repo_view` can fail either way,
 # and the identity mapping sits between it and the README fetch. All of them are
@@ -246,6 +253,7 @@ class Verdict(StrEnum):
 
     OK = "ok"
     SKIP_NOT_A_REPO = "skip-not-a-repo"
+    SKIP_NO_SUCH_REPO = "skip-no-such-repo"
     SOURCE_FILE = "source-file"
     ERROR_META = "error-meta"
     DEFECT_PAYLOAD = "defect-payload"
@@ -341,7 +349,7 @@ def gather(url: str, *, today: date) -> dict:
             # fail: an unanswered probe leaves the verdict where it already was.
             exists = None
         if exists is False:
-            return {"url": url, "status": Verdict.SKIP_NOT_A_REPO}
+            return {"url": url, "status": Verdict.SKIP_NO_SUCH_REPO}
         record.update(status=Verdict.ERROR_META, error=err)
         return record
     # Re-key off the canonical owner/repo `gh` resolved to (handles renames,

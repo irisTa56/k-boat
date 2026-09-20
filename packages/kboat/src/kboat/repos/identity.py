@@ -28,15 +28,22 @@ _REPO_RE = re.compile(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)", re.IG
 
 # First path segments that are GitHub's own routes, never a user/org. A denylist
 # is inherently partial, so it is only a cheap pre-filter, and the list is not
-# where an unlisted route is caught: one that slips through reaches the `gh`
-# fetch, which finds no repository there and answers with the same verdict this
-# list produces (`gather`, the `gh_repo_exists` branch).
+# what stops an unlisted route being catalogued: one that slips through reaches
+# the `gh` fetch, which finds no repository there (`gather`, the `gh_repo_exists`
+# branch), and no note is written either way.
 #
-# Listing one is still worth doing where a route turns up in the queue. It saves
-# both `gh` calls per capture per run, and it settles the route without `gh`
-# having to answer at all: an unlisted one meeting a rate limit or an outage gets
-# no status line, the probe abstains, and the verdict falls back to the retryable
-# one that keeps the capture — the stall, for as long as that lasts.
+# What the list decides is which of the two skip verdicts the route gets, and
+# they are not interchangeable. A listed route is `skip-not-a-repo` — a page
+# there is something to read at, which every caller may ingest. An unlisted one
+# is `skip-no-such-repo`, which a user who pasted the URL is told about instead.
+# So a readable content path met in the queue belongs on this list: that is what
+# gets `github.com/readme/…` the verdict `github.com/torvalds` already has.
+#
+# Listing one also saves both `gh` calls per capture per run, and settles the
+# route without `gh` having to answer at all: an unlisted one meeting a rate
+# limit or an outage gets no status line, the probe abstains, and the verdict
+# falls back to the retryable one that keeps the capture — the stall, for as long
+# as that lasts.
 #
 # These are the common reserved top-level paths.
 _RESERVED_OWNERS = frozenset(

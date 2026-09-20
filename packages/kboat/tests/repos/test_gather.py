@@ -228,9 +228,29 @@ def test_gather_routes_a_github_url_gh_has_no_repository_for_to_the_source_path(
     out = gather("https://github.com/resources/articles/ai/what-is-ai", today=TODAY)
 
     assert out == {
-        "status": "skip-not-a-repo",
+        "status": "skip-no-such-repo",
         "url": "https://github.com/resources/articles/ai/what-is-ai",
     }
+
+
+def test_gather_keeps_the_two_skip_verdicts_apart(monkeypatch) -> None:
+    # The URL's shape and GitHub's answer are decided by different code and mean
+    # different things to the reader: a reserved route is a page there is an
+    # article at, which any caller may ingest, while a 404 is a page there is
+    # nothing at, which a user who pasted the URL is told about instead. One
+    # verdict for both would put GitHub's own articles and a typo'd `owner/repo`
+    # in the same bucket. `gh` is never reached for the shape case — nothing is
+    # stubbed here, and a call would fail the test by leaving the sandbox.
+    reserved = gather("https://github.com/readme/stories/a-maintainer", today=TODAY)
+
+    assert reserved["status"] == "skip-not-a-repo"
+
+    monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, "no such repo"))
+    monkeypatch.setattr(gather_mod, "gh_repo_exists", lambda o, r: False)
+
+    absent = gather("https://github.com/acme/typoed", today=TODAY)
+
+    assert absent["status"] == "skip-no-such-repo"
 
 
 def test_gather_keeps_a_gh_failure_that_is_not_a_missing_repository_retryable(monkeypatch) -> None:
