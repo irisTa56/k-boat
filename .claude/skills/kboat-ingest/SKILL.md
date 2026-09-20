@@ -221,6 +221,9 @@ End the run with a summary covering:
   - Count the two PDF-unusable outcomes separately — the upload errored, or it reached `ready` and extracted to empty/garbled text — since they send the human after different things (a re-exported copy versus a text-bearing one) and leave different states: both a readable file, but the errored one no notebook and the empty extraction an unusable notebook kept.
   - Also note any source NotebookLM typed outside the schema's two values (`youtube`, `epub`, …): it ingested fine and is kept as a `web_page`, so this is not an error — only a heads-up that its `source_type` is approximate.
   - For PDFs also count: transient download failures (queue file kept) and titles that fell back to the capture's link text.
+- **GitHub URLs `gh` answered with no repository at** (`skip-no-such-repo`): name each by its URL.
+  - It was captured as a repository and is not one, so it went down the source path and is a `Sources/` note now, counted among the drained and not among the repos catalogued.
+  - That is the right ending for one of GitHub's own content pages and the wrong one for a repository deleted or made private since it was captured, and nothing in `gh`'s answer separates them — so this line is the only thing that lets the reader tell which they got.
 - Captures step 1's de-dup stopped as already in the DLQ, already dismissed, or already distilled, since nothing else records that they were made: the queue file is gone and the note is unchanged.
   - **Already in the DLQ**: name each, with `kboat-rescue` as the way on.
   - **Already dismissed**: name each, with the instruction to untick `dismiss` and capture the URL again to read it.
