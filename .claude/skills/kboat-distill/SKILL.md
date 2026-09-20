@@ -91,8 +91,7 @@ The tool has already resolved the disposition branching — handling flag co-occ
 Sources that needed no destructive action — ambiguous (`ambiguous`), `keep`-only (`counts.keep_noop`), already distilled (`counts.already_distilled`), or still inside the cooldown (`counts.awaiting_cooldown`) — are not in either set; surface their counts in the summary.
 The ripe predicate the tool applied — `distill`, unambiguous, past the 7-day cooldown, not blocked, not yet distilled — is specified exactly in kboat-notes' [Source lifecycle and state](../kboat-notes/references/source-note.md#source-lifecycle-and-state); this skill does not restate it.
 
-Take the ripe sources oldest `filed_date` first, keeping the tool's order among sources filed the same day.
-The create cap is spent in this order, so a source an earlier partial pass left ripe is finished before newer ones use the cap up.
+Take the ripe sources oldest `filed_date` first, keeping the tool's order among sources filed the same day, so a run's order is the same whatever the tool listed first.
 
 Take each source through the steps below in their exact order.
 That order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
@@ -174,7 +173,7 @@ Like Phase B, Phase C runs **only when Basic Memory is healthy** (see preamble) 
 The work set is `kindles.ripe` from the tool: Kindle notes marked `distill` with `distilled_date` empty (see kboat-notes [Kindle note](../kboat-notes/references/kindle-note.md#kindle-note-kindlesmd)).
 Each entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
 
-Take the books in the order the tool lists them, which is by ASIN, since a Kindle note carries no `filed_date`; Phase C follows Phase B, so a book gets whatever of the create cap the sources left.
+Take the books in the order the tool lists them, which is by ASIN, since a Kindle note carries no `filed_date`; Phase C follows Phase B, and each book has the whole create cap of its own.
 
 Process each `kindles.ripe` entry in this order — the same crash-safety logic as Phase B, minus the notebook steps (the `distilled_date` stamp is the commit point, and there is no discard):
 
@@ -223,15 +222,17 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
       - They are an insight nothing has named, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
   - **`edit_note` does not raise on a failing anchor** — it returns the failure as an ordinary result, so call it with `output_format="json"` and read a non-null `error` key.
     - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6), so a later run makes the append again.
-      - A note the writer cannot edit refuses that append on every run, so the source stays ripe until a human repairs the note.
+      - Read what came back here too, by the same split as a failed create: a timeout is retried, a refusal the note itself causes repeats on every run until a human repairs it.
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
   - A create that did not land — the `write_note` call failed or returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
     - Read the note back before marking it: a `write_note` that timed out can still have created the note, and one that exists carrying this source's claims was created.
+    - Read what came back, since the run summary reports the two apart: a timeout or a transport error is a write the next run simply makes, while a refusal the knowledge base repeats — an `Errno 1` on a note the writer has no access to, say — will not land on any run until a human clears it.
   - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title.
-- **Cap creates per run.** `create_cap` is **8** new concept notes per run, Phase B and Phase C together; this is the one place the value is set, so adjust it here.
-  - Once the run has created `create_cap` notes, stop creating and finish appends: log each concept left to create under `uncreated candidates:` marked `deferred (create cap reached)`, and report the cap-hit itself — that the ceiling was reached and how many were left — in the run summary.
-  - A deferred concept is not given up: it keeps its source ripe (Phase B step 6), and a later run creates it.
+- **Cap creates per source.** `create_cap` is **5** new concept notes for each ripe source or Kindle book, counting the notes this pass creates for that one source; this skill is the one place the value is set, so adjust it here.
+  - Once a source has had `create_cap` notes created for it, stop creating for that source and finish its appends; the next source or book starts with the whole cap again.
+  - Log each concept left to create under `uncreated candidates:` marked `deferred (create cap reached)`.
+  - A deferred concept keeps its source ripe (Phase B step 6), so a later run creates it — but the run summary names it for a human all the same, because which concept was left is a judgement the ceiling made blindly and the reader may not want it left to a later pass.
 - **Ground every claim.** Treat the **original** source's `fulltext` (and the source-grounded NotebookLM `summary`) as the authority.
   - Tag each distilled observation by grounding: `#grounded` when the original source supports it, `#dialogue` when it is external knowledge the conversation brought in — a saved dialogue note (an extra notebook source, see Extract) or an uncited Gemini answer in `history`.
   - Never let a `#dialogue` claim read as if it came from the source.
@@ -335,7 +336,7 @@ Each key holds **one line**, its top-level items separated by `; `, so a `、` i
 - `kept from dialogue:`, `corrected from dialogue:`, `uncreated candidates:`, `skipped (dup of):`, `merge candidates:` — short, self-contained Japanese phrases.
 
 Write `none` for any of these keys when there is nothing to report.
-Annotate a per-run create-cap hit **once**: suffix `created:` with `(N created, create cap reached)`, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
+Annotate a create-cap hit in the section of the source that reached it: suffix that section's `created:` **once** with `(N created, create cap reached)`, N being the notes this pass created for this source, and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
 
 When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in: invoke a matching writing skill for that language up front if the environment offers one, and follow its conventions rather than drafting from memory of the rules.
 Then, before finalizing the prose you just drafted, re-read it once against that skill's own self-check as a distinct pass, rather than trusting that you kept the rules in mind while drafting.
@@ -350,9 +351,15 @@ End the run with counts — most come straight from the tool's `counts` block (P
 Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, and non-fatal errors on a saved dialogue note, `history`, or `summary`), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
 
-Name every source and Kindle book a partial pass left ripe (Phase B step 6), under one of two lines:
+Name every source and Kindle book a partial pass left ripe (Phase B step 6), under the line its reason belongs to, and name the concepts each one left undone:
 
-- **Left ripe by the create cap** — every unwritten concept was a cap deferral; give how many each deferred.
-  - A later run finishes these unaided, so this line asks nothing of anyone.
-- **Left ripe by a write not made** — at least one concept's create or append did not land, whether or not the cap also deferred others; give the concept and the error.
-  - The next run makes the same write, and one refused for a reason in the knowledge base rather than the call — a note the writer cannot edit — fails every time, so this line is for a human.
+- **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
+  - **This needs a human's attention**: the ceiling decided which concepts went unwritten without weighing them, so the reader is the one to say whether an important one can wait for a later pass.
+  - A later run creates them unaided, which is the safety net under that reading and not a reason to leave it unsaid.
+- **Left ripe by a write the next run retries** — a create or append that came back a timeout or a transport error; name the concept and what came back.
+  - The next run simply makes the write, so this line asks nothing of anyone.
+- **Left ripe by a write the knowledge base refused** — a create or append refused for a reason in the note rather than the call, an `Errno 1` on a note the writer cannot edit among them; name the concept and what came back.
+  - **This needs a human's attention**: no run lands that write until they clear it, so the source would otherwise stay ripe for good.
+
+Where a source's unwritten concepts fall under more than one line, name it under the line that asks the most of the reader — a refusal before a cap deferral, a cap deferral before a retry — with all of its concepts.
+Whether any of this becomes a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
