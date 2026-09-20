@@ -303,14 +303,14 @@ Find this source's sections by their `Source:` line, the day's own file first.
 
 A pass writes a section at all only where it has something this source's earlier sections — in any day's report, today's included — do not already say:
 
-- it placed something: a create, a claim, or a relation;
+- it placed something: a create, a claim, a relation, or the provenance line a reading the note did not yet name owes it;
 - or it settled a concept an earlier pass marked for retry some other way, leaving it to the human to promote or dropping it.
 
 A write that failed again, or a candidate an earlier section already logged, stays in the run summary, whose left-ripe lines already name the source.
 Where the pass has something to say, the day decides how it lands.
 
 - Where the day's file already holds this source's section, this is a **replay on the same day**: replace that section rather than append a second, the section running from its `###` heading to the next level-3 heading or the end of the file, its own `####` subsections included.
-  - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: compose the whole file, write it to a sibling temp path in `Reviews/` whose name does not end in `.md`, and move that into place, which is the durable write every `kboat` tool makes (kboat-vault-conventions "Durability and the vault lock") and the one this file gets from nowhere else.
+  - This is the one write here that rewrites a file rather than appending to it, and the day's other sources' sections are in it: compose the whole file, write it to a sibling temp path in `Reviews/` whose name does not end in `.md`, and move that into place, so no reader ever meets a half-written report; the tools' own write adds the two `fsync`s that carry it past a power loss (kboat-vault-conventions "Durability and the vault lock"), and this one does not.
     - The suffix matters because everything that reads `Reviews/` globs `*.md`: a temp file left by a crash under that name is a second report for the day, in the Base and among the earlier sections a later replay reads.
     - Nothing rewrites those other sections if a half-written file loses them — their sources carry `distilled_date`, and a `distill`-only source's notebook is already gone.
   - The replacement reports the day's passes as if one pass had done what they did together: a concept either pass created or appended to goes under `created:` or `appended-to:`, and nothing under `skipped (dup of):` or `uncreated candidates:` stands for a write the day's passes made.
