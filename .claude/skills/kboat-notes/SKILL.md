@@ -50,7 +50,7 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
     - Anything else at the name — a directory, a symlink leading nowhere — is no run's to free, so write nothing there either and report it for a human.
     - What a caller does instead is its procedure's to say.
 - `Reviews/` — one `YYYY-MM-DD.md` per date on which a run distilled something, a partial pass included, the review report read for memory consolidation: the distillation knowledge log only (per-source/Kindle consolidation plus decision log), not operational telemetry, which stays in the run summary.
-  - A run that distilled nothing writes no file, and a second run the same day appends to the file already there.
+  - A run that distilled nothing writes no file, and no date ever gets a second one — what a later run the same day adds to the file it finds is kboat-distill "Review report".
   - Covers both source and Kindle distillation.
   - Carries a small `type: review`/`date`/`read` frontmatter block for the read-tracking Base (see [Review note](references/review-note.md#review-note-reviewsmd)); the body layout is kboat-distill "Review report".
 - `Reviews.base` — a top-level standalone Base listing the review reports with their read flag (see [Review Base](references/bases.md#review-base)).

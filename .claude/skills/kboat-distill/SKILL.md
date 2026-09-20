@@ -200,6 +200,7 @@ A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass
 
 The `memory-ingest` skill assumes a human approves each new entity before it is created.
 This pass is unattended, so the approval gate becomes an **after-the-fact review gate**: every create, append, and skip decision is logged in the report for the human to reverse later.
+Where the "Review report" rules refuse this pass a section, that log goes to the run summary instead — the gate moves with it, and nothing this pass wrote goes unrecorded.
 Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this skill).
 
 - **Append first.** Before creating a concept note, `search_notes` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
@@ -303,7 +304,8 @@ Before writing, look for this source's section in the day's own file, by its `So
 Finding one is an **anomaly**, not a section to merge into: two passes of the same day have distilled a source the first left ripe.
 
 - Write no second section and leave the one there untouched — it is a record a human may already have read, and the pass that wrote it is not this pass.
-- Report it in the run summary, naming the source and what this pass did, so the reader can see the two passes apart and knows the day's report holds only the first.
+- Report it in the run summary, naming the source and this pass's whole decision log — what it created, what it appended to, what it skipped, what it left undone — since the report's review gate moves there for this pass and the section already in the file is the earlier pass's account, not this one's.
+  - The reader then has both passes, knows the day's report holds only the first, and can reverse this pass's writes from the summary as they would from a section.
 
 Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
 
@@ -355,8 +357,9 @@ Everything operational stays out of the report and goes to the run summary only 
 End the run with counts — most come straight from the tool's `counts` block (Phase A: `filed_stamped`, `filed_cleared`, `ambiguous`; Phase B: `ripe`, `dismiss_discard`, `keep_noop`, `already_distilled`, `dismiss_already_discarded`, `awaiting_cooldown`; Phase C: `kindles_ripe`, `kindles_already_distilled`, `kindles_total`) — plus what only the agent knows (sources and Kindle books actually distilled, the dismissed discards, notebooks retained under `keep`, Kindle books skipped for no extractable highlights, ambiguous dispositions left unprocessed, and items left for the next run by errors).
 Name every relation that did not land, with the two concepts it would have joined and what came back: on its own it does not keep the source ripe, so a source with nothing else unwritten stamps and no run comes back for it, which is what makes this line the route to `memory-curate`.
 It asks nothing of the run it is reported in, so it is a line to read rather than one to escalate.
-Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, with what this pass did), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
+Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, carrying this pass's decision log as "Review report" says), whether the run stopped because the `k-boat-knowledge` project was missing or `kboat-lifecycle` could not be run (Step 3), or skipped Phase B/C for a Basic Memory outage or a rejected call (Step 2), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
+The one crossing runs the other way: a pass the report's anomaly rule refused a section reports its decision log here too, because that is the only place left for it.
 
 Name every source and Kindle book a partial pass left ripe (Phase B step 6), under the line its reason belongs to, and name the concepts each one left undone:
 
@@ -365,6 +368,8 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
 
 **Both lines need a human's attention**, whatever the call returned: the concept named there is one no run is bound to write.
 A later run distils the source again, but its judgement re-derives the concepts from the source, and only the reader can say whether an important one may go on waiting.
+Say what they can do about it, since a source nothing settles is ripe again on every run and writes a section on every one: promote the concept from the report themselves on the cap line, or clear whatever refused the write on the other.
+Once its claims are in the knowledge base, however they got there, the next run's replay finds them, leaves nothing unwritten, and stamps.
 
 Where a source's unwritten concepts fall under both lines, name it under the write line, with all of its concepts.
 Whether any of this becomes a desktop notification is the unattended routine's concern — it owns the notification's fixed-string set; a manual run just reads the summary.
