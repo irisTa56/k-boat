@@ -57,8 +57,10 @@ def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | 
     value rather than an exception — the caller wants the stderr text to put in
     its `error`, and always gets one, since `gh` can exit non-zero saying nothing.
     That one code covers both a repository that is not there and a call that did
-    not land, so the caller asks `gh_repo_exists` which it was rather than reading
-    the stderr. A zero exit whose stdout is not a usable repo view is the other
+    not land, and this function does not part them. `gather` asks `gh_repo_exists`
+    which it was, rather than reading the stderr; `refresh`, the other caller,
+    does not, so a repo deleted upstream is a `fetch` failure there and relayed
+    as retryable. A zero exit whose stdout is not a usable repo view is the other
     kind, and raises `PayloadError`.
     """
     cmd = [_gh(), "repo", "view", f"{owner}/{repo}", "--json", _VIEW_FIELDS]

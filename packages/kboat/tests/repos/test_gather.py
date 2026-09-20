@@ -234,13 +234,14 @@ def test_gather_routes_a_github_url_gh_has_no_repository_for_to_the_source_path(
 
 
 def test_gather_keeps_the_two_skip_verdicts_apart(monkeypatch) -> None:
-    # The URL's shape and GitHub's answer are decided by different code and mean
-    # different things to the reader: a reserved route is a page there is an
-    # article at, which any caller may ingest, while a 404 is a page there is
-    # nothing at, which a user who pasted the URL is told about instead. One
-    # verdict for both would put GitHub's own articles and a typo'd `owner/repo`
-    # in the same bucket. `gh` is never reached for the shape case — nothing is
-    # stubbed here, and a call would fail the test by leaving the sandbox.
+    # What parts them is how each was settled, not what is at the URL: the URL
+    # alone for a reserved route, a 404 for the rest — and that 404 says nothing
+    # about whether the page reads, `github.com/resources/…` serving an article
+    # whose `owner/repo` is absent. One verdict for both would leave the caller
+    # unable to tell a decision `gh` never entered from one it did, which is what
+    # the pasted-URL branch acts on. `gh` is never reached for the shape case —
+    # nothing is stubbed here, and a call would fail the test by leaving the
+    # sandbox.
     reserved = gather("https://github.com/readme/stories/a-maintainer", today=TODAY)
 
     assert reserved["status"] == "skip-not-a-repo"
