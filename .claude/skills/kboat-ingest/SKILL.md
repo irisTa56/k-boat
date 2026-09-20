@@ -34,7 +34,7 @@ The queue is filled by the capture bookmarklet (run `kboat-bookmarklet` to print
 
 **Route by kind first.**
 Hand every URL on `github.com` to the `kboat-repos` skill's "Procedure: catalogue a repo", whose step 1 runs `kboat-repos gather` on it.
-Which GitHub link is a repository, which is a file to read as a source, and which is neither is `gather`'s call through `kboat.repos.identity`, the authority kboat-notes [Naming and de-dup](../kboat-notes/references/repo-note.md#naming-and-de-dup) summarizes, so do not decide it here from the URL's shape.
+Which GitHub link is a repository, which is a file to read as a source, and which is neither is `gather`'s call, made through `kboat.repos.identity` for what the URL settles and its own `gh` probe for the rest — the authority kboat-notes [Naming and de-dup](../kboat-notes/references/repo-note.md#naming-and-de-dup) summarizes, so do not decide it here from the URL's shape.
 
 - A **repository** is catalogued by that procedure (per kboat-notes [Procedure: create or update a repo note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-repo-note)); delete the queue file once the `Repos/<slug>.md` note exists (the same commit-point rule as step 4 below).
   - A repo has no fetch, notebook, or DLQ, so the byte-sniff and steps 1–3 below do not apply to it.

@@ -32,9 +32,8 @@ Run `kboat-repos gather "<url>"`.
 
   - `skip-not-a-repo` — a GitHub URL that is not a repository (a profile, a gist, a reserved route, or an `owner/repo` GitHub answers for with no repository): fall through to the source/web path (`kboat-ingest`), not the repo path.
     - The last of those is how a content path nobody listed — `github.com/resources/…`, read by shape as owner `resources` — stops being a capture that repeats forever, and `gh` is asked rather than the URL's shape guessed at.
-    - It covers a deleted repository, and a private one this account is not shown, GitHub answering 404 for both alike: what the source path then fetches may be GitHub's own "not found" page, which is a source note to dismiss rather than a queue file nothing drains.
-    - **That trade is the routed caller's.** A URL the user pasted has no queue file to strand, so ingesting a page they did not ask for buys nothing: tell them this URL is not a repository K-Boat can catalogue, and stop.
-      - Without that, a typo'd or private `owner/repo` becomes a `Sources/` note and a notebook off a "not found" page, entering the reading inbox and the daily pick with nothing said.
+    - It covers a deleted repository, and a private one this account is not shown, GitHub answering 404 for both alike: what the source path then fetches is GitHub's own "not found" page, so the capture ends wherever that path ends a page with no article in it — a note on disk either way, rather than a queue file nothing drains.
+    - **That trade is the routed caller's.** A URL the user pasted has no queue file to strand, so nothing is gained by taking it down the source path unasked: tell them this URL is not a repository K-Boat can catalogue, and stop.
       - They capture it through the bookmarklet if they do want it read, which is the ordinary way in for a page.
   - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
