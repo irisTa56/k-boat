@@ -33,11 +33,13 @@ _REPO_RE = re.compile(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)", re.IG
 # branch), and no note is written either way.
 #
 # What the list decides is which of the two skip verdicts the route gets, and
-# they are not interchangeable. A listed route is `skip-not-a-repo` — a page
-# there is something to read at, which every caller may ingest. An unlisted one
-# is `skip-no-such-repo`, which a user who pasted the URL is told about instead.
-# So a readable content path met in the queue belongs on this list: that is what
-# gets `github.com/readme/…` the verdict `github.com/torvalds` already has.
+# they are not interchangeable. A listed route is `skip-not-a-repo`, settled by
+# the URL, and every caller ingests it. An unlisted one is `skip-no-such-repo`,
+# settled by a 404 that says nothing about whether the page is readable — so a
+# user who pasted the URL is told rather than having it ingested for them. A
+# readable content path met in the queue therefore belongs on this list: that is
+# what gets `github.com/readme/…` the verdict `github.com/torvalds` already has,
+# instead of the one `github.com/resources/…` gets for want of being listed.
 #
 # Listing one also saves both `gh` calls per capture per run, and settles the
 # route without `gh` having to answer at all: an unlisted one meeting a rate

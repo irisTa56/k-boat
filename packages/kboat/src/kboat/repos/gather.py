@@ -231,11 +231,11 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # extend that reflex to the one failure no retry ever clears.
 #
 # The two `skip-*` verdicts are two because the code already decides them apart —
-# `parse_repo` from the URL's shape, `gh_repo_exists` from what GitHub answered —
-# and only one record could carry the difference. It matters to the reader: a URL
-# whose shape is not a repository names a page there is something to read at
-# (`github.com/readme/…` is an article, a profile is a profile), while a 404 names
-# one there is not.
+# `parse_repo` from the URL alone, `gh_repo_exists` from what GitHub answered —
+# and only one record could carry the difference. What parts them is how it was
+# settled, not what is at the URL: a 404 says there is no repository and nothing
+# about whether the page reads, which is why `github.com/resources/…` (an article
+# GitHub serves, whose `owner/repo` is a 404) and a typo land on the same one.
 #
 # The boundaries below are several narrow ones rather than one wrapper around the
 # body, because the two classes interleave: `gh_repo_view` can fail either way,

@@ -47,7 +47,7 @@ One carve-out before the repo path: a `blob`/`raw` link to a readable file — a
 Every other deep link (`/tree`, `/issues`, another file extension) still collapses to the repo below.
 A link the URL rule reads as no repository at all — a bare profile, a reserved route — is neither, and comes back as `skip-not-a-repo` for `kboat-ingest` to take down the source path.
 One whose `owner/repo` looks ordinary and which GitHub then answers for with no repository is neither either, the reserved-route list being a cheap filter rather than the decision: `gather` asks `gh` and returns `skip-no-such-repo`.
-The two are separate verdicts because there is a page to read at the first and none at the second, which `kboat-repos` step 1 turns into what each caller does.
+The two are separate verdicts because they are settled differently — the URL alone, or a 404 that says nothing about whether the page reads — which `kboat-repos` step 1 turns into what each caller does.
 
 1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
 2. Slug = `kboat-note slug "<canonical-url>"`, the same oracle as a source. The file is `Repos/<slug>.md`.
