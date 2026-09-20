@@ -190,9 +190,12 @@ def test_gather_injects_today_into_status(monkeypatch) -> None:
 
 
 def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
-    # `gh` answering non-zero (rate limit, auth, the call giving out) is a record,
-    # not an exception: the skill reads `error-meta` as "keep the queue file and
-    # retry", and the identity from the queued link names what failed.
+    # `gh` answering non-zero (rate limit, auth, network) and the probe then not
+    # answering "no repository there" is a record, not an exception: the skill reads
+    # `error-meta` as "keep the queue file and retry", and the identity from the
+    # queued link names what failed. A call that gives out instead of answering is
+    # the other way to this verdict and never reaches the probe at all — that one is
+    # `test_gather_reports_a_subprocess_failure_as_error_meta`, below.
     monkeypatch.setattr(gather_mod, "gh_repo_view", lambda o, r: (None, "HTTP 403: rate limited"))
     monkeypatch.setattr(gather_mod, "gh_repo_exists", lambda o, r: None)
 
