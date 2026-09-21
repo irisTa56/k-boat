@@ -5,7 +5,6 @@
 activate_aggressive = true
 
 [tools]
-gitleaks = "latest"
 lychee = "latest"
 rumdl = "latest"
 shellcheck = "latest"
@@ -37,11 +36,30 @@ _.path = ["tools/notebooklm/.venv/bin"]
 # `--no-active` silences uv's warning that `VIRTUAL_ENV` (exported above) is not
 # this project's environment, which is the intent and would otherwise be noise on
 # the output the paragraph above asks the reader to scan.
+#
+# The pre-push hook is redirected into place rather than written with `--write`,
+# which would move an existing hook aside as `pre-push.old`. Entire owns `pre-push` while its trial
+# runs, and chains to `pre-push.pre-entire` with git's arguments and stdin, so
+# the scan goes there instead; `entire disable` renames that back to `pre-push`.
 postinstall = """
 mise generate git-pre-commit --write --task=pre-commit
+push_hook="$(git rev-parse --git-path hooks/pre-push)"
+if grep -qs 'Entire CLI hooks' "$push_hook"; then push_hook="$push_hook.pre-entire"; fi
+mise generate git-pre-commit --hook pre-push --task secrets:push-scan >"$push_hook"
+chmod +x "$push_hook"
 uv sync
 uv sync --project tools/notebooklm --no-active
 """
+
+# `secrets:scan` (per commit, gitleaks), `secrets:push-scan` (per push,
+# trufflehog) and `shared-tasks:check` come from dotfiles' shared task library,
+# whose `tasks/README.md` is what to read before touching this: why `ref` is a
+# full sha on its `main`, and what an include that fails to load takes with it.
+# `shared-tasks:check` in CI says when `main` has moved past the pin.
+[task_config]
+includes = [
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=0af676a2e84853068270b9c65252acb39648170f",
+]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
 # Shared settings come from `lychee.toml`.
@@ -65,10 +83,11 @@ description = "Check the authentication status"
 run = "notebooklm auth check --test --json"
 
 # `**`, not `*`: mise's `*` matches a single task segment, so `qa:*` left
-# `qa:links:offline` ungated.
+# `qa:links:offline` ungated. `secrets:scan` is named on its own because it is a
+# shared task (see `[task_config]`) and so sits outside `qa:`.
 [tasks.pre-commit]
 description = "Run all pre-commit checks"
-depends = ["qa:**"]
+depends = ["qa:**", "secrets:scan"]
 
 # Two commands, because `rumdl` cannot make the second check -- the house rule
 # and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
@@ -84,10 +103,6 @@ uv run python scripts/md_shape.py
 [tasks."fmt:md"]
 description = "Format markdown files"
 run = "rumdl check --fix"
-
-[tasks."qa:secrets"]
-description = "Scan staged changes for secrets"
-run = "gitleaks git --staged -v"
 
 [tasks."qa:sh"]
 description = "Lint and check formatting of shell scripts"

@@ -51,6 +51,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 ## Commands
 
 `mise.toml` is the task list and carries its own reasons; `mise run pre-commit` is the gate, run by the git hook its postinstall generates.
+The same postinstall installs a pre-push hook running `secrets:push-scan`, one of the shared tasks `mise.toml` includes from dotfiles.
 
 ## Architecture (K-Boat)
 

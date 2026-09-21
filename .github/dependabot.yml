@@ -8,9 +8,11 @@
 # - uv, at "/tools/notebooklm": the browser-driven NotebookLM CLI, whose exact pin
 #   is what this entry exists to announce. See below.
 #
-# The mise-managed tools are out of Dependabot's scope, and can be: gitleaks,
-# lychee, rumdl, shellcheck, shfmt and uv all track `latest`, so `mise upgrade`
-# covers them.
+# The mise-managed tools are out of Dependabot's scope, and can be: lychee,
+# rumdl, shellcheck, shfmt and uv all track `latest`, so `mise upgrade` covers
+# them. So is the dotfiles shared-task pin in mise.toml, which the CI job
+# `shared-tasks-check` watches instead; the tools its tasks declare track
+# `latest` too.
 #
 # notebooklm-py needs an exact pin instead: no CI job exercises the browser-driven
 # CLI, so each bump has to be checked against the live NotebookLM service by hand,

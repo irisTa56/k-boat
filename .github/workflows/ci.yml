@@ -5,8 +5,9 @@ name: CI
 # to say. One job per top-level `qa:` family. `pre-commit` picks up a new family
 # through its `qa:**` glob and CI does not: a new family needs its own job here,
 # and a place in the main ruleset's required checks, before a merge waits on it.
-# `qa:secrets` is the one family with no job, since it scans staged changes and
-# `secret-scan` below scans a pull request's commits instead.
+# `secrets:scan`, which `pre-commit` names outside that glob, has no job, since
+# it scans staged changes and `secret-scan` below scans a pull request's commits
+# instead.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -96,6 +97,19 @@ jobs:
         with:
           cache: false # as in `python-qa`
       - run: mise run qa:links:offline
+
+  # Stays red while dotfiles `main` is past the shared-task pin in mise.toml, and
+  # for the reason below is a reminder rather than a required check, and skipped
+  # on the schedule. Exit 2 (it could not tell) fails it too.
+  shared-tasks-check:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4.3.0
+        with:
+          cache: false # as in `python-qa`
+      - run: mise run shared-tasks:check
 
   # Stays red while a newer CPython minor is out, so it is a reminder and must
   # never become a required check. Skipped on the schedule, whose run exists to
