@@ -158,8 +158,8 @@ One of them needs a human, three are settled by the next run, and one is a note 
 - `payload` — `gh` answered with something unusable, the same class as `gather`'s `defect-payload`.
   - **Escalate it**: surface it as needing a human rather than relaying it among the rest, since no later run clears it.
     - What needs looking at is the mapping.
-- `note` — the note has no line for a field the refresh rewrites, so nothing was written.
-  - The next run cannot help — a note's shape does not change on its own — but relay it rather than escalating: the same run's `kboat-validate` pass reports the missing field as vault drift, which is the human's to fix at their own pace.
+- `note` — a field the refresh rewrites is not on exactly one line the reader can decode — it is missing, held only in a shape the reader cannot decode, or named more than once — so nothing was written.
+  - The next run cannot help — a note's shape does not change on its own — but relay it rather than escalating: the same run's `kboat-validate` pass reports the field as vault drift (`missing_field` or `repeated_key`), which is the human's to fix at their own pace.
   - One entry is a note to repair by hand; every note at once is a field added to the refresh without the catalogue being migrated to carry it, and that case raises its hand through the whole-report rule below.
 - `vault` — the vault refused a read while planning the note.
   - The next run tries again; it is the vault that needs looking at, not `gh`.

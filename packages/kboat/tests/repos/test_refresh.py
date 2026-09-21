@@ -802,6 +802,26 @@ def test_refresh_escalates_a_note_with_no_line_to_rewrite(tmp_path: Path, monkey
     assert "homepage" in report["failed"][0]["error"]
 
 
+def test_refresh_fails_a_note_naming_a_rewritten_field_twice(tmp_path: Path, monkeypatch) -> None:
+    # Every reader takes the last `stars` line. Rewriting the first would report the
+    # note as updated while it still read the old count; like a missing line, it is
+    # the note's shape, so it fails as `note` and waits on a human.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    note.write_text(
+        note.read_text(encoding="utf-8").replace("stars: 1\n", "stars: 7\nstars: 1\n"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert report["updated"] == []
+    assert [(f["reason"], f["path"]) for f in report["failed"]] == [
+        ("note", note.relative_to(tmp_path).as_posix())
+    ]
+    assert parse_frontmatter(note.read_text(encoding="utf-8"))["stars"] == "1"
+
+
 def test_a_dry_run_surfaces_a_note_with_no_line_to_rewrite(tmp_path: Path, monkeypatch) -> None:
     # The preview an operator checks a `github_fields` addition against. If it skipped
     # building the content, it would report a clean full-catalogue update and the next

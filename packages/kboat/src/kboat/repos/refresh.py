@@ -155,9 +155,10 @@ def _failure(note_rel: str, owner_repo: str, *, reason: Reason, error: str) -> d
 def set_fields(text: str, updates: Mapping[str, object]) -> str:
     """Rewrite the named top-level frontmatter lines in place.
 
-    Each key in `updates` must already exist as a top-level line (refresh targets
-    always-present GitHub-derived fields); a missing key is a `FrontmatterError`,
-    not a silent insert. The field order, every other field, and the body survive.
+    Each key in `updates` must already exist as one readable top-level line
+    (refresh targets always-present GitHub-derived fields); any other key is a
+    `FrontmatterError` (`kboat.frontmatter.set_fields` says which), not a silent
+    insert. The field order, every other field, and the body survive.
 
     An in-place line rewrite rather than a re-write of the whole note, which is
     what makes the judgement layer and the body untouchable here. It works
@@ -405,7 +406,8 @@ def refresh(
         try:
             written = _apply(plan, dry_run=dry_run)
         except FrontmatterError as exc:
-            # The note has no line to rewrite for a field this pass rewrites. That is
+            # The note has no one readable line to rewrite for a field this pass
+            # rewrites — none, or several naming the same key. That is
             # the note's own shape, not the weather: it fails identically every run,
             # and if it followed an addition to `github_fields` it fails for the whole
             # catalogue at once. Sorted apart from `write`, which promises a next run

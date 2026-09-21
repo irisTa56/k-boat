@@ -121,8 +121,14 @@ def _apply_phase_a(
     plan_clear: list[Source],
     today_iso: str,
     vault: Path,
-) -> list[dict[str, str]]:
-    """Rewrite the `filed_date` line on disk. Returns per-note write anomalies."""
+) -> tuple[list[Source], list[Source], list[dict[str, str]]]:
+    """Rewrite the `filed_date` line on disk.
+
+    Returns the sources actually stamped, those actually cleared, and a write
+    anomaly for each of the rest, so the report names a note whose write failed
+    as that anomaly and not also as stamped or cleared.
+    """
+    written: dict[str | None, list[Source]] = {today_iso: [], None: []}
     anomalies: list[dict[str, str]] = []
     for s, value in [(s, today_iso) for s in plan_stamp] + [(s, None) for s in plan_clear]:
         path = vault / s.path
@@ -130,7 +136,9 @@ def _apply_phase_a(
             atomic_write_text(path, set_filed_date(path.read_text(encoding="utf-8"), value))
         except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": s.path, "error": f"filed_date write failed: {exc}"})
-    return anomalies
+        else:
+            written[value].append(s)
+    return written[today_iso], written[None], anomalies
 
 
 def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object], bool]:
@@ -154,12 +162,16 @@ def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object],
     anomalies += kindle_anomalies
     ripe_kindles = select_ripe_kindles(kindles)
 
+    stamped, cleared = plan.phase_a_stamp, plan.phase_a_clear
     if not dry_run:
-        anomalies += _apply_phase_a(
-            plan.phase_a_stamp, plan.phase_a_clear, today.isoformat(), vault
+        stamped, cleared, write_anomalies = _apply_phase_a(
+            stamped, cleared, today.isoformat(), vault
         )
+        anomalies += write_anomalies
 
     counts = dict(plan.counts)
+    counts["filed_stamped"] = len(stamped)
+    counts["filed_cleared"] = len(cleared)
     counts["kindles_total"] = len(kindles)
     counts["kindles_ripe"] = len(ripe_kindles)
     counts["kindles_already_distilled"] = sum(1 for k in kindles if k.distilled_date is not None)
@@ -169,8 +181,8 @@ def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object],
         "vault": str(vault),
         "dry_run": dry_run,
         "phase_a": {
-            "stamped": [_source_json(s) for s in plan.phase_a_stamp],
-            "cleared": [_source_json(s) for s in plan.phase_a_clear],
+            "stamped": [_source_json(s) for s in stamped],
+            "cleared": [_source_json(s) for s in cleared],
         },
         "ambiguous": [_source_json(s) for s in plan.ambiguous],
         "phase_b": {

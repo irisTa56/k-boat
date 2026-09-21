@@ -26,7 +26,7 @@ from kboat.io_utils import list_note_dir
 from kboat.lifecycle.core import Kindle, Source
 from kboat.schema import DIR_BY_TYPE
 
-from .core import Violation, check_note
+from .core import Violation, check_note, check_repeated_keys
 from .stats import compute_stats
 
 
@@ -73,11 +73,13 @@ def _validate_vault(
             rel = path.relative_to(vault).as_posix()
             count += 1
             try:
-                fm = parse_frontmatter(path.read_text(encoding="utf-8"))
+                text = path.read_text(encoding="utf-8")
+                fm = parse_frontmatter(text)
             except NOTE_READ_ERRORS as exc:
                 violations.append(Violation(rel, "_frontmatter", "parse_error", str(exc)))
                 continue
             violations.extend(check_note(note_type, fm, rel))
+            violations.extend(check_repeated_keys(text, rel))
             # The stats describe the lifecycle's work sets, and the lifecycle
             # loads a source by its declared `type`, not by the folder it sits in
             # — a misfiled note is an anomaly there, so it must not become a

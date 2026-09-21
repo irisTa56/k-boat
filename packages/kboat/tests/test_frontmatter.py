@@ -11,7 +11,9 @@ from kboat.frontmatter import (
     is_iso_date,
     parse_entries,
     parse_frontmatter,
+    repeated_keys,
     set_field,
+    set_fields,
     strip_frontmatter,
     yaml_scalar,
 )
@@ -486,3 +488,89 @@ class TestIsIsoDate:
     @pytest.mark.parametrize("value", [None, [], 20260601, True])
     def test_rejects_a_non_string(self, value: object) -> None:
         assert is_iso_date(value) is False
+
+
+# What each shape of `picked` in a note leaves the scoped writers to do. A key
+# held on one line the reader decodes is rewritten; every other shape has no one
+# line that is the value every reader sees, so a write there is refused.
+_HELD = {
+    "once": ("picked: false",),
+    "twice": ("picked: true", "blocked: false", "picked: false"),
+    "twice, once undecodably": ('"picked": true', "picked: false"),
+    "only undecodably": ("picked : true",),
+    "only as a quoted key": ('"picked": true',),
+}
+
+
+@pytest.mark.parametrize("held", list(_HELD))
+def test_set_field_and_set_fields_give_one_answer(held: str) -> None:
+    # One asymmetry in two functions: a caller of either must meet the same rule.
+    note = _fm("type: source", *_HELD[held])
+    outcomes: list[object] = []
+    for write in (
+        lambda: set_field(note, "picked", "true"),
+        lambda: set_fields(note, {"picked": "true"}),
+    ):
+        try:
+            outcomes.append(write())
+        except FrontmatterError as exc:
+            outcomes.append(type(exc))
+    assert outcomes[0] == outcomes[1]
+    if held == "once":
+        assert isinstance(outcomes[0], str)
+        assert parse_frontmatter(outcomes[0])["picked"] is True
+    else:
+        assert outcomes[0] is FrontmatterError
+
+
+def test_a_repeated_key_is_refused_rather_than_written_where_no_reader_looks() -> None:
+    # The reader takes the last line, so rewriting the first would report success
+    # and change nothing any reader of the note sees.
+    note = _fm("picked: true", "picked: false")
+    assert parse_frontmatter(note)["picked"] is False
+    with pytest.raises(FrontmatterError, match="picked"):
+        set_field(note, "picked", "true")
+
+
+@pytest.mark.parametrize("held", ['"picked": true', "picked : true"])
+def test_insert_if_absent_does_not_add_a_second_line_beside_an_undecodable_one(
+    held: str,
+) -> None:
+    # The line names the key without decoding as it. A plain one inserted beside
+    # it leaves two lines for one key, which this reader and a YAML loader
+    # resolve to different values.
+    note = _fm("type: source", "blocked: false", held)
+    with pytest.raises(FrontmatterError, match="picked"):
+        set_field(note, "picked", "false", insert_if_absent=True, insert_after="blocked")
+
+
+def test_insert_if_absent_still_inserts_a_key_the_note_does_not_name() -> None:
+    note = _fm("type: source", "blocked: false", "notebooklm_id: x")
+    out = set_field(note, "picked", "true", insert_if_absent=True, insert_after="blocked")
+    assert parse_frontmatter(out)["picked"] is True
+    assert repeated_keys(out) == {}
+
+
+def test_set_fields_writes_nothing_when_one_key_is_refused() -> None:
+    # A partial rewrite would report as the failure it is while having changed the
+    # note anyway.
+    note = _fm("stars: 1", "status: dormant", "status: active")
+    with pytest.raises(FrontmatterError, match="status"):
+        set_fields(note, {"stars": "2", "status": "active"})
+
+
+def test_repeated_keys_counts_what_the_writers_refuse_and_nothing_else() -> None:
+    note = _fm(
+        "picked: true",
+        '"picked": false',
+        "# picked: a comment",
+        "# picked: a comment",
+        "topics:",
+        "  - picked: an item",
+        "- picked: an item",
+        "- picked: an item",
+        "summary: |",
+        "  picked: block text",
+        "title: once",
+    )
+    assert repeated_keys(note) == {"picked": 2}
