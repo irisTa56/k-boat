@@ -123,7 +123,7 @@ Get the candidate set from the lifecycle tool read-only — pass `--dry-run` so 
 
 ### Step 2: capture summary and topics for each candidate
 
-For each listed source, run kboat-notes [Procedure: capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics) against the existing notebook (resolve the original source per kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11) — `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null`, the redirect for the reason kboat-notes [Environment](../kboat-notes/SKILL.md#environment) gives, since step 3 branches on what this call returns and the notebooks it exists to catch are the ones that warn loudest — then `source guide`), and write `summary`/`topics` back with `kboat-note write --type source` (a `{slug, fields}` record merged over the note).
+For each listed source, run kboat-notes [Procedure: capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics) against the existing notebook (resolve the original source per kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11) — `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect kboat-notes [Environment](../kboat-notes/SKILL.md#environment) requires, and the notebooks it exists to catch are the ones that warn loudest) — then `source guide`), and write `summary`/`topics` back with `kboat-note write --type source` (a `{slug, fields}` record merged over the note).
 
 - The notebook already exists — do not create or re-add anything.
 
@@ -138,7 +138,7 @@ Whatever it is, leave the note alone and move on — this sweep writes `summary`
   - Report it **for the notebook-health step**, which runs later in the same run and takes exactly this source (`kboat-notebook-health`, "Scope").
   - Absorbing it here is what would hide it: a loss read as a guide failure is one nothing else ever reports.
 - **The call failed and the notebook is gone** — a `notebooklm_id` naming no notebook fails `source list` with a message reporting a `Not found` RPC and then suggesting a signed-in-account mismatch, so it reads like an auth failure.
-  - Check `notebooklm --quiet list --json 2>/dev/null` before concluding anything from a failure here (kboat-notes [Environment](../kboat-notes/SKILL.md#environment) says why the redirect matters where a decision turns on the output).
+  - Check `notebooklm --quiet list --json 2>/dev/null` before concluding anything from a failure here (the redirect kboat-notes [Environment](../kboat-notes/SKILL.md#environment) requires).
   - Read that listing as kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 says to, against the vault's other stored ids rather than this one alone: under the wrong signed-in account every id reads as absent, and the report below sends a human to a procedure that discards notebooks by their stored id.
   - Where the id is absent among ids that otherwise resolve, retrying is futile and the health step cannot help either: report it against kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook), which is the only thing that gets the source a notebook again.
 - **The call failed with the notebook still listed** — a rate limit, an auth error, a network failure, so report it and let the next run retry.
