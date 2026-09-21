@@ -8,7 +8,7 @@ members = ["packages/*"]
 dev = [
     "pytest>=9",
     "pytest-cov",
-    "ruff>=0.16.7",
+    "ruff>=0.16.8",
     "ty>=0.0.82",
     "playwright",
     # Also a runtime dependency of kboat, which declares it for itself; listed here
