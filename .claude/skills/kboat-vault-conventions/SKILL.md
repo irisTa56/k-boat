@@ -165,12 +165,17 @@ That restatement drifts, so `packages/kboat/tests/test_doc_schema_sync.py` (run 
 The per-field prose (defaults, kinds, enums) is woven into the `Meaning` cells and is *not* machine-checked, so keep it accurate by hand.
 When a field changes, update the owning spec's table and `kboat.schema` together.
 
-`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines, `parse_error`, and two for a note the pass could not read at all: `icloud_placeholder` against the placeholder's own path, and `unreadable_dir` against a note directory the OS refused to list.
+`kboat-validate` checks every vault note against its schema and prints the violations as JSON: per-field (`missing_field`, `empty_required`, `not_bool` / `bad_enum` / `bad_date` / `not_list` / `not_int` / `not_str`), plus any cross-field rules the schema defines, `parse_error`, `repeated_key` (below), and two for a note the pass could not read at all: `icloud_placeholder` against the placeholder's own path, and `unreadable_dir` against a note directory the OS refused to list.
 Both are violations like any other, so both enter `violations`, `counts.total` and `counts.by_code`; what they leave alone is `checked` and the stats, which keep their own meanings — `checked` counts the notes the pass could list and the stats the ones it could read, a note that would not parse being in the first and not the second.
 What they add is that a vault read in part stops reporting as a clean one, which is the reading a short backlog otherwise invites.
+
 It is read-only and report-only by default (exit 0; `--strict` exits non-zero), so a routine runs it last and surfaces the violations as drift for a human to fix.
 `--stats` adds a block of backlog-health counts, defined by the owning member over its own lifecycle predicates rather than over the schema; K-Boat's set is in `kboat-notes` ([Backlog stats](../kboat-notes/references/validation.md#backlog-stats)).
 Stats never affect the exit code — they describe how the backlog is moving, not whether a note is well-formed.
+
+`repeated_key` is reported against a key that more than one top-level line names, counting a line that names it in a shape the reader cannot decode (`"picked": x`, `picked : x`).
+The reader takes the last of those lines while a human editing the note sees the first, and nothing in the note says which was meant.
+So the in-place rewriters behind `kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh` and `kboat-note migrate-slugs` (`kboat.frontmatter.set_field` / `set_fields`) refuse to write such a key, and one named only on a line the reader cannot decode, rather than pick a line; each command reports that note as not written, and it stays so on every run until a human deletes the line not meant.
 
 ## The write contract
 

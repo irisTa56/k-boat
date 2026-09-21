@@ -79,6 +79,22 @@ def test_parse_error_is_a_violation(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert any(v["code"] == "parse_error" for v in out["violations"])
 
 
+@pytest.mark.parametrize(
+    "held", ["picked: true\npicked: false\n", '"picked": true\npicked: false\n']
+)
+def test_a_key_named_twice_is_a_violation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], held: str
+) -> None:
+    # Every field reads as valid — the reader keeps the last line — so without this
+    # the note is clean here while every run that writes `picked` refuses it.
+    vault = _vault(tmp_path, **{"a.md": VALID_SOURCE.replace("picked: false\n", held)})
+    assert main(["--vault", str(vault), "--strict"]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert [(v["path"], v["field"], v["code"]) for v in out["violations"]] == [
+        ("Sources/a.md", "picked", "repeated_key")
+    ]
+
+
 def test_a_note_that_is_not_utf8_is_a_violation_and_not_a_dead_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

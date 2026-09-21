@@ -51,7 +51,8 @@ Value = Scalar | list[str]
 
 
 class FrontmatterError(ValueError):
-    """The note has no parseable `---` frontmatter block, or lacks a required field."""
+    """The note has no parseable `---` frontmatter block, or no one readable line
+    for a field a writer was asked to rewrite."""
 
 
 # What a per-note boundary catches. `UnicodeDecodeError` is a `ValueError` rather than an
@@ -307,8 +308,14 @@ def names_key(line: str, key: str) -> bool:
     and `url : x` are undecodable precisely by being outside that grammar — and
     those are the notes it most matters not to overwrite.
     """
+    return named_key(line) == key
+
+
+def named_key(line: str) -> str | None:
+    """The key `line` appears to set — `names_key`'s question, asked without a key."""
     head, sep, _ = line.partition(":")
-    return bool(sep) and head.strip().strip("\"'") == key
+    name = head.strip().strip("\"'")
+    return name if sep and name else None
 
 
 def parse_entries(text: str) -> list[Entry]:
@@ -449,59 +456,100 @@ def set_field(
     """Rewrite the single top-level `key:` line inside the frontmatter block.
 
     `value` is the already-rendered text after `key: ` (e.g. `"true"`, a date), or
-    None to leave the field bare (`key:`). If the key is absent: when
-    `insert_if_absent`, insert a new line after the top-level `insert_after` key
-    (or before the closing fence if that key is missing too); otherwise raise
-    `FrontmatterError`. Only that one line, inside the frontmatter, changes.
+    None to leave the field bare (`key:`). A key the note names at all is
+    rewritten by `set_fields`, and refused there on the same terms. A key it does
+    not name: when `insert_if_absent`, insert a new line after the top-level
+    `insert_after` key (or before the closing fence if that key is missing too);
+    otherwise raise `FrontmatterError`. Only that one line, inside the
+    frontmatter, changes.
     """
-    rendered = f"{key}:" if value is None else f"{key}: {value}"
     lines = _lines_keepends(text)
     start, end = _fence_bounds(lines)
-    anchor: int | None = None
-    for i in range(start, end):
-        body, newline = _split_newline(lines[i])
-        if body[:1].isspace():
-            continue
-        if body.startswith(f"{key}:"):
-            lines[i] = rendered + newline
-            return "".join(lines)
-        if insert_after is not None and body.startswith(f"{insert_after}:"):
-            anchor = i
-    if not insert_if_absent:
-        raise FrontmatterError(f"note has no top-level '{key}' line to rewrite")
-    at = anchor if anchor is not None else end - 1
+    named = _key_lines(lines, start, end)
+    if key in named or not insert_if_absent:
+        return set_fields(text, {key: value})
+    anchors = named.get(insert_after, []) if insert_after is not None else []
+    at = anchors[-1] if anchors else end - 1
     _, newline = _split_newline(lines[at]) if start < end else ("", "\n")
-    lines.insert(at + 1, rendered + (newline or "\n"))
+    lines.insert(at + 1, _render_line(key, value) + (newline or "\n"))
     return "".join(lines)
 
 
 def set_fields(text: str, rendered: Mapping[str, str | None]) -> str:
     """Rewrite several existing top-level lines in one pass.
 
-    Each key in `rendered` must already exist as a top-level line (callers target
-    always-present fields); any missing key is a `FrontmatterError` listing all of
-    them, rather than a silent insert. Values are already-rendered text. Field
-    order and the body are preserved.
+    Each key in `rendered` must be named by exactly one top-level line, and one
+    the reader decodes as that key; any other key is a `FrontmatterError`
+    listing all of them, and nothing is rewritten. A missing key is not
+    inserted (callers target always-present fields). A key named more than once
+    is not rewritten either: the reader takes the last line, a human reading the
+    note sees the first, and which one was meant is not in the note — so any
+    line chosen here leaves a value on another that somebody reads. One named
+    only in a shape the reader cannot decode (`"key": x`, `key : x`) is refused
+    for the same reason from the other side: a plain line beside it would be a
+    second one. Values are already-rendered text. Field order and the body are
+    preserved.
     """
     lines = _lines_keepends(text)
     start, end = _fence_bounds(lines)
-    remaining = dict(rendered)
-    for i in range(start, end):
-        body, newline = _split_newline(lines[i])
-        if body[:1].isspace() or body.lstrip().startswith("- "):
-            continue
-        match = _KEY_RE.match(body)
-        if not match:
-            continue
-        key = match.group(1)
-        if key in remaining:
-            value = remaining.pop(key)
-            lines[i] = (f"{key}:" if value is None else f"{key}: {value}") + newline
-    if remaining:
-        raise FrontmatterError(
-            "note has no top-level line(s) to rewrite: " + ", ".join(sorted(remaining))
-        )
+    named = _key_lines(lines, start, end)
+    refusals = [
+        refusal
+        for key in sorted(rendered)
+        if (refusal := _refusal(key, [lines[i] for i in named.get(key, [])]))
+    ]
+    if refusals:
+        raise FrontmatterError("; ".join(refusals))
+    for key, value in rendered.items():
+        (i,) = named[key]
+        _, newline = _split_newline(lines[i])
+        lines[i] = _render_line(key, value) + newline
     return "".join(lines)
+
+
+def _render_line(key: str, value: str | None) -> str:
+    return f"{key}:" if value is None else f"{key}: {value}"
+
+
+def _key_lines(lines: Sequence[str], start: int, end: int) -> dict[str, list[int]]:
+    """Each key the top-level lines in `lines[start:end]` name, with those lines' indices.
+
+    Named loosely, by `named_key`, so a line the reader cannot decode still counts
+    as the key it is about. An indented line belongs to the key above it, and a
+    comment or a column-zero `- item` sets no key.
+    """
+    named: dict[str, list[int]] = {}
+    for i in range(start, end):
+        body, _ = _split_newline(lines[i])
+        if body[:1].isspace() or body.startswith(("#", "- ")):
+            continue
+        key = named_key(body)
+        if key is not None:
+            named.setdefault(key, []).append(i)
+    return named
+
+
+def _refusal(key: str, held: Sequence[str]) -> str | None:
+    """Why the lines in `held`, all naming `key`, cannot be rewritten as it — or None."""
+    if not held:
+        return f"note has no top-level '{key}' line to rewrite"
+    if len(held) > 1:
+        return f"note names '{key}' on {len(held)} top-level lines"
+    match = _KEY_RE.match(_split_newline(held[0])[0])
+    if match is None or match.group(1) != key:
+        return f"note names '{key}' only on a line the reader cannot decode"
+    return None
+
+
+def repeated_keys(text: str) -> dict[str, int]:
+    """Each key more than one top-level frontmatter line names, with how many do.
+
+    The question `set_field` and `set_fields` refuse on, asked of a whole note, so
+    that what the validator reports is exactly what those writers will not touch.
+    """
+    lines = _lines_keepends(text)
+    start, end = _fence_bounds(lines)
+    return {k: len(at) for k, at in _key_lines(lines, start, end).items() if len(at) > 1}
 
 
 # --------- YAML-safe scalar rendering ---------

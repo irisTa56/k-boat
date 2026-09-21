@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from kboat.frontmatter import repeated_keys
 from kboat.lock import vault_lock
 from kboat.pick.__main__ import main
 from kboat.pick.notes import Value, parse_frontmatter
@@ -312,6 +313,48 @@ def test_set_reports_missing_slug(vault: Path, capsys: pytest.CaptureFixture[str
     out = json.loads(capsys.readouterr().out)
     assert out["picked"] == ["web1"]
     assert out["missing"] == ["ghost"]
+
+
+def test_set_does_not_report_a_pick_no_reader_of_the_note_sees(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Two `picked` lines, and every reader takes the last. Rewriting the first would
+    # leave the note reading `false` under a report that named it picked.
+    note = vault / "Sources" / "web1.md"
+    note.write_text(
+        note.read_text(encoding="utf-8").replace(
+            "picked: false\n", "picked: true\npicked: false\n"
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["--vault", str(vault), "set", "--slugs", "web1,web2"]) == 0
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["picked"] == ["web2"]
+    assert out["missing"] == []
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/web1.md"]
+    assert "picked" in out["anomalies"][0]["error"]
+    fm = parse_frontmatter(note.read_text(encoding="utf-8"))
+    assert fm["picked"] is False  # what the report now agrees with
+
+
+@pytest.mark.parametrize("held", ['"picked": true', "picked : true"])
+def test_set_does_not_give_a_note_a_second_picked_line(
+    vault: Path, capsys: pytest.CaptureFixture[str], held: str
+) -> None:
+    # The note names `picked` in a shape the reader cannot decode. Inserting a plain
+    # line beside it leaves the note naming the key twice, a fault of the pick's own
+    # making that `kboat-validate` would then report.
+    note = vault / "Sources" / "web2.md"
+    before = note.read_text(encoding="utf-8").replace("picked: false\n", f"{held}\n")
+    note.write_text(before, encoding="utf-8")
+
+    assert main(["--vault", str(vault), "set", "--slugs", ""]) == 0
+    out = json.loads(capsys.readouterr().out)
+
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/web2.md"]
+    assert repeated_keys(note.read_text(encoding="utf-8")) == {}
 
 
 def test_candidates_reports_a_source_note_it_cannot_parse(

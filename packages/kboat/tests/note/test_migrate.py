@@ -628,6 +628,23 @@ def test_a_pdf_source_moves_with_its_file_and_its_reading_link(vault: Path) -> N
     assert f"[[{FRESH}.pdf]]" in (vault / "Sources" / f"{FRESH}.md").read_text()
 
 
+def test_a_reading_link_named_twice_holds_the_pair_as_a_failed_row(vault: Path) -> None:
+    # Every reader takes the last `reading_link`. Retargeting the first would move
+    # the PDF and leave the link a reader follows pointing at the name it left.
+    note = _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
+    link = f'reading_link: "[[{STALE}.pdf]]"\n'
+    text = note.read_text(encoding="utf-8")
+    assert link in text
+    note.write_text(text.replace(link, link + link), encoding="utf-8")
+    (vault / "PDFs" / f"{STALE}.pdf").write_bytes(b"%PDF-1.7\n")
+
+    report = migrate(vault, apply=True)
+
+    assert [r.status for r in report.rows] == ["failed"]
+    assert "reading_link" in report.rows[0].detail
+    assert note.exists() and (vault / "PDFs" / f"{STALE}.pdf").exists()
+
+
 def _pdf_source(vault: Path) -> tuple[Path, Path]:
     note = _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
     pdf = vault / "PDFs" / f"{STALE}.pdf"

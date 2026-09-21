@@ -3,7 +3,8 @@
 Per-field checks (presence, emptiness, kind/enum/date) plus the cross-field rules
 a single field can't express, enumerated by `CrossFieldCode` below. The rules
 encode the load-bearing invariants from `kboat-notes` ("Cross-field rules"); they
-are deliberately conservative so a valid vault reports nothing.
+are deliberately conservative so a valid vault reports nothing. `check_repeated_keys`
+reads the note's text instead, for the one fault the parsed frontmatter hides.
 
 A state the routine itself is about to resolve is not a rule here: a disposition
 with no `filed_date` is reported as a backlog stat instead (`kboat.validate.stats`,
@@ -15,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from kboat.frontmatter import Value, is_iso_date, is_yaml_int, parse_flow_list
+from kboat.frontmatter import Value, is_iso_date, is_yaml_int, parse_flow_list, repeated_keys
 from kboat.schema import BY_TYPE, Field, Kind, NoteSchema
 
 
@@ -185,3 +186,17 @@ def check_note(note_type: str, fm: dict[str, Value], path: str) -> list[Violatio
     if rule is not None:
         out += rule(fm, path)
     return out
+
+
+def check_repeated_keys(text: str, path: str) -> list[Violation]:
+    """A `repeated_key` for each key more than one top-level line of the note names.
+
+    Asked of the note's text rather than of its parsed frontmatter, which has
+    already kept one line per key and so cannot show that there were two. What
+    this reports is what the in-place rewriters refuse, so a note a run keeps
+    naming as unwritten is named here too, whether or not any run touches it.
+    """
+    return [
+        Violation(path, key, "repeated_key", f"named on {count} top-level lines")
+        for key, count in repeated_keys(text).items()
+    ]
