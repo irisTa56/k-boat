@@ -13,7 +13,7 @@
 - [Procedure: create or update a Kindle note](#procedure-create-or-update-a-kindle-note)
 - [Procedure: create or update a repo note](#procedure-create-or-update-a-repo-note)
 - [Procedure: refresh repo metadata](#procedure-refresh-repo-metadata)
-- [Procedure: backfill the repo readme mark](#procedure-backfill-the-repo-readme-mark)
+- [Procedure: backfill repo fields](#procedure-backfill-repo-fields)
 
 ## Procedure: create or update a source note
 
@@ -660,7 +660,7 @@ The note **write itself is owned by the `kboat-repos` tool** (`kboat-repos write
 1. `gather` resolves the canonical owner/repo via `gh` and returns `slug`/`url`/`title` plus the ready-to-write `fields`, and the `readme_error` the write sets the note's `readme` mark from.
    - The subagent adds `role`/`domain`/`summary` to that record.
 2. Pipe the augmented record to `kboat-repos write`.
-   - It is a CLI over the shared write contract (Conventions "The write contract") with the repo record shape: it verifies the record's `slug` against the record's own `url` (a slug that is not the one that `url` names is `status: slug_mismatch`, written nowhere — a record `gather` handed over intact cannot be one, since step 1's `slug` and `url` come from the same canonical URL by the recipe the write recomputes), de-dups by slug (a `url` at the same slug that cannot be shown to be this repo is a collision → `status: collision` with a `reason` of `identity_differs` or `unreadable_identity`, written nowhere; a note iCloud has evicted at that slug is `status: evicted`, and one naming a key on more than one line `status: repeated_key`, both written nowhere too), preserves an existing note's body, `reading`, and original `added_date` on update, stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
+   - It is a CLI over the shared write contract (Conventions "The write contract") with the repo record shape: it verifies the record's `slug` against the record's own `url` (a slug that is not the one that `url` names is `status: slug_mismatch`, written nowhere — a record `gather` handed over intact cannot be one, since step 1's `slug` and `url` come from the same canonical URL by the recipe the write recomputes), de-dups by slug (a `url` at the same slug that cannot be shown to be this repo is a collision → `status: collision` with a `reason` of `identity_differs` or `unreadable_identity`, written nowhere; a note iCloud has evicted at that slug is `status: evicted`, and one naming a key on more than one line `status: repeated_key`, both written nowhere too), preserves an existing note's body, `reading`, and original `added_date` on update, clears a ticked `gone` on update (reported as `gone_cleared: true`, since the record's `gather` found GitHub showing the repository), stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
 
 ## Procedure: refresh repo metadata
 
@@ -668,20 +668,21 @@ Drain ingestion snapshots a repo once; this keeps the GitHub-derived fields fres
 It is mechanical and runs over the whole catalogue, so the `kboat-repos` tool does it directly:
 
 1. Run `kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`).
-   - For every `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched.
+   - It skips every note ticked `gone`, counting them in its report and nothing more.
+   - For every other `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched.
    - When `gh` resolves a new canonical `owner/repo`, it adopts the rename (updates `url`/`title`, renames the file to the new slug).
 2. It prints a JSON report.
-   - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `evicted`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
+   - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `evicted`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `no_such_repo`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
      - A `failed` note is not quite an untouched one, and which `reason` needs a human rather than the next run is the `kboat-repos` skill's to say ("Procedure: refresh the catalogue" step 2); read it before relaying the report.
 
-## Procedure: backfill the repo readme mark
+## Procedure: backfill repo fields
 
-A repo note written before the `readme` field existed has no `readme` line, and which of those were classified without their README was never recorded, so each gets `unknown` ([Repo note](repo-note.md#repo-note-reposmd)).
+A repo note written before a field existed has no line for it, and for the fields listed here the schema default is also the honest value for such a note ([Repo note](repo-note.md#repo-note-reposmd)): `readme: unknown`, since which notes were classified without their README was never recorded, and `gone: false`, since nobody has ticked it.
 A human runs this, not the routine:
 
-1. Run `kboat-repos backfill-readme --dry-run`, then `--apply` (defaults to `$OBSIDIAN_VAULT_PATH`).
-   - It writes `readme: unknown` on every `Repos/*.md` with no line naming `readme`, and leaves every other line as it was, `refreshed_date` included.
-   - A note already carrying a `readme` line is skipped, whatever it holds, so a re-run touches only the notes still unmarked.
+1. Run `kboat-repos backfill --dry-run`, then `--apply` (defaults to `$OBSIDIAN_VAULT_PATH`).
+   - It writes each of those fields a `Repos/*.md` has no line naming, at its default, and leaves every other line as it was, `refreshed_date` included.
+   - A field the note already has a line for is left as it is, whatever it holds, so a re-run touches only what is still missing.
 2. It prints a JSON report.
    - `marked` names the notes it wrote, or under `--dry-run` would write.
    - An `anomalies` entry is a note it could not read as a repo note, and a `failed` entry one it did not write — the write failed, or the note names a key on more than one line (`kboat-validate`'s `repeated_key`, `kboat-vault-conventions` "Schema authority and validation"), which rewriting the note would collapse to the last; neither was marked.

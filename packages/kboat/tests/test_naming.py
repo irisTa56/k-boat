@@ -50,17 +50,17 @@ def test_one_page_reached_two_ways_gets_one_slug(variant: str, why: str) -> None
 def test_the_oracle_does_not_collapse_a_file_link_onto_its_repository() -> None:
     """Why routing is not the oracle's job.
 
-    `kboat.repos.identity.canonical_slug` answers "which repo is this URL about",
-    so it maps every deep link onto the repository — which is right for the repo
-    catalogue and wrong for a slug: a `.md` or `.pdf` file inside a repo is
-    ingested as its own source, and it would land on the repository's note.
-    The generic oracle hashes the URL it is given, so the three stay apart.
+    `kboat.repos.identity.canonical_slug` answers "which repo is this URL the
+    entry URL of", and a link to a file inside the repository is the entry URL of
+    none — it is ingested as its own source. The generic oracle hashes the URL it
+    is given, so the file's note and the repository's stay apart.
     """
     repo = "https://github.com/astral-sh/ruff"
     readme = "https://github.com/astral-sh/ruff/blob/main/README.md"
     paper = "https://github.com/astral-sh/ruff/blob/main/docs/paper.pdf"
 
-    assert canonical_slug(repo) == canonical_slug(readme) == canonical_slug(paper)
+    assert canonical_slug(readme) is None
+    assert canonical_slug(paper) is None
     assert len({note_slug(repo), note_slug(readme), note_slug(paper)}) == 3
 
 

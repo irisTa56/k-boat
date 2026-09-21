@@ -20,7 +20,7 @@ The split mirrors the rest of K-Boat: the package does the judgement-free work, 
 
 ## Procedure: catalogue a repo
 
-Given a GitHub repository URL (from `kboat-ingest` routing, or pasted by the user).
+Given a GitHub URL (from `kboat-ingest` routing, or pasted by the user).
 
 ### Step 1: gather the metadata
 
@@ -28,24 +28,26 @@ Run `kboat-repos gather "<url>"`.
 
 - It prints a JSON record with the **`gh`-resolved** canonical `url`, `slug`, `title` (`owner/repo`), a ready-to-write `fields` object (the mechanical GitHub-derived frontmatter — `description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`, `status` — already mapped, including the 10%-share language rule), a `readme_excerpt`, and a `readme_error`.
 - A `status` other than `ok` means this is not a repo to catalogue — report it and stop; do not write a note.
+- A URL the user **pasted** only ever catalogues: pasting to this skill is the act of cataloguing, and the bookmarklet and the queue are how a page is read.
+  - So on `skip-not-a-repo`, `skip-no-such-repo` or `source-file` for a pasted URL, write nothing and build no notebook: tell them the link is not a repository's own URL (on `skip-no-such-repo`, that GitHub shows this account no repository there), that a repository is catalogued from its own URL, and that a page is read by capturing it with the bookmarklet; then stop.
+  - What each verdict below says about the source path is for a queued capture, which `kboat-ingest` handed here.
 - The non-`ok` verdicts:
 
-  - `skip-not-a-repo` — the URL itself settled it: a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/readme/…`, `github.com/features/…`).
-    - Fall through to the source/web path (`kboat-ingest`), not the repo path — whether the URL was queued or the user pasted it.
+  - `skip-not-a-repo` — the URL itself settled it: any link deeper than a repository's entry URL (an issue, a release, a file, `/tree/<ref>`, a GitHub content path such as `github.com/resources/articles/…`), a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/topics/python`, `github.com/features/copilot`).
+    - A queued capture falls through to the source/web path (`kboat-ingest`) with the record's `url`, not the repo path.
     - `gh` is never asked about these, so the verdict arrives whatever GitHub is doing.
       - The list is of first path segments that are never an owner, not of pages worth reading: `settings`, `login` and `notifications` are on it beside the content routes.
-  - `skip-no-such-repo` — the URL is shaped like `owner/repo`, and `gh` answered that GitHub has no repository there.
-    - **That answer is about the repository, not about the page.** GitHub's own content paths are exactly what falls here — `github.com/resources/articles/…` serves an article and `repos/resources/articles` is a 404 — and so, identically, do a typo, a deleted repository, and a private one this account is not shown.
+  - `skip-no-such-repo` — the URL is a repository's entry URL by shape, `owner/repo`, and `gh` answered that GitHub has no repository there.
+    - **That answer is about the repository, not about the page.** A two-segment GitHub page that is not on the reserved list falls here — `github.com/resources/articles` is a page GitHub serves and `repos/resources/articles` is a 404 — and so, identically, do a typo, a deleted repository, and a private one this account is not shown.
     - Which of those a given URL is, the record cannot say and neither can the reader: nothing in the 404 separates them.
     - This is how a content path nobody listed stops being a capture that repeats forever, `gh` being asked rather than the URL's shape guessed at.
     - A **queued** capture falls through to the source path like the verdict above, rather than stalling on `error-meta`, and what becomes of it there is that path's own to decide and to report.
-    - A URL the user **pasted** has no queue file to strand, so nothing is taken down the source path unasked: tell them this account is shown no repository at that URL, say that the page may still be readable, and stop.
+    - For a URL the user **pasted**, the stop above says GitHub shows this account no repository there; say too that the page may still be readable.
       - Name the access reading beside the typo, since a repository this account is not shown answers the same way one that never existed does: what they check next may be `gh auth status` rather than the URL.
-      - They capture it through the bookmarklet if they want it read, which is the ordinary way in for a page.
       - Never tell them the repository does not exist, or that there is nothing at the page: you know neither, and the second is false for a GitHub content path.
-  - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
+  - `source-file` — a blob/raw link to a `.pdf` or `.md` file (`source_type: pdf` or `web_page`): a deep link like the ones above, with its URL fixed up and its type already decided.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
-    - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
+    - A queued capture is handed to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
   - `error-meta` — `gh` gave back no repo view, so there is nothing to catalogue and nothing that sends the URL anywhere else.
     - **Left to the next run** — keep the queue file.
     - It tells you neither that the repository is there nor that it is not: the record carries no answer to that question, whatever the run may have seen on the way to this verdict.
@@ -79,11 +81,12 @@ Take the gather record, add the judged `role`, `domain`, `summary` keys, and pip
 Keep `readme_error` as `gather` returned it, `null` included: the write sets the note's `readme` mark from it, and refuses a record without it (exit 2) rather than guess.
 
 - The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
+- An update to a note ticked `gone` clears the tick, since this `gather` found GitHub showing the repository, and the result carries `gone_cleared: true`; tell the human in one line that the tick was cleared because GitHub shows the repository again, and that the refresh takes the note up from the next run.
 - It prints `{status: created|updated|collision|slug_mismatch|evicted|repeated_key|locked, ...}`, and the last five are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
   - A `repeated_key` (the note at this slug names a key on more than one line) is the note's, and waits on a human (see Errors).
   - An `evicted` (iCloud holds the note at this slug behind a placeholder) and a `locked` (another run held the vault) are the vault's, and clear on their own (see Errors).
-- A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
+- A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, `gone`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
 This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
 
@@ -95,7 +98,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once).
 
 Run `kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`; pass `--dry-run` to preview).
 
-It re-fetches every `Repos/*.md` via `gh` in parallel, rewrites only the GitHub-derived frontmatter plus `status` and `refreshed_date`, and **preserves** the judged `role`/`domain`/`summary` and the `## Notes` body.
+It re-fetches every `Repos/*.md` not ticked `gone` via `gh` in parallel, rewrites only the GitHub-derived frontmatter plus `status` and `refreshed_date`, and **preserves** the judged `role`/`domain`/`summary` and the `## Notes` body.
 When `gh` resolves a new canonical `owner/repo`, it **adopts the rename**: updates `url`/`title` and renames the file to the new slug, carrying the judgement and body across.
 It reads the JSON report on stdout.
 
@@ -107,7 +110,8 @@ It reads the JSON report on stdout.
 
 ### Step 2: relay the report
 
-**Relay** the report: counts (`total`/`updated`/`adopted`/`rename_collisions`/`failed`/`anomalies`), and the entries below.
+**Relay** the report: counts (`total`/`gone`/`updated`/`adopted`/`rename_collisions`/`failed`/`anomalies`), and the entries below.
+`gone` is how many notes the human ticked `gone`, which the pass skipped and left out of `total`; it is a count only, with nothing to act on.
 
 The routine never deletes a note.
 
@@ -152,11 +156,16 @@ Do not sort them for the reader; branch on what the entry looks like.
   - Its `error` leads with which of the three it met — `absent`, `not a directory`, or `refused` — and the command exits 1.
   - Unlike a failed read of one file this clears on no later run until a human fixes the vault.
 
-Each `failed` entry carries a `reason` — one of five — and an `error` with the detail.
-One of them needs a human, three are settled by the next run, and one is a note to repair that the run reports without raising its hand:
+Each `failed` entry carries a `reason` — one of six — and an `error` with the detail.
+One of them needs a human, three are settled by the next run, and two are notes for a human to act on that the run reports without raising its hand:
 
-- `fetch` — `gh` did not answer for that repo (deleted, private, unreachable, or the call gave out).
+- `fetch` — `gh` did not answer for that repo (unreachable, rate-limited, or the call gave out), and GitHub did not say the repository is absent.
   - The next run tries again.
+  - One that fails on every run stops advancing the note's `refreshed_date`, and the backlog stats' unrefreshed-repo age is what raises the hand (kboat-notes "Backlog stats").
+- `no_such_repo` — `gh` did not answer for that repo, and GitHub then answered that it shows this account no repository there: deleted, made private, or no longer visible to this account, and nothing in the 404 says which.
+  - No later run refreshes the note, and nothing in a routine run changes it, so relay it as a human's decision among three: tick the note's `gone` to keep it, which stops the refresh and the age below from reaching it; restore the access if the repository should still be visible (`gh auth status`); or delete the note.
+  - Do not raise the hand for one entry: its `refreshed_date` stops advancing, and the unrefreshed-repo age does that if the choice is left unmade.
+  - Never say the repository was deleted: the answer says only that this account is shown none.
 - `payload` — `gh` answered with something unusable, the same class as `gather`'s `defect-payload`.
   - **Escalate it**: surface it as needing a human rather than relaying it among the rest, since no later run clears it.
     - What needs looking at is the mapping.
@@ -176,18 +185,18 @@ The same note appears in `rename_collisions` and `updated` when the rewrite did 
 Two rules over the whole report, ahead of any per-entry reason. **Escalate** when either holds:
 
 - the run updated nothing while reporting failures or anomalies — it refreshed no part of the catalogue;
-- more than one note failed for the same reason that no later run clears (`payload`, `note`).
+- more than one note failed for the same reason that no later run clears (`payload`, `note`, `no_such_repo`).
 
 Several notes failing the same way is not a heavier version of one note failing; it is a common cause.
-A `gh` upgrade the fetch cannot survive gives every repo the same non-zero exit, which no per-entry reason can tell from a repo that was deleted; a field added to the refresh without the catalogue being migrated gives every un-migrated note a `note` failure — and a repo catalogued that same day carries the new field and refreshes cleanly, so "updated nothing" alone would not notice.
-Left to the per-entry classes either one reads as an ordinary day, and the catalogue stops refreshing for good with nothing said.
+A `gh` upgrade the fetch cannot survive gives every repo the same non-zero exit; a credential that stops being shown an organisation's private repositories gives each of them `no_such_repo`; a field added to the refresh without the catalogue being migrated gives every un-migrated note a `note` failure — and a repo catalogued that same day carries the new field and refreshes cleanly, so "updated nothing" alone would not notice.
+Left to the per-entry classes each reads as an ordinary day, and the catalogue stops refreshing for good with nothing said.
 
 ## Errors
 
 Detect and report; do not work around.
 
 - During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `skip-no-such-repo`, `source-file`, `error-meta`, or `defect-payload` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes).
-  - The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path, and so does a queued `skip-no-such-repo`; a pasted one is reported to the user instead (step 1).
+  - A queued capture on `skip-not-a-repo`, `skip-no-such-repo` or `source-file` falls through to `kboat-ingest`'s source path; a pasted URL on any of the three is reported to the user instead, and nothing is written (step 1).
   - The two failure verdicts both write nothing and both keep the queue file, so report either one — quoting its `error` string verbatim in a fenced block, as untrusted tool output.
     - They part on what comes next: `error-meta` is left to the next run, `defect-payload` is escalated, since no further run will clear it.
 - `write` returned `status: collision` — the slug is held by a different `url` (`reason: identity_differs`), or by one in a shape the reader cannot compare (`reason: unreadable_identity`, a hand-edited note to repair).
@@ -207,6 +216,6 @@ Detect and report; do not work around.
   - A repo `kboat-ingest` routed here keeps its queue file, so the next run writes the note; leave it to that run.
   - A repo the user pasted has nothing that retries it: tell them, since the same record can be written once the holding run has finished.
   - A refused `refresh` changed nothing: the next routine run refreshes the catalogue, and one run by hand can be run again once the holding run has finished.
-- `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the five `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the four `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
+- `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the six `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the four `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
 - `gh` not authenticated.
   - Stop and report rather than producing empty records.

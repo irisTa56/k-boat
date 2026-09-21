@@ -108,6 +108,7 @@ def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, m
     report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"] == {
         "total": 1,
+        "gone": 0,
         "updated": 1,
         "adopted": 0,
         "rename_collisions": 0,
@@ -121,6 +122,59 @@ def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, m
     assert fm["role"] == "library" and fm["summary"] == "要約"  # judgement preserved
     assert fm["reading"] is True  # preserved
     assert "keep me" in note  # body preserved
+
+
+def test_refresh_skips_a_note_ticked_gone_and_takes_it_up_again_once_unticked(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The tick is how a human keeps a repository GitHub no longer shows: asked
+    # about, it fails as `no_such_repo` on every run, so the pass must not ask.
+    gone = _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    gone.write_text(gone.read_text().replace("gone: false\n", "gone: true\n"))
+    before = gone.read_text()
+    asked: list[str] = []
+
+    def view(owner: str, name: str) -> tuple[dict | None, str | None]:
+        asked.append(f"{owner}/{name}")
+        return _meta(owner, name), None
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", view)
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert asked == ["acme/tool"]
+    assert report["counts"]["gone"] == 1
+    assert report["counts"]["total"] == 1
+    assert report["counts"]["updated"] == 1
+    assert gone.read_text() == before
+
+    gone.write_text(before.replace("gone: true\n", "gone: false\n"))
+    asked.clear()
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert sorted(asked) == ["acme/gone", "acme/tool"]
+    assert report["counts"]["gone"] == 0
+    assert parse_frontmatter(gone.read_text())["refreshed_date"] == TODAY.isoformat()
+
+
+@pytest.mark.parametrize("value", ['"false"', '"true"', "yes"])
+def test_only_a_real_true_takes_a_note_out_of_the_refresh(
+    tmp_path: Path, monkeypatch, value: str
+) -> None:
+    # A quoted or mistyped value reads as a string, and a truthy test would skip a
+    # note nobody ticked — and, since the stat shares the predicate, drop it from
+    # the age that would otherwise notice. It is refreshed, and `kboat-validate`
+    # reports the value as `not_bool`.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    note.write_text(note.read_text().replace("gone: false\n", f"gone: {value}\n"))
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["gone"] == 0
+    assert report["counts"]["updated"] == 1
 
 
 def test_refresh_adopts_rename_and_moves_file(tmp_path: Path, monkeypatch) -> None:
@@ -387,6 +441,7 @@ def test_a_repos_directory_whose_own_stat_is_refused_is_an_anomaly_not_an_absenc
 # catalogue that refreshed nothing, and no reader branches on a second shape.
 _UNREAD_COUNTS = {
     "total": 0,
+    "gone": 0,
     "updated": 0,
     "adopted": 0,
     "rename_collisions": 0,
@@ -471,22 +526,87 @@ def test_refresh_dryrun_reports_same_target_collapse_consistently(
     assert (tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/old-b')}.md").exists()
 
 
-def test_refresh_reports_failed_repo(tmp_path: Path, monkeypatch) -> None:
-    _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
-    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, "not found"))
+@pytest.mark.parametrize("exists", [None, True])
+def test_refresh_reports_a_fetch_the_probe_does_not_call_absent_as_retryable(
+    tmp_path: Path, monkeypatch, exists: bool | None
+) -> None:
+    # A rate limit, an outage, or a repository GitHub says is there all fail the
+    # fetch without saying anything about the note, so the next run is its answer.
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, "HTTP 403"))
+    monkeypatch.setattr(refresh_mod, "gh_repo_exists", lambda o, r: exists)
     report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"]["failed"] == 1
-    assert report["failed"][0]["owner_repo"] == "acme/gone"
-    # `fetch` is the escalation switch's off position, and this is its commonest
-    # member: a repo that is gone answers non-zero every day, and a run that read
-    # it as the permanent class would notify about it every day.
+    assert report["failed"][0]["owner_repo"] == "acme/tool"
     assert report["failed"][0]["reason"] == "fetch"
 
 
+def test_refresh_parts_a_repository_github_shows_no_longer_from_a_failed_call(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A repository deleted or made private upstream fails the fetch on every run, and
+    # as `fetch` it would be relayed as "the next run tries again" for good. Driven
+    # through the real probe, so what is pinned is the question it asks as well as
+    # the answer: asking about the wrong repository 404s for nearly every one.
+    _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
+    asked: list[str] = []
+
+    class _Completed:
+        def __init__(self, stdout: str) -> None:
+            self.stdout, self.returncode, self.stderr = stdout, 1, "gh: Not Found"
+
+    def run(*a: object, **_kw: object) -> _Completed:
+        argv = a[0]
+        assert isinstance(argv, list)
+        if argv[1] == "api":
+            asked.append(str(argv[-1]))
+            return _Completed("HTTP/2.0 404 Not Found\n")
+        return _Completed("")
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", run)
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert asked == ["repos/acme/gone"]
+    assert report["failed"] == [
+        {
+            "path": report["failed"][0]["path"],
+            "owner_repo": "acme/gone",
+            "reason": "no_such_repo",
+            "error": "gh: Not Found",
+        }
+    ]
+
+
+def test_refresh_survives_an_existence_probe_that_raises(tmp_path: Path, monkeypatch) -> None:
+    # The probe raises a `gh` missing from `PATH` or one that outruns its timeout
+    # rather than answering, and it runs in a worker whose raise `Executor.map`
+    # carries into the parent — so without its own boundary one such note ends the
+    # pass, and every other note in the catalogue goes unrefreshed and unreported.
+    _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+
+    def view(owner: str, name: str) -> tuple[dict | None, str | None]:
+        return (None, "HTTP 403") if name == "gone" else (_meta(owner, name), None)
+
+    def probe(_owner: str, _name: str) -> bool | None:
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", view)
+    monkeypatch.setattr(refresh_mod, "gh_repo_exists", probe)
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["updated"] == 1
+    assert [(f["owner_repo"], f["reason"]) for f in report["failed"]] == [("acme/gone", "fetch")]
+
+
 def _counts_match_the_lists(report: dict) -> bool:
-    """Every count is the length of the list it summarises (`total` aside)."""
+    """Every count is the length of the list it summarises (`total` and `gone` aside)."""
     return all(
-        report["counts"][key] == len(report[key]) for key in report["counts"] if key != "total"
+        report["counts"][key] == len(report[key])
+        for key in report["counts"]
+        if key not in ("total", "gone")
     )
 
 
@@ -521,6 +641,7 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
 
     assert report["counts"] == {
         "total": 2,
+        "gone": 0,
         "updated": 1,
         "adopted": 0,
         "rename_collisions": 0,
@@ -739,6 +860,7 @@ def test_refresh_reports_a_rename_that_left_both_files(tmp_path: Path, monkeypat
     assert old.exists() and new_path.exists()  # the state the report has to describe
     assert report["counts"] == {
         "total": 1,
+        "gone": 0,
         "updated": 0,
         "adopted": 0,
         "rename_collisions": 0,
@@ -894,6 +1016,7 @@ def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
 
     assert report["counts"] == {
         "total": 1,
+        "gone": 0,
         "updated": 0,
         "adopted": 0,
         "rename_collisions": 0,

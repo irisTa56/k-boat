@@ -166,6 +166,7 @@ REPO = NoteSchema(
         Field("url", Kind.STR),
         Field("homepage", Kind.STR, empty_ok=True),
         _bool("reading"),
+        _bool("gone"),
         Field("description", Kind.STR, empty_ok=True),
         Field("language", Kind.STR_LIST, empty_ok=True, list_style="inline"),
         Field("topics", Kind.STR_LIST, empty_ok=True, list_style="inline"),

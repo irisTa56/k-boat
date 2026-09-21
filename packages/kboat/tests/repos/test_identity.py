@@ -19,16 +19,40 @@ from kboat.repos.identity import (
         ("https://github.com/google/A2A/", "google", "A2A"),
         ("https://github.com/google/A2A.git", "google", "A2A"),
         ("http://github.com/google/A2A", "google", "A2A"),
-        ("https://github.com/google/A2A/tree/main/spec", "google", "A2A"),
-        ("https://github.com/google/A2A/blob/main/README.md", "google", "A2A"),
-        ("https://github.com/google/A2A/issues/12", "google", "A2A"),
-        ("https://github.com/google/A2A?tab=readme", "google", "A2A"),
-        ("https://github.com/google/A2A#install", "google", "A2A"),
+        ("https://github.com/google/A2A?tab=readme-ov-file", "google", "A2A"),
+        ("https://github.com/google/A2A/?tab=readme-ov-file", "google", "A2A"),
+        ("https://github.com/google/A2A#readme", "google", "A2A"),
+        ("https://github.com/google/A2A.git/", "google", "A2A"),
         ("https://www.github.com/google/A2A", "google", "A2A"),
     ],
 )
-def test_parse_variants_collapse(url: str, owner: str, repo: str) -> None:
+def test_the_ways_an_entry_url_is_written_collapse(url: str, owner: str, repo: str) -> None:
     assert parse_repo(url) == (owner, repo)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Pages inside a real repository, which the reader captured to read.
+        "https://github.com/astral-sh/ruff/issues/12345",
+        "https://github.com/astral-sh/ruff/pull/678",
+        "https://github.com/astral-sh/ruff/discussions/90",
+        "https://github.com/astral-sh/ruff/releases/tag/0.6.0",
+        "https://github.com/astral-sh/ruff/wiki/Home",
+        "https://github.com/astral-sh/ruff/blob/main/crates/ruff/src/main.rs",
+        # `/tree/<ref>` with no path after it too: the default branch is not in
+        # the URL, and a ref may contain `/`.
+        "https://github.com/astral-sh/ruff/tree/main",
+        "https://github.com/astral-sh/ruff/tree/main/docs",
+        "https://github.com/astral-sh/ruff/tree/feature/x",
+        # A GitHub content path, which only its shape made look like `owner/repo`.
+        "https://github.com/resources/articles/devops/what-is-devops",
+        "https://github.com/resources/articles/devops/what-is-devops?ref=nav#top",
+    ],
+)
+def test_a_link_deeper_than_the_entry_url_is_not_the_repository(url: str) -> None:
+    assert parse_repo(url) == (None, None)
+    assert canonical_slug(url) is None
 
 
 @pytest.mark.parametrize("name", ["buildkit", "logging", "vitest", "cadvisor"])
@@ -70,7 +94,7 @@ def test_slug_is_stable_across_variants() -> None:
     for variant in (
         "https://github.com/google/A2A/",
         "https://github.com/google/A2A.git",
-        "https://github.com/google/A2A/tree/main",
+        "https://github.com/google/A2A?tab=readme-ov-file",
         "http://github.com/google/A2A#x",
     ):
         assert canonical_slug(variant) == base
@@ -170,7 +194,7 @@ def test_github_file_source_collapses_ref_forms_to_one_url() -> None:
         "https://github.com/google/A2A",  # repo root
         "https://github.com/google/A2A/tree/main/spec",  # directory deep link
         "https://github.com/google/A2A/issues/12",  # non-file deep link
-        "https://github.com/o/r/blob/main/script.py",  # another extension stays a repo
+        "https://github.com/o/r/blob/main/script.py",  # another extension keeps its URL
         "https://github.com/o/r/blob/main/data.txt",
         "https://github.com/o/r/blob/main/notes.markdown",  # only `.md`, not `.markdown`
         "https://github.com/o/r/blob/main/x.pdf.txt",  # last segment decides — not a PDF

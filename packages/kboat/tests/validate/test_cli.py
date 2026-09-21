@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -163,6 +164,10 @@ def test_an_unparseable_note_is_a_violation_but_not_a_stat(
         "ripe_undistilled": 0,
         "ripe_undistilled_kindles": 0,
         "awaiting_filed_stamp": 0,
+        "unrefreshed_repo_count": 0,
+        "unrefreshed_repo_oldest_age_days": None,
+        "queued_count": 0,
+        "queued_oldest_age_days": None,
     }
 
 
@@ -197,6 +202,10 @@ def test_stats_report_the_backlog(tmp_path: Path, capsys: pytest.CaptureFixture[
         "ripe_undistilled": 1,
         "ripe_undistilled_kindles": 0,
         "awaiting_filed_stamp": 0,
+        "unrefreshed_repo_count": 0,
+        "unrefreshed_repo_oldest_age_days": None,
+        "queued_count": 0,
+        "queued_oldest_age_days": None,
     }
 
 
@@ -330,3 +339,88 @@ def test_a_misfiled_note_in_kindles_is_a_violation_but_not_a_stat(
     out = json.loads(capsys.readouterr().out)
     assert out["stats"]["ripe_undistilled_kindles"] == 0
     assert any(v["field"] == "type" for v in out["violations"])
+
+
+def _repo_note(refreshed: str) -> str:
+    return f"---\ntype: repo\ntitle: o/r\nurl: https://github.com/o/r\nrefreshed_date: {refreshed}\n---\n"
+
+
+def _capture(vault: Path, year: int, month: int, day: int, hour: int) -> None:
+    """A capture named as the bookmarklet names one made at that local time."""
+    queue = vault / "Queue"
+    queue.mkdir(exist_ok=True)
+    made = time.mktime((year, month, day, hour, 0, 0, 0, 0, -1))
+    name = f"kboat-queue-{int(made * 1000)}.md"
+    (queue / name).write_text("[A page](https://example.com/a)\n", encoding="utf-8")
+
+
+def test_stats_age_a_repo_the_refresh_stopped_reaching_and_a_stuck_capture(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A repo note whose refresh has failed for a month, and a capture ingest has
+    # kept for a week and a day: both look like an ordinary day's retry from inside
+    # any one run, and only their age says otherwise.
+    vault = _vault(tmp_path)
+    (vault / "Repos" / "fresh.md").write_text(_repo_note("2026-06-15"), encoding="utf-8")
+    (vault / "Repos" / "stuck.md").write_text(_repo_note("2026-05-16"), encoding="utf-8")
+    _capture(vault, 2026, 6, 7, 9)
+    _capture(vault, 2026, 6, 15, 8)
+
+    assert main(["--vault", str(vault), "--stats", "--today", "2026-06-15"]) == 0
+    stats = json.loads(capsys.readouterr().out)["stats"]
+
+    assert stats["unrefreshed_repo_count"] == 1
+    assert stats["unrefreshed_repo_oldest_age_days"] == 30
+    assert stats["queued_count"] == 2
+    assert stats["queued_oldest_age_days"] == 8
+
+
+def test_a_repo_note_ticked_gone_is_not_behind(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The refresh skips it on the human's say-so, so its date stops by design; were
+    # it counted, keeping such a note would trip the age threshold every day.
+    vault = _vault(tmp_path)
+    kept = _repo_note("2026-05-16").replace("url:", "gone: true\nurl:")
+    (vault / "Repos" / "kept.md").write_text(kept, encoding="utf-8")
+
+    main(["--vault", str(vault), "--stats", "--today", "2026-06-15"])
+    stats = json.loads(capsys.readouterr().out)["stats"]
+
+    assert stats["unrefreshed_repo_count"] == 0
+    assert stats["unrefreshed_repo_oldest_age_days"] is None
+
+
+def test_a_healthy_repo_catalogue_and_a_drained_queue_are_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    vault = _vault(tmp_path)
+    (vault / "Repos" / "fresh.md").write_text(_repo_note("2026-06-15"), encoding="utf-8")
+    (vault / "Queue").mkdir()
+
+    main(["--vault", str(vault), "--stats", "--today", "2026-06-15"])
+    stats = json.loads(capsys.readouterr().out)["stats"]
+
+    assert stats["unrefreshed_repo_count"] == 0
+    assert stats["unrefreshed_repo_oldest_age_days"] is None
+    assert stats["queued_count"] == 0
+    assert stats["queued_oldest_age_days"] is None
+
+
+def test_a_queue_that_cannot_be_listed_is_a_violation_rather_than_an_empty_queue(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A refused listing comes back empty from a glob, and an empty queue is the
+    # healthy answer — so without this a queue nobody can drain reads as drained.
+    vault = _vault(tmp_path)
+    _capture(vault, 2026, 6, 1, 9)
+    (vault / "Queue").chmod(0o111)
+    try:
+        exit_code = main(["--vault", str(vault), "--strict", "--stats", "--today", "2026-06-15"])
+    finally:
+        (vault / "Queue").chmod(0o755)
+    out = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    unreadable = [v for v in out["violations"] if v["code"] == "unreadable_dir"]
+    assert [v["path"] for v in unreadable] == ["Queue"]

@@ -60,7 +60,8 @@ def test_write_creates_note(tmp_path: Path) -> None:
     assert fm["type"] == "repo"
     assert fm["role"] == "framework"
     assert fm["status"] == "recent"
-    assert fm["reading"] is False  # the always-present boolean the Base filters on
+    assert fm["reading"] is False  # the always-present booleans the Bases filter on
+    assert fm["gone"] is False
     assert fm["added_date"] == "2026-06-06"
     assert fm["refreshed_date"] == "2026-06-06"
     assert fm["stars"] == "100"  # the parser returns scalars as strings
@@ -176,8 +177,8 @@ def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> N
 
 
 def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path: Path) -> None:
-    # `reading` is the human's, the date stamps are the schema's, and `title` is
-    # read off the top level. A `fields` block carrying any of them (a
+    # `reading` and `gone` are the human's, the date stamps are the schema's, and
+    # `title` is read off the top level. A `fields` block carrying any of them (a
     # hand-assembled record, or a gather record fed back in) must not reach
     # them — nor may a key no schema knows reach the frontmatter.
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
@@ -190,6 +191,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
             "fields": {
                 **RECORD["fields"],
                 "reading": False,
+                "gone": True,  # only a human ticks it
                 "added_date": "1999-01-01",
                 "refreshed_date": "1999-01-01",
                 "title": "someone/else",
@@ -203,6 +205,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     note = path.read_text()
     fm = parse_frontmatter(note)
     assert fm["reading"] is True
+    assert fm["gone"] is False
     assert fm["added_date"] == "2026-06-06"
     assert fm["refreshed_date"] == "2027-01-01"
     assert fm["title"] == "google/A2A"  # the top-level value, not the one under `fields`
@@ -210,11 +213,53 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     # Dropped, but not in silence — the caller is told what it sent that did not land.
     assert result["dropped_fields"] == [
         "reading",
+        "gone",
         "added_date",
         "refreshed_date",
         "title",
         "invented_by_the_classifier",
     ]
+
+
+def test_cataloguing_a_repository_ticked_gone_again_clears_the_tick_and_says_so(
+    tmp_path: Path,
+) -> None:
+    # A record reaches the writer only after `gather` found GitHub showing the
+    # repository, so the tick is false by then; left in place, every refresh would
+    # skip the repository the human just catalogued again, and nothing would say so.
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+    path = _note(tmp_path)
+    path.write_text(path.read_text().replace("gone: false", "gone: true"))
+
+    result = write_note(RECORD, tmp_path, today_iso="2027-01-01")
+
+    assert result["status"] == "updated"
+    assert result["gone_cleared"] is True
+    assert parse_frontmatter(path.read_text())["gone"] is False
+
+
+def test_a_write_to_a_note_not_ticked_gone_reports_no_clearing(tmp_path: Path) -> None:
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+
+    assert "gone_cleared" not in write_note(RECORD, tmp_path, today_iso="2027-01-01")
+
+
+def test_a_refused_write_clears_nothing(tmp_path: Path) -> None:
+    # A note at the slug that is not this repository is refused, so neither its
+    # tick nor the report may claim a clearing that never landed.
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+    path = _note(tmp_path)
+    path.write_text(
+        path.read_text()
+        .replace("gone: false", "gone: true")
+        .replace(f"url: {URL}", "url: https://github.com/someone/else")
+    )
+
+    result = write_note(RECORD, tmp_path, today_iso="2027-01-01")
+
+    assert result["status"] == "collision"
+    assert "gone_cleared" not in result
+    assert parse_frontmatter(path.read_text())["gone"] is True
 
 
 def test_write_reports_nothing_dropped_when_nothing_was(tmp_path: Path) -> None:

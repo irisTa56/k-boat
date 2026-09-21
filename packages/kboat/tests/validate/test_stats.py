@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import date
 
 from kboat.frontmatter import Value
@@ -43,8 +44,25 @@ def kdl(slug: str, **over: Value) -> Kindle:
     return Kindle.from_frontmatter(slug, f"Kindles/{slug}.md", fm)
 
 
-def stats(*sources: Source, kindles: list[Kindle] | None = None) -> dict[str, object]:
-    return compute_stats(list(sources), kindles or [], TODAY).to_json()
+def stats(
+    *sources: Source,
+    kindles: list[Kindle] | None = None,
+    repo_refreshed: list[Value] | None = None,
+    captures: list[str] | None = None,
+) -> dict[str, object]:
+    return compute_stats(
+        list(sources),
+        kindles or [],
+        TODAY,
+        repo_refreshed=repo_refreshed or [],
+        captures=captures or [],
+    ).to_json()
+
+
+def capture(year: int, month: int, day: int, hour: int = 12) -> str:
+    """A capture's file name as the bookmarklet writes it, made at that local time."""
+    made = time.mktime((year, month, day, hour, 0, 0, 0, 0, -1))
+    return f"kboat-queue-{int(made * 1000)}.md"
 
 
 def test_the_stalled_window_is_a_fortnight() -> None:
@@ -61,7 +79,62 @@ def test_empty_vault_is_all_zero() -> None:
         "ripe_undistilled": 0,
         "ripe_undistilled_kindles": 0,
         "awaiting_filed_stamp": 0,
+        "unrefreshed_repo_count": 0,
+        "unrefreshed_repo_oldest_age_days": None,
+        "queued_count": 0,
+        "queued_oldest_age_days": None,
     }
+
+
+class TestUnrefreshedRepos:
+    def test_a_catalogue_refreshed_today_is_all_zero(self) -> None:
+        out = stats(repo_refreshed=["2026-06-15", "2026-06-15"])
+        assert out["unrefreshed_repo_count"] == 0
+        assert out["unrefreshed_repo_oldest_age_days"] is None
+
+    def test_a_note_the_refresh_stopped_reaching_ages_from_its_last_refresh(self) -> None:
+        # Whatever the reason the refresh keeps failing on it, the date stops
+        # advancing, and that is all the count needs to know.
+        out = stats(repo_refreshed=["2026-06-15", "2026-06-14", "2026-05-16"])
+        assert out["unrefreshed_repo_count"] == 2
+        assert out["unrefreshed_repo_oldest_age_days"] == 30
+
+    def test_a_missing_or_unreadable_date_is_behind_but_no_age(self) -> None:
+        # Not stamped today, so behind; but no age of zero, which would read as
+        # the freshest note there is.
+        out = stats(repo_refreshed=[None, "", "2026/06/01", "2027-01-01"])
+        assert out["unrefreshed_repo_count"] == 4
+        assert out["unrefreshed_repo_oldest_age_days"] is None
+
+    def test_an_unreadable_date_does_not_mask_a_real_age(self) -> None:
+        out = stats(repo_refreshed=["2026/06/01", "2026-06-05"])
+        assert out["unrefreshed_repo_oldest_age_days"] == 10
+
+
+class TestQueued:
+    def test_the_oldest_capture_ages_from_the_time_in_its_name(self) -> None:
+        out = stats(captures=[capture(2026, 6, 14), capture(2026, 6, 8, hour=23)])
+        assert out["queued_count"] == 2
+        assert out["queued_oldest_age_days"] == 7
+
+    def test_a_capture_made_today_is_an_age_of_zero(self) -> None:
+        assert stats(captures=[capture(2026, 6, 15, hour=0)])["queued_oldest_age_days"] == 0
+
+    def test_a_name_without_the_timestamp_is_counted_but_not_aged(self) -> None:
+        # A capture made by hand or renamed: still in the queue, still counted, but
+        # nothing says when it was made.
+        out = stats(captures=["my capture.md", "kboat-queue-abc.md"])
+        assert out["queued_count"] == 2
+        assert out["queued_oldest_age_days"] is None
+
+    def test_a_name_without_the_timestamp_does_not_mask_a_real_age(self) -> None:
+        out = stats(captures=["my capture.md", capture(2026, 6, 5)])
+        assert out["queued_oldest_age_days"] == 10
+
+    def test_a_timestamp_in_the_future_is_no_age(self) -> None:
+        out = stats(captures=[capture(2026, 6, 16)])
+        assert out["queued_count"] == 1
+        assert out["queued_oldest_age_days"] is None
 
 
 class TestRipeUndistilledKindles:

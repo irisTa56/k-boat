@@ -8,7 +8,8 @@ writes. Exit 0 by default (report-only, for the routine's run summary); with
 `--stats` adds the backlog-health counts (`kboat.validate.stats`) to the same
 report. They describe how the backlog is moving rather than whether a note is
 well-formed, so they never change the exit code — `--strict` still keys on
-violations alone.
+violations alone. The queue's counts come from a listing of `Queue/`, whose
+captures are not schema'd notes and are not validated.
 """
 
 from __future__ import annotations
@@ -17,33 +18,42 @@ import argparse
 import json
 import sys
 from collections import Counter
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 from kboat.cli import add_today_argument, add_vault_argument, vault_path
-from kboat.frontmatter import NOTE_READ_ERRORS, parse_frontmatter
+from kboat.frontmatter import NOTE_READ_ERRORS, Value, parse_frontmatter
 from kboat.io_utils import list_note_dir
 from kboat.lifecycle.core import Kindle, Source
-from kboat.schema import DIR_BY_TYPE
+from kboat.repos.refresh import is_gone
+from kboat.schema import DIR_BY_TYPE, QUEUE_DIR
 
 from .core import Violation, check_note, check_repeated_keys
 from .stats import compute_stats
 
 
-def _validate_vault(
-    vault: Path,
-) -> tuple[dict[str, int], list[Violation], list[Source], list[Kindle]]:
+@dataclass
+class _Backlog:
+    """What the stats are computed over, gathered by the validation walk."""
+
+    sources: list[Source] = field(default_factory=list)
+    kindles: list[Kindle] = field(default_factory=list)
+    repo_refreshed: list[Value] = field(default_factory=list)
+    captures: list[str] = field(default_factory=list)
+
+
+def _validate_vault(vault: Path) -> tuple[dict[str, int], list[Violation], _Backlog]:
     """The per-type note counts, every violation, and the notes the stats need.
 
-    The sources and Kindle books come back from this one pass rather than a second
-    scan, so the stats describe exactly the notes that were validated.
+    The notes come back from this one pass rather than a second scan, so the
+    stats describe exactly the notes that were validated.
 
     Built whether or not `--stats` asked for them, so the walk has one behaviour.
     """
     checked: dict[str, int] = {}
     violations: list[Violation] = []
-    sources: list[Source] = []
-    kindles: list[Kindle] = []
+    backlog = _Backlog()
     for note_type, subdir in DIR_BY_TYPE.items():
         directory = vault / subdir
         count = 0
@@ -86,11 +96,25 @@ def _validate_vault(
             # phantom count here that no run can ever drain. Validation still
             # reports it: the wrong `type` is a `bad_enum` against this schema.
             if note_type == "source" and fm.get("type") == "source":
-                sources.append(Source.from_frontmatter(path.stem, rel, fm))
+                backlog.sources.append(Source.from_frontmatter(path.stem, rel, fm))
             elif note_type == "kindle" and fm.get("type") == "kindle":
-                kindles.append(Kindle.from_frontmatter(path.stem, rel, fm))
+                backlog.kindles.append(Kindle.from_frontmatter(path.stem, rel, fm))
+            elif note_type == "repo" and fm.get("type") == "repo" and not is_gone(fm):
+                # The refresh reads a repo note by its `type` too, and skips one
+                # the human ticked `gone`, so that one is not behind.
+                backlog.repo_refreshed.append(fm.get("refreshed_date"))
         checked[note_type] = count
-    return checked, violations, sources, kindles
+    # The captures ingest drains, by name: the name is the capture's timestamp, and
+    # nothing in a capture's body is read here. Refused rather than absent is the
+    # same silence as a note directory's, so it is reported the same way; an
+    # absent `Queue/` is `kboat-doctor`'s to report, and reads here as empty.
+    try:
+        found, _ = list_note_dir(vault / QUEUE_DIR)
+    except OSError as exc:
+        violations.append(Violation(QUEUE_DIR, "_dir", "unreadable_dir", str(exc)))
+    else:
+        backlog.captures = [path.name for path in found]
+    return checked, violations, backlog
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -116,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
 
     vault = vault_path(parser, args)
 
-    checked, violations, sources, kindles = _validate_vault(vault)
+    checked, violations, backlog = _validate_vault(vault)
     by_code = Counter(v.code for v in violations)
     output: dict[str, object] = {
         "vault": str(vault),
@@ -125,7 +149,13 @@ def main(argv: list[str] | None = None) -> int:
         "counts": {"total": len(violations), "by_code": dict(sorted(by_code.items()))},
     }
     if args.stats:
-        output["stats"] = compute_stats(sources, kindles, date.fromisoformat(args.today)).to_json()
+        output["stats"] = compute_stats(
+            backlog.sources,
+            backlog.kindles,
+            date.fromisoformat(args.today),
+            repo_refreshed=backlog.repo_refreshed,
+            captures=backlog.captures,
+        ).to_json()
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 1 if (args.strict and violations) else 0

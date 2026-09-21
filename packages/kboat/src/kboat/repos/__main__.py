@@ -8,15 +8,15 @@ Four subcommands, all printing JSON on stdout:
   classification (JSON on stdin), so the agent never hand-writes frontmatter.
 - `refresh` — re-fetch every `Repos/*.md` note's GitHub-derived frontmatter and
   recompute `status`, adopting renames, preserving the judgement layer and body.
-- `backfill-readme --dry-run|--apply` — write `readme: unknown` on every repo
-  note that has no `readme` line.
+- `backfill --dry-run|--apply` — write each backfilled field (`readme`, `gone`)
+  a repo note has no line for, at its schema default.
 
 The one-time migration of the legacy catalogue is deliberately NOT a subcommand
 — it was a throwaway script that imports this package's helpers, run once and
-deleted. `backfill-readme` is the exception: it rewrites every note in the live
+deleted. `backfill` is the exception: it rewrites every note in the live
 catalogue, so it is tested like the rest rather than run as an untested script,
 and it is run again for a note the first run could not mark (`kboat-notes`
-"Procedure: backfill the repo readme mark").
+"Procedure: backfill repo fields").
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ _COMMANDS = {
     "gather": gather.main,
     "write": write.main,
     "refresh": refresh.main,
-    "backfill-readme": backfill.main,
+    "backfill": backfill.main,
 }
 
 

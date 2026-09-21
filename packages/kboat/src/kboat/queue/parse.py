@@ -23,10 +23,33 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 
 from kboat.frontmatter import strip_frontmatter
 
 _URL_RE = re.compile(r"^https?://\S+$")
+
+# What the capture bookmarklet puts ahead of `Date.now()` in each capture's file
+# name (see `kboat.bookmarklet`), which makes the name the capture's timestamp.
+CAPTURE_PREFIX = "kboat-queue-"
+_CAPTURE_NAME_RE = re.compile(rf"^{re.escape(CAPTURE_PREFIX)}(\d+)\.md$")
+
+
+def captured_on(name: str) -> date | None:
+    """The local calendar day a capture was made, read from its file name.
+
+    None for a name that is not `kboat-queue-<epoch_ms>.md` — a capture made by
+    hand, or renamed — and for a timestamp no clock can place, rather than a
+    guess: the queue's age is a count of days, and a wrong one is worse than none.
+    The local day, because `--today` is the reader's local day too (`kboat.cli`).
+    """
+    match = _CAPTURE_NAME_RE.match(name)
+    if not match:
+        return None
+    try:
+        return datetime.fromtimestamp(int(match.group(1)) / 1000, tz=UTC).astimezone().date()
+    except OverflowError, OSError, ValueError:
+        return None
 
 
 @dataclass(frozen=True)

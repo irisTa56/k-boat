@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 
+from kboat.queue.parse import CAPTURE_PREFIX
 from kboat.schema import QUEUE_DIR
 
 
@@ -39,7 +40,7 @@ def build_bookmarklet(vault: str, folder: str) -> str:
         "(function(){"
         "var t=document.title,u=location.href;"
         "var c='['+t+']('+u+')\\n';"
-        f"var f={prefix_literal}+'kboat-queue-'+Date.now();"
+        f"var f={prefix_literal}+'{CAPTURE_PREFIX}'+Date.now();"
         f"location.href='obsidian://new?vault='+encodeURIComponent({vault_literal})"
         "+'&file='+encodeURIComponent(f)"
         "+'&content='+encodeURIComponent(c)"
