@@ -79,7 +79,8 @@ The classification is permanent — the note is written and the queue file delet
 Take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`).
 Keep `readme_error` as `gather` returned it, `null` included: the write sets the note's `readme` mark from it, and refuses a record without it (exit 2) rather than guess.
 
-- The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `gone` / `added_date` on update — none of which the agent should hand-assemble.
+- The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
+- An update to a note ticked `gone` clears the tick, since this `gather` found GitHub showing the repository, and the result carries `gone_cleared: true`; tell the human in one line that the tick was cleared because GitHub shows the repository again, and that the refresh takes the note up from the next run.
 - It prints `{status: created|updated|collision|slug_mismatch|evicted|repeated_key|locked, ...}`, and the last five are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
   - A `repeated_key` (the note at this slug names a key on more than one line) is the note's, and waits on a human (see Errors).
@@ -161,7 +162,7 @@ One of them needs a human, three are settled by the next run, and two are notes 
   - The next run tries again.
   - One that fails on every run stops advancing the note's `refreshed_date`, and the backlog stats' unrefreshed-repo age is what raises the hand (kboat-notes "Backlog stats").
 - `no_such_repo` — `gh` did not answer for that repo, and GitHub then answered that it shows this account no repository there: deleted, made private, or no longer visible to this account, and nothing in the 404 says which.
-  - No later run refreshes the note, and nothing in a run changes it, so relay it as a human's decision among three: tick the note's `gone` to keep it, which stops the refresh and the age below from reaching it; restore the access if the repository should still be visible (`gh auth status`); or delete the note.
+  - No later run refreshes the note, and nothing in a routine run changes it, so relay it as a human's decision among three: tick the note's `gone` to keep it, which stops the refresh and the age below from reaching it; restore the access if the repository should still be visible (`gh auth status`); or delete the note.
   - Do not raise the hand for one entry: its `refreshed_date` stops advancing, and the unrefreshed-repo age does that if the choice is left unmade.
   - Never say the repository was deleted: the answer says only that this account is shown none.
 - `payload` — `gh` answered with something unusable, the same class as `gather`'s `defect-payload`.

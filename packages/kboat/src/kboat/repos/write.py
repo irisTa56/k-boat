@@ -26,9 +26,12 @@ from kboat.cli import (
     run_write,
     vault_path,
 )
+from kboat.frontmatter import NOTE_READ_ERRORS, parse_frontmatter
 from kboat.lock import vault_lock
-from kboat.schema import REPO, ReadmeMark
+from kboat.schema import DIR_BY_TYPE, REPO, ReadmeMark
 from kboat.write import WROTE_A_NOTE, BadInputError, upsert
+
+from .refresh import is_gone
 
 # `readme_error` is required though `null` is its usual value: a record that
 # dropped the key would otherwise read as a README fetched, and the note would
@@ -39,7 +42,25 @@ REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary", "read
 # know: `reading` and `gone` are the human's checkboxes and the stamps are the
 # schema's. `upsert` preserves a field the write leaves alone and overwrites one
 # it is given, so dropping these is what keeps them the human's and the schema's.
+# The one write this module makes to `gone` itself is `_clears_gone`'s.
 _NOT_FROM_THE_RECORD = frozenset({"reading", "gone"} | {f.name for f in REPO.fields if f.stamp})
+
+
+def _clears_gone(vault: Path, slug: str) -> bool:
+    """Whether the note this write updates is ticked `gone`, so the write unticks it.
+
+    A record reaches this writer only from a `gather` that returned `ok` — GitHub
+    showed the repository — so a tick saying GitHub no longer shows it is known to
+    be false by now, and left in place it would keep `refresh` skipping a
+    repository the human just catalogued again. Only ever towards `false`: ticking
+    it stays a human act. A note this cannot read is left to `upsert`, which reports
+    what it finds there.
+    """
+    try:
+        text = (vault / DIR_BY_TYPE["repo"] / f"{slug}.md").read_text(encoding="utf-8")
+        return is_gone(parse_frontmatter(text))
+    except NOTE_READ_ERRORS:
+        return False
 
 
 def readme_mark(record: dict) -> ReadmeMark:
@@ -94,10 +115,21 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
         else:
             dropped.append(key)
     fields.update(top_level)
+    clearing = _clears_gone(vault, record["slug"])
+    if clearing:
+        fields["gone"] = False
     result = upsert(REPO, vault, {"slug": record["slug"], "fields": fields}, today=today_iso)
-    if dropped and result["status"] in WROTE_A_NOTE:
-        return {**result, "dropped_fields": dropped}
-    return result
+    if result["status"] not in WROTE_A_NOTE:
+        return result
+    # Reported only when it happened, as `dropped_fields` is: the relay owes the
+    # human a line saying their tick was cleared, and a key present on every write
+    # would be one more for it to branch on.
+    extra: dict[str, object] = {}
+    if dropped:
+        extra["dropped_fields"] = dropped
+    if clearing:
+        extra["gone_cleared"] = True
+    return {**result, **extra}
 
 
 def main(argv: list[str] | None = None) -> int:
