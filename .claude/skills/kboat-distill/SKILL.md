@@ -45,7 +45,8 @@ Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
   - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
     - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
     - (Pass `--dry-run` to compute without writing — for inspection only.)
-  - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse, are not the expected `type`, or were evicted by iCloud, and a folder it could not read).
+  - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse, are not the expected `type`, or were evicted by iCloud, a `filed_date` it could not write, and a folder it could not read).
+    - `phase_a` and its counts hold only the writes that landed; a note whose `filed_date` write failed is in `anomalies` alone.
     - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
     - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
   - It **exits 1 with that JSON** when `Sources/` or `Kindles/` could not be read: absent, not a directory, or refused, named by the `anomalies` entry whose `path` is the folder (kboat-vault-conventions "Vault preconditions").

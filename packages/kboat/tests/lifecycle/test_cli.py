@@ -218,8 +218,24 @@ def test_a_filed_date_named_twice_is_an_anomaly_and_not_a_stamp(vault: Path, cap
 
     assert [a["path"] for a in out["anomalies"]] == ["Sources/a.md"]
     assert out["anomalies"][0]["error"].startswith("filed_date write failed")
+    assert out["phase_a"]["stamped"] == []
+    assert out["counts"]["filed_stamped"] == 0
     fm = parse_frontmatter((sources / "a.md").read_text(encoding="utf-8"))
     assert fm["filed_date"] is None  # the note still says it was never stamped
+
+
+def test_a_clear_it_could_not_write_is_not_reported_as_cleared(vault: Path, capsys):
+    sources = vault / "Sources"
+    write_note(sources, "a", filed_date="2026-06-01")
+    text = (sources / "a.md").read_text(encoding="utf-8")
+    text = text.replace("filed_date: 2026-06-01\n", "filed_date:\nfiled_date: 2026-06-01\n")
+    (sources / "a.md").write_text(text, encoding="utf-8")
+
+    out = run(vault, capsys)
+
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/a.md"]
+    assert out["phase_a"]["cleared"] == []
+    assert out["counts"]["filed_cleared"] == 0
 
 
 def test_a_note_that_turns_unreadable_between_load_and_stamp_is_an_anomaly(
