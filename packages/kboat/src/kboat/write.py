@@ -27,6 +27,7 @@ from kboat.frontmatter import (
     names_key,
     parse_entries,
     parse_flow_list,
+    repeated_keys,
     split_lines,
     yaml_list,
     yaml_scalar,
@@ -135,8 +136,9 @@ def build_note(
     `parse_entries` output for the entries this write is not changing. A carried
     schema field keeps its canonical position; every other carried entry follows
     the rendered ones, in the relative order the note already had. `fields` wins
-    over a carried entry for the same key, and a key carried twice keeps its last
-    entry, matching which of a repeated key the reader (and Obsidian) reads.
+    over a carried entry for the same key, and a key carried twice keeps only its
+    last entry — which deletes the other, so every caller refuses a note naming a
+    key twice before it gets here.
 
     A carried entry that owns no key and would attach to the line above it goes
     first, before anything else — there is nothing for it to attach to there.
@@ -190,7 +192,7 @@ NOTES_HEADING = "## Notes"
 class WriteStatus(StrEnum):
     """Every `status` a note write can print, wherever along its path it is composed.
 
-    `upsert` composes the first five. `LOCKED` is composed at the CLI edge — by
+    `upsert` composes the first six. `LOCKED` is composed at the CLI edge — by
     `kboat.cli.emit_locked`, and by feed-filter's `main` — for a vault another run
     holds: a write that never reached `upsert`, and a status its caller branches
     on all the same, so it is a member here rather than a bare string where it is
@@ -203,6 +205,7 @@ class WriteStatus(StrEnum):
     COLLISION = "collision"
     SLUG_MISMATCH = "slug_mismatch"
     EVICTED = "evicted"
+    REPEATED_KEY = "repeated_key"
     LOCKED = "locked"
 
 
@@ -413,9 +416,10 @@ def upsert(
 
     A record whose slug is not the one its `url` names is refused as a
     `slug_mismatch`, a different `identity` value at an existing slug as a
-    `collision` (never overwritten), and a slug iCloud has evicted as `evicted`.
-    Returns `{status, slug, path}` — which is also the `evicted` record's shape —
-    or one of the other two refusals; a record that does not say a note — a slug
+    `collision` (never overwritten), a slug iCloud has evicted as `evicted`, and
+    a note naming any key on more than one top-level line as `repeated_key`, with
+    those keys under `keys`. Returns `{status, slug, path}` — which is also the
+    `evicted` record's shape — or one of the other refusals; a record that does not say a note — a slug
     that is no filename, a field name that is no property key — raises
     `BadInputError` and writes nothing. A slug held by something that is not a
     file, and a probe the vault refuses, raise an `OSError` and write nothing.
@@ -463,15 +467,24 @@ def upsert(
     if not created:
         text = path.read_text(encoding="utf-8")
         entries = parse_entries(text)
+        # The note is re-assembled with one line per key, so a key named on two
+        # lines would lose one — whether or not this write is about it — and
+        # which one was meant is not in the note. Counted by the lines the
+        # in-place writers refuse over and `kboat-validate` reports, so the three
+        # agree on which notes these are.
+        repeated = repeated_keys(text)
+        if repeated:
+            return {
+                "status": WriteStatus.REPEATED_KEY,
+                "slug": slug,
+                "path": rel,
+                "keys": sorted(repeated),
+            }
         if schema.identity is not None:
-            # The *last* entry naming the identity, and its value — one entry, so
-            # the two cannot disagree. Last, because that is the one the reader
-            # and Obsidian both take when a key repeats: reading the name off one
-            # line and the value off another would clear a write against a value
-            # the note does not actually hold.
-            held = next(
-                (e for e in reversed(entries) if names_key(e.lines[0], schema.identity)), None
-            )
+            # The entry naming the identity, and its value — one entry, so the two
+            # cannot disagree. At most one names it, a repeated key having been
+            # refused above.
+            held = next((e for e in entries if names_key(e.lines[0], schema.identity)), None)
             old = held.value if held is not None and held.modelled else None
             new = provided.get(schema.identity)
             # An identity the reader cannot compare is not a licence to proceed:

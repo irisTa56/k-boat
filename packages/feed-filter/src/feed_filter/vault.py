@@ -45,7 +45,8 @@ class VaultError(Exception):
     unlikely 48-bit SHA-256 clash between two canonical URLs), or the note holds
     a `url` the reader cannot decode, so it cannot be shown to be this page at
     all — distinguished by the record's `reason`, and both needing a human. A note
-    iCloud has evicted is refused as the subclass `VaultEvictedError` below. Any
+    iCloud has evicted is refused as the subclass `VaultEvictedError` below, and
+    one naming a key on more than one line as `VaultRepeatedKeyError`. Any
     other refusal is raised too rather than read as a write: what makes never-lost
     hold is that nothing is recorded seen unless a note landed, so a status this
     module does not recognise must not be the one that slips through. Also raised
@@ -70,6 +71,24 @@ class VaultEvictedError(VaultError):
         super().__init__(f"{path} is evicted to an iCloud placeholder — nothing was written")
         self.slug = slug
         self.path = path
+
+
+class VaultRepeatedKeyError(VaultError):
+    """The note at this entry's slug names a frontmatter key on more than one line.
+
+    A refusal like any other `VaultError` — nothing written, nothing recorded seen.
+    It waits on a human deleting the line not meant, but it concerns this one note
+    rather than the vault, so the CLI prints `record` — `upsert`'s own
+    `repeated_key` result — for a run skill to carry on past it rather than stop
+    reminding.
+    """
+
+    def __init__(self, record: dict[str, object]) -> None:
+        super().__init__(
+            f"{record.get('path')} names {record.get('keys')} on more than one line "
+            "— nothing was written"
+        )
+        self.record = record
 
 
 def write_feed_note(
@@ -123,6 +142,8 @@ def write_feed_note(
         return result
     if status == WriteStatus.EVICTED:
         raise VaultEvictedError(slug, str(result.get("path")))
+    if status == WriteStatus.REPEATED_KEY:
+        raise VaultRepeatedKeyError(result)
     if status == WriteStatus.COLLISION:
         if result.get("reason") == "unreadable_identity":
             raise VaultError(

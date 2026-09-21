@@ -176,6 +176,7 @@ Stats never affect the exit code — they describe how the backlog is moving, no
 `repeated_key` is reported against a key that more than one top-level line names, counting a line that names it in a shape the reader cannot decode (`"picked": x`, `picked : x`).
 The reader takes the last of those lines while a human editing the note sees the first, and nothing in the note says which was meant.
 So the in-place rewriters behind `kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh` and `kboat-note migrate-slugs` (`kboat.frontmatter.set_field` / `set_fields`) refuse to write such a key, and one named only on a line the reader cannot decode, rather than pick a line or add a second; each command reports that note as not written, and it stays so on every run until a human repairs it.
+The note writer refuses the whole note instead, whichever key repeats ("The write contract" below).
 The repair for `repeated_key` is deleting the line not meant; for the lone undecodable line, which `kboat-validate` shows as a `missing_field` ("The write contract" below), it is rewriting that line as a plain `key: value`.
 
 ## The write contract
@@ -201,6 +202,10 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - A slug held by something that is not a file — a directory, or a symlink that leads nowhere — raises an `OSError` and writes nothing, which `kboat-note write` and `kboat-repos write` report as `write failed: …` and feed-filter as `error: …`, each with exit 1.
     - No run frees that name, so it is a human's.
   - A probe the vault refuses raises the same way, so a refusal is never reported as an eviction.
+- **A note naming a key twice is refused.** An existing note that names any key on more than one top-level line — counted as `kboat-validate`'s `repeated_key` counts it — is refused as `{status: "repeated_key", slug, path, keys}`, written nowhere, `keys` listing every such key.
+  - The write re-assembles the note with one line per key, so it would delete a line a human wrote, whether or not the record touches that key, and which line they meant is not in the note.
+  - A key held only on one line the reader cannot decode is not refused: a write setting it replaces that line, and one that does not carries it back as it is.
+  - No run clears it; the repair is `repeated_key`'s ("Schema authority and validation" above), and a caller reports the note and carries on with the rest.
 - **Merge on update.** If a file is there, the record's `fields` are merged over the existing note — provided keys win, absent keys are preserved — so a partial write (omitting a field, or `body`) preserves what it omits.
   - Omitting a key therefore never clears it; to clear a field, give it as `null`, which writes the field's empty form: a bare `key:` for a string or a date, `[]` for a list.
 - **Always-present defaults on create.** A present field absent from the record is filled with its schema default (a boolean → `false`), so the Base-filter booleans are written on every note from creation.

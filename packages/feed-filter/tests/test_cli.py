@@ -1266,6 +1266,48 @@ def test_remind_reports_an_evicted_note_and_records_nothing(
         assert count(conn) == 0
 
 
+def _repeat_a_key(url: str) -> Path:
+    """Put a feed note at ``url``'s slug that names ``shelved`` on two lines."""
+    cu = canonical_url(url)
+    feeds = vault_path() / "Feeds"
+    feeds.mkdir(parents=True, exist_ok=True)
+    note = feeds / f"{url_slug(str(cu))}.md"
+    note.write_text(
+        f"---\ntype: feed\ntitle: T\nurl: {cu}\n"
+        "read: false\nshelved: true\nshelved: false\ndismissed: false\nwall: false\n"
+        "feed_kind: article\nsite_id: f1\nsummary:\nadded_date: 2026-07-01\n---\n",
+        encoding="utf-8",
+    )
+    return note
+
+
+def test_remind_reports_a_note_naming_a_key_twice_and_records_nothing(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The note is left for a human to say which line they meant, so it is not
+    # written and the entry stays unseen. A `repeated_key` record on stdout, like
+    # `evicted`, because it concerns this one note: the run skill carries on past it.
+    url = "https://e.example.com/a"
+    note = _repeat_a_key(url)
+    before = note.read_bytes()
+
+    rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
+
+    assert rc == 1
+    captured = capsys.readouterr()
+    slug = url_slug(str(canonical_url(url)))
+    assert json.loads(captured.out) == {
+        "status": "repeated_key",
+        "slug": slug,
+        "path": f"Feeds/{slug}.md",
+        "keys": ["shelved"],
+    }
+    assert "error:" in captured.err
+    assert note.read_bytes() == before
+    with contextlib.closing(open_db(db_path())) as conn:
+        assert not is_seen(conn, canonical_url(url))
+
+
 def test_remind_reports_a_vault_that_does_not_exist_and_records_nothing(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -2954,6 +2996,41 @@ def test_forum_remind_reports_an_evicted_note_and_records_nothing(
         assert rc == 1
         assert json.loads(capsys.readouterr().out)["status"] == "evicted"
 
+    with contextlib.closing(open_db(db_path())) as conn:
+        from feed_filter.forum_store import is_post_seen, op_interest_kept
+
+        assert not is_post_seen(conn, FORUM_SITE_ID, 5001)
+        assert op_interest_kept(conn, FORUM_SITE_ID, 1234) is None
+
+
+def test_forum_remind_reports_a_note_naming_a_key_twice_and_records_nothing(
+    state_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """forum-remind: a note naming a key twice is not written, so neither axis is recorded."""
+    _add_forum_site()
+    url = f"{FORUM_URL}/t/topic/1234"
+    note = _repeat_a_key(url)
+    before = note.read_bytes()
+
+    for axis in (["--post-id", "5001"], ["--is-op"]):
+        rc = cli.main(
+            [
+                "forum-remind",
+                "--site-id",
+                FORUM_SITE_ID,
+                "--topic-id",
+                "1234",
+                *axis,
+                "--url",
+                url,
+                "--title",
+                "T",
+            ]
+        )
+        assert rc == 1
+        assert json.loads(capsys.readouterr().out)["status"] == "repeated_key"
+
+    assert note.read_bytes() == before
     with contextlib.closing(open_db(db_path())) as conn:
         from feed_filter.forum_store import is_post_seen, op_interest_kept
 

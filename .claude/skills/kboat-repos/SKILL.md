@@ -79,8 +79,9 @@ Take the gather record, add the judged `role`, `domain`, `summary` keys, and pip
 Keep `readme_error` as `gather` returned it, `null` included: the write sets the note's `readme` mark from it, and refuses a record without it (exit 2) rather than guess.
 
 - The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
-- It prints `{status: created|updated|collision|slug_mismatch|evicted|locked, ...}`, and the last four are refusals, written nowhere.
+- It prints `{status: created|updated|collision|slug_mismatch|evicted|repeated_key|locked, ...}`, and the last five are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
+  - A `repeated_key` (the note at this slug names a key on more than one line) is the note's, and waits on a human (see Errors).
   - An `evicted` (iCloud holds the note at this slug behind a placeholder) and a `locked` (another run held the vault) are the vault's, and clear on their own (see Errors).
 - A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
@@ -198,6 +199,9 @@ Detect and report; do not work around.
   - The record is not at fault and the note's own fields are still in iCloud, so report it by name without escalating: it clears once the note is downloaded, and the next run's `kboat-doctor` reports the eviction.
   - A repo `kboat-ingest` routed here keeps its queue file, so a later run writes the note; leave it to that run.
   - A repo the user pasted has nothing that retries it: tell them the record can be written once the note is downloaded.
+- `write` returned `status: repeated_key` — the note at this slug names each key under `keys` on more than one line, so nothing was written (kboat-vault-conventions "The write contract").
+  - The record is not at fault, and no run clears it: report the note's `path` and its `keys` as needing a human to delete the line not meant.
+  - A repo `kboat-ingest` routed here keeps its queue file, so the run after that repair writes the note.
 - `write` or `refresh` printed a `locked` record in place of its usual output — another run held the vault (kboat-vault-conventions "Durability and the vault lock").
   - Nothing was written and the record is not at fault, so report it without escalating.
   - A repo `kboat-ingest` routed here keeps its queue file, so the next run writes the note; leave it to that run.

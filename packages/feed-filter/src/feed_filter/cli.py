@@ -92,7 +92,12 @@ from feed_filter.sites import (
     update_pattern,
     validate_article_url_pattern,
 )
-from feed_filter.vault import VaultError, VaultEvictedError, write_feed_note
+from feed_filter.vault import (
+    VaultError,
+    VaultEvictedError,
+    VaultRepeatedKeyError,
+    write_feed_note,
+)
 from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.cli import add_today_argument
 from kboat.lock import VaultLockedError
@@ -1374,6 +1379,10 @@ def main(argv: Sequence[str] | None = None) -> int:
       prints ``{"status": "evicted", "slug", "path"}`` on stdout for the same reason:
       it concerns this one note and clears once the note is downloaded, so a run
       skill leaves the entry for a later run and keeps reminding the others;
+    - ``VaultRepeatedKeyError`` — the ``VaultError`` for a note naming a key on more
+      than one line, which prints ``{"status": "repeated_key", "slug", "path",
+      "keys"}`` on stdout: it clears only once a human deletes the line not meant,
+      but it concerns this one note, so a run skill keeps reminding the others;
     - ``BadInputError`` — the shared writer refused the record itself. Nothing
       feed-filter assembles can trip it (its slug is a URL hash and its field
       names are literals), so this is the writer's contract being honoured here
@@ -1408,6 +1417,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except VaultEvictedError as exc:
         _emit({"status": WriteStatus.EVICTED, "slug": exc.slug, "path": exc.path})
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except VaultRepeatedKeyError as exc:
+        _emit(exc.record)
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except sqlite3.Error as exc:
