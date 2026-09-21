@@ -683,6 +683,7 @@ A human runs this, not the routine:
    - A note already carrying a `readme` line is skipped, whatever it holds, so a re-run touches only the notes still unmarked.
 2. It prints a JSON report.
    - `marked` names the notes it wrote, or under `--dry-run` would write.
-   - An `anomalies` entry is a note it could not read as a repo note — most often an evicted `.icloud` placeholder — and a `failed` entry one whose write failed; neither was marked.
-     - `kboat-validate` reports each as a `missing_field` on `readme` until a re-run, once the note is back or writable, marks it.
+   - An `anomalies` entry is a note it could not read as a repo note, and a `failed` entry one whose write failed; neither was marked.
+     - Re-run once the cause is gone — an evicted `.icloud` placeholder downloaded in Finder, a write the vault refused writable again — until neither list names a repo note.
+     - An entry whose `type` is not `repo` is never marked, however often it re-runs: that note is misfiled or mistyped, and a human's to fix.
    - It exits 1 when `Repos/` itself could not be read or a write failed.
