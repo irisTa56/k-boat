@@ -16,7 +16,12 @@ import pytest
 
 import feed_filter.vault as vault_mod
 import kboat.lock
-from feed_filter.vault import VaultError, VaultEvictedError, write_feed_note
+from feed_filter.vault import (
+    VaultError,
+    VaultEvictedError,
+    VaultRepeatedKeyError,
+    write_feed_note,
+)
 from kboat.canonical import CanonicalUrl, canonical_url
 from kboat.frontmatter import Value, parse_frontmatter
 from kboat.lock import VaultLockedError, vault_lock
@@ -240,6 +245,36 @@ def test_an_evicted_note_raises_its_own_refusal_and_is_left_alone(tmp_path: Path
     assert (raised.value.slug, raised.value.path) == (slug, f"Feeds/{slug}.md")
     assert isinstance(raised.value, VaultError)  # every VaultError boundary still holds
     assert sorted(p.name for p in (tmp_path / "Feeds").iterdir()) == [stub.name]
+
+
+def test_a_note_naming_a_key_twice_raises_its_own_refusal_and_is_left_alone(
+    tmp_path: Path,
+) -> None:
+    # A hand-edit left `shelved` on two lines. Rewriting the note would keep one
+    # of them, and which one the reader meant is not in the note — so the note
+    # is refused as a refusal about this one note, which a run carries on past.
+    slug = url_slug(str(CU))
+    (tmp_path / "Feeds").mkdir()
+    note = tmp_path / "Feeds" / f"{slug}.md"
+    note.write_text(
+        f"---\ntype: feed\ntitle: A post\nurl: {CU}\n"
+        "read: false\nshelved: true\nshelved: false\ndismissed: false\nwall: false\n"
+        "feed_kind: article\nsite_id: ex\nsummary:\nadded_date: 2026-07-01\n---\n",
+        encoding="utf-8",
+    )
+    before = note.read_bytes()
+
+    with pytest.raises(VaultRepeatedKeyError) as raised:
+        _write(tmp_path)
+
+    assert raised.value.record == {
+        "status": "repeated_key",
+        "slug": slug,
+        "path": f"Feeds/{slug}.md",
+        "keys": ["shelved"],
+    }
+    assert isinstance(raised.value, VaultError)  # every VaultError boundary still holds
+    assert note.read_bytes() == before
 
 
 def test_a_refusal_this_module_does_not_know_still_raises(

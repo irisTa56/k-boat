@@ -546,7 +546,7 @@ def repeated_keys(text: str) -> dict[str, int]:
 
     Counted by the same lines `set_field` and `set_fields` refuse over a repeated
     key on, so the validator and those writers cannot disagree about which notes
-    name a key twice.
+    name a key twice — nor can the note writers that refuse on this directly.
     """
     lines = _lines_keepends(text)
     start, end = _fence_bounds(lines)

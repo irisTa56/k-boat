@@ -60,7 +60,7 @@ Browser path (opt-in):
 Side effects and orchestration:
 
 - `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run.
-  - Raises `VaultError` on a write the writer refused — its subclass `VaultEvictedError` where iCloud holds the note behind a placeholder — and `VaultLockedError` when the lock's bounded wait expires with another run still holding it; whichever it is, a failed write is never recorded seen.
+  - Raises `VaultError` on a write the writer refused — its subclass `VaultEvictedError` where iCloud holds the note behind a placeholder, and `VaultRepeatedKeyError` where the note names a key on more than one line — and `VaultLockedError` when the lock's bounded wait expires with another run still holding it; whichever it is, a failed write is never recorded seen.
 - `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
   - `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
@@ -155,7 +155,7 @@ These are the rules a multi-module change must preserve, each named with where i
 The user-facing narrative of the observable behavior is README's "Failure and self-heal behavior" — keep the two in sync.
 
 - **Never-lost over never-duplicated.** `cmd_remind` (`cli.py`) writes the note *then* records seen, recording only on success; `write_feed_note` raises `VaultError` on a write the writer refused, `VaultLockedError` when the vault lock's wait expires, `VaultLockUnavailableError` when that lock cannot be operated at all, and lets an `OSError` from the atomic write propagate (`vault.py`), so a failed write is never recorded as seen.
-  - `VaultLockedError` and `VaultEvictedError` are the two that do not recur for the run as a whole — the holder finishes, and an eviction concerns one note and clears once it is downloaded — so `main` prints each as a `status` record on stdout, and the run skills leave that entry for a later run and carry on rather than stopping.
+  - `VaultLockedError`, `VaultEvictedError` and `VaultRepeatedKeyError` are the three that do not recur for the run as a whole — the holder finishes, and an eviction or a repeated key concerns one note — so `main` prints each as a `status` record on stdout, and the run skills leave that entry for a later run and carry on rather than stopping.
   - A judging error still writes the note (title or URL fallback) before recording.
   - The only duplicate window is a crash in the gap between write and record — and the hash-named upsert makes even that re-run write idempotent, so nothing duplicates.
 - **Never-lost at post grain (forum).** `cmd_forum_remind` mirrors the above for forum posts: the note write *then* the DB write, only on success.

@@ -64,9 +64,14 @@ class Source:
     notebooklm_id: str | None
     summary_empty: bool
     topics_empty: bool
+    # The keys the note names on more than one line, which the note writer
+    # refuses the whole note over.
+    repeated_keys: tuple[str, ...] = ()
 
     @classmethod
-    def from_frontmatter(cls, slug: str, path: str, fm: dict[str, Value]) -> Source:
+    def from_frontmatter(
+        cls, slug: str, path: str, fm: dict[str, Value], repeated_keys: tuple[str, ...] = ()
+    ) -> Source:
         def boolean(key: str) -> bool:
             return fm.get(key) is True
 
@@ -99,6 +104,7 @@ class Source:
             topics_empty=not (
                 isinstance(topics, list) and any(isinstance(t, str) and t.strip() for t in topics)
             ),
+            repeated_keys=repeated_keys,
         )
 
     @property
@@ -192,6 +198,11 @@ class Plan:
     ripe: list[Source] = field(default_factory=list)
     dismiss_discard: list[Source] = field(default_factory=list)
     needs_summary: list[Source] = field(default_factory=list)
+    # A source that `ripe`, `dismiss_discard` or `needs_summary` would list, but
+    # whose note names a key twice: each of those passes ends in a note write the
+    # note writer refuses, after work a later run would only repeat — and, for a
+    # discard, after the notebook is gone. Keyed by the pass it was held from.
+    held: list[tuple[Source, str]] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
 
 
@@ -202,7 +213,10 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
     # both phases, so they never get stamped, cleared, or flagged.
     for s in sources:
         if s.needs_summary:  # recovery set — orthogonal to the cooldown phases
-            plan.needs_summary.append(s)
+            if s.repeated_keys:
+                plan.held.append((s, "needs_summary"))
+            else:
+                plan.needs_summary.append(s)
         if s.blocked:
             continue
         if s.is_ambiguous:
@@ -241,6 +255,8 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
                 awaiting_cooldown += 1
             elif s.notebooklm_id is None:
                 dismiss_already_discarded += 1
+            elif s.repeated_keys:
+                plan.held.append((s, "dismiss_discard"))
             else:
                 plan.dismiss_discard.append(s)
         elif s.keep and not s.distill:
@@ -250,6 +266,8 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
                 already_distilled += 1
             elif not elapsed:
                 awaiting_cooldown += 1
+            elif s.repeated_keys:
+                plan.held.append((s, "ripe"))
             else:
                 plan.ripe.append(s)
         # else: undispositioned — not part of either phase's work.
@@ -278,9 +296,12 @@ class Kindle:
     title: str | None
     distill: bool
     distilled_date: str | None
+    repeated_keys: tuple[str, ...] = ()  # as on `Source`
 
     @classmethod
-    def from_frontmatter(cls, slug: str, path: str, fm: dict[str, Value]) -> Kindle:
+    def from_frontmatter(
+        cls, slug: str, path: str, fm: dict[str, Value], repeated_keys: tuple[str, ...] = ()
+    ) -> Kindle:
         def text(key: str) -> str | None:
             value = fm.get(key)
             return value if isinstance(value, str) else None
@@ -294,6 +315,7 @@ class Kindle:
             # `is None` check; a human clears it to re-distill (kboat-notes), so a
             # blank `""` must normalise to None like the source dates above.
             distilled_date=_nonblank(fm.get("distilled_date")),
+            repeated_keys=repeated_keys,
         )
 
     @property

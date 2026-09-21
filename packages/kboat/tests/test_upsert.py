@@ -614,7 +614,7 @@ def test_a_shadow_of_a_written_key_cannot_outlive_the_value_written(vault: Path)
     upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
     path = vault / "Feeds" / f"{F}.md"
     path.write_text(
-        path.read_text().replace("summary: old", "summary : Shadow\nsummary: old"),
+        path.read_text().replace("summary: old", "summary : Shadow"),
         encoding="utf-8",
     )
 
@@ -700,25 +700,36 @@ def test_an_unreadable_identity_with_nothing_to_compare_is_not_a_refusal(vault: 
     assert parse_frontmatter(text)["summary"] == "new"
 
 
-def test_a_repeated_key_keeps_the_value_the_reader_sees(vault: Path) -> None:
-    # A duplicated key is a hand-edit slip, but both Obsidian and this reader take
-    # the last one — so a write that kept the first would silently change the
-    # note's meaning while claiming to have changed nothing.
+@pytest.mark.parametrize(
+    ("lines", "keys", "why"),
+    [
+        ("my_rating: 1\nmy_rating: 9", ["my_rating"], "a key the write does not touch"),
+        ('"my_rating": 1\nmy_rating: 9', ["my_rating"], "one of the two lines undecodable"),
+        ("summary: mine\nsummary: theirs", ["summary"], "a key the write sets"),
+        ("a: 1\na: 2\nb: 1\nb : 2", ["a", "b"], "every repeated key is named"),
+    ],
+)
+def test_a_note_naming_a_key_on_two_lines_is_refused_and_left_alone(
+    vault: Path, lines: str, keys: list[str], why: str
+) -> None:
+    # A duplicated key is a hand-edit slip. Re-assembling the note keeps one line
+    # per key, so writing it would delete a line a human wrote without their
+    # knowing — and which one they meant is not in the note.
     upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-19")
     path = vault / "Feeds" / f"{F}.md"
     path.write_text(
-        path.read_text().replace(
-            "---\ntype: feed", "---\ntype: feed\nmy_rating: 1\nmy_rating: 9", 1
-        ),
+        path.read_text().replace("summary: old", lines, 1),
         encoding="utf-8",
     )
-    before = parse_frontmatter(path.read_text())["my_rating"]
+    before = path.read_bytes()
 
-    upsert(FEED, vault, {"slug": F, "fields": _FEED_FIELDS}, today="2026-07-20")
+    result = upsert(
+        FEED, vault, {"slug": F, "fields": {**_FEED_FIELDS, "title": "B"}}, today="2026-07-20"
+    )
 
-    text = path.read_text()
-    assert parse_frontmatter(text)["my_rating"] == before == "9"
-    assert text.count("my_rating:") == 1
+    assert result == {"status": "repeated_key", "slug": F, "path": f"Feeds/{F}.md", "keys": keys}
+    assert result["status"] not in WROTE_A_NOTE, why
+    assert path.read_bytes() == before, why
 
 
 @pytest.mark.parametrize("blank", ["", "\n", "   "], ids=["empty", "newline", "spaces"])

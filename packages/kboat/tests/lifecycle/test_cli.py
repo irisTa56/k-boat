@@ -152,6 +152,44 @@ def test_ripe_and_dismiss_work_sets(vault: Path, capsys):
     assert out["counts"]["keep_noop"] == 1
 
 
+def _repeat_a_line(note: Path, line: str) -> None:
+    text = note.read_text(encoding="utf-8")
+    note.write_text(text.replace(f"{line}\n", f"{line}\n{line}\n", 1), encoding="utf-8")
+
+
+def test_a_note_naming_a_key_twice_is_held_out_of_every_work_set(vault: Path, capsys):
+    # Each work set's pass ends in a note write, which the note writer refuses on
+    # a note naming a key twice. A dismissed source would lose its notebook and
+    # keep an id naming nothing; a ripe one would be distilled again on every run
+    # without ever being stamped. So each is held back as an anomaly instead,
+    # until a human repairs the note.
+    sources, kindles = vault / "Sources", vault / "Kindles"
+    write_note(sources, "drop", dismiss=True, filed_date="2026-06-01")
+    write_note(sources, "ripe", distill=True, filed_date="2026-06-01")
+    write_note(sources, "gap", summary="", topics=())
+    write_kindle(kindles, "B001RIPE", distill=True)
+    for note in (sources / "drop.md", sources / "ripe.md", sources / "gap.md"):
+        _repeat_a_line(note, "reading: false")
+    _repeat_a_line(kindles / "B001RIPE.md", "added_date: 2026-06-01")
+    out = run(vault, capsys)
+
+    assert out["phase_b"] == {"ripe": [], "dismiss_discard": []}
+    assert out["needs_summary"] == []
+    assert out["kindles"]["ripe"] == []
+    counts = out["counts"]
+    assert (counts["ripe"], counts["dismiss_discard"], counts["needs_summary"]) == (0, 0, 0)
+    assert counts["kindles_ripe"] == 0
+    held = {a["path"]: a["error"] for a in out["anomalies"]}
+    assert sorted(held) == [
+        "Kindles/B001RIPE.md",
+        "Sources/drop.md",
+        "Sources/gap.md",
+        "Sources/ripe.md",
+    ]
+    assert "'reading'" in held["Sources/ripe.md"]
+    assert "'added_date'" in held["Kindles/B001RIPE.md"]
+
+
 def test_blocked_excluded_from_everything(vault: Path, capsys):
     sources = vault / "Sources"
     write_note(sources, "b", distill=True, blocked=True, filed_date="2026-06-01")

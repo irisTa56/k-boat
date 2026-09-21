@@ -40,7 +40,7 @@ def make(slug: str, **over: object) -> Source:
         "topics_empty": False,
     }
     base.update(over)
-    return Source(**base)  # type: ignore[arg-type]
+    return Source(**base)  # ty: ignore[invalid-argument-type]
 
 
 class TestCooldown:
@@ -394,7 +394,7 @@ def make_kindle(slug: str, **over: object) -> Kindle:
         "distilled_date": None,
     }
     base.update(over)
-    return Kindle(**base)  # type: ignore[arg-type]
+    return Kindle(**base)  # ty: ignore[invalid-argument-type]
 
 
 class TestKindle:

@@ -45,7 +45,7 @@ Run `kboat-lifecycle` (it reads `OBSIDIAN_VAULT_PATH`).
   - It **maintains the cooldown clock on disk (Phase A)**: stamps `filed_date` with today's date on newly-dispositioned sources, clears it where every disposition was unchecked.
     - These are the only writes it makes; they are non-destructive, which is why this runs even when Phase B will be skipped.
     - (Pass `--dry-run` to compute without writing — for inspection only.)
-  - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse, are not the expected `type`, or were evicted by iCloud, a `filed_date` it could not write, and a folder it could not read).
+  - It **prints the work sets as JSON** on stdout: `phase_a.stamped`/`phase_a.cleared`, `ambiguous`, `phase_b.ripe`, `phase_b.dismiss_discard`, `kindles.ripe`, plus `counts` and `anomalies` (notes that failed to parse, are not the expected `type`, or were evicted by iCloud, a `filed_date` it could not write, a note it held out of a work set because the note names a key twice, and a folder it could not read).
     - `phase_a` and its counts hold only the writes that landed; a note whose `filed_date` write failed is in `anomalies` alone.
     - Each source entry carries `slug`, `path`, `title`, `source_type`, `url`, the disposition flags, `filed_date`, `distilled_date`, and `notebooklm_id`.
     - Each Kindle entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
@@ -162,14 +162,14 @@ Stamp it with today's date on the source note, and read what the write returned 
 - **Write no stamp where this pass did not finish with the source** — where something it set out to write is not written, the stamp included:
   - a concept the create cap deferred, or one whose create or append did not land (both in the accretion policy below);
   - a section step 5 could not write;
-  - the stamp itself, where `kboat-note write` came back a `status: locked` record (the vault held by another writer) or `status: evicted` (iCloud holding this note behind a placeholder) in place of the written note (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)).
+  - the stamp itself, where `kboat-note write` came back a `status: locked` record (the vault held by another writer), `status: evicted` (iCloud holding this note behind a placeholder) or `status: repeated_key` (the note naming a key on more than one line) in place of the written note (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)).
 - **What the pass settled, and what another pass repairs, are not that** — both are logged and neither bars the stamp:
   - a concept the accretion policy left uncreated on purpose, too vague or broad to name, or a `#dialogue` claim it could neither confirm nor correct;
   - the `###` heading a placement owed a flat note, where that second edit did not land — the next append to that note heads those claims whoever makes it (the accretion policy's wrap rule), so holding this source ripe would wait on a repair its own replay never reaches.
 - A source left unstamped stays ripe: name it in the run summary under its line, discard nothing, and let a later run distil it again, the accretion policy's replay rules keeping what already landed from being written twice.
   - Nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
   - Step 7's other branch runs as ever: a `keep` source's notebook is retained whatever this pass did, and the run summary reports that retention as on any other run.
-- A stamp write that came back neither the note nor one of those two refusals — an empty stdout with a `write failed: …` on stderr — leaves the source ripe like the rest, and **needs a human**: no later run clears it.
+- A stamp write that came back neither the note nor one of those three refusals — an empty stdout with a `write failed: …` on stderr — leaves the source ripe like the rest, and **needs a human**: no later run clears it.
   - Do not name a cause for it. `kboat-note write` reports that way for an unusable vault lock, a name held by something it cannot write over, a note it cannot parse or decode, and an ordinary I/O error alike (`kboat.cli`'s `NOTE_READ_ERRORS`), so relay what it reported and let the reader tell them apart.
   - Go on to the next source rather than ending the phase: nothing is lost where no stamp lands, and all but one of those causes is that one note's.
 - Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
@@ -205,7 +205,7 @@ Process each `kindles.ripe` entry in this order — the same crash-safety logic 
    - Grounding for a Kindle book: passages quoted from the book are `#grounded`; the reader's own commentary or interpretation in the body is external, so give it the same `#dialogue` treatment as a source's dialogue claims (vet it per the accretion policy's dialogue handling — keep as-is, correct, or drop — before accreting; a Kindle book has no notebook, but the reader's marginalia is the same kind of reader signal as saved dialogue).
    - Provenance is the ASIN, not a URL: `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` (the bare ASIN — the note's filename).
 3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same day's file as Phase B), before the stamp, under the "Review report" section's rules — always appended, with a section already there for this book reported as an anomaly.
-4. **Stamp `distilled_date`** with today's date on the Kindle note, under Phase B step 6 whole: write no stamp where this pass did not finish with the book, the stamp write's own `locked` and `evicted` refusals included, since a Kindle note takes them the same way.
+4. **Stamp `distilled_date`** with today's date on the Kindle note, under Phase B step 6 whole: write no stamp where this pass did not finish with the book, the stamp write's own `locked`, `evicted` and `repeated_key` refusals included, since a Kindle note takes them the same way.
    - The stamp is the commit point; after it the book leaves the ripe set, and a book left ripe is named in the run summary under its line there.
    - There is no notebook, so nothing turns on the stamp beyond that.
 
@@ -372,7 +372,7 @@ End the run with counts — most come straight from the tool's `counts` block (P
 Name every relation that did not land, with the two concepts it would have joined, and every provenance line that did not land, with the note and the reading it would have named — each with what came back.
 Neither keeps the source ripe on its own (Phase B step 6), so a source with nothing else unwritten stamps and no run comes back for either, which is what makes these the only route to `memory-curate` and to the reader's own hand.
 They ask nothing of the run they are reported in, so they are lines to read rather than ones to escalate.
-Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, a `filed_date` it could not write, and a folder it could not read — that one as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, which this pass appended below), and every error with the source or book it affected and the cause.
+Report the tool's `anomalies` (unparseable, non-`source`/non-`kindle`, or evicted notes, a `filed_date` it could not write, a note held out of a work set, and a folder it could not read — those last two as needing a human), the per-source/Kindle anomalies the agent hit (notebook missing, an original that could not be identified — name these, since the notebook-health step later in the run takes them and this is its only route to a ripe source — discard failed, an original-source extraction/fetch error, non-fatal errors on a saved dialogue note, `history`, or `summary`, and a day's report that already held this source's section, which this pass appended below), and every error with the source or book it affected and the cause.
 The run summary is the **sole** home for this operational detail — the review report carries the distillation knowledge only (see "Review report"), so a run that distilled nothing reports here and writes no report.
 
 Report how the run ended where it did not run through:
@@ -387,7 +387,7 @@ Name every source and Kindle book a partial pass left ripe (Phase B step 6), und
 
 - **Left ripe by the create cap** — the cap stopped this source's creates; name the concepts it deferred.
 - **Left ripe by a write that did not land** — a create or append that failed or came back an error, the review-report section this pass could not write, or a `distilled_date` stamp the write refused or could not make; name the concept, or the section, or the stamp, and what came back.
-  - What a refused stamp asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)).
+  - What a refused stamp asks is the vault's to say, not this skill's: a `locked` record is the next run's to recover, an evicted note is freed only by a human in Finder (kboat-vault-conventions [Durability and the vault lock](../kboat-vault-conventions/SKILL.md#durability-and-the-vault-lock)), and a `repeated_key` note only by a human deleting the line not meant (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)).
 
 **Both lines need a human's attention**, whatever came back: nothing here is a write a run is bound to make on its own.
 A later run distils the source again, but its judgement re-derives the concepts from the source, and only the reader can say whether an important one may go on waiting.

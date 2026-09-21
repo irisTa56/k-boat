@@ -98,14 +98,17 @@ An apostrophe is ordinary in a title, and one left unescaped ends the quoting mi
   - This writes the `Feeds/` note **and** records the entry seen (kept=1) in one process.
   - Do **not** also call `mark-seen` — that would double-record.
   - A non-zero exit means the vault write failed and the entry was **not** recorded seen.
-    - Three cases, and the stdout tells them apart:
+    - Four cases, and the stdout tells them apart:
       - `{"status": "locked", "holder": …}` — a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock").
         - This does **not** recur, because the holder finishes: leave this entry for the next run and **carry on** with the remaining keeps.
         - Report how many were deferred this way.
       - `{"status": "evicted", "slug": …, "path": …}` — iCloud holds this entry's note behind a placeholder, so nothing was written (kboat-vault-conventions "The write contract").
         - It concerns this one note and clears once the note is downloaded: leave this entry for a later run and **carry on** with the remaining keeps.
         - Report each by its `path`.
-      - Neither record (a slug collision, an unset vault, a disk error) — surface it and stop reminding, since the failure will recur.
+      - `{"status": "repeated_key", "slug": …, "path": …, "keys": …}` — the entry's note names each of `keys` on more than one line, so nothing was written (kboat-vault-conventions "The write contract").
+        - It concerns this one note, and returns on every run until a human deletes the line not meant: **carry on** with the remaining keeps.
+        - Report each by its `path` and `keys`, as needing a human.
+      - None of these records (a slug collision, an unset vault, a disk error) — surface it and stop reminding, since the failure will recur.
 - **Drop** → `feed-filter mark-seen --site-id <id> --url '<url>' --title '<title>'`.
   - Records the entry seen (kept=0) with no note, so it is not judged again.
 - **Subagent or fetch error** on an entry → do not silently lose it.

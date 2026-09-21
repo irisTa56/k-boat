@@ -128,6 +128,7 @@ An apostrophe is ordinary in a topic title, and one left unescaped ends the quot
   - A non-zero exit means the vault write failed.
     - A `{"status": "locked", "holder": …}` record on stdout means a K-Boat run held the vault longer than the write waits (kboat-vault-conventions "Durability and the vault lock"): it does not recur, so leave this topic for the next run and carry on with the remaining keeps.
     - A `{"status": "evicted", "slug": …, "path": …}` record means iCloud holds the topic's note behind a placeholder (kboat-vault-conventions "The write contract"): it clears once the note is downloaded, so leave this topic for a later run, carry on with the remaining keeps, and report it by its `path`.
+    - A `{"status": "repeated_key", "slug": …, "path": …, "keys": …}` record means the topic's note names each of `keys` on more than one line (kboat-vault-conventions "The write contract"): it concerns this one note and returns on every run until a human deletes the line not meant, so carry on with the remaining keeps and report it by its `path` and `keys`, as needing a human.
     - Any other non-zero exit will recur — surface it and stop reminding.
 - **Drop** (Rule A) → `feed-filter forum-mark-seen --site-id <id> --topic-id <topic_id> --url '<topic_url>' --title '<title>' --is-op`.
   - Records the interest verdict (kept=0); no note, and **no** post-grain seen — so if the OP later gains likes, Rule B re-judges it.

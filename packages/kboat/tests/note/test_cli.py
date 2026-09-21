@@ -110,6 +110,31 @@ def test_an_evicted_note_exits_nonzero_with_the_refusal_on_stdout(
     assert stub.read_bytes() == b"placeholder"
 
 
+def test_a_note_naming_a_key_twice_exits_nonzero_with_the_refusal_on_stdout(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # What `kboat-distill` reads to leave a stamp unmade and `kboat-ingest` to keep
+    # the capture queued: exit 1 and a `repeated_key` record naming the key.
+    rec = json.dumps({"slug": SLUG, "fields": {"type": "source", "title": "T", "url": URL}})
+    assert _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch) == 0
+    capsys.readouterr()
+    path = vault / "Sources" / f"{SLUG}.md"
+    path.write_text(path.read_text().replace("keep: false", "keep: false\nkeep: true"))
+    before = path.read_bytes()
+    stamp = json.dumps({"slug": SLUG, "fields": {"distilled_date": "2026-09-21"}})
+
+    assert _run(["write", "--type", "source", "--vault", str(vault)], stamp, monkeypatch) == 1
+
+    out = json.loads(capsys.readouterr().out)
+    assert out == {
+        "status": "repeated_key",
+        "slug": SLUG,
+        "path": f"Sources/{SLUG}.md",
+        "keys": ["keep"],
+    }
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize("holder", ["link", "directory"])
 def test_a_slug_held_by_a_non_file_is_a_failed_write(
     vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, holder: str
