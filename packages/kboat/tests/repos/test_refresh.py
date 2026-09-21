@@ -471,16 +471,79 @@ def test_refresh_dryrun_reports_same_target_collapse_consistently(
     assert (tmp_path / "Repos" / f"{canonical_slug('https://github.com/acme/old-b')}.md").exists()
 
 
-def test_refresh_reports_failed_repo(tmp_path: Path, monkeypatch) -> None:
-    _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
-    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, "not found"))
+@pytest.mark.parametrize("exists", [None, True])
+def test_refresh_reports_a_fetch_the_probe_does_not_call_absent_as_retryable(
+    tmp_path: Path, monkeypatch, exists: bool | None
+) -> None:
+    # A rate limit, an outage, or a repository GitHub says is there all fail the
+    # fetch without saying anything about the note, so the next run is its answer.
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (None, "HTTP 403"))
+    monkeypatch.setattr(refresh_mod, "gh_repo_exists", lambda o, r: exists)
     report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"]["failed"] == 1
-    assert report["failed"][0]["owner_repo"] == "acme/gone"
-    # `fetch` is the escalation switch's off position, and this is its commonest
-    # member: a repo that is gone answers non-zero every day, and a run that read
-    # it as the permanent class would notify about it every day.
+    assert report["failed"][0]["owner_repo"] == "acme/tool"
     assert report["failed"][0]["reason"] == "fetch"
+
+
+def test_refresh_parts_a_repository_github_shows_no_longer_from_a_failed_call(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A repository deleted or made private upstream fails the fetch on every run, and
+    # as `fetch` it would be relayed as "the next run tries again" for good. Driven
+    # through the real probe, so what is pinned is the question it asks as well as
+    # the answer: asking about the wrong repository 404s for nearly every one.
+    _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
+    asked: list[str] = []
+
+    class _Completed:
+        def __init__(self, stdout: str) -> None:
+            self.stdout, self.returncode, self.stderr = stdout, 1, "gh: Not Found"
+
+    def run(*a: object, **_kw: object) -> _Completed:
+        argv = a[0]
+        assert isinstance(argv, list)
+        if argv[1] == "api":
+            asked.append(str(argv[-1]))
+            return _Completed("HTTP/2.0 404 Not Found\n")
+        return _Completed("")
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", run)
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert asked == ["repos/acme/gone"]
+    assert report["failed"] == [
+        {
+            "path": report["failed"][0]["path"],
+            "owner_repo": "acme/gone",
+            "reason": "no_such_repo",
+            "error": "gh: Not Found",
+        }
+    ]
+
+
+def test_refresh_survives_an_existence_probe_that_raises(tmp_path: Path, monkeypatch) -> None:
+    # The probe raises a `gh` missing from `PATH` or one that outruns its timeout
+    # rather than answering, and it runs in a worker whose raise `Executor.map`
+    # carries into the parent — so without its own boundary one such note ends the
+    # pass, and every other note in the catalogue goes unrefreshed and unreported.
+    _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+
+    def view(owner: str, name: str) -> tuple[dict | None, str | None]:
+        return (None, "HTTP 403") if name == "gone" else (_meta(owner, name), None)
+
+    def probe(_owner: str, _name: str) -> bool | None:
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", view)
+    monkeypatch.setattr(refresh_mod, "gh_repo_exists", probe)
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["updated"] == 1
+    assert [(f["owner_repo"], f["reason"]) for f in report["failed"]] == [("acme/gone", "fetch")]
 
 
 def _counts_match_the_lists(report: dict) -> bool:

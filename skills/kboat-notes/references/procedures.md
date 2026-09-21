@@ -671,7 +671,7 @@ It is mechanical and runs over the whole catalogue, so the `kboat-repos` tool do
    - For every `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched.
    - When `gh` resolves a new canonical `owner/repo`, it adopts the rename (updates `url`/`title`, renames the file to the new slug).
 2. It prints a JSON report.
-   - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `evicted`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
+   - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `evicted`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `no_such_repo`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
      - A `failed` note is not quite an untouched one, and which `reason` needs a human rather than the next run is the `kboat-repos` skill's to say ("Procedure: refresh the catalogue" step 2); read it before relaying the report.
 
 ## Procedure: backfill the repo readme mark

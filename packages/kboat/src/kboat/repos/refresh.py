@@ -66,7 +66,7 @@ from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
 
-from .gather import PayloadError, gh_repo_view, github_fields, resolved_identity
+from .gather import PayloadError, gh_repo_exists, gh_repo_view, github_fields, resolved_identity
 from .identity import canonical_slug, canonical_url, parse_repo
 
 MAX_WORKERS = 10
@@ -77,10 +77,11 @@ MAX_WORKERS = 10
 # unannounced value would otherwise type-check clean and quietly stop the
 # escalation firing. Every site that sets one goes through `_fetched` or
 # `_failure`, so the annotation is what the value is checked against rather than
-# decoration. Two of the five are beyond a later run — `payload` (the mapping)
-# and `note` (the note's own shape) — and the skill says which of those the run
-# raises its hand about.
-Reason = Literal["fetch", "payload", "vault", "note", "write"]
+# decoration. Three of the six are beyond a later run — `payload` (the mapping),
+# `note` (the note's own shape) and `no_such_repo` (GitHub shows this account no
+# repository there) — and the skill says which of those the run raises its hand
+# about.
+Reason = Literal["fetch", "no_such_repo", "payload", "vault", "note", "write"]
 
 
 # Why a canonical slug could not be adopted. Typed for the reason `Reason` above
@@ -146,8 +147,7 @@ def _failure(note_rel: str, owner_repo: str, *, reason: Reason, error: str) -> d
     """One `failed` entry: the note, why it dropped out, and the detail.
 
     The run branches on `reason`, never on `error`, which carries `gh`'s stderr and
-    an exception's text — neither of which this side writes. `payload` is the one
-    no later run clears; the others are settled by trying again.
+    an exception's text — neither of which this side writes.
     """
     return {"path": note_rel, "owner_repo": owner_repo, "reason": reason, "error": error}
 
@@ -215,7 +215,21 @@ def _fetch(note: dict) -> dict:
         # `gh` did not answer. Its stderr can be empty — a `gh` the OOM killer took,
         # one that wrote its diagnostic to stdout — so the class comes from whether
         # there is a payload, never from whether there is text to show for it.
-        return _fetched(note, meta=None, error=err, reason="fetch")
+        #
+        # Which way it did not answer is the probe's to say, as it is for
+        # `gather`: a repository GitHub shows this account nothing at fails the
+        # same way on every run, and relayed as `fetch` it would be promised a
+        # retry that never comes.
+        try:
+            exists = gh_repo_exists(note["owner"], note["repo"])
+        except Exception:  # noqa: BLE001
+            # Its own boundary rather than the fetch's: the probe raises a `gh`
+            # that is missing or outruns its timeout instead of answering None,
+            # and here that raise would reach `Executor.map` and end the pass. An
+            # unanswered probe leaves the failure where the fetch already put it.
+            exists = None
+        reason: Reason = "no_such_repo" if exists is False else "fetch"
+        return _fetched(note, meta=None, error=err, reason=reason)
     return _fetched(note, meta=meta, error=err, reason=None)
 
 

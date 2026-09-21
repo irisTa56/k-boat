@@ -57,11 +57,10 @@ def gh_repo_view(owner: str, repo: str, *, timeout: float = 30) -> tuple[dict | 
     value rather than an exception — the caller wants the stderr text to put in
     its `error`, and always gets one, since `gh` can exit non-zero saying nothing.
     That one code covers both a repository that is not there and a call that did
-    not land, and this function does not part them. `gather` asks `gh_repo_exists`
-    which it was, rather than reading the stderr; `refresh`, the other caller,
-    does not, so a repo deleted upstream is a `fetch` failure there and relayed
-    as retryable. A zero exit whose stdout is not a usable repo view is the other
-    kind, and raises `PayloadError`.
+    not land, and this function does not part them: both callers ask
+    `gh_repo_exists` which it was, rather than reading the stderr. A zero exit
+    whose stdout is not a usable repo view is the other kind, and raises
+    `PayloadError`.
     """
     cmd = [_gh(), "repo", "view", f"{owner}/{repo}", "--json", _VIEW_FIELDS]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
@@ -102,8 +101,8 @@ def gh_repo_exists(owner: str, repo: str, *, timeout: float = 30) -> bool | None
 
     An OS error does **not** come back as None: a `gh` missing from `PATH` or one
     that outruns `timeout` raises out of here, as `subprocess.run` raises it, and
-    containing that is the caller's. `gather` does it with a blind boundary at the
-    call site; a caller that omits one takes the raise.
+    containing that is the caller's. `gather` and `refresh` each do it with a blind
+    boundary at the call site; a caller that omits one takes the raise.
 
     False means only that this authenticated account is shown no repository there:
     GitHub answers 404 for a private one it will not reveal exactly as it does for

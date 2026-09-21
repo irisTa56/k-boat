@@ -153,11 +153,16 @@ Do not sort them for the reader; branch on what the entry looks like.
   - Its `error` leads with which of the three it met — `absent`, `not a directory`, or `refused` — and the command exits 1.
   - Unlike a failed read of one file this clears on no later run until a human fixes the vault.
 
-Each `failed` entry carries a `reason` — one of five — and an `error` with the detail.
-One of them needs a human, three are settled by the next run, and one is a note to repair that the run reports without raising its hand:
+Each `failed` entry carries a `reason` — one of six — and an `error` with the detail.
+One of them needs a human, three are settled by the next run, and two are notes for a human to act on that the run reports without raising its hand:
 
-- `fetch` — `gh` did not answer for that repo (deleted, private, unreachable, or the call gave out).
+- `fetch` — `gh` did not answer for that repo (unreachable, rate-limited, or the call gave out), and GitHub did not say the repository is absent.
   - The next run tries again.
+  - One that fails on every run stops advancing the note's `refreshed_date`, and the backlog stats' unrefreshed-repo age is what raises the hand (kboat-notes "Backlog stats").
+- `no_such_repo` — `gh` did not answer for that repo, and GitHub then answered that it shows this account no repository there: deleted, made private, or no longer visible to this account, and nothing in the 404 says which.
+  - No later run refreshes the note, and the routine never deletes one, so relay it as a human's decision: delete the note if the repository is gone, or restore the access if it should still be visible (`gh auth status`).
+  - Do not raise the hand for one entry: its `refreshed_date` stops advancing, and the unrefreshed-repo age does that if the note is left — for as long as it is kept.
+  - Never say the repository was deleted: the answer says only that this account is shown none.
 - `payload` — `gh` answered with something unusable, the same class as `gather`'s `defect-payload`.
   - **Escalate it**: surface it as needing a human rather than relaying it among the rest, since no later run clears it.
     - What needs looking at is the mapping.
@@ -177,11 +182,11 @@ The same note appears in `rename_collisions` and `updated` when the rewrite did 
 Two rules over the whole report, ahead of any per-entry reason. **Escalate** when either holds:
 
 - the run updated nothing while reporting failures or anomalies — it refreshed no part of the catalogue;
-- more than one note failed for the same reason that no later run clears (`payload`, `note`).
+- more than one note failed for the same reason that no later run clears (`payload`, `note`, `no_such_repo`).
 
 Several notes failing the same way is not a heavier version of one note failing; it is a common cause.
-A `gh` upgrade the fetch cannot survive gives every repo the same non-zero exit, which no per-entry reason can tell from a repo that was deleted; a field added to the refresh without the catalogue being migrated gives every un-migrated note a `note` failure — and a repo catalogued that same day carries the new field and refreshes cleanly, so "updated nothing" alone would not notice.
-Left to the per-entry classes either one reads as an ordinary day, and the catalogue stops refreshing for good with nothing said.
+A `gh` upgrade the fetch cannot survive gives every repo the same non-zero exit; a credential that stops being shown an organisation's private repositories gives each of them `no_such_repo`; a field added to the refresh without the catalogue being migrated gives every un-migrated note a `note` failure — and a repo catalogued that same day carries the new field and refreshes cleanly, so "updated nothing" alone would not notice.
+Left to the per-entry classes each reads as an ordinary day, and the catalogue stops refreshing for good with nothing said.
 
 ## Errors
 
@@ -208,6 +213,6 @@ Detect and report; do not work around.
   - A repo `kboat-ingest` routed here keeps its queue file, so the next run writes the note; leave it to that run.
   - A repo the user pasted has nothing that retries it: tell them, since the same record can be written once the holding run has finished.
   - A refused `refresh` changed nothing: the next routine run refreshes the catalogue, and one run by hand can be run again once the holding run has finished.
-- `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the five `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the four `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
+- `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the six `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the four `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
 - `gh` not authenticated.
   - Stop and report rather than producing empty records.
