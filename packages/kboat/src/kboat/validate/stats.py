@@ -3,19 +3,24 @@
 The spec is `kboat-notes` ("Backlog stats"). These are not schema findings: every
 state counted here is well-formed, and none of them changes the exit code. What
 they answer is whether the backlog is moving — whether the DLQ is being drained,
-whether the summary-backfill recovery is working, whether distillation ran.
+whether the summary-backfill recovery is working, whether distillation ran,
+whether the repo refresh and the queue drain are still getting through.
 
-Nothing here re-derives a predicate. The counts come from `kboat.lifecycle.core`
-— the same `Source`/`Kindle` views and the same `compute_plan` the routine acts
-on — so a count and the work set it describes can never disagree.
+Nothing here re-derives a predicate. The source and Kindle counts come from
+`kboat.lifecycle.core` — the same `Source`/`Kindle` views and the same
+`compute_plan` the routine acts on — so a count and the work set it describes can
+never disagree. The repo and queue counts are over what the refresh and ingest
+read: every repo note's `refreshed_date`, and every capture's file name.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from kboat.frontmatter import Value
 from kboat.lifecycle.core import (
     Kindle,
     Source,
@@ -24,6 +29,7 @@ from kboat.lifecycle.core import (
     older_than,
     select_ripe_kindles,
 )
+from kboat.queue.parse import captured_on
 
 # A fortnight of daily ingest runs. The needs-summary set is meant to self-heal on
 # the next one, so an entry still in it after that many chances is not waiting, it
@@ -42,6 +48,10 @@ class Stats:
     ripe_undistilled: int
     ripe_undistilled_kindles: int
     awaiting_filed_stamp: int
+    unrefreshed_repo_count: int
+    unrefreshed_repo_oldest_age_days: int | None
+    queued_count: int
+    queued_oldest_age_days: int | None
 
     def to_json(self) -> dict[str, object]:
         # `asdict` in declaration order, so this method spells no field names of
@@ -51,16 +61,36 @@ class Stats:
         return dataclasses.asdict(self)
 
 
-def compute_stats(sources: list[Source], kindles: list[Kindle], today: date) -> Stats:
+def _oldest(ages: Sequence[int | None]) -> int | None:
+    # None when there is nothing to age, and equally when no entry carries a date
+    # `age_in_days` can use: an unreadable or future date is not an age of zero.
+    usable = [age for age in ages if age is not None]
+    return max(usable) if usable else None
+
+
+def compute_stats(
+    sources: list[Source],
+    kindles: list[Kindle],
+    today: date,
+    *,
+    repo_refreshed: Sequence[Value],
+    captures: Sequence[str],
+) -> Stats:
+    """The backlog counts as of `today`.
+
+    `repo_refreshed` is each repo note's `refreshed_date` as read, and `captures`
+    each queue capture's file name.
+    """
     plan = compute_plan(sources, today)
     blocked = [s for s in sources if s.blocked]
-    ages = [age for s in blocked if (age := age_in_days(s.added_date, today)) is not None]
+    # Any value but today's date is a note the day's refresh did not stamp, a
+    # missing or unreadable one included — whatever kept the refresh from it, which
+    # is the point: the count does not ask why, so a failure that recurs forever is
+    # in it the same as one that clears tomorrow, and only the age parts them.
+    behind = [d for d in repo_refreshed if d != today.isoformat()]
     return Stats(
         blocked_count=len(blocked),
-        # None when the DLQ is empty, and equally when no entry carries a date
-        # `age_in_days` can use: an `added_date` that is unreadable, or in the
-        # future, is not an age of zero.
-        blocked_oldest_age_days=max(ages) if ages else None,
+        blocked_oldest_age_days=_oldest([age_in_days(s.added_date, today) for s in blocked]),
         stalled_summaries=sum(
             1 for s in plan.needs_summary if older_than(s.added_date, today, STALLED_SUMMARY_DAYS)
         ),
@@ -75,4 +105,15 @@ def compute_stats(sources: list[Source], kindles: list[Kindle], today: date) -> 
         # so one still ripe is simply one the run did not distill.
         ripe_undistilled_kindles=len(select_ripe_kindles(kindles)),
         awaiting_filed_stamp=len(plan.phase_a_stamp),
+        unrefreshed_repo_count=len(behind),
+        unrefreshed_repo_oldest_age_days=_oldest(
+            [age_in_days(d if isinstance(d, str) else None, today) for d in behind]
+        ),
+        queued_count=len(captures),
+        queued_oldest_age_days=_oldest(
+            [
+                age_in_days(day.isoformat(), today) if (day := captured_on(name)) else None
+                for name in captures
+            ]
+        ),
     )

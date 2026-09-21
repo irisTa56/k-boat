@@ -42,7 +42,7 @@ It is reported as the `awaiting_filed_stamp` count instead — see [Backlog stat
 ## Backlog stats
 
 `kboat-validate --stats` adds a `stats` block of backlog-health counts alongside the violations.
-They are computed from the same `kboat.lifecycle.core` predicates the routine acts on, so a count can never disagree with the work set it describes.
+The source and Kindle counts are computed from the same `kboat.lifecycle.core` predicates the routine acts on, so a count can never disagree with the work set it describes; the repo and queue counts are over the notes `kboat-repos refresh` reads and the captures `kboat-queue list` hands ingest.
 Unlike a violation, a stat is about how the backlog is *moving*: none of these states is malformed, and none affects the exit code (`--strict` still keys on violations alone).
 
 | Field | Meaning |
@@ -54,8 +54,13 @@ Unlike a violation, a stat is about how the backlog is *moving*: none of these s
 | `ripe_undistilled` | Sources the lifecycle calls **ripe** (`distill && !dismiss && !blocked`, cooldown elapsed, `distilled_date` empty). Distillation runs before validation, so after a run whose distillation completed this is what that run left ripe: sources whose concepts its create cap deferred or whose writes did not land, and sources it failed on. Its run summary names each with the reason — a source a partial pass left ripe is the reader's to act on, and one an error skipped carries there whatever that run said about it. |
 | `ripe_undistilled_kindles` | Kindle books the lifecycle calls ripe (`distill`, `distilled_date` empty) — the same question for the other distillable kind, so a stalled Kindle pass is not invisible. No cooldown gates a book, so one still ripe after a run is one the run did not finish, for any of the reasons its run summary names — the two above, or a body with no extractable highlights, which is the ordinary state of a book ticked `distill` before its highlights are in. |
 | `awaiting_filed_stamp` | Sources with a disposition and no `filed_date`, excluding blocked ones (whose dispositions are inert) — the Phase A stamp a run applies. |
+| `unrefreshed_repo_count` | Repo notes whose `refreshed_date` is not today: every note the day's refresh did not stamp, whatever kept it from doing so — a `failed` entry of any `reason`, a `url` the refresh could not parse, or a refresh that did not run. Reason-agnostic by choice: a `fetch` or `vault` failure that recurs on every run and one the next run clears look the same on any one day, and only the age below tells them apart. Read between runs, before the day's refresh, it holds the whole catalogue. |
+| `unrefreshed_repo_oldest_age_days` | Days since the oldest such note's `refreshed_date`, or `null` when no note is behind or none of them carries a usable date. |
+| `queued_count` | Captures in `Queue/`, well-formed or not — the files ingest drains. Read from the routine's validation pass, it is what that run's ingest kept: a transient failure left for the next run, or a capture stopped for a human. |
+| `queued_oldest_age_days` | Days since the oldest capture was made, read in the local calendar from the time the capture bookmarklet writes into its file name (`kboat-queue-<epoch_ms>.md`); `null` when the queue is empty or no capture's name carries that time. A capture whose name does not — one made by hand, or renamed — is in `queued_count` and left out of this age. |
 
-**Every age these counts report is clocked from `added_date`**, since no note records when these states began, so an age measures time since ingest rather than time in the state being counted.
+**Every source age these counts report is clocked from `added_date`**, since no note records when these states began, so an age measures time since ingest rather than time in the state being counted.
+The repo and queue ages are not: `refreshed_date` is the last refresh that succeeded, and a capture's name is the moment it was made, so each measures time in the state it counts.
 A source blocked long after ingest (through reactivation) reports the age since ingest, and a reactivated source can enter `stalled_summaries` after a single failed fetch rather than a fortnight of them; a threshold on either has to be read knowing that.
 A date that is unreadable *or in the future* is no age at all, so it contributes no age rather than one of zero or a negative that would read as the newest entry there is — `blocked_count` still counts the entry, while `stalled_summaries` simply never reaches it.
 An unreadable date is reported as `bad_date` in the same output, which is what keeps such a source from vanishing silently.

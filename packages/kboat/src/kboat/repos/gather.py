@@ -249,8 +249,8 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # `skip-no-such-repo` that status is what would tell a readable page from a
 # repository that is gone. Only a two-segment URL reaches the probe, so the pages
 # it could sort are few; the source path GETs the page itself either way; and a
-# capture that path cannot finish is either parked in the DLQ, whose age the
-# backlog stats report, or kept in the queue.
+# capture that path cannot finish is either parked in the DLQ or kept in the
+# queue, and the backlog stats age both.
 #
 # The boundaries below are several narrow ones rather than one wrapper around the
 # body, because the two classes interleave: `gh_repo_view` can fail either way,
