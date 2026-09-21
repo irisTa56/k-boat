@@ -6,7 +6,7 @@ error-absorbing shape.
 
 Two public entry points:
 
-``admit_from_feeds(conn, site, *, client, now)`` — **Rule-A path**:
+``admit_from_feeds(conn, site, *, client, now, tally)`` — **Rule-A path**:
     Fetches the three RSS feeds (latest + daily top + weekly top), builds the
     admission union deduped by topic id, calls ``forum_store.admit_topic`` for
     each (idempotent INSERT-OR-IGNORE), and emits a ``RuleACandidate`` for every
@@ -14,7 +14,7 @@ Two public entry points:
     Feed-level ``FetchError`` is absorbed into ``error``; surviving feeds are
     still processed.
 
-``gather_forum(conn, site, *, client, now)`` — **Rule-B path**:
+``gather_forum(conn, site, *, client, now, tally)`` — **Rule-B path**:
     For each due topic (``forum_store.due_topics``), fetches its JSON, evaluates
     qualifying posts against the effective like threshold, and emits a
     ``RuleBCandidate`` carrying the trigger posts and threshold.  Also returns a
@@ -142,6 +142,18 @@ class RuleBCandidate:
     effective_threshold: int = DEFAULT_LIKE_THRESHOLD
 
 
+@dataclass
+class FetchTally:
+    """The Discourse requests a run has attempted, for ``discourse_fetches``.
+
+    Incremented before each request, so a request that fails still counts.  Owned
+    by the caller and passed in, rather than carried home on a result, so a call
+    that raises past its own guards still leaves the requests it made counted.
+    """
+
+    count: int = 0
+
+
 @dataclass(frozen=True)
 class AdmitResult:
     """Outcome of one ``admit_from_feeds`` call.
@@ -149,10 +161,6 @@ class AdmitResult:
     ``candidates`` are Rule-A topics whose OP has not yet been judged.
     ``error`` is a combined message from any feed-level ``FetchError``(s),
     or ``None`` if all three feeds fetched successfully.
-    ``fetch_count`` is the number of Discourse HTTP requests this call attempted
-    (one per RSS feed, so at most three) — counted whether or not each succeeded,
-    so the CLI can surface a per-run Discourse-call total for politeness
-    observability (see ``cmd_forum_new``).  Default 0 keeps test fakes terse.
     ``all_feeds_failed`` is the typed site-unreachability signal: ``True`` iff
     **every** discovery feed fetch raised ``FetchError``
     (latest ∧ daily-top ∧ weekly-top), so the whole site was unreachable this run.
@@ -161,17 +169,20 @@ class AdmitResult:
     (≥1 feed succeeded) leaves it ``False``, so a reachable-but-degraded site
     resets rather than escalates.  A feed that answered with a body
     ``parse_feed`` could recover nothing from still counts as reachable, since the
-    fetch succeeded.  That leaves a known blind spot: a forum whose host answers
-    200 with a non-feed page (a moved domain serving a landing page) reports a
-    wholly clean status forever, admitting nothing.  The article path catches the
-    analogous case with ``zero_links``; the forum path has no zero-admission
-    signal yet.  Default ``False`` keeps test fakes terse.
+    fetch succeeded.
+    ``zero_links`` is the zero-admission signal, the forum counterpart of the
+    article path's: ``latest.rss`` answered, yet listed no topic.  It is what
+    separates a host that no longer serves the forum (a moved domain answering
+    200 with a landing page) from a quiet run, whose ``latest.rss`` still lists
+    the forum's newest topics even when none of them is new.  A run whose
+    ``latest.rss`` failed leaves it ``False``; that failure is in ``error``.
+    Defaults ``False`` keep test fakes terse.
     """
 
     candidates: list[RuleACandidate]
     error: str | None
-    fetch_count: int = 0
     all_feeds_failed: bool = False
+    zero_links: bool = False
 
 
 @dataclass(frozen=True)
@@ -215,15 +226,11 @@ class GatherForumResult:
     it is.  It is a typed signal rather than a prefix the reader has to parse back
     out of ``error``, matching ``pipeline.FetchOutcome.unexpected`` on the article
     path.  Default ``False`` keeps test fakes terse.
-    ``fetch_count`` is the number of Discourse topic-JSON requests this call
-    attempted (one per due topic, counted whether or not each succeeded), so the
-    CLI can report a per-run Discourse-call total.  Default 0 keeps fakes terse.
     """
 
     candidates: list[RuleBCandidate]
     polled_topics: list[PolledTopic]
     error: str | None
-    fetch_count: int = 0
     unexpected: bool = False
 
 
@@ -238,6 +245,7 @@ def admit_from_feeds(
     *,
     client: httpx.Client,
     now: int,
+    tally: FetchTally,
 ) -> AdmitResult:
     """Fetch the three discovery feeds, admit topics, and emit Rule-A candidates.
 
@@ -280,20 +288,19 @@ def admit_from_feeds(
     # successfully. If all three raise FetchError it stays False, so the site was
     # wholly unreachable this run — the typed trigger for the site_health counter.
     any_feed_succeeded = False
-    # Count every Discourse HTTP request attempted (incremented before each
-    # fetch, so a FetchError still counts the call we made — politeness metric).
-    fetch_count = 0
 
     # --- Fetch all three feeds independently; absorb per-feed FetchErrors ---
 
     # latest.rss: all entries in source order (sort=False preserves feed order,
     # though for latest the order does not matter — we take all topics, not top-N).
     latest_entries = []
+    latest_answered = False
     try:
-        fetch_count += 1
+        tally.count += 1
         result = fetch(latest_feed_url(forum_url), client=client)
         latest_entries = parse_feed(result.content, result.final_url, sort=False)
         any_feed_succeeded = True
+        latest_answered = True
     except FetchError as exc:
         errors.append(str(exc))
 
@@ -301,7 +308,7 @@ def admit_from_feeds(
     # parse_feed with sort=False preserves the feed's rank order.
     daily_entries = []
     try:
-        fetch_count += 1
+        tally.count += 1
         result = fetch(top_feed_url(forum_url, "daily"), client=client)
         daily_entries = parse_feed(result.content, result.final_url, sort=False)[:daily_count]
         any_feed_succeeded = True
@@ -311,7 +318,7 @@ def admit_from_feeds(
     # top.rss?period=weekly: rank order, truncated to weekly_count.
     weekly_entries = []
     try:
-        fetch_count += 1
+        tally.count += 1
         result = fetch(top_feed_url(forum_url, "weekly"), client=client)
         weekly_entries = parse_feed(result.content, result.final_url, sort=False)[:weekly_count]
         any_feed_succeeded = True
@@ -368,8 +375,11 @@ def admit_from_feeds(
     return AdmitResult(
         candidates=candidates,
         error="; ".join(errors) if errors else None,
-        fetch_count=fetch_count,
         all_feeds_failed=not any_feed_succeeded,
+        # Keyed on latest.rss alone: the top feeds cover a period, so a quiet
+        # forum's can be empty, while latest lists its newest topics regardless.
+        zero_links=latest_answered
+        and not any(topic_id_from_url(e.canonical_url) is not None for e in latest_entries),
     )
 
 
@@ -384,6 +394,7 @@ def gather_forum(
     *,
     client: httpx.Client,
     now: int,
+    tally: FetchTally,
 ) -> GatherForumResult:
     """Assemble Rule-B candidates for due topics. Performs NO writes.
 
@@ -444,13 +455,10 @@ def gather_forum(
     candidates: list[RuleBCandidate] = []
     polled_topics: list[PolledTopic] = []
     unexpected = False
-    # One Discourse topic-JSON request per due topic; counted before the call so
-    # a failed topic still counts the attempted call (politeness metric).
-    fetch_count = 0
 
     for row in forum_store.due_topics(conn, site.id, offsets, now):
         topic_id = row["topic_id"]
-        fetch_count += 1
+        tally.count += 1
         try:
             outcome = _gather_topic(conn, site, row, forum_url=forum_url, client=client)
         except sqlite3.Error:
@@ -477,7 +485,6 @@ def gather_forum(
         candidates=candidates,
         polled_topics=polled_topics,
         error="; ".join(errors) if errors else None,
-        fetch_count=fetch_count,
         unexpected=unexpected,
     )
 

@@ -13,6 +13,7 @@ import contextlib
 import json
 import sqlite3
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -35,6 +36,7 @@ from feed_filter.feeds import Entry, EntryKind
 from feed_filter.fetch import FetchError
 from feed_filter.forum_pipeline import (
     AdmitResult,
+    FetchTally,
     GatherForumResult,
     PolledTopic,
     RuleACandidate,
@@ -1985,14 +1987,14 @@ def _fake_admit_result(
     *,
     candidates: list[RuleACandidate] | None = None,
     error: str | None = None,
-    fetch_count: int = 0,
     all_feeds_failed: bool = False,
+    zero_links: bool = False,
 ) -> AdmitResult:
     return AdmitResult(
         candidates=candidates or [],
         error=error,
-        fetch_count=fetch_count,
         all_feeds_failed=all_feeds_failed,
+        zero_links=zero_links,
     )
 
 
@@ -2001,16 +2003,24 @@ def _fake_gather_result(
     candidates: list[RuleBCandidate] | None = None,
     polled: list[PolledTopic] | None = None,
     error: str | None = None,
-    fetch_count: int = 0,
     unexpected: bool = False,
 ) -> GatherForumResult:
     return GatherForumResult(
         candidates=candidates or [],
         polled_topics=polled or [],
         error=error,
-        fetch_count=fetch_count,
         unexpected=unexpected,
     )
+
+
+def _fetching[R](result: R, *, fetches: int) -> Callable[..., R]:
+    """A fake admission or gather that made ``fetches`` Discourse requests."""
+
+    def fake(conn: object, site: SiteConfig, *, client: object, now: int, tally: FetchTally) -> R:
+        tally.count += fetches
+        return result
+
+    return fake
 
 
 def _rule_a(topic_id: int, *, site_id: str = FORUM_SITE_ID) -> RuleACandidate:
@@ -2046,25 +2056,19 @@ def test_forum_new_emits_topics_and_polls(
     polled = [PolledTopic(topic_id=201, like_count=15)]
 
     monkeypatch.setattr(
-        cli,
-        "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(
-            candidates=[rule_a_cand], fetch_count=3
-        ),
+        cli, "admit_from_feeds", _fetching(_fake_admit_result(candidates=[rule_a_cand]), fetches=3)
     )
     monkeypatch.setattr(
         cli,
         "gather_forum",
-        lambda conn, site, *, client, now: _fake_gather_result(
-            candidates=[rule_b_cand], polled=polled, fetch_count=1
-        ),
+        _fetching(_fake_gather_result(candidates=[rule_b_cand], polled=polled), fetches=1),
     )
 
     rc = cli.main(["forum-new"])
     assert rc == 0
     out = _out(capsys)
 
-    # discourse_fetches sums the per-path fetch counts across sites (3 RSS + 1 JSON).
+    # discourse_fetches counts both paths' requests (3 RSS + 1 JSON).
     assert out["discourse_fetches"] == 4
 
     topics = out["topics"]
@@ -2094,6 +2098,7 @@ def test_forum_new_emits_topics_and_polls(
     assert out["sites"] == [
         {
             "site_id": FORUM_SITE_ID,
+            "zero_links": False,
             "error": None,
             "unexpected_error": False,
             "consecutive_failures": 0,
@@ -2114,13 +2119,15 @@ def test_forum_new_skips_disabled_site(
 
     admitted_ids: list[str] = []
 
-    def fake_admit(conn: object, site: SiteConfig, *, client: object, now: int) -> AdmitResult:
+    def fake_admit(
+        conn: object, site: SiteConfig, *, client: object, now: int, tally: FetchTally
+    ) -> AdmitResult:
         admitted_ids.append(site.id)
         return _fake_admit_result()
 
     monkeypatch.setattr(cli, "admit_from_feeds", fake_admit)
     monkeypatch.setattr(
-        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+        cli, "gather_forum", lambda conn, site, *, client, now, tally: _fake_gather_result()
     )
 
     assert cli.main(["forum-new"]) == 0
@@ -2137,18 +2144,15 @@ def test_forum_new_sums_discourse_fetches_across_sites(
     _add_forum_site()  # id "ef"
     _add_forum_site(site_id="ef2")
 
-    monkeypatch.setattr(
-        cli,
-        "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(fetch_count=3),
-    )
-    monkeypatch.setattr(
-        cli,
-        "gather_forum",
-        lambda conn, site, *, client, now: _fake_gather_result(
-            fetch_count=2 if site.id == "ef2" else 1
-        ),
-    )
+    monkeypatch.setattr(cli, "admit_from_feeds", _fetching(_fake_admit_result(), fetches=3))
+
+    def gather(
+        conn: object, site: SiteConfig, *, client: object, now: int, tally: FetchTally
+    ) -> GatherForumResult:
+        tally.count += 2 if site.id == "ef2" else 1
+        return _fake_gather_result()
+
+    monkeypatch.setattr(cli, "gather_forum", gather)
 
     rc = cli.main(["forum-new"])
     assert rc == 0
@@ -2169,12 +2173,12 @@ def test_forum_new_absorbs_per_site_errors(
     monkeypatch.setattr(
         cli,
         "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(error="feed fetch failed"),
+        lambda conn, site, *, client, now, tally: _fake_admit_result(error="feed fetch failed"),
     )
     monkeypatch.setattr(
         cli,
         "gather_forum",
-        lambda conn, site, *, client, now: _fake_gather_result(error="json fetch failed"),
+        lambda conn, site, *, client, now, tally: _fake_gather_result(error="json fetch failed"),
     )
 
     rc = cli.main(["forum-new"])
@@ -2205,10 +2209,12 @@ def test_forum_new_unexpected_site_exception_is_isolated_to_its_site(
     monkeypatch.setattr(
         cli,
         "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(candidates=[_rule_a(101)]),
+        lambda conn, site, *, client, now, tally: _fake_admit_result(candidates=[_rule_a(101)]),
     )
 
-    def gather(conn: Any, site: SiteConfig, *, client: Any, now: int) -> GatherForumResult:
+    def gather(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> GatherForumResult:
         if site.id == FORUM_SITE_ID:
             raise RuntimeError("kaboom")
         return _fake_gather_result(candidates=[_rule_b(201)], polled=[PolledTopic(201, 15)])
@@ -2248,14 +2254,16 @@ def test_forum_new_admit_exception_does_not_forfeit_the_rule_b_gather(
     _no_client(monkeypatch)
     _add_forum_site()
 
-    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+    def admit(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> AdmitResult:
         raise ValueError("bad feed payload")
 
     monkeypatch.setattr(cli, "admit_from_feeds", admit)
     monkeypatch.setattr(
         cli,
         "gather_forum",
-        lambda conn, site, *, client, now: _fake_gather_result(
+        lambda conn, site, *, client, now, tally: _fake_gather_result(
             candidates=[_rule_b(201)], polled=[PolledTopic(201, 15)]
         ),
     )
@@ -2287,12 +2295,12 @@ def test_forum_new_carries_gather_unexpected_flag(
     monkeypatch.setattr(
         cli,
         "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(),
+        lambda conn, site, *, client, now, tally: _fake_admit_result(),
     )
     monkeypatch.setattr(
         cli,
         "gather_forum",
-        lambda conn, site, *, client, now: _fake_gather_result(
+        lambda conn, site, *, client, now, tally: _fake_gather_result(
             error="topic 7: RuntimeError: boom", unexpected=True
         ),
     )
@@ -2317,14 +2325,16 @@ def test_forum_new_per_site_boundary_does_not_absorb_base_exception(
     _no_client(monkeypatch)
     _add_forum_site()
 
-    def interrupted(conn: Any, site: SiteConfig, *, client: Any, now: int) -> Any:
+    def interrupted(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> Any:
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        cli, "admit_from_feeds", lambda conn, site, *, client, now: _fake_admit_result()
+        cli, "admit_from_feeds", lambda conn, site, *, client, now, tally: _fake_admit_result()
     )
     monkeypatch.setattr(
-        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+        cli, "gather_forum", lambda conn, site, *, client, now, tally: _fake_gather_result()
     )
     monkeypatch.setattr(cli, raising_call, interrupted)
 
@@ -2353,10 +2363,10 @@ def test_forum_new_store_bug_fails_the_run_not_the_site(
         raise sqlite3.OperationalError("no such column: forum_watch.retired")
 
     monkeypatch.setattr(
-        cli, "admit_from_feeds", lambda conn, site, *, client, now: _fake_admit_result()
+        cli, "admit_from_feeds", lambda conn, site, *, client, now, tally: _fake_admit_result()
     )
     monkeypatch.setattr(
-        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+        cli, "gather_forum", lambda conn, site, *, client, now, tally: _fake_gather_result()
     )
     monkeypatch.setattr(cli, raising_call, broken_forum_table)
 
@@ -2373,18 +2383,13 @@ def test_forum_new_gather_guard_catches_a_real_due_topics_failure(
     escapes ``gather_forum`` — the case the outer guard exists for. A *store* error
     there is the run's failure and propagates (covered separately), so the fault
     injected here is the other kind: a bug in the store layer itself. The Rule-A
-    candidates survive it, and the gather's ``fetch_count`` is lost with the call,
-    so ``discourse_fetches`` reports only the admission's.
+    candidates survive it.
     """
     _no_client(monkeypatch)
     _add_forum_site()
 
     monkeypatch.setattr(
-        cli,
-        "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(
-            candidates=[_rule_a(101)], fetch_count=3
-        ),
+        cli, "admit_from_feeds", _fetching(_fake_admit_result(candidates=[_rule_a(101)]), fetches=3)
     )
 
     def buggy_due_topics(*args: Any, **kwargs: Any) -> Any:
@@ -2418,14 +2423,16 @@ def test_forum_new_gather_failure_still_resets_a_running_streak(
 
     unreachable = True
 
-    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+    def admit(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> AdmitResult:
         if unreachable:
             return _fake_admit_result(error="every feed failed", all_feeds_failed=True)
         return _fake_admit_result()
 
     monkeypatch.setattr(cli, "admit_from_feeds", admit)
     monkeypatch.setattr(
-        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+        cli, "gather_forum", lambda conn, site, *, client, now, tally: _fake_gather_result()
     )
 
     # Two unreachable runs build the streak up to 2.
@@ -2437,7 +2444,9 @@ def test_forum_new_gather_failure_still_resets_a_running_streak(
     # the flag says the failure was unclassified.
     unreachable = False
 
-    def gather(conn: Any, site: SiteConfig, *, client: Any, now: int) -> GatherForumResult:
+    def gather(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> GatherForumResult:
         raise RuntimeError("gather blew up")
 
     monkeypatch.setattr(cli, "gather_forum", gather)
@@ -2464,14 +2473,14 @@ def test_forum_new_unreachable_site_and_gather_failure_report_together(
     monkeypatch.setattr(
         cli,
         "admit_from_feeds",
-        lambda conn, site, *, client, now: _fake_admit_result(
+        lambda conn, site, *, client, now, tally: _fake_admit_result(
             error="every feed failed", all_feeds_failed=True
         ),
     )
     monkeypatch.setattr(
         cli,
         "gather_forum",
-        lambda conn, site, *, client, now: _fake_gather_result(
+        lambda conn, site, *, client, now, tally: _fake_gather_result(
             error="topic 7: RuntimeError: boom", unexpected=True
         ),
     )
@@ -2497,12 +2506,16 @@ def test_forum_new_both_paths_raising_loses_the_whole_site_but_no_other(
     _add_forum_site()  # id "ef" — the site that loses both paths
     _add_forum_site(site_id="ef2")
 
-    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+    def admit(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> AdmitResult:
         if site.id == FORUM_SITE_ID:
             raise RuntimeError("admit blew up")
         return _fake_admit_result(candidates=[_rule_a(101)])
 
-    def gather(conn: Any, site: SiteConfig, *, client: Any, now: int) -> GatherForumResult:
+    def gather(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> GatherForumResult:
         if site.id == FORUM_SITE_ID:
             raise ValueError("gather blew up")
         return _fake_gather_result(candidates=[_rule_b(201)], polled=[PolledTopic(201, 15)])
@@ -2539,14 +2552,16 @@ def test_forum_new_repeated_admit_exception_escalates_to_persistent(
 
     raising = True
 
-    def admit(conn: Any, site: SiteConfig, *, client: Any, now: int) -> AdmitResult:
+    def admit(
+        conn: Any, site: SiteConfig, *, client: Any, now: int, tally: FetchTally
+    ) -> AdmitResult:
         if raising:
             raise RuntimeError("kaboom")
         return _fake_admit_result()
 
     monkeypatch.setattr(cli, "admit_from_feeds", admit)
     monkeypatch.setattr(
-        cli, "gather_forum", lambda conn, site, *, client, now: _fake_gather_result()
+        cli, "gather_forum", lambda conn, site, *, client, now, tally: _fake_gather_result()
     )
 
     for expected_count in (1, 2, 3):
@@ -2576,7 +2591,12 @@ def test_forum_new_excludes_article_sites(
     gathered_ids: list[str] = []
 
     def fake_admit(
-        conn: sqlite3.Connection, site: SiteConfig, *, client: object, now: int
+        conn: sqlite3.Connection,
+        site: SiteConfig,
+        *,
+        client: object,
+        now: int,
+        tally: FetchTally,
     ) -> AdmitResult:
         gathered_ids.append(site.id)
         return _fake_admit_result()

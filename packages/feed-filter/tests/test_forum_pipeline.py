@@ -34,6 +34,7 @@ import pytest
 
 from feed_filter import forum_store, seen
 from feed_filter.forum_pipeline import (
+    FetchTally,
     RuleACandidate,
     RuleBCandidate,
     admit_from_feeds,
@@ -140,15 +141,16 @@ def _no_json_handler(request: httpx.Request) -> httpx.Response:
 def test_admission_union_admits_all_three_feeds(conn: sqlite3.Connection) -> None:
     """Topics from latest, daily, and weekly feeds are all admitted."""
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    tally = FetchTally()
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=tally)
 
     assert result.error is None
     # latest.rss: 101, 102, 103; top.rss (daily+weekly both use same fixture): 201, 202, 203
     admitted_ids = {c.topic_id for c in result.candidates}
     assert {101, 102, 103, 201, 202, 203} == admitted_ids
     # Three RSS fetches (latest + daily + weekly), all successful.
-    assert result.fetch_count == 3
+    assert tally.count == 3
 
 
 def test_admission_union_dedupes_overlapping_topics(conn: sqlite3.Connection) -> None:
@@ -162,7 +164,7 @@ def test_admission_union_dedupes_overlapping_topics(conn: sqlite3.Connection) ->
     forum_store.admit_topic(conn, SITE_ID, 101, first_seen_at=NOW - 100)
 
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     # Row count for topic 101 must be exactly 1 (INSERT-OR-IGNORE).
     count = conn.execute(
@@ -184,7 +186,7 @@ def test_top_feed_rank_order_preserved(conn: sqlite3.Connection) -> None:
     site = _forum_site(daily_watch_count=1, weekly_watch_count=0)
 
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     admitted_ids = {c.topic_id for c in result.candidates}
     # Latest: 101, 102, 103; daily top-1: 201 (not 203 which is newest).
@@ -201,7 +203,7 @@ def test_rule_a_candidates_emitted_without_json_fetch(conn: sqlite3.Connection) 
     """
     site = _forum_site()
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert len(result.candidates) > 0, "must emit at least one Rule-A candidate"
     # Each candidate carries data from the RSS feed.
@@ -222,7 +224,7 @@ def test_rule_a_skips_topic_with_op_interest_set(conn: sqlite3.Connection) -> No
     forum_store.set_op_verdict(conn, SITE_ID, 101, kept=1)
 
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert all(c.topic_id != 101 for c in result.candidates), (
         "topic with op_interest_kept set must not appear as a Rule-A candidate"
@@ -236,7 +238,7 @@ def test_rule_a_skips_topic_with_op_dropped(conn: sqlite3.Connection) -> None:
     forum_store.set_op_verdict(conn, SITE_ID, 102, kept=0)
 
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert all(c.topic_id != 102 for c in result.candidates)
 
@@ -245,7 +247,7 @@ def test_rule_a_candidate_carries_op_text(conn: sqlite3.Connection) -> None:
     """Rule-A candidates include the RSS summary as op_text."""
     site = _forum_site(daily_watch_count=0, weekly_watch_count=0)
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     # All three latest topics should have op_text from the fixture descriptions.
     for cand in result.candidates:
@@ -291,7 +293,7 @@ def test_rule_a_op_text_flattens_html_description(conn: sqlite3.Connection) -> N
     """
     site = _forum_site(daily_watch_count=0, weekly_watch_count=0)
     with _client_from_handler(_html_latest_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     cand = next(c for c in result.candidates if c.topic_id == 777)
     assert cand.op_text == "First paragraph of the OP. Second line & more."
@@ -312,7 +314,7 @@ def test_admit_error_absorption_continues_on_feed_failure(conn: sqlite3.Connecti
 
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.error is not None, "a failed feed must produce an error message"
     # Top feeds succeeded → daily/weekly topics admitted.
@@ -332,27 +334,118 @@ def test_admit_all_feeds_fail_returns_error_no_candidates(conn: sqlite3.Connecti
         return httpx.Response(503, text="down")
 
     site = _forum_site()
+    tally = FetchTally()
     with _client_from_handler(handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=tally)
 
     assert result.error is not None
     assert result.candidates == []
     # All three RSS calls were attempted and counted even though each failed —
-    # fetch_count is a metric of calls made, not calls that succeeded.
-    assert result.fetch_count == 3
+    # the tally counts calls made, not calls that succeeded.
+    assert tally.count == 3
     # Every feed failed → the site was wholly unreachable this run; this is the
     # typed signal the CLI increments the site_health counter on.
     assert result.all_feeds_failed is True
+    # An unreachable site is an outage, not a site that answered with nothing.
+    assert result.zero_links is False
 
 
 def test_admit_all_feeds_succeed_not_flagged_unreachable(conn: sqlite3.Connection) -> None:
     """When every feed fetches, all_feeds_failed is False (the reachable case)."""
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(_no_json_handler) as client:
-        result = admit_from_feeds(conn, site, client=client, now=NOW)
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.error is None, "all feeds succeeding must produce no error"
     assert result.all_feeds_failed is False
+
+
+def _landing_page_handler(request: httpx.Request) -> httpx.Response:
+    """Every discovery feed answers 200 with an HTML page that is not a feed —
+    the old host of a moved forum serving a landing page."""
+    if request.url.path.endswith(".rss"):
+        return httpx.Response(
+            200,
+            text="<html><body><h1>We have moved</h1></body></html>",
+            headers={"content-type": "text/html"},
+        )
+    raise AssertionError(f"unexpected path {request.url.path}")
+
+
+def test_admit_feeds_answering_with_no_topics_set_zero_links(conn: sqlite3.Connection) -> None:
+    """A host that answers every feed yet yields no topic is flagged, not clean.
+
+    The fetches succeed, so the site is reachable and nothing errors — without
+    ``zero_links`` this run would read exactly like a healthy one.
+    """
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(_landing_page_handler) as client:
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
+
+    assert result.candidates == []
+    assert result.error is None
+    assert result.all_feeds_failed is False
+    assert result.zero_links is True
+
+
+_EMPTY_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Top topics</title><link>https://forum.example.com</link>
+<description>Nothing this period</description></channel></rss>"""
+
+
+def test_admit_empty_top_feeds_after_a_latest_failure_are_not_zero_links(
+    conn: sqlite3.Connection,
+) -> None:
+    """A quiet forum's period-bounded top feeds can be empty; with latest.rss
+    failing that run, nothing says the forum stopped serving topics."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/latest.rss":
+            return httpx.Response(500, text="boom")
+        return httpx.Response(
+            200, content=_EMPTY_RSS, headers={"content-type": "application/rss+xml"}
+        )
+
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(handler) as client:
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
+
+    assert result.candidates == []
+    assert result.error is not None, "the latest.rss failure is reported"
+    assert result.zero_links is False
+
+
+def test_admit_latest_listing_no_topic_sets_zero_links(conn: sqlite3.Connection) -> None:
+    """latest.rss answering with no topic is flagged whatever the top feeds held."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/latest.rss":
+            return _landing_page_handler(request)
+        return _no_json_handler(request)
+
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(handler) as client:
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
+
+    assert result.error is None
+    assert result.zero_links is True
+
+
+def test_admit_quiet_run_is_not_zero_links(conn: sqlite3.Connection) -> None:
+    """A run with nothing new to judge still lists the forum's topics, so it is not
+    flagged: every topic was admitted and judged on an earlier run."""
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(_no_json_handler) as client:
+        first = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
+    for c in first.candidates:
+        forum_store.set_op_verdict(conn, SITE_ID, c.topic_id, kept=0)
+
+    with _client_from_handler(_no_json_handler) as client:
+        quiet = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
+
+    assert first.zero_links is False
+    assert quiet.candidates == [], "every topic was already judged"
+    assert quiet.zero_links is False
 
 
 def test_admit_marks_only_top_feed_topics_poll_eligible(conn: sqlite3.Connection) -> None:
@@ -364,7 +457,7 @@ def test_admit_marks_only_top_feed_topics_poll_eligible(conn: sqlite3.Connection
     """
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(_no_json_handler) as client:
-        admit_from_feeds(conn, site, client=client, now=NOW)
+        admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     eligible = {
         topic_id
@@ -392,7 +485,7 @@ def test_gather_skips_latest_only_topics(conn: sqlite3.Connection) -> None:
     """
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(_no_json_handler) as client:
-        admit_from_feeds(conn, site, client=client, now=NOW)
+        admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
     fetched_ids: list[int] = []
 
@@ -406,7 +499,7 @@ def test_gather_skips_latest_only_topics(conn: sqlite3.Connection) -> None:
         return httpx.Response(404, text="not found")
 
     with _client_from_handler(recording_handler) as client:
-        gather_forum(conn, site, client=client, now=NOW)
+        gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert {101, 102, 103}.isdisjoint(fetched_ids), "latest-only topics must not be JSON-polled"
     assert set(fetched_ids) == {201, 202, 203}, "only top-feed topics are JSON-polled"
@@ -448,12 +541,13 @@ def test_gather_forum_emits_rule_b_candidates(conn: sqlite3.Connection) -> None:
     # in the JSON body, but parse_topic returns the parsed topic/posts regardless.
     _admit_and_make_due(conn, 1234)
 
+    tally = FetchTally()
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=tally)
 
     assert result.error is None
     # One due topic → one topic-JSON fetch counted.
-    assert result.fetch_count == 1
+    assert tally.count == 1
     assert len(result.candidates) == 1
     cand = result.candidates[0]
     assert isinstance(cand, RuleBCandidate)
@@ -485,7 +579,7 @@ def test_gather_forum_candidate_url_carries_slug(conn: sqlite3.Connection) -> No
     _admit_and_make_due(conn, 1234)
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.candidates[0].topic_url == "https://forum.example.com/t/my-forum-topic/1234"
 
@@ -514,7 +608,7 @@ def test_gather_forum_candidate_url_falls_back_to_slugless(conn: sqlite3.Connect
     _admit_and_make_due(conn, 1234)
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.candidates[0].topic_url == "https://forum.example.com/t/1234"
 
@@ -544,7 +638,7 @@ def test_gather_forum_effective_threshold_switches_on_interest(conn: sqlite3.Con
     forum_store.set_op_verdict(conn, SITE_ID, 1234, kept=1)
 
     with _client_from_handler(handler) as client:
-        result_a = gather_forum(conn, site, client=client, now=NOW)
+        result_a = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert len(result_a.candidates) == 1
     trigger_ids_a = {p.post_id for p in result_a.candidates[0].trigger_posts}
@@ -573,7 +667,7 @@ def test_gather_forum_effective_threshold_default_when_interest_not_kept(
     # op_interest_kept not set (NULL) → default threshold applies.
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert len(result.candidates) == 1
     trigger_ids = {p.post_id for p in result.candidates[0].trigger_posts}
@@ -598,7 +692,7 @@ def test_gather_forum_seen_posts_excluded(conn: sqlite3.Connection) -> None:
     forum_store.record_post(conn, SITE_ID, topic_id=1234, post_id=5001, kept=1)
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     # Post 5001 already seen → only 5003 (5 likes ≥ threshold 5) qualifies.
     trigger_ids = {p.post_id for p in result.candidates[0].trigger_posts}
@@ -627,7 +721,7 @@ def test_gather_forum_last_like_count_short_circuit(conn: sqlite3.Connection) ->
 
     # --- Poll 1 (completed_polls=0, last_like_count=None): must evaluate ---
     with _client_from_handler(handler) as client:
-        result1 = gather_forum(conn, site, client=client, now=NOW)
+        result1 = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert len(result1.candidates) == 1, "first poll must always produce a candidate"
 
@@ -640,7 +734,7 @@ def test_gather_forum_last_like_count_short_circuit(conn: sqlite3.Connection) ->
     # offset[1]=1 day → due when now - 0 >= 86400; use now >= 86400
     due_now = 86400 + 1
     with _client_from_handler(handler) as client:
-        result2 = gather_forum(conn, site, client=client, now=due_now)
+        result2 = gather_forum(conn, site, client=client, now=due_now, tally=FetchTally())
 
     assert result2.candidates == [], "second poll with unchanged like_count must be short-circuited"
 
@@ -667,7 +761,7 @@ def test_gather_forum_short_circuit_does_not_fire_on_first_poll(conn: sqlite3.Co
     # completed_polls is still 0 (not finalized), so the short-circuit must not fire.
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert len(result.candidates) == 1, (
         "first poll must never be short-circuited (completed_polls=0)"
@@ -688,7 +782,7 @@ def test_gather_forum_json_error_absorbed(conn: sqlite3.Connection) -> None:
         return httpx.Response(503, text="down")
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.error is not None
     assert result.candidates == []
@@ -714,7 +808,7 @@ def test_gather_forum_permanent_404_advances_poll_for_retirement(
         return httpx.Response(404, text="not found")
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.candidates == []
     assert result.error is not None, "a retirement notice is still surfaced"
@@ -748,7 +842,7 @@ def test_gather_forum_permanent_and_transient_in_one_run_dont_interfere(
         return httpx.Response(404, text="not found")
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert [pt.topic_id for pt in result.polled_topics] == [1111], (
         "only the permanently-deleted topic advances toward retirement"
@@ -770,7 +864,7 @@ def test_gather_forum_permanent_410_advances_poll_for_retirement(
         return httpx.Response(410, text="gone")
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert [pt.topic_id for pt in result.polled_topics] == [1234]
 
@@ -794,7 +888,7 @@ def test_gather_forum_permanent_404_carries_stored_like_count(
         return httpx.Response(404, text="not found")
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert [pt.topic_id for pt in result.polled_topics] == [1234]
     assert result.polled_topics[0].like_count == 15, "stored count is carried, not reset"
@@ -819,7 +913,7 @@ def test_dead_topic_retires_after_offsets_consumed(conn: sqlite3.Connection) -> 
         now = offset * 86400
         assert forum_store.due_topics(conn, SITE_ID, offsets, now), "topic should be due"
         with _client_from_handler(handler) as client:
-            result = gather_forum(conn, site, client=client, now=now)
+            result = gather_forum(conn, site, client=client, now=now, tally=FetchTally())
         for pt in result.polled_topics:
             forum_store.finalize_poll(conn, SITE_ID, pt.topic_id, pt.like_count, offsets)
 
@@ -853,8 +947,9 @@ def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Conne
             )
         return httpx.Response(404, text="not found")
 
+    tally = FetchTally()
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=tally)
 
     assert result.error is not None, "error must mention the failed topic"
     # Topic 1234 succeeded and has qualifying posts.
@@ -866,7 +961,7 @@ def test_gather_forum_continues_after_one_topic_json_failure(conn: sqlite3.Conne
     )
     # Both due topics were fetched (the failed 1111 and the succeeding 1234), so
     # both calls are counted even though one raised.
-    assert result.fetch_count == 2
+    assert tally.count == 2
 
 
 # A second topic's JSON, so a fault can be injected for one topic and not the
@@ -916,8 +1011,9 @@ def test_gather_forum_unexpected_exception_is_isolated_to_its_topic(
 
     monkeypatch.setattr(forum_store, "is_post_seen", flaky_is_post_seen)
 
+    tally = FetchTally()
     with _client_from_handler(_two_topic_handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=tally)
 
     assert [pt.topic_id for pt in result.polled_topics] == [1234], (
         "a topic whose gather raised must not reach the finalize worklist"
@@ -933,7 +1029,7 @@ def test_gather_forum_unexpected_exception_is_isolated_to_its_topic(
     assert "topic 1111" in result.error
     assert "RuntimeError" in result.error, "the message names the exception type"
     # Both topics were fetched, so both calls are counted even though one raised.
-    assert result.fetch_count == 2
+    assert tally.count == 2
 
 
 def test_gather_forum_mixes_classified_and_unclassified_failures(
@@ -963,7 +1059,7 @@ def test_gather_forum_mixes_classified_and_unclassified_failures(
     monkeypatch.setattr(forum_store, "is_post_seen", flaky_is_post_seen)
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert [pt.topic_id for pt in result.polled_topics] == [1234], (
         "the retired topic advances; the one that raised does not"
@@ -997,7 +1093,7 @@ def test_gather_forum_does_not_absorb_a_store_error_per_topic(
         _client_from_handler(_two_topic_handler) as client,
         pytest.raises(sqlite3.OperationalError),
     ):
-        gather_forum(conn, site, client=client, now=NOW)
+        gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
 
 def test_gather_forum_does_not_absorb_base_exception(
@@ -1018,7 +1114,7 @@ def test_gather_forum_does_not_absorb_base_exception(
     monkeypatch.setattr(forum_store, "is_post_seen", interrupted)
 
     with _client_from_handler(_two_topic_handler) as client, pytest.raises(KeyboardInterrupt):
-        gather_forum(conn, site, client=client, now=NOW)
+        gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
 
 def test_gather_forum_no_qualifying_posts_emits_no_candidate(conn: sqlite3.Connection) -> None:
@@ -1036,7 +1132,7 @@ def test_gather_forum_no_qualifying_posts_emits_no_candidate(conn: sqlite3.Conne
     _admit_and_make_due(conn, 1234)
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     assert result.candidates == []
     assert result.error is None
@@ -1067,7 +1163,7 @@ def test_gather_forum_writes_nothing_to_db(conn: sqlite3.Connection) -> None:
     post_seen_before = conn.execute("SELECT * FROM forum_post_seen").fetchall()
 
     with _client_from_handler(handler) as client:
-        result = gather_forum(conn, site, client=client, now=NOW)
+        result = gather_forum(conn, site, client=client, now=NOW, tally=FetchTally())
 
     watch_after = conn.execute("SELECT * FROM forum_watch").fetchall()
     post_seen_after = conn.execute("SELECT * FROM forum_post_seen").fetchall()

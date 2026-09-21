@@ -993,6 +993,47 @@ def test_forum_new_dead_topic_retirement_does_not_increment(
     assert status["persistent"] is False
 
 
+def _moved_forum_transport() -> httpx.Client:
+    """The old host of a moved forum: every request answers 200 with a landing page."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text="<html><body><h1>This forum has moved</h1></body></html>",
+            headers={"content-type": "text/html"},
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_forum_new_flags_a_site_that_admits_nothing_every_run(
+    state_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A forum whose host answers but serves no feed is flagged on every run.
+
+    Nothing errors, so without ``zero_links`` each run would report the site as
+    clean. As with a ``zero_links`` scrape, the counter takes the success branch:
+    the site answered, so it is not an outage.
+    """
+    _register_forum()
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "build_client", _forum_transport)
+    assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+    assert _forum_status(_out(capsys))["zero_links"] is False, "a serving forum is not flagged"
+
+    monkeypatch.setattr(cli, "build_client", _moved_forum_transport)
+    for _ in range(3):
+        assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
+        status = _forum_status(_out(capsys))
+        assert status["zero_links"] is True
+        assert status["error"] is None
+        assert status["consecutive_failures"] == 0
+        assert status["persistent"] is False
+
+
 # ---------------------------------------------------------------------------
 # Per-topic failure isolation: a topic whose gather did not complete stays out
 # of the emitted polls worklist and re-polls on the next run.
@@ -1207,9 +1248,8 @@ def test_forum_new_admission_raising_mid_loop_re_emits_rule_a_next_run(
     assert cli.main(["forum-new", "--site-id", _FORUM_SITE_ID]) == 0
     out = _out(capsys)
     # The admission fetched all three feeds before raising, and the gather fetched
-    # the one due topic — but a caught call's count never rides home, so the
-    # politeness metric reports only the gather's. It is a floor, not a total.
-    assert out["discourse_fetches"] == 1
+    # the one due topic: the requests a caught call made still count.
+    assert out["discourse_fetches"] == 4
     assert [t for t in out["topics"] if t["rule"] == "A"] == [], (
         "the whole Rule-A pass is forfeited, not partly emitted"
     )

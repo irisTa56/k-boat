@@ -73,6 +73,7 @@ from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.exa import ExaError, search, usable_cost
 from feed_filter.fetch import FetchError, build_client
 from feed_filter.forum_pipeline import (
+    FetchTally,
     GatherForumResult,
     RuleACandidate,
     admit_from_feeds,
@@ -398,7 +399,7 @@ def _fetch_all(sites: list[SiteConfig], *, client: httpx.Client) -> dict[str, Fe
 
 
 class SiteStatus(TypedDict):
-    """One ``sites[]`` entry of a gather's report — the keys ``forum-new`` emits.
+    """One ``sites[]`` entry of a gather's report — the keys both gathers emit.
 
     Declared rather than composed as a dict literal at each gather, so the two
     gathers and the doc-sync gate over the run skills' enumerations of this key
@@ -407,17 +408,11 @@ class SiteStatus(TypedDict):
     """
 
     site_id: str
+    zero_links: bool
     error: str | None
     unexpected_error: bool
     consecutive_failures: int
     persistent: bool
-
-
-class ArticleSiteStatus(SiteStatus):
-    """A ``new-entries`` ``sites[]`` entry: the shared keys plus ``zero_links``,
-    the scrape self-heal signal the forum path has no analogue of."""
-
-    zero_links: bool
 
 
 def cmd_new_entries(args: argparse.Namespace) -> int:
@@ -463,7 +458,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
     # extra is missing, so a misconfigured run errors cleanly up front.
     require_playwright_if_needed(sites_path())
     groups: list[list[dict[str, Any]]] = []
-    site_status: list[ArticleSiteStatus] = []
+    site_status: list[SiteStatus] = []
     entries: list[dict[str, Any]] = []
     try:
         with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
@@ -810,18 +805,24 @@ class _AdmitOutcome:
     ``AdmitResult.all_feeds_failed``, since an admission that raised holds none
     either. That is why the absorbing path returns this type rather than a
     synthesized ``AdmitResult``, whose ``all_feeds_failed`` would be a claim about
-    feeds that may well have answered.
+    feeds that may well have answered. ``zero_links`` is ``AdmitResult``'s, and
+    stays ``False`` on the absorbing path for the same reason.
     """
 
     candidates: list[RuleACandidate] = field(default_factory=list)
     error: str | None = None
     unexpected: bool = False
     reached: bool = False
-    fetch_count: int = 0
+    zero_links: bool = False
 
 
 def _admit_or_absorb(
-    conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client, now: int
+    conn: sqlite3.Connection,
+    site: SiteConfig,
+    *,
+    client: httpx.Client,
+    now: int,
+    tally: FetchTally,
 ) -> _AdmitOutcome:
     """Run one site's Rule-A admission, absorbing what is that site's own.
 
@@ -833,7 +834,7 @@ def _admit_or_absorb(
     — see ARCHITECTURE's forum failure-isolation bullet.
     """
     try:
-        result = admit_from_feeds(conn, site, client=client, now=now)
+        result = admit_from_feeds(conn, site, client=client, now=now, tally=tally)
     except sqlite3.Error:
         raise  # the run's failure, not this site's
     except Exception as exc:  # noqa: BLE001 — the per-site Rule-A absorb boundary
@@ -844,12 +845,17 @@ def _admit_or_absorb(
         candidates=result.candidates,
         error=result.error,
         reached=not result.all_feeds_failed,
-        fetch_count=result.fetch_count,
+        zero_links=result.zero_links,
     )
 
 
 def _gather_or_absorb(
-    conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client, now: int
+    conn: sqlite3.Connection,
+    site: SiteConfig,
+    *,
+    client: httpx.Client,
+    now: int,
+    tally: FetchTally,
 ) -> GatherForumResult:
     """Run one site's Rule-B gather, absorbing what escaped its own loop.
 
@@ -860,7 +866,7 @@ def _gather_or_absorb(
     Rule B. Same carve-outs for a store error and a ``BaseException``.
     """
     try:
-        return gather_forum(conn, site, client=client, now=now)
+        return gather_forum(conn, site, client=client, now=now, tally=tally)
     except sqlite3.Error:
         raise  # the run's failure, not this site's
     except Exception as exc:  # noqa: BLE001 — the per-site Rule-B absorb boundary
@@ -903,12 +909,17 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     The emitted ``discourse_fetches`` is the total Discourse HTTP calls this run
     made (RSS feeds + topic JSON, summed across sites) — a coarse politeness
     metric the skill reports; it excludes the judging subagents' ``WebFetch``.
-    It counts only what a returned result carried home, so a call the per-site
-    boundary caught reports none of the requests it had made — as does the
-    ``error`` it had collected. Both are why the skill treats the figure as rough.
+    It counts attempted requests, a failed one included, and one run-wide
+    ``FetchTally`` holds the count, so a call the per-site boundary caught still
+    reports the requests it had made.
 
-    Each ``sites[]`` entry carries three fields beyond ``error``:
+    Each ``sites[]`` entry carries four fields beyond ``error``:
 
+    - ``zero_links`` — the site's ``latest.rss`` answered, yet listed no topic
+      (``AdmitResult.zero_links``), which a quiet run does not produce. As on
+      the article path it does not increment the
+      counter: the site answered, so it resets as for any reached site, and the
+      run summary rather than the counter is what surfaces it.
     - ``unexpected_error`` — an absorbed exception the run could not classify,
       the same typed flag the article path emits. It asserts only that the
       failure did not arrive as a ``FetchError``, so the skill reports the
@@ -931,14 +942,13 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
     finalize_worklists: list[tuple[str, int, int]] = []
     site_status: list[SiteStatus] = []
     # Accumulated across sites; emitted as discourse_fetches (see docstring).
-    discourse_fetches = 0
+    tally = FetchTally()
 
     with contextlib.closing(open_db(db_path())) as conn, build_client() as client:
         for site in sites:
-            admit = _admit_or_absorb(conn, site, client=client, now=now)
-            gather = _gather_or_absorb(conn, site, client=client, now=now)
+            admit = _admit_or_absorb(conn, site, client=client, now=now, tally=tally)
+            gather = _gather_or_absorb(conn, site, client=client, now=now, tally=tally)
             unexpected = admit.unexpected or gather.unexpected
-            discourse_fetches += admit.fetch_count + gather.fetch_count
 
             # Serialize Rule-A candidates.
             rule_a = [
@@ -998,6 +1008,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
             site_status.append(
                 {
                     "site_id": site.id,
+                    "zero_links": admit.zero_links,
                     "error": "; ".join(errors) if errors else None,
                     "unexpected_error": unexpected,
                     "consecutive_failures": failure_count,
@@ -1032,7 +1043,7 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
             "topics": topics,
             "polls": polls,
             "sites": site_status,
-            "discourse_fetches": discourse_fetches,
+            "discourse_fetches": tally.count,
         }
     )
     return 0
