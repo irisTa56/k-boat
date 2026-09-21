@@ -544,8 +544,9 @@ def _refusal(key: str, held: Sequence[str]) -> str | None:
 def repeated_keys(text: str) -> dict[str, int]:
     """Each key more than one top-level frontmatter line names, with how many do.
 
-    The question `set_field` and `set_fields` refuse on, asked of a whole note, so
-    that what the validator reports is exactly what those writers will not touch.
+    Counted by the same lines `set_field` and `set_fields` refuse over a repeated
+    key on, so the validator and those writers cannot disagree about which notes
+    name a key twice.
     """
     lines = _lines_keepends(text)
     start, end = _fence_bounds(lines)

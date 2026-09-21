@@ -192,9 +192,7 @@ def check_repeated_keys(text: str, path: str) -> list[Violation]:
     """A `repeated_key` for each key more than one top-level line of the note names.
 
     Asked of the note's text rather than of its parsed frontmatter, which has
-    already kept one line per key and so cannot show that there were two. What
-    this reports is what the in-place rewriters refuse, so a note a run keeps
-    naming as unwritten is named here too, whether or not any run touches it.
+    already kept one line per key and so cannot show that there were two.
     """
     return [
         Violation(path, key, "repeated_key", f"named on {count} top-level lines")

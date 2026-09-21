@@ -175,7 +175,8 @@ Stats never affect the exit code — they describe how the backlog is moving, no
 
 `repeated_key` is reported against a key that more than one top-level line names, counting a line that names it in a shape the reader cannot decode (`"picked": x`, `picked : x`).
 The reader takes the last of those lines while a human editing the note sees the first, and nothing in the note says which was meant.
-So the in-place rewriters behind `kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh` and `kboat-note migrate-slugs` (`kboat.frontmatter.set_field` / `set_fields`) refuse to write such a key, and one named only on a line the reader cannot decode, rather than pick a line; each command reports that note as not written, and it stays so on every run until a human deletes the line not meant.
+So the in-place rewriters behind `kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh` and `kboat-note migrate-slugs` (`kboat.frontmatter.set_field` / `set_fields`) refuse to write such a key, and one named only on a line the reader cannot decode, rather than pick a line or add a second; each command reports that note as not written, and it stays so on every run until a human repairs it.
+The repair for `repeated_key` is deleting the line not meant; for the lone undecodable line, which `kboat-validate` shows as a `missing_field` ("The write contract" below), it is rewriting that line as a plain `key: value`.
 
 ## The write contract
 
