@@ -28,10 +28,11 @@ _.path = ["tools/notebooklm/.venv/bin"]
 
 [hooks]
 # Keep the git-hook generation first. A failing step aborts the rest (`sh -o
-# errexit`) while `mise install` still exits 0, and of the three this is the only
-# one whose absence is silent: a missing venv fails the next command loudly, a
-# missing pre-commit hook lets every later commit through ungated. Both syncs
-# reach the network, so neither can take that place.
+# errexit`) while `mise install` still exits 0, and the hooks are the steps whose
+# absence is silent: a missing venv fails the next command loudly, a missing
+# pre-commit hook lets every later commit through ungated and a missing pre-push
+# hook every push through unscanned. Both syncs reach the network, so neither can
+# take their place.
 #
 # `--no-active` silences uv's warning that `VIRTUAL_ENV` (exported above) is not
 # this project's environment, which is the intent and would otherwise be noise on
