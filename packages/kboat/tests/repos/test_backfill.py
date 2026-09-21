@@ -41,7 +41,7 @@ def _legacy_note(vault: Path, owner_repo: str = "owner/repo") -> Path:
     record = _record(owner_repo)
     write_note(record, vault, today_iso="2026-06-06")
     path = vault / "Repos" / f"{record['slug']}.md"
-    path.write_text(path.read_text().replace("readme: read\n", ""))
+    path.write_text(path.read_text().replace("readme: fetched\n", ""))
     return path
 
 

@@ -99,7 +99,7 @@ class ReadmeMark(StrEnum):
     enumeration of the set against this one declaration.
     """
 
-    READ = "read"
+    FETCHED = "fetched"
     UNAVAILABLE = "unavailable"
     UNKNOWN = "unknown"
 
@@ -182,7 +182,7 @@ REPO = NoteSchema(
             Kind.ENUM,
             enum=tuple(ReadmeMark),
             # `unknown` for the reason `status` defaults to its no-data member: a
-            # create that says nothing about the README must not claim it was read.
+            # create that says nothing about the README must not claim it was fetched.
             default=ReadmeMark.UNKNOWN,
         ),
         Field(

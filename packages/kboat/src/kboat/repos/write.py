@@ -51,7 +51,7 @@ def readme_mark(record: dict) -> ReadmeMark:
     """
     error = record["readme_error"]
     if error is None:
-        return ReadmeMark.READ
+        return ReadmeMark.FETCHED
     if isinstance(error, str) and error:
         return ReadmeMark.UNAVAILABLE
     raise BadInputError(f"record 'readme_error' must be null or a non-empty string: {error!r}")

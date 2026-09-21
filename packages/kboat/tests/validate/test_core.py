@@ -212,7 +212,7 @@ def test_valid_kindle_and_repo() -> None:
         "role": "library",
         "domain": "[tools]",
         "summary": "a repo",
-        "readme": "read",
+        "readme": "fetched",
         "status": "recent",
         "added_date": "2026-06-01",
         "refreshed_date": "2026-06-10",

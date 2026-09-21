@@ -89,10 +89,10 @@ def test_a_record_whose_readme_fetch_failed_writes_a_note_marked_unavailable(
     assert check_note("repo", dict(fm), f"Repos/{SLUG}.md") == []
 
 
-def test_a_record_whose_readme_was_fetched_writes_a_note_marked_read(tmp_path: Path) -> None:
+def test_a_record_whose_readme_was_fetched_writes_a_note_marked_fetched(tmp_path: Path) -> None:
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
 
-    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "read"
+    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "fetched"
 
 
 def test_cataloguing_a_repo_again_marks_the_note_for_the_new_classification(
@@ -103,12 +103,12 @@ def test_cataloguing_a_repo_again_marks_the_note_for_the_new_classification(
     write_note({**RECORD, "readme_error": "HTTP 404: Not Found"}, tmp_path, today_iso="2026-06-06")
     write_note(RECORD, tmp_path, today_iso="2027-01-01")
 
-    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "read"
+    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "fetched"
 
 
 def test_the_fields_block_cannot_claim_a_readme_the_record_did_not_fetch(tmp_path: Path) -> None:
     result = write_note(
-        {**RECORD, "fields": {**RECORD["fields"], "readme": "read"}, "readme_error": "boom"},
+        {**RECORD, "fields": {**RECORD["fields"], "readme": "fetched"}, "readme_error": "boom"},
         tmp_path,
         today_iso="2026-06-06",
     )
