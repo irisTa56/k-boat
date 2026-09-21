@@ -56,10 +56,10 @@ uv sync --project tools/notebooklm --no-active
 # trufflehog) and `shared-tasks:check` come from dotfiles' shared task library,
 # whose `tasks/README.md` is what to read before touching this: why `ref` is a
 # full sha on its `main`, and what an include that fails to load takes with it.
-# `shared-tasks:check` in CI says when `main` has moved past the pin.
+# `shared-tasks:check` in CI says when the tasks on `main` differ from the pin's.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=bd8d05f14c09ac1bfb7a2c37df45000a5c6aff67",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=709c486c620b291f7068f11641e4ad5476dc9c1d",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
