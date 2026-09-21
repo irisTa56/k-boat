@@ -28,6 +28,7 @@ import pytest
 
 from kboat.repos.gather import Verdict
 from kboat.repos.refresh import CollisionReason, Reason
+from kboat.schema import ReadmeMark
 from kboat.write import WriteStatus
 
 # tests → kboat → packages → the workspace root, which holds `.claude/skills`.
@@ -35,6 +36,7 @@ SKILLS = Path(__file__).resolve().parents[3] / ".claude/skills"
 
 _REPOS_SKILL = "kboat-repos/SKILL.md"
 _NOTES_PROCEDURES = "kboat-notes/references/procedures.md"
+_REPO_NOTE = "kboat-notes/references/repo-note.md"
 
 _BACKTICKED = re.compile(r"`([^`]+)`")
 _BULLET = re.compile(r"^( *)- (.*)$")
@@ -138,6 +140,11 @@ _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
         _NOT_OK_VERDICTS,
         _REPOS_SKILL,
         _inline(_REPOS_SKILL, r"`gather` returned a non-`ok` verdict — ([^(]*)\("),
+    ),
+    "repo-readme-inline": (
+        tuple(mark.value for mark in ReadmeMark),
+        _REPO_NOTE,
+        _inline(_REPO_NOTE, r"^\| `readme` \| .*? one of ([^.]*)\."),
     ),
     "write-status-inline": (
         tuple(status.value for status in WriteStatus),

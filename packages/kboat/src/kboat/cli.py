@@ -157,9 +157,10 @@ def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
     human. Stdout stays empty rather than carrying a report the run never produced.
 
     For the CLIs whose output *is* a report — `kboat-lifecycle`, `kboat-pick set`,
-    `kboat-repos refresh`, `kboat-note migrate-slugs --apply`. Their contract is
-    JSON on stdout and a diagnostic on stderr, and an uncaught `OSError` from
-    acquisition would break it with a traceback and no output at all. `kboat-note`
+    `kboat-repos refresh`, `kboat-repos backfill-readme --apply`,
+    `kboat-note migrate-slugs --apply`. Their contract is JSON on stdout and a
+    diagnostic on stderr, and an uncaught `OSError` from acquisition would break
+    it with a traceback and no output at all. `kboat-note`
     is on both sides of this: `migrate-slugs` reports on a whole vault and comes
     here, while `write` is a note writer and does not. For the two note writers,
     `run_write` already folds an unusable lock into its `write failed: …`, which is

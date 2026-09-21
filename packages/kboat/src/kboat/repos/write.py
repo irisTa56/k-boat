@@ -1,12 +1,13 @@
 """`kboat-repos write`: write a repo note from gather + classification.
 
 Reads one JSON object on stdin — a `gather` record (its `slug`/`url`/`title`/
-`fields`) augmented by the skill with the judged `role`, `domain`, `summary` —
-and writes `Repos/<slug>.md` through `kboat.write.upsert` under the `REPO`
-schema. Everything mechanical (field order, YAML quoting, de-dup by `url`, body
-preservation, the date stamps) belongs to that shared writer, so this module is
-only the translation between the record shape `gather` speaks and the
-`{slug, fields}` one `upsert` speaks.
+`fields`/`readme_error`) augmented by the skill with the judged `role`, `domain`,
+`summary` — and writes `Repos/<slug>.md` through `kboat.write.upsert` under the
+`REPO` schema, its `readme` mark derived from `readme_error`. Everything
+mechanical (field order, YAML quoting, de-dup by `url`, body preservation, the
+date stamps) belongs to that shared writer, so this module is only the
+translation between the record shape `gather` speaks and the `{slug, fields}`
+one `upsert` speaks.
 
 Like `kboat-note write`, the write is held under the vault lock, so a refused
 vault prints a `locked` record and exits non-zero instead of racing the run that
@@ -26,16 +27,35 @@ from kboat.cli import (
     vault_path,
 )
 from kboat.lock import vault_lock
-from kboat.schema import REPO
+from kboat.schema import REPO, ReadmeMark
 from kboat.write import WROTE_A_NOTE, BadInputError, upsert
 
-REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary")
+# `readme_error` is required though `null` is its usual value: a record that
+# dropped the key would otherwise read as a README fetched, and the note would
+# claim a classification the record cannot vouch for.
+REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary", "readme_error")
 
 # Schema fields the `fields` block may not carry, because they are not its to
 # know: `reading` is the human's checkbox and the stamps are the schema's.
 # `upsert` preserves a field the write leaves alone and overwrites one it is
 # given, so dropping these is what keeps them the human's and the schema's.
 _NOT_FROM_THE_RECORD = frozenset({"reading"} | {f.name for f in REPO.fields if f.stamp})
+
+
+def readme_mark(record: dict) -> ReadmeMark:
+    """The note's `readme` value, from the record's `readme_error`.
+
+    Only the fact of the error is kept: its text is `gh`'s stderr, which the vault
+    does not store. `gather` never sets it to the empty string, so one that arrives
+    empty, or as anything but a string, was altered on the way here and says
+    nothing either way about the fetch.
+    """
+    error = record["readme_error"]
+    if error is None:
+        return ReadmeMark.FETCHED
+    if isinstance(error, str) and error:
+        return ReadmeMark.UNAVAILABLE
+    raise BadInputError(f"record 'readme_error' must be null or a non-empty string: {error!r}")
 
 
 def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object]:
@@ -64,6 +84,7 @@ def write_note(record: dict, vault: Path, *, today_iso: str) -> dict[str, object
         "role": record["role"],
         "domain": record["domain"],
         "summary": record["summary"],
+        "readme": readme_mark(record),
     }
     fields: dict[str, object] = {}
     dropped: list[str] = []
@@ -96,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         # The record is checked before the lock is taken: one this writer cannot
         # read is the agent's to fix, and it never reaches the vault.
         require_readable_payload(record)
+        readme_mark(record)
         with vault_lock(vault):
             return write_note(record, vault, today_iso=args.today)
 

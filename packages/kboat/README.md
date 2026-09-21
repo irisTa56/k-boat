@@ -7,7 +7,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
 ## Console scripts
 
 - `kboat-lifecycle` — the distillation lifecycle state machine: boolean/date predicates over frontmatter, no judgement.
-- `kboat-repos` — the repo catalogue's mechanics: `gather` and `refresh` over the `gh` CLI, and `write` over the shared writer.
+- `kboat-repos` — the repo catalogue's mechanics: `gather` and `refresh` over the `gh` CLI, `write` over the shared writer, and `backfill-readme`, which gives each repo note written before the `readme` field existed `readme: unknown`.
 - `kboat-pick` — the daily-pick mechanics (`candidates`/`set`), no LLM and no NotebookLM.
 - `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON; `--stats` adds the backlog-health counts.
 - `kboat-doctor` — checks the vault's environment preconditions before a run:
