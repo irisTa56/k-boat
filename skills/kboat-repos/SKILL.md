@@ -32,7 +32,8 @@ Run `kboat-repos gather "<url>"`.
 
   - `skip-not-a-repo` — the URL itself settled it: any link deeper than a repository's entry URL (an issue, a release, a file, `/tree/<ref>`, a GitHub content path such as `github.com/resources/articles/…`), a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/topics/python`, `github.com/features/copilot`).
     - Fall through to the source/web path (`kboat-ingest`) with the record's `url`, not the repo path, for a queued capture of any of these and for a pasted profile, gist or GitHub route.
-    - A **pasted** link deeper than a repository's own URL is not taken down the source path unasked, since what the user asked for was the repository: tell them only the repository's own URL is catalogued, name it (`https://github.com/<owner>/<repo>`, the link's first two path segments) for them to paste, and stop.
+    - A **pasted** link deeper than a repository's own URL is not taken down the source path unasked, since what the user asked for was a repository: tell them only a repository's own URL is catalogued, and stop.
+      - Where the link sits inside a repository, pasting that repository's own URL catalogues it; do not name one for them, since the record does not say whether the first two path segments are a repository (`github.com/resources/articles/…` is a GitHub page, not one).
       - They capture the link through the bookmarklet if they want the page itself read.
     - `gh` is never asked about these, so the verdict arrives whatever GitHub is doing.
       - The list is of first path segments that are never an owner, not of pages worth reading: `settings`, `login` and `notifications` are on it beside the content routes.
