@@ -38,14 +38,16 @@ _.path = ["tools/notebooklm/.venv/bin"]
 # this project's environment, which is the intent and would otherwise be noise on
 # the output the paragraph above asks the reader to scan.
 #
-# The pre-push scan is a config-defined hook (git 2.54+, `git help hook`) rather
-# than a file under `.git/hooks`, where `pre-push` belongs to Entire while its
-# trial runs. Git runs it before that file, handing each the same arguments and
-# stdin, and a failure from either refuses the push.
+# The pre-push scan is registered in git's config rather than written under
+# `.git/hooks`, where `pre-push` belongs to Entire while its trial runs; how that
+# runs beside a hook file, and the git it needs, is dotfiles' `tasks/README.md`.
+# A git that ignores those keys would leave pushes unscanned in silence, so the
+# line after them says so when `git hook list` does not name the scan.
 postinstall = """
 mise generate git-pre-commit --write --task=pre-commit
 git config hook.secrets-push-scan.event pre-push
 git config hook.secrets-push-scan.command 'mise run secrets:push-scan'
+git hook list pre-push 2>/dev/null | grep -qx secrets-push-scan || echo "warning: this git ignores hook.* config, so pushes are not scanned; git 2.54 or later runs it" >&2
 uv sync
 uv sync --project tools/notebooklm --no-active
 """
@@ -57,7 +59,7 @@ uv sync --project tools/notebooklm --no-active
 # `shared-tasks:check` in CI says when `main` has moved past the pin.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=490a331318e62d007db506f930263ac56b16f962",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=bd8d05f14c09ac1bfb7a2c37df45000a5c6aff67",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
