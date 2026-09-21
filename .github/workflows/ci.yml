@@ -5,9 +5,9 @@ name: CI
 # to say. One job per top-level `qa:` family. `pre-commit` picks up a new family
 # through its `qa:**` glob and CI does not: a new family needs its own job here,
 # and a place in the main ruleset's required checks, before a merge waits on it.
-# `secrets:scan`, which `pre-commit` names outside that glob, has no job, since
-# it scans staged changes and `secret-scan` below scans a pull request's commits
-# instead.
+# `secrets:commit-scan`, which `pre-commit` names outside that glob, has no job,
+# since it scans staged changes and `secret-scan` below scans a pull request's
+# commits instead.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:

@@ -63,14 +63,14 @@ uv sync
 uv sync --project tools/notebooklm --no-active
 '''
 
-# `secrets:scan` (per commit, gitleaks), `secrets:push-scan` (per push,
+# `secrets:commit-scan` (per commit, gitleaks), `secrets:push-scan` (per push,
 # trufflehog) and `shared-tasks:check` come from dotfiles' shared task library,
 # whose `tasks/README.md` is what to read before touching this: why `ref` is a
 # full sha on its `main`, and what an include that fails to load takes with it.
 # `shared-tasks:check` in CI says when `main` has moved past the pin.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=dab177f49fb279a98a9ca03b5739344b513999a7",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=490a331318e62d007db506f930263ac56b16f962",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
@@ -95,11 +95,11 @@ description = "Check the authentication status"
 run = "notebooklm auth check --test --json"
 
 # `**`, not `*`: mise's `*` matches a single task segment, so `qa:*` left
-# `qa:links:offline` ungated. `secrets:scan` is named on its own because it is a
-# shared task (see `[task_config]`) and so sits outside `qa:`.
+# `qa:links:offline` ungated. `secrets:commit-scan` is named on its own because it
+# is a shared task (see `[task_config]`) and so sits outside `qa:`.
 [tasks.pre-commit]
 description = "Run all pre-commit checks"
-depends = ["qa:**", "secrets:scan"]
+depends = ["qa:**", "secrets:commit-scan"]
 
 # Two commands, because `rumdl` cannot make the second check -- the house rule
 # and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
