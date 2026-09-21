@@ -3,10 +3,11 @@
 Reads one JSON object on stdin — a `gather` record (its `slug`/`url`/`title`/
 `fields`/`readme_error`) augmented by the skill with the judged `role`, `domain`,
 `summary` — and writes `Repos/<slug>.md` through `kboat.write.upsert` under the
-`REPO` schema, its `readme` mark derived from `readme_error`. Everything mechanical (field order, YAML quoting, de-dup by `url`, body
-preservation, the date stamps) belongs to that shared writer, so this module is
-only the translation between the record shape `gather` speaks and the
-`{slug, fields}` one `upsert` speaks.
+`REPO` schema, its `readme` mark derived from `readme_error`. Everything
+mechanical (field order, YAML quoting, de-dup by `url`, body preservation, the
+date stamps) belongs to that shared writer, so this module is only the
+translation between the record shape `gather` speaks and the `{slug, fields}`
+one `upsert` speaks.
 
 Like `kboat-note write`, the write is held under the vault lock, so a refused
 vault prints a `locked` record and exits non-zero instead of racing the run that
