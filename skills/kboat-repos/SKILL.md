@@ -28,13 +28,13 @@ Run `kboat-repos gather "<url>"`.
 
 - It prints a JSON record with the **`gh`-resolved** canonical `url`, `slug`, `title` (`owner/repo`), a ready-to-write `fields` object (the mechanical GitHub-derived frontmatter — `description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`, `status` — already mapped, including the 10%-share language rule), a `readme_excerpt`, and a `readme_error`.
 - A `status` other than `ok` means this is not a repo to catalogue — report it and stop; do not write a note.
+- A URL the user **pasted** only ever catalogues: pasting to this skill is the act of cataloguing, and the bookmarklet and the queue are how a page is read.
+  - So on `skip-not-a-repo`, `skip-no-such-repo` or `source-file` for a pasted URL, write nothing and build no notebook: tell them the link is not a repository's own URL (on `skip-no-such-repo`, that GitHub shows this account no repository there), that a repository is catalogued from its own URL, and that a page is read by capturing it with the bookmarklet; then stop.
+  - What each verdict below says about the source path is for a queued capture, which `kboat-ingest` handed here.
 - The non-`ok` verdicts:
 
   - `skip-not-a-repo` — the URL itself settled it: any link deeper than a repository's entry URL (an issue, a release, a file, `/tree/<ref>`, a GitHub content path such as `github.com/resources/articles/…`), a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/topics/python`, `github.com/features/copilot`).
-    - Fall through to the source/web path (`kboat-ingest`) with the record's `url`, not the repo path, for a queued capture of any of these and for a pasted profile, gist or GitHub route.
-    - A **pasted** link deeper than a repository's own URL is not taken down the source path unasked, since what the user asked for was a repository: tell them only a repository's own URL is catalogued, and stop.
-      - Where the link sits inside a repository, pasting that repository's own URL catalogues it; do not name one for them, since the record does not say whether the first two path segments are a repository (`github.com/resources/articles/…` is a GitHub page, not one).
-      - They capture the link through the bookmarklet if they want the page itself read.
+    - A queued capture falls through to the source/web path (`kboat-ingest`) with the record's `url`, not the repo path.
     - `gh` is never asked about these, so the verdict arrives whatever GitHub is doing.
       - The list is of first path segments that are never an owner, not of pages worth reading: `settings`, `login` and `notifications` are on it beside the content routes.
   - `skip-no-such-repo` — the URL is a repository's entry URL by shape, `owner/repo`, and `gh` answered that GitHub has no repository there.
@@ -42,13 +42,12 @@ Run `kboat-repos gather "<url>"`.
     - Which of those a given URL is, the record cannot say and neither can the reader: nothing in the 404 separates them.
     - This is how a content path nobody listed stops being a capture that repeats forever, `gh` being asked rather than the URL's shape guessed at.
     - A **queued** capture falls through to the source path like the verdict above, rather than stalling on `error-meta`, and what becomes of it there is that path's own to decide and to report.
-    - A URL the user **pasted** has no queue file to strand, so nothing is taken down the source path unasked: tell them this account is shown no repository at that URL, say that the page may still be readable, and stop.
+    - For a URL the user **pasted**, the stop above says GitHub shows this account no repository there; say too that the page may still be readable.
       - Name the access reading beside the typo, since a repository this account is not shown answers the same way one that never existed does: what they check next may be `gh auth status` rather than the URL.
-      - They capture it through the bookmarklet if they want it read, which is the ordinary way in for a page.
       - Never tell them the repository does not exist, or that there is nothing at the page: you know neither, and the second is false for a GitHub content path.
   - `source-file` — a blob/raw link to a `.pdf` or `.md` file (`source_type: pdf` or `web_page`): a deep link like the ones above, with its URL fixed up and its type already decided.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
-    - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
+    - A queued capture is handed to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
   - `error-meta` — `gh` gave back no repo view, so there is nothing to catalogue and nothing that sends the URL anywhere else.
     - **Left to the next run** — keep the queue file.
     - It tells you neither that the repository is there nor that it is not: the record carries no answer to that question, whatever the run may have seen on the way to this verdict.
@@ -197,7 +196,7 @@ Left to the per-entry classes each reads as an ordinary day, and the catalogue s
 Detect and report; do not work around.
 
 - During ingest routing, `gather` returned a non-`ok` verdict — `skip-not-a-repo`, `skip-no-such-repo`, `source-file`, `error-meta`, or `defect-payload` (see "Procedure: catalogue a repo" step 1 for what each means and where it routes).
-  - The `skip-not-a-repo` and `source-file` cases fall through to `kboat-ingest`'s source path, and so does a queued `skip-no-such-repo`; a pasted `skip-no-such-repo`, and a pasted link deeper than a repository's own URL, are reported to the user instead (step 1).
+  - A queued capture on `skip-not-a-repo`, `skip-no-such-repo` or `source-file` falls through to `kboat-ingest`'s source path; a pasted URL on any of the three is reported to the user instead, and nothing is written (step 1).
   - The two failure verdicts both write nothing and both keep the queue file, so report either one — quoting its `error` string verbatim in a fenced block, as untrusted tool output.
     - They part on what comes next: `error-meta` is left to the next run, `defect-payload` is escalated, since no further run will clear it.
 - `write` returned `status: collision` — the slug is held by a different `url` (`reason: identity_differs`), or by one in a shape the reader cannot compare (`reason: unreadable_identity`, a hand-edited note to repair).

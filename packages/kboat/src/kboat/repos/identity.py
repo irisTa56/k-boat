@@ -44,13 +44,14 @@ _REPO_RE = re.compile(
 # reaches the `gh` fetch, which finds no repository there (`gather`, the
 # `gh_repo_exists` branch), and no note is written either way.
 #
-# What the list decides is which of the two skip verdicts the route gets, and
-# they are not interchangeable. A listed route is `skip-not-a-repo`, settled by
-# the URL, and every caller ingests it. An unlisted one is `skip-no-such-repo`,
-# settled by a 404 that says nothing about whether the page is readable — so a
-# user who pasted the URL is told rather than having it ingested for them. A
-# readable two-segment content path met in the queue therefore belongs on this
-# list: that is what gets `github.com/topics/python` the verdict
+# What the list decides is which of the two skip verdicts the route gets. A
+# listed route is `skip-not-a-repo`, settled by the URL; an unlisted one is
+# `skip-no-such-repo`, settled by a 404 that says nothing about whether the page
+# is readable. A queued capture takes the source path on either, and a pasted URL
+# stops on either; what differs is what a user who pasted it is told — that the
+# link is not a repository's own URL, or that GitHub shows this account no
+# repository there, which for a page GitHub serves reads like a typo or a lost
+# access. That is what listing gets `github.com/topics/python`, the verdict
 # `github.com/torvalds` already has, instead of the one `github.com/resources/articles`
 # gets for want of being listed.
 #

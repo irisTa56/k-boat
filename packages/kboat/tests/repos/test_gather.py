@@ -296,12 +296,14 @@ def test_gather_keeps_the_two_skip_verdicts_apart(monkeypatch) -> None:
     # about whether the page reads, `github.com/resources/…` serving an article
     # whose `owner/repo` is absent. One verdict for both would leave the caller
     # unable to tell a decision `gh` never entered from one it did, which is what
-    # the pasted-URL branch acts on. Nothing is stubbed for the shape case because
-    # nothing has to be: `gather` returns on the `parse_repo` branch before it
-    # reaches a subprocess at all. Nothing here would stop a call that did escape —
-    # the suite installs no subprocess guard, and `gather`'s blind boundary would
-    # turn even a missing `gh` into an `error-meta` record rather than an error.
-    reserved = gather("https://github.com/readme/stories/a-maintainer", today=TODAY)
+    # the message to a user who pasted the URL turns on. Nothing is stubbed for the
+    # shape case because nothing has to be: `gather` returns on the `parse_repo`
+    # branch before it reaches a subprocess at all. Nothing here would stop a call
+    # that did escape — the suite installs no subprocess guard, and `gather`'s blind
+    # boundary would turn even a missing `gh` into an `error-meta` record rather
+    # than an error. The reserved route is a two-segment one, since a deeper URL is
+    # `skip-not-a-repo` by its depth whatever its first segment.
+    reserved = gather("https://github.com/readme/stories", today=TODAY)
 
     assert reserved["status"] == "skip-not-a-repo"
 
