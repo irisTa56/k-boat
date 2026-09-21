@@ -388,20 +388,46 @@ def test_admit_feeds_answering_with_no_topics_set_zero_links(conn: sqlite3.Conne
     assert result.zero_links is True
 
 
-def test_admit_partial_failure_with_no_topics_sets_zero_links(conn: sqlite3.Connection) -> None:
-    """A feed that failed does not hide that the ones which answered held no topic."""
+_EMPTY_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Top topics</title><link>https://forum.example.com</link>
+<description>Nothing this period</description></channel></rss>"""
+
+
+def test_admit_empty_top_feeds_after_a_latest_failure_are_not_zero_links(
+    conn: sqlite3.Connection,
+) -> None:
+    """A quiet forum's period-bounded top feeds can be empty; with latest.rss
+    failing that run, nothing says the forum stopped serving topics."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/latest.rss":
             return httpx.Response(500, text="boom")
-        return _landing_page_handler(request)
+        return httpx.Response(
+            200, content=_EMPTY_RSS, headers={"content-type": "application/rss+xml"}
+        )
 
     site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
     with _client_from_handler(handler) as client:
         result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
 
-    assert result.error is not None
-    assert result.all_feeds_failed is False
+    assert result.candidates == []
+    assert result.error is not None, "the latest.rss failure is reported"
+    assert result.zero_links is False
+
+
+def test_admit_latest_listing_no_topic_sets_zero_links(conn: sqlite3.Connection) -> None:
+    """latest.rss answering with no topic is flagged whatever the top feeds held."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/latest.rss":
+            return _landing_page_handler(request)
+        return _no_json_handler(request)
+
+    site = _forum_site(daily_watch_count=3, weekly_watch_count=3)
+    with _client_from_handler(handler) as client:
+        result = admit_from_feeds(conn, site, client=client, now=NOW, tally=FetchTally())
+
+    assert result.error is None
     assert result.zero_links is True
 
 

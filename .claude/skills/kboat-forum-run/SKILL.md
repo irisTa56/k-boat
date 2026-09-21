@@ -51,8 +51,8 @@ Run `eval "$(mise env)" && feed-filter forum-new`.
   - `discourse_fetches` is the count of Discourse HTTP calls this gather made — one per RSS feed (three per site) plus one per due topic's JSON.
     - It is a coarse politeness/rate metric for the run summary; it does not include the judging subagents' `WebFetch` calls, which are not Discourse-API requests.
   - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
-    - `zero_links` means the site answered, yet no discovery feed that answered listed a single topic (step 5).
-      - A quiet run is not this: the feeds still list the forum's topics when none of them is new.
+    - `zero_links` means the forum's `latest.rss` answered, yet listed no topic (step 5).
+      - A quiet run is not this: `latest.rss` still lists the forum's newest topics when none of them is new.
     - A site with a non-null `error` may still have emitted topics and polls: the gather contains a failure to the smallest unit it can, so a partly-failed site is the normal case, not an anomaly (step 5).
     - `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
     - `consecutive_failures` counts consecutive runs the site's Rule-A admission returned no reachability verdict — every discovery feed failed, or the admission raised and so returned none at all.
@@ -183,7 +183,7 @@ For each site in `sites` with a non-null `error`, part of that site's gather fai
       - Withholding escalation is not a claim that the failure is transient: the counter only tracks whether the admission reached the site, so a Rule-B failure can repeat run after run without moving it.
         - So report what the fields say and let the counter do its job; never write a repeating failure up as self-healing.
 
-For each site in `sites` with `zero_links == true`, the forum's host answered but served no topic — the shape of a moved domain whose old host now serves a landing page.
+For each site in `sites` with `zero_links == true`, the forum's `latest.rss` answered but listed no topic — the shape of a moved domain whose old host now serves a landing page.
 
 - Nothing else surfaces it: the admission reached the site, so the counter resets and the site never turns `persistent`, however many runs it repeats on.
 - Flag it as actionable in the run summary, recommending the same two-step investigation as for a `persistent` site, moved or renamed forum URL first.

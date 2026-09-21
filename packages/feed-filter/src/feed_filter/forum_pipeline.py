@@ -171,10 +171,11 @@ class AdmitResult:
     ``parse_feed`` could recover nothing from still counts as reachable, since the
     fetch succeeded.
     ``zero_links`` is the zero-admission signal, the forum counterpart of the
-    article path's: at least one feed answered, yet no feed that answered yielded
-    a single topic.  It is what separates a host that no longer serves the forum
-    (a moved domain answering 200 with a landing page) from a quiet run, which
-    still lists the forum's latest topics even when none of them is new.
+    article path's: ``latest.rss`` answered, yet listed no topic.  It is what
+    separates a host that no longer serves the forum (a moved domain answering
+    200 with a landing page) from a quiet run, whose ``latest.rss`` still lists
+    the forum's newest topics even when none of them is new.  A run whose
+    ``latest.rss`` failed leaves it ``False``; that failure is in ``error``.
     Defaults ``False`` keep test fakes terse.
     """
 
@@ -293,11 +294,13 @@ def admit_from_feeds(
     # latest.rss: all entries in source order (sort=False preserves feed order,
     # though for latest the order does not matter — we take all topics, not top-N).
     latest_entries = []
+    latest_answered = False
     try:
         tally.count += 1
         result = fetch(latest_feed_url(forum_url), client=client)
         latest_entries = parse_feed(result.content, result.final_url, sort=False)
         any_feed_succeeded = True
+        latest_answered = True
     except FetchError as exc:
         errors.append(str(exc))
 
@@ -373,7 +376,10 @@ def admit_from_feeds(
         candidates=candidates,
         error="; ".join(errors) if errors else None,
         all_feeds_failed=not any_feed_succeeded,
-        zero_links=any_feed_succeeded and not ordered,
+        # Keyed on latest.rss alone: the top feeds cover a period, so a quiet
+        # forum's can be empty, while latest lists its newest topics regardless.
+        zero_links=latest_answered
+        and not any(topic_id_from_url(e.canonical_url) is not None for e in latest_entries),
     )
 
 

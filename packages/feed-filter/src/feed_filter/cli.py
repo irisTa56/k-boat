@@ -915,9 +915,9 @@ def cmd_forum_new(args: argparse.Namespace) -> int:
 
     Each ``sites[]`` entry carries four fields beyond ``error``:
 
-    - ``zero_links`` — the admission reached the site, yet no discovery feed that
-      answered yielded a topic (``AdmitResult.zero_links``), which a quiet run
-      does not produce. As on the article path it does not increment the
+    - ``zero_links`` — the site's ``latest.rss`` answered, yet listed no topic
+      (``AdmitResult.zero_links``), which a quiet run does not produce. As on
+      the article path it does not increment the
       counter: the site answered, so it resets as for any reached site, and the
       run summary rather than the counter is what surfaces it.
     - ``unexpected_error`` — an absorbed exception the run could not classify,
