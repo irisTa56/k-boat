@@ -107,14 +107,16 @@ def _load_kindles(vault: Path) -> tuple[list[Kindle], list[dict[str, str]], bool
     for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
-            fm = parse_frontmatter(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+            fm = parse_frontmatter(text)
         except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "kindle":
             anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'kindle'"})
             continue
-        kindles.append(Kindle.from_frontmatter(path.stem, rel, fm))
+        repeated = tuple(sorted(repeated_keys(text)))
+        kindles.append(Kindle.from_frontmatter(path.stem, rel, fm, repeated))
     return kindles, anomalies, unread
 
 
@@ -143,6 +145,16 @@ def _apply_phase_a(
     return written[today_iso], written[None], anomalies
 
 
+def _held(path: str, keys: tuple[str, ...], work_set: str) -> dict[str, str]:
+    """The anomaly for a note held out of `work_set` because it names `keys` twice."""
+    named = ", ".join(repr(key) for key in keys)
+    return {
+        "path": path,
+        "error": f"held out of {work_set}: the note names {named} on more than one line,"
+        " so the note writer would refuse the write that pass ends in",
+    }
+
+
 def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object], bool]:
     """Read the vault, compute the plan, apply Phase A unless `dry_run`, and
     return the JSON output with whether a required folder could not be read.
@@ -157,20 +169,18 @@ def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object],
     """
     sources, anomalies, sources_unread = _load_sources(vault)
     plan = compute_plan(sources, today)
-    anomalies += [
-        {
-            "path": s.path,
-            "error": f"notebook not discarded: the note names {', '.join(map(repr, s.repeated_keys))}"
-            " on more than one line, so the note writer would refuse to clear its coordinates",
-        }
-        for s in plan.dismiss_held
-    ]
+    anomalies += [_held(s.path, s.repeated_keys, work_set) for s, work_set in plan.held]
 
     # No on-disk writes for Kindle notes — Kindle has no cooldown clock — only
     # ripe selection.
     kindles, kindle_anomalies, kindles_unread = _load_kindles(vault)
     anomalies += kindle_anomalies
-    ripe_kindles = select_ripe_kindles(kindles)
+    ripe_kindles = []
+    for k in select_ripe_kindles(kindles):
+        if k.repeated_keys:
+            anomalies.append(_held(k.path, k.repeated_keys, "kindles.ripe"))
+        else:
+            ripe_kindles.append(k)
 
     stamped, cleared = plan.phase_a_stamp, plan.phase_a_clear
     if not dry_run:

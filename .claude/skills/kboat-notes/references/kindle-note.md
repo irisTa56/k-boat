@@ -48,6 +48,7 @@ The note is never deleted — it is a permanent catalogue and de-dup record.
 
 The ripe predicate is `distill && distilled_date` empty.
 The deterministic tool `kboat-lifecycle` evaluates it (alongside the source predicates) and emits the ripe Kindle set as JSON; this skill is the spec, the tool an implementation of it.
+A ripe book whose note names a key on more than one line is held out of that set as an anomaly, as a source is ([Source lifecycle and state](source-note.md#source-lifecycle-and-state)).
 
 Distillation reads the **note body** (the highlights/notes).
 A ripe book whose body has no extractable text — empty, or only image embeds / whitespace — cannot be distilled: the routine reports it and leaves `distilled_date` empty so it re-surfaces once the body is filled.

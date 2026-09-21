@@ -81,7 +81,6 @@ The routine (kboat-distill) drives the transitions:
     - A pass that did not finish with the source stamps nothing and discards nothing: the source stays ripe, so the notebook still grounds what never landed, and a later run distils it again (kboat-distill says which endings those are, how the replay avoids writing anything twice, and why the unwritten concept goes to a human rather than to that run).
   - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty.
     - The note and any PDF stay as a de-dup tombstone, excluded from recall.
-    - A note naming a key on more than one line keeps its notebook, reported as an anomaly, until a human repairs it: the discard ends by clearing the note's coordinates, which the note writer refuses on such a note (`kboat-vault-conventions`, "The write contract"), so discarding first would leave an id naming no notebook.
   - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry.
     - `keep` alone has no deferred action — it is a stable state from the moment it is checked.
 
@@ -93,6 +92,9 @@ It is not a lifecycle transition: it gates no destructive action and ignores the
 It is the recovery set `kboat-ingest` retries — re-fetch the source guide while the notebook still exists — so a source-guide failure at ingest (which leaves `summary`/`topics` empty, see [Procedure: capture summary and topics](procedures.md#procedure-capture-summary-and-topics)) self-heals on a later run.
 An undispositioned active source is the case that needs it most: it never becomes ripe, yet the daily pick and recall lean on its `summary`/`topics`, so distillation would never fill the gap.
 A `blocked` source has no notebook, so it is excluded; `summary` or `topics` empty (either) qualifies, since the guide supplies both at once.
+
+A source whose note names a key on more than one line is held out of all three sets — ripe, dismiss, and needs-summary — and reported as an anomaly until a human repairs the note.
+Each of those passes ends in a note write, which the note writer refuses on such a note (`kboat-vault-conventions`, "The write contract"): a ripe source would be distilled again on every run without ever being stamped, and a dismissed one would lose its notebook and keep an id naming none.
 The cooldown gates only the destructive actions (`distill`, `dismiss`); during it you can still change the disposition — flip `dismiss` → `keep`, or add `distill` — in the Holding view.
 `filed_date` is the *first*-filed time, so adding `distill` to a source kept long ago distils it on the next run (its cooldown has already elapsed) rather than waiting a fresh week.
 States are readable from the disposition flags plus the dates: `distilled_date` set → distilled; `keep` set with `notebooklm_id` present → a retained "read later" source; `dismiss` set with `notebooklm_id` empty → an abandoned tombstone; a `distill` or `dismiss` source with `distilled_date` empty and `notebooklm_id` present → in flight (awaiting the cooldown, or — for `distill` — ripe and retried after a recorded error or a partial pass).

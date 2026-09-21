@@ -394,7 +394,7 @@ def make_kindle(slug: str, **over: object) -> Kindle:
         "distilled_date": None,
     }
     base.update(over)
-    return Kindle(**base)  # type: ignore[arg-type]
+    return Kindle(**base)  # ty: ignore[invalid-argument-type]
 
 
 class TestKindle:

@@ -210,8 +210,8 @@ Collect, per item, at least:
 - Slug collisions: an existing `Sources/<slug>.md` cannot be shown to be this item — it holds a `url` naming a different page, or holds one in a shape the reader cannot compare (see kboat-notes de-dup).
   - A second link to a page already ingested is **not** this case: it shares the slug by design and is that note's source, which step 1 handles.
   - Stop that item without overwriting, keep its queue file, and report which of the two it was; this is deterministic, so it needs a human to resolve rather than a retry.
-- A note write returning `status: repeated_key` — on the source path, the repo route, or the backfill sweep: the note at that slug names each key under `keys` on more than one line, so nothing was written (kboat-vault-conventions "The write contract").
-  - Stop that item, keeping its queue file where it has one, as for a collision: report the note's `path` and `keys`, since no run clears it until a human deletes the line not meant.
+- A note write returning `status: repeated_key`, on the source path or the repo route alike: the note at that slug names each key under `keys` on more than one line, so nothing was written (kboat-vault-conventions "The write contract").
+  - Stop that item and keep its queue file, as for a collision: report the note's `path` and `keys`, since no run clears it until a human deletes the line not meant.
 - A failed `notebooklm auth refresh` at the start.
   - If auth is unusable, stop and report rather than processing the queue.
 
