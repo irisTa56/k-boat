@@ -111,7 +111,7 @@ Take `notebooklm_id` from the ripe entry (the tool read it from the source note)
 
 ### Step 2: resolve the sources
 
-Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect per kboat-notes [Environment](../kboat-notes/SKILL.md#environment), since this step decides which source is the original from what the call returns).
+Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect kboat-notes [Environment](../kboat-notes/SKILL.md#environment) requires).
 
 - If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
 - The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, type `gemini_chat`, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
@@ -136,7 +136,7 @@ Errors on the other extractions below — saved dialogue notes, `history`, `summ
   - Its content is dialogue, not the source — treat its claims as dialogue-origin: vet each per the accretion policy's dialogue handling (keep as-is, correct, or drop) before accreting, and key its provenance to the **original** source's `url`.
   - Skip any note that won't extract and report it in the run summary (non-fatal, per the opener).
   - There may be zero such notes.
-- `notebooklm --quiet history --notebook <notebooklm_id> --json` — reading-time dialogue left in the chat (may be empty when you saved it as notes instead).
+- `notebooklm --quiet history --notebook <notebooklm_id> --json 2>/dev/null` — reading-time dialogue left in the chat (may be empty when you saved it as notes instead).
   - The dialogue happens through the Gemini UI, which grounds answers in the notebook source but **also draws on web and world knowledge**, citing the sources it used.
   - Keep those citations: a cited claim is source-grounded, an uncited one is external, and the accretion policy treats them differently.
 - `notebooklm --quiet summary --notebook <notebooklm_id>` — NotebookLM's own summary (text only; no `--json`).

@@ -32,7 +32,9 @@ Where this skill says "source" it means a `Sources/*.md` note; the Kindle and re
 - When parsing `--json` output, pass the global `--quiet` flag (`notebooklm --quiet … --json`): some subcommands (e.g. `source list`) otherwise print status to stdout, where it corrupts the JSON.
   - **`--quiet` reaches the CLI's own output and not the library beneath it**, which writes to stderr — an `UnknownTypeWarning` naming a source kind the installed version does not know, or an `ERROR … rpc_code=…` line ahead of a failure.
     - The Bash tool merges the two streams, so an agent deciding whether a call succeeded meets that text first, and a warning naming a version problem reads like a failure.
-  - Redirect stderr (`2>/dev/null`) wherever a decision turns on the output: both the success payload and the `--json` error object come back on stdout, so nothing is lost.
+  - Redirect stderr (`2>/dev/null`) on every `notebooklm … --json` call, whether or not anything branches on the result.
+    - Both the success payload and the `--json` error object come back on stdout, so nothing is lost.
+    - A merged `ERROR … rpc_code=` line breaks the JSON parse even where nothing branches on it — a `create` or `source add` whose only parsed output is an id fails to parse just as a branching call does.
 - For CLI usage and authentication details, see the `notebooklm-py` skill.
 
 ## Layout

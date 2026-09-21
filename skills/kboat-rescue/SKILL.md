@@ -95,16 +95,16 @@ If Claude in Chrome is unavailable or cannot get past the wall, ask the user to 
 
 ### Step 5: Finish ingestion
 
-**Finish ingestion** per kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source): `create` (read `.notebook.id`) → set chat persona → add the source, reading the returned source id from the `--json` output → `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`, branching on `.status` and **not** the exit code (which merges `not_found` and `error`, whose handling is opposite) → verify extraction (`fulltext <source_id> --notebook <id> -o <tmpfile> --force`) → capture `summary`/`topics` (kboat-notes [capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics)).
+**Finish ingestion** per kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source): `create` (read `.notebook.id`) → set chat persona → add the source, reading the returned source id from the `--json` output → `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`, branching on `.status` and **not** the exit code (which merges `not_found` and `error`, whose handling is opposite) → verify extraction (`fulltext <source_id> --notebook <id> -o <tmpfile> --force`) → capture `summary`/`topics` (kboat-notes [capture summary and topics](../kboat-notes/references/procedures.md#procedure-capture-summary-and-topics)).
 
 A `not_found` or `timeout` is a non-verdict, so re-run the wait once — in a fresh Bash call, or two 90s waits blow the 120s budget — rather than discard a human-assisted capture.
 Any status but `ready` surviving that is the notebook-not-built ending in step 6.
 kboat-notes owns the full status policy.
 The add differs by branch:
 
-- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`.
+- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
   - No `--title`: NotebookLM resets a file source's title to the filename, and a PDF resolves by `type: pdf`.
-- **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
+- **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
   - A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.
 
 Then set `blocked: false`, write `notebooklm_id`/`gemini_url`/`notebooklm_url` and the captured `summary`/`topics`, and set `reading_link` = `[[<slug>.pdf]]` for a PDF (leave it as the `url` for a web page).

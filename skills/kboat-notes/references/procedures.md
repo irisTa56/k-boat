@@ -48,11 +48,11 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - This write is the commit point.
    - (The tool also re-makes step 1's checks and refuses rather than writing: `status: slug_mismatch` when the slug is not the one the `url` names — always a bug in how the record was assembled, since step 1's oracle is what to use — and `status: collision` with a `reason` of `identity_differs` or `unreadable_identity` when the note at that slug cannot be shown to be this page — and `status: evicted` when iCloud holds the note at that slug behind a placeholder, which step 1 stops first unless the eviction lands after it; kboat-ingest keeps the queue file for a later run — and `status: repeated_key` when that note names a key on more than one line, which kboat-ingest keeps the queue file for until a human repairs the note.)
 3. Create the 1:1 notebook and record its coordinates:
-   - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
+   - Run `notebooklm --quiet create "<title>" --json 2>/dev/null` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
      - Non-fatal — on failure, report it and continue.
-   - Run `notebooklm --quiet source add "<url>" --notebook <id> --json` to add the one source, and read the returned source id.
-   - Wait for the add to finish (adding is async): `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`. Branch on `.status`, **not** the exit code — the code merges `not_found` and `error` into `1`, and those two want opposite handling. Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report a timeout instead of being killed mid-wait, which would yield no status at all.
+   - Run `notebooklm --quiet source add "<url>" --notebook <id> --json 2>/dev/null` to add the one source, and read the returned source id.
+   - Wait for the add to finish (adding is async): `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`. Branch on `.status`, **not** the exit code — the code merges `not_found` and `error` into `1`, and those two want opposite handling. Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report a timeout instead of being killed mid-wait, which would yield no status at all.
      - `ready` → run both checks below, **type first**.
        - "Is this the real article or a wall?" is a question about a web page, so it is only worth asking once the source is known to be one.
      - `error` → NotebookLM took the source and could not process it, and for a web source that verdict is durable: the library polls through an ERROR status only for a still-unclassified or media source, and treats it as terminal for every other type, a web page among them, so it will not report `error` for one that is merely still settling.
@@ -60,7 +60,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
      - `not_found` or `timeout` → neither says the fetch failed, so decide nothing from them.
        - `not_found` is a first-poll race against the source appearing (it is raised without retry), and `timeout` says only that we stopped waiting.
        - Discard the notebook (see [Procedure: discard a source's notebook](#procedure-discard-a-sources-notebook), passing the id `create` returned) and leave the note without a `notebooklm_id` — the transient shape where kboat-ingest keeps the queue file and the next run redoes the add.
-   - Confirm it **is** a web page: read `.source.type` from `notebooklm --quiet source get <source_id> --notebook <id> --json`.
+   - Confirm it **is** a web page: read `.source.type` from `notebooklm --quiet source get <source_id> --notebook <id> --json 2>/dev/null`.
      - This is NotebookLM's own verdict on the bytes its fetcher retrieved, in the same vocabulary as this schema (`web_page`, `pdf`), so it settles what the ingest sniff could only decide provisionally (see [Procedure: ingest a PDF source](#procedure-ingest-a-pdf-source)).
      - A `pdf` means the sniff's browser-UA GET — the same request the PDF path would download with — came back without the file, so this run has nothing to upload and the source belongs in the DLQ as a `pdf` (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq), which covers what that costs and why).
        - Stop there: do not run the article check below or read the text of a notebook that is about to be discarded.
@@ -158,12 +158,12 @@ Every web source pays for the `source get` round trip regardless (one call in a 
          - Anything else at the name is a human's to clear, and nothing goes there either.
          - An eviction is not a missing file: the human downloads it in Finder, and a copy put there instead lands beside the placeholder.
          - A name nothing holds is the file genuinely gone, which is the one answer a copy put at `PDFs/<slug>.pdf` by hand fixes, as [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source)'s dead-`url` route has the human do.
-   - Run `notebooklm --quiet create "<title>" --json` and read `.notebook.id`.
+   - Run `notebooklm --quiet create "<title>" --json 2>/dev/null` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
      - Non-fatal — on failure, report it and continue.
-   - Add the PDF as an uploaded file: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`, and read the returned source id.
+   - Add the PDF as an uploaded file: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`, and read the returned source id.
      - Use the absolute vault path and quote it — it contains a space — because `source add` silently ingests a path that does not exist on disk as inline *text* rather than erroring, so a wrong path would upload the path string instead of the PDF.
-   - Wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`. Branch on `.status`, **not** the exit code — the code merges `not_found` and `error` into `1`, and those two want opposite handling. Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report a timeout instead of being killed mid-wait, which would yield no status at all.
+   - Wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`. Branch on `.status`, **not** the exit code — the code merges `not_found` and `error` into `1`, and those two want opposite handling. Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report a timeout instead of being killed mid-wait, which would yield no status at all.
      - `ready` → run the extraction check below.
      - `error` → NotebookLM took the file and could not process it, and that verdict is durable: the library polls through an ERROR status only for a still-unclassified or media source and treats it as terminal for every other type, an uploaded PDF among them.
        - It is **not** a DLQ case, for the same reason the empty extraction below is not — `PDFs/<slug>.pdf` downloaded and verified as real PDF bytes, so the file this path requires is in hand and readable in Obsidian; only NotebookLM is out, and rescue re-supplying the same bytes would fail the same way.
@@ -200,7 +200,7 @@ They are the durable, searchable description the recall skill leans on once the 
 Run this after the source is `ready` (the fetch/extraction verification above passed).
 The same procedure is the recovery sweep `kboat-ingest` runs against an existing note whose capture failed earlier (the `needs_summary` set, see [Source lifecycle and state](source-note.md#source-lifecycle-and-state)): the notebook is already `ready`, so skip straight to step 1 and write the result back over the existing note — create or re-add nothing.
 
-1. `notebooklm --quiet source guide <source_id> --notebook <id> --json` returns `.summary` (a short overview) and `.keywords` (topic tags).
+1. `notebooklm --quiet source guide <source_id> --notebook <id> --json 2>/dev/null` returns `.summary` (a short overview) and `.keywords` (topic tags).
    - The guide follows the notebook's language, so its output may be in either language — normalise it in the next step, do not store it verbatim.
 2. Write `summary` = a concise one- or two-sentence summary in **Japanese** (if `.summary` came back in another language, **translate** it first — keep established acronyms and proper nouns as-is — then trim to its lead if it runs long), and `topics` = the `.keywords` list in **English** (translate any non-English keyword).
    - This is normalisation, not re-derivation: the guide already summarised the content; here you only fix the language.
@@ -259,7 +259,7 @@ Step 2 imports the ingest verification whole, so every ending that step has arri
 
 ### Step 1: confirm the original is really missing
 
-Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` and identify the original per [One notebook per source (1:1)](source-note.md#one-notebook-per-source-11); redirect stderr per [Environment](../SKILL.md#environment), since what this procedure does next turns on what the call returns.
+Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect kboat-notes [Environment](../SKILL.md#environment) requires) and identify the original per [One notebook per source (1:1)](source-note.md#one-notebook-per-source-11).
 If the original is there, stop — whether its text is any good is a different question with its own checks.
 
 Two answers are not a missing original:
@@ -528,10 +528,10 @@ A wall is what this step expects; a page that turns out to be **gone** rather th
 Build it from the supplied content: `create` (read `.notebook.id`) → set chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)) → add the one source, and read the returned source id from the `--json` output.
 Neither branch's source has a `url`; the web-page branch resolves by the note's `title`, which it is given as `--title`, and the PDF by its type:
 
-- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json`.
-- **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
+- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
+- **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
 
-Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json`.
+Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`.
 Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report its own timeout.
 Branch on `.status`, **not** the exit code — it merges `not_found` and `error` into `1`, and here too they want opposite handling.
 
