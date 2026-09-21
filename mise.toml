@@ -5,7 +5,6 @@
 activate_aggressive = true
 
 [tools]
-gitleaks = "latest"
 lychee = "latest"
 rumdl = "latest"
 shellcheck = "latest"
@@ -29,19 +28,37 @@ _.path = ["tools/notebooklm/.venv/bin"]
 
 [hooks]
 # Keep the git-hook generation first. A failing step aborts the rest (`sh -o
-# errexit`) while `mise install` still exits 0, and of the three this is the only
-# one whose absence is silent: a missing venv fails the next command loudly, a
-# missing pre-commit hook lets every later commit through ungated. Both syncs
-# reach the network, so neither can take that place.
+# errexit`) while `mise install` still exits 0, and the hooks are the steps whose
+# absence is silent: a missing venv fails the next command loudly, a missing
+# pre-commit hook lets every later commit through ungated and a missing pre-push
+# hook every push through unscanned. Both syncs reach the network, so neither can
+# take their place.
 #
 # `--no-active` silences uv's warning that `VIRTUAL_ENV` (exported above) is not
 # this project's environment, which is the intent and would otherwise be noise on
 # the output the paragraph above asks the reader to scan.
+#
+# The pre-push scan is a config-defined hook (git 2.54+, `git help hook`) rather
+# than a file under `.git/hooks`, where `pre-push` belongs to Entire while its
+# trial runs. Git runs it before that file, handing each the same arguments and
+# stdin, and a failure from either refuses the push.
 postinstall = """
 mise generate git-pre-commit --write --task=pre-commit
+git config hook.secrets-push-scan.event pre-push
+git config hook.secrets-push-scan.command 'mise run secrets:push-scan'
 uv sync
 uv sync --project tools/notebooklm --no-active
 """
+
+# `secrets:commit-scan` (per commit, gitleaks), `secrets:push-scan` (per push,
+# trufflehog) and `shared-tasks:check` come from dotfiles' shared task library,
+# whose `tasks/README.md` is what to read before touching this: why `ref` is a
+# full sha on its `main`, and what an include that fails to load takes with it.
+# `shared-tasks:check` in CI says when `main` has moved past the pin.
+[task_config]
+includes = [
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=490a331318e62d007db506f930263ac56b16f962",
+]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
 # Shared settings come from `lychee.toml`.
@@ -65,10 +82,11 @@ description = "Check the authentication status"
 run = "notebooklm auth check --test --json"
 
 # `**`, not `*`: mise's `*` matches a single task segment, so `qa:*` left
-# `qa:links:offline` ungated.
+# `qa:links:offline` ungated. `secrets:commit-scan` is named on its own because it
+# is a shared task (see `[task_config]`) and so sits outside `qa:`.
 [tasks.pre-commit]
 description = "Run all pre-commit checks"
-depends = ["qa:**"]
+depends = ["qa:**", "secrets:commit-scan"]
 
 # Two commands, because `rumdl` cannot make the second check -- the house rule
 # and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
@@ -84,10 +102,6 @@ uv run python scripts/md_shape.py
 [tasks."fmt:md"]
 description = "Format markdown files"
 run = "rumdl check --fix"
-
-[tasks."qa:secrets"]
-description = "Scan staged changes for secrets"
-run = "gitleaks git --staged -v"
 
 [tasks."qa:sh"]
 description = "Lint and check formatting of shell scripts"
