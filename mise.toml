@@ -38,18 +38,29 @@ _.path = ["tools/notebooklm/.venv/bin"]
 # the output the paragraph above asks the reader to scan.
 #
 # The pre-push hook is redirected into place rather than written with `--write`,
-# which would move an existing hook aside as `pre-push.old`. Entire owns `pre-push` while its trial
-# runs, and chains to `pre-push.pre-entire` with git's arguments and stdin, so
-# the scan goes there instead; `entire disable` renames that back to `pre-push`.
-postinstall = """
+# which would move an existing hook aside as `pre-push.old`. Entire owns
+# `pre-push` while its trial runs, so the scan goes to `pre-push.pre-entire`,
+# which `entire disable` renames back to `pre-push`. Entire calls that file, with
+# git's arguments and stdin, only from a hook it wrote while the file existed;
+# the block appended below is the one it writes then, so an `entire enable` later
+# rewrites the hook to what it already holds.
+postinstall = '''
 mise generate git-pre-commit --write --task=pre-commit
 push_hook="$(git rev-parse --git-path hooks/pre-push)"
-if grep -qs 'Entire CLI hooks' "$push_hook"; then push_hook="$push_hook.pre-entire"; fi
+if grep -qs 'Entire CLI hooks' "$push_hook"; then
+  grep -qs 'pre-push.pre-entire' "$push_hook" || printf '%s\n' \
+    '# Chain: run pre-existing hook' \
+    '_entire_hook_dir="$(dirname "$0")"' \
+    'if [ -x "$_entire_hook_dir/pre-push.pre-entire" ]; then' \
+    '    "$_entire_hook_dir/pre-push.pre-entire" "$@"' \
+    'fi' >>"$push_hook"
+  push_hook="$push_hook.pre-entire"
+fi
 mise generate git-pre-commit --hook pre-push --task secrets:push-scan >"$push_hook"
 chmod +x "$push_hook"
 uv sync
 uv sync --project tools/notebooklm --no-active
-"""
+'''
 
 # `secrets:scan` (per commit, gitleaks), `secrets:push-scan` (per push,
 # trufflehog) and `shared-tasks:check` come from dotfiles' shared task library,
