@@ -209,7 +209,7 @@ def test_gather_reports_a_failed_gh_as_error_meta(monkeypatch) -> None:
 def test_gather_routes_a_github_url_gh_has_no_repository_for_to_the_source_path(
     monkeypatch,
 ) -> None:
-    # `github.com/resources/...` is one of GitHub's own content paths, read by the
+    # `github.com/resources/articles` is one of GitHub's own pages, read by the
     # URL's shape as owner `resources`. The denylist in `identity` does not know it
     # and no denylist can know them all, so it reaches `gh` — which answers that
     # there is no such repository. Classed with the failed calls it would be
@@ -224,13 +224,70 @@ def test_gather_routes_a_github_url_gh_has_no_repository_for_to_the_source_path(
     )
     monkeypatch.setattr(gather_mod.subprocess, "run", gh)
 
-    out = gather("https://github.com/resources/articles/ai/what-is-ai", today=TODAY)
+    out = gather("https://github.com/resources/articles?ref=nav", today=TODAY)
 
     assert gh.asked == ["repos/resources/articles"]
     assert out == {
         "status": "skip-no-such-repo",
-        "url": "https://github.com/resources/articles/ai/what-is-ai",
+        "url": "https://github.com/resources/articles?ref=nav",
     }
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # A page inside a real repository, which the reader captured to read.
+        "https://github.com/astral-sh/ruff/issues/12345",
+        "https://github.com/astral-sh/ruff/releases/tag/0.6.0",
+        "https://github.com/astral-sh/ruff/tree/main",
+        "https://github.com/astral-sh/ruff/blob/main/crates/ruff/src/main.rs",
+        # A GitHub content path, which no `gh` call has to be asked about.
+        "https://github.com/resources/articles/devops/what-is-devops",
+    ],
+)
+def test_gather_hands_a_deep_link_to_the_source_path_as_linked(monkeypatch, url: str) -> None:
+    # Truncated to `owner/repo`, the first would catalogue the repository and leave
+    # the reader no note of the issue they were reading, and the last would reach
+    # `gh` as a repository called `resources/articles`. The URL goes back exactly as
+    # it came, since the source path's de-dup and fetch are over the page itself.
+    calls: list[object] = []
+    monkeypatch.setattr(gather_mod.subprocess, "run", lambda *a, **kw: calls.append(a[0]))
+
+    out = gather(url, today=TODAY)
+
+    assert out == {"status": "skip-not-a-repo", "url": url}
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/acme/tool?tab=readme-ov-file",
+        "https://github.com/acme/tool#readme",
+        "https://github.com/acme/tool/",
+        "https://github.com/acme/tool.git",
+    ],
+)
+def test_gather_catalogues_the_entry_url_however_it_is_written(monkeypatch, url: str) -> None:
+    # The stub answers for any repository, so what pins the parse is the one `gh`
+    # was asked about: a query or fragment left on the name asks about another.
+    viewed: list[str] = []
+
+    def run(*a: object, **_kw: object) -> _Completed:
+        argv = a[0]
+        assert isinstance(argv, list)
+        if argv[1] == "repo":
+            viewed.append(str(argv[3]))
+            return _Completed(_REPO_VIEW_STDOUT)
+        return _Completed("A README.\n")
+
+    monkeypatch.setattr(gather_mod.subprocess, "run", run)
+
+    out = gather(url, today=TODAY)
+
+    assert out["status"] == "ok"
+    assert out["url"] == "https://github.com/acme/tool"
+    assert viewed == ["acme/tool"]
 
 
 def test_gather_keeps_the_two_skip_verdicts_apart(monkeypatch) -> None:

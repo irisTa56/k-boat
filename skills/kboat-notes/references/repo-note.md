@@ -39,23 +39,25 @@ Lists (`language`, `topics`, `domain`) are written **inline** (flow style, `topi
 ## Naming and de-dup
 
 A repo's identity is its `owner/repo`, which GitHub keeps unique.
-Queued links vary (a `.git` suffix, a trailing slash, a deep link into `/tree`, `/blob`, `/issues`), and GitHub 301-redirects renamed/transferred/wrong-case URLs — so the **authoritative** identity is the one `gh` resolves, not the queued text.
+Only a repository's **entry URL** is the repository: `github.com/<owner>/<repo>`, with a trailing slash, a `.git` suffix, a `?query` (`?tab=readme-ov-file`) and a `#fragment` (`#readme`) ignored.
+GitHub 301-redirects renamed/transferred/wrong-case URLs, so the **authoritative** identity is the one `gh` resolves, not the queued text.
 `gather`/`refresh` re-key off `gh`'s `owner.login`/`name`.
-Then:
 
-One carve-out before the repo path: a `blob`/`raw` link to a readable file — a `.pdf` or a `.md` — is a **source**, not the repo.
-`gather` (via `kboat.repos.identity.github_file_source`) detects it and returns `status: "source-file"` with a `source_type` and the URL to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, since the blob page is HTML; a `.md` normalized to its rendered blob page, read as an article — both canonical, so a `refs/heads/…` permalink and the plain link de-dup to one source), and `kboat-ingest` routes it to the source path instead.
-Every other deep link (`/tree`, `/issues`, another file extension) still collapses to the repo below.
-A link the URL rule reads as no repository at all — a bare profile, a reserved route — is neither, and comes back as `skip-not-a-repo` for `kboat-ingest` to take down the source path.
-One whose `owner/repo` looks ordinary and which GitHub then answers for with no repository is neither either, the reserved-route list being a cheap filter rather than the decision: `gather` asks `gh` and returns `skip-no-such-repo`.
+Any link deeper than the entry URL — an issue, a pull request, a discussion, a release, a wiki page, a file, a `/tree/<ref>` directory — is a page the reader was reading, and is a **source**, not the repo.
+`/tree/<ref>` is one even with no path after it: which ref is the default branch is not in the URL, and a ref may itself contain `/`.
+Capturing such a link does not catalogue its repository; capturing the repository's own URL does.
+`gather` hands it back as `skip-not-a-repo`, with the URL as it was linked, for `kboat-ingest` to take down the source path.
+Two file kinds get more on the way, since their URL wants fixing up and their type is already known: a `blob`/`raw` link to a `.pdf` or a `.md` comes back as `status: "source-file"` with a `source_type` and the URL to ingest (via `kboat.repos.identity.github_file_source` — a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, since the blob page is HTML; a `.md` normalized to its rendered blob page, read as an article — both canonical, so a `refs/heads/…` permalink and the plain link de-dup to one source).
+A link the URL rule reads as no repository at all — a bare profile, a reserved route — is `skip-not-a-repo` too.
+An entry URL whose `owner/repo` looks ordinary and which GitHub then answers for with no repository is not a repository either, the reserved-route list being a cheap filter rather than the decision: `gather` asks `gh` and returns `skip-no-such-repo`.
 The two are separate verdicts because they are settled differently — the URL alone, or a 404 that says nothing about whether the page reads — which `kboat-repos` step 1 turns into what each caller does.
 
-1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing a queued link strips `.git` as a whole — never `rstrip(".git")` — and ignores any deeper path/`?query`/`#fragment`).
+1. Build the canonical URL `https://github.com/<owner>/<repo>` from the resolved owner/repo (parsing an entry URL strips `.git` as a whole — never `rstrip(".git")` — and ignores a trailing slash, `?query` and `#fragment`).
 2. Slug = `kboat-note slug "<canonical-url>"`, the same oracle as a source. The file is `Repos/<slug>.md`.
 
-Step 1 is **routing** and step 2 is naming, and they must not be confused: routing answers which repo a link is about — which is why it collapses a `/tree/<ref>/docs` link onto its repository, and why a readable file the carve-out above sends to the source path never reaches it — while the slug then follows from the note's stored `url` by the one recipe every note type shares.
+Step 1 is **routing** and step 2 is naming, and they must not be confused: routing answers which repo a link is the entry URL of, collapsing the ways that URL is written onto one, while the slug then follows from the note's stored `url` by the one recipe every note type shares.
 The note always stores that constructed canonical URL rather than the queued link, which is what lets the writer re-derive the name and refuse a note filed anywhere else.
-Step 1 is `kboat.repos.identity` plus `gather`'s resolution step and step 2 is `kboat.naming.note_slug`; the code is the authority on which link is a repository, a file to read as a source, or neither, and this section and the carve-out above summarize it — so a routing change is made there, with its tests, and this summary follows.
+Step 1 is `kboat.repos.identity` plus `gather`'s resolution step and step 2 is `kboat.naming.note_slug`; the code is the authority on which link is a repository, a page or file to read as a source, or neither, and this section summarizes it — so a routing change is made there, with its tests, and this summary follows.
 `kboat.repos.identity.canonical_slug` is the two composed, and it asks the oracle rather than re-deriving the hash, so the name it hands out is the one the writer recomputes to verify the write.
 Resolving via `gh` makes de-dup case-insensitive (two casings of one repo resolve to one slug) and lets refresh follow renames.
 De-dup like a source: if `Repos/<slug>.md` exists, read its `url`; a match means the same repo (update in place, preserving the body), a mismatch is a slug collision (stop and report), and a `url` held in a shape the reader cannot compare is the same refusal for a different reason — nothing shows the note to be this repo, so it is reported for a human to repair rather than overwritten.

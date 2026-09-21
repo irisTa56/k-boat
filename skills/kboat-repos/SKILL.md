@@ -20,7 +20,7 @@ The split mirrors the rest of K-Boat: the package does the judgement-free work, 
 
 ## Procedure: catalogue a repo
 
-Given a GitHub repository URL (from `kboat-ingest` routing, or pasted by the user).
+Given a GitHub URL (from `kboat-ingest` routing, or pasted by the user).
 
 ### Step 1: gather the metadata
 
@@ -30,12 +30,13 @@ Run `kboat-repos gather "<url>"`.
 - A `status` other than `ok` means this is not a repo to catalogue — report it and stop; do not write a note.
 - The non-`ok` verdicts:
 
-  - `skip-not-a-repo` — the URL itself settled it: a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/readme/…`, `github.com/features/…`).
-    - Fall through to the source/web path (`kboat-ingest`), not the repo path — whether the URL was queued or the user pasted it.
+  - `skip-not-a-repo` — the URL itself settled it: any link deeper than a repository's entry URL (an issue, a release, a file, `/tree/<ref>`, a GitHub content path such as `github.com/resources/articles/…`), a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/topics/python`, `github.com/features/copilot`).
+    - Fall through to the source/web path (`kboat-ingest`) with the record's `url`, not the repo path — whether the URL was queued or the user pasted it.
+      - A pasted deep link is read as the page it is, and its repository is not catalogued; the repository's own URL is what catalogues it.
     - `gh` is never asked about these, so the verdict arrives whatever GitHub is doing.
       - The list is of first path segments that are never an owner, not of pages worth reading: `settings`, `login` and `notifications` are on it beside the content routes.
-  - `skip-no-such-repo` — the URL is shaped like `owner/repo`, and `gh` answered that GitHub has no repository there.
-    - **That answer is about the repository, not about the page.** GitHub's own content paths are exactly what falls here — `github.com/resources/articles/…` serves an article and `repos/resources/articles` is a 404 — and so, identically, do a typo, a deleted repository, and a private one this account is not shown.
+  - `skip-no-such-repo` — the URL is a repository's entry URL by shape, `owner/repo`, and `gh` answered that GitHub has no repository there.
+    - **That answer is about the repository, not about the page.** A two-segment GitHub page that is not on the reserved list falls here — `github.com/resources/articles` is a page GitHub serves and `repos/resources/articles` is a 404 — and so, identically, do a typo, a deleted repository, and a private one this account is not shown.
     - Which of those a given URL is, the record cannot say and neither can the reader: nothing in the 404 separates them.
     - This is how a content path nobody listed stops being a capture that repeats forever, `gh` being asked rather than the URL's shape guessed at.
     - A **queued** capture falls through to the source path like the verdict above, rather than stalling on `error-meta`, and what becomes of it there is that path's own to decide and to report.
@@ -43,7 +44,7 @@ Run `kboat-repos gather "<url>"`.
       - Name the access reading beside the typo, since a repository this account is not shown answers the same way one that never existed does: what they check next may be `gh auth status` rather than the URL.
       - They capture it through the bookmarklet if they want it read, which is the ordinary way in for a page.
       - Never tell them the repository does not exist, or that there is nothing at the page: you know neither, and the second is false for a GitHub content path.
-  - `source-file` — a blob/raw link to a readable file (`source_type: pdf` or `web_page`): not a repo but a **source**.
+  - `source-file` — a blob/raw link to a `.pdf` or `.md` file (`source_type: pdf` or `web_page`): a deep link like the ones above, with its URL fixed up and its type already decided.
     - The record carries the canonical `url` to ingest (a `.pdf` rewritten to its `raw.githubusercontent.com` download URL, a `.md` normalized to its rendered blob page) and the `source_type`.
     - Hand it to `kboat-ingest`'s source path with that `url` and type — see kboat-ingest "Route by kind".
   - `error-meta` — `gh` gave back no repo view, so there is nothing to catalogue and nothing that sends the URL anywhere else.

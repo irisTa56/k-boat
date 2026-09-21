@@ -241,9 +241,16 @@ def resolved_identity(meta: dict) -> tuple[str | None, str | None]:
 # `parse_repo` from the URL alone, `gh_repo_exists` from what GitHub answered —
 # and only one record could carry the difference. What parts them is how it was
 # settled, not what is at the URL: a 404 says this account is shown no repository
-# and nothing about whether the page reads, which is why `github.com/resources/…`
-# (an article GitHub serves, whose `owner/repo` is a 404) and a typo land on the
-# same one.
+# and nothing about whether the page reads, which is why `github.com/resources/articles`
+# (a page GitHub serves, whose `owner/repo` is a 404) and a typo land on the same
+# one.
+#
+# Neither verdict reads the captured page's own HTTP status, though on
+# `skip-no-such-repo` that status is what would tell a readable page from a
+# repository that is gone. Only a two-segment URL reaches the probe, so the pages
+# it could sort are few; the source path GETs the page itself either way; and a
+# capture that path cannot finish is either parked in the DLQ, whose age the
+# backlog stats report, or kept in the queue.
 #
 # The boundaries below are several narrow ones rather than one wrapper around the
 # body, because the two classes interleave: `gh_repo_view` can fail either way,
@@ -316,11 +323,10 @@ def gather(url: str, *, today: date) -> dict:
     `today` is injected (not read from the clock here) so `status` is reproducible
     and testable — matching `github_fields`, `derive_status`, and `refresh`.
     """
-    # A blob/raw link to a readable file (a `.pdf` or `.md`) is a source, not the
-    # repo: hand it back for the source path with the type already decided and the
-    # URL fixed up (`.pdf` rewritten to its raw download URL). This is checked
-    # before `parse_repo`, which would otherwise truncate the deep link to the
-    # repo and catalogue the whole repository.
+    # A blob/raw link to a readable file (a `.pdf` or `.md`) is a source like any
+    # deep link, handed back with the type already decided and the URL fixed up
+    # (`.pdf` rewritten to its raw download URL). It is checked before
+    # `parse_repo`, which answers `skip-not-a-repo` for it with the URL as linked.
     file_src = github_file_source(url)
     if file_src:
         source_type, src_url = file_src
