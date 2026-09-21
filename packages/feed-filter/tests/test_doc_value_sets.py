@@ -25,7 +25,7 @@ from typing import get_args
 
 import pytest
 
-from feed_filter.cli import ArticleSiteStatus, SiteStatus
+from feed_filter.cli import SiteStatus
 from feed_filter.discover import RejectionReason
 
 # tests → feed-filter → packages → the workspace root, which holds `.claude/skills`.
@@ -97,12 +97,8 @@ def _bullets(path: str, lead_in: str) -> Callable[[], list[str]]:
     return extract
 
 
-# The two gathers' `sites[]` entries differ by `zero_links`, which only the
-# article path emits, so each run skill is pinned against its own gather's keys.
-_FORUM_SITE_KEYS = tuple(SiteStatus.__required_keys__ | SiteStatus.__optional_keys__)
-_ARTICLE_SITE_KEYS = tuple(
-    ArticleSiteStatus.__required_keys__ | ArticleSiteStatus.__optional_keys__
-)
+# Both gathers emit the same `sites[]` keys, so both run skills are pinned against one set.
+_SITE_KEYS = tuple(SiteStatus.__required_keys__ | SiteStatus.__optional_keys__)
 
 # (the code's set, the site's path, how to read the site's values)
 _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
@@ -112,22 +108,22 @@ _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
         _bullets(_ADD_SITE, r"^- \*\*`rejection` is set\*\*"),
     ),
     "article-site-keys-output": (
-        _ARTICLE_SITE_KEYS,
+        _SITE_KEYS,
         _FEED_RUN,
         _inline(_FEED_RUN, r"sites: \[\{([^}]*)\}\]"),
     ),
     "article-site-keys-entry": (
-        _ARTICLE_SITE_KEYS,
+        _SITE_KEYS,
         _FEED_RUN,
         _inline(_FEED_RUN, r"Each `sites` entry is `\{([^}]*)\}`"),
     ),
     "forum-site-keys-output": (
-        _FORUM_SITE_KEYS,
+        _SITE_KEYS,
         _FORUM_RUN,
         _inline(_FORUM_RUN, r"sites: \[\{([^}]*)\}\]"),
     ),
     "forum-site-keys-entry": (
-        _FORUM_SITE_KEYS,
+        _SITE_KEYS,
         _FORUM_RUN,
         _inline(_FORUM_RUN, r"Each `sites` entry is `\{([^}]*)\}`"),
     ),

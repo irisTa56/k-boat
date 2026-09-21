@@ -76,7 +76,7 @@ New modules:
 - `discourse.py` — URL derivation (`latest_feed_url`, `top_feed_url`, `topic_json_url`), topic-id extraction (`topic_id_from_url`), and JSON parsing (`parse_topic` → `ForumTopic` + `list[ForumPost]`, reading `post_stream.posts` and taking each post's like count from `actions_summary id==2`).
   - All HTTP and RSS goes through the reused `fetch`/`parse_feed` primitives.
 - `forum_store.py` — the post-grain dedupe authority in its own two tables: `admit_topic` / `set_op_verdict` / `is_post_seen` / `record_post` / `due_topics` / `finalize_poll` / `last_like_count`.
-- `forum_pipeline.py` — `admit_from_feeds` (RSS ingestion + Rule-A candidate emission) and `gather_forum` (due-topic Rule-B candidate assembly + `polled_topics` finalize worklist).
+- `forum_pipeline.py` — `admit_from_feeds` (RSS ingestion + Rule-A candidate emission + the `zero_links` zero-admission signal) and `gather_forum` (due-topic Rule-B candidate assembly + `polled_topics` finalize worklist).
 
 State store (v2 migration in `seen.py`, colocated for shared `user_version`):
 
@@ -201,9 +201,8 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - Every boundary re-raises `sqlite3.Error`, the forum counterpart of the article path's `MissingPlaywrightError` carve-out: a store error is scoped to a connection, table, or lock rather than to one site or topic, so absorbing it would report one store bug as N site outages — each with a rising failure counter that escalates healthy forums to `persistent`.
     - It cannot be left to the unguarded `site_health` write to surface, because a breakage scoped to the forum tables leaves that write working.
     - `main` reports one that `seen.is_environment_failure` accepts as `error: …` with exit 1, and lets any other reach a traceback as a store bug of ours (`cli.py`'s `main` docstring).
-  - The absorbed exception is flagged `sites[].unexpected_error`, the same typed classification the article path emits, and `discourse_fetches` is a rough figure rather than an exact total: it counts attempts, and only those a returned result carried home, so a site whose admission the per-site boundary caught reports none of the calls it made.
-  - One forum failure still has no signal of any kind: a moved domain whose old host answers the feeds 200 with a non-feed page admits nothing while reporting a wholly clean status (`AdmitResult.all_feeds_failed` keys on the fetch, not on what parsed).
-    - The article path catches the analogue with `zero_links`; the forum path needs a typed zero-admission signal, and until it has one the case is unflagged rather than compensated in skill prose — deriving it from the error text is exactly what the counter's typed-signal rule refuses.
+  - The absorbed exception is flagged `sites[].unexpected_error`, the same typed classification the article path emits.
+  - A path the per-site boundary caught still counts the requests it made toward `discourse_fetches`, because the CLI holds that count in one run-wide `FetchTally` that the pipeline increments before each request, rather than in a result the raise would discard.
 - **Operational notices never become notes.**
   - The `Feeds/` folder holds only user-facing page notes (`vault.py`); self-heal and per-site errors are reported in the run's summary, not as feed notes.
 - **Scrape self-heal.** The `zero_links` signal (`pipeline.py`) means the stored `article_url_pattern` no longer matches the live index.
@@ -232,6 +231,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
     - It also increments when `admit_from_feeds` itself raised, which returns no reachability verdict at all and so must not be allowed to reset the streak.
     - It resets on any run whose admission reached the site, and a dead-topic retirement, a partial feed failure, or a raise inside the Rule-B gather does **not** increment.
       - The last of those is deliberate: the admission already reported the site reachable, so a chronically raising Rule-B gather is surfaced every run through `unexpected_error` instead.
+    - A `zero_links` admission resets it too, being a reached site: it is the forum counterpart of the article path's signal (`AdmitResult.zero_links` — a feed answered, yet none that answered listed a topic), typed from what parsed because `all_feeds_failed` keys on the fetch, and the run summary rather than this counter is what surfaces it.
   - `cmd_new_entries` mirrors this for article sites, which fetch a single feed/index: it increments when `gathered.error is not None` and resets otherwise, and a `zero_links` scrape (a broken pattern, not an outage) does **not** increment — where the run cannot heal it, it is the run summary rather than this counter that surfaces the site.
   - At `DEFAULT_PERSISTENT_FAILURE_RUNS` (3) the emitted `sites[]` entry flags `persistent`, and both run skills escalate: they flag it as actionable in the run summary (which classes of actionable item reach a desktop notification is the unattended routine's own decision — it owns that trigger set, not this repo) and recommend checking for a moved URL first, then `disable-site` if truly gone, noting an `unexpected_error` message verbatim since that failure may not be the site's at all.
   - The CLI never auto-disables — a persistent failure is as often a recoverable migration (the elixirforum subdomain move) as a dead site, so termination stays a human decision.

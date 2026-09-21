@@ -40,7 +40,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 Run `eval "$(mise env)" && feed-filter forum-new`.
 
-- The output is `{topics: [...], polls: [...], sites: [{site_id, error, unexpected_error, consecutive_failures, persistent}], discourse_fetches: <int>}`.
+- The output is `{topics: [...], polls: [...], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}], discourse_fetches: <int>}`.
   - `topics` are Rule-A and Rule-B candidates, already round-robin-interleaved across sites (and Rule-A/B interleaved within each site) and clamped to the global cap.
     - Candidates dropped by the cap are absent; they are re-derived next run without any loss.
   - Each candidate entry has shape `{site_id, topic_id, topic_url, title, rule: "A"|"B", ...}`; Rule-A adds `op_text`; Rule-B adds `effective_threshold` and `trigger_posts: [{post_id, post_number, like_count, text}]`.
@@ -50,8 +50,9 @@ Run `eval "$(mise env)" && feed-filter forum-new`.
     - Zero-candidate topics (short-circuited by the like-count check, or no qualifying posts) are trivially cap-safe and also appear in `polls`.
   - `discourse_fetches` is the count of Discourse HTTP calls this gather made — one per RSS feed (three per site) plus one per due topic's JSON.
     - It is a coarse politeness/rate metric for the run summary; it does not include the judging subagents' `WebFetch` calls, which are not Discourse-API requests.
-    - Read it as a rough figure rather than an exact count: it counts attempted calls, and a Rule-A or Rule-B pass that failed outright reports none of the ones it had already made.
-  - Each `sites` entry is `{site_id, error, unexpected_error, consecutive_failures, persistent}`.
+  - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
+    - `zero_links` means the site answered, yet no discovery feed that answered listed a single topic (step 5).
+      - A quiet run is not this: the feeds still list the forum's topics when none of them is new.
     - A site with a non-null `error` may still have emitted topics and polls: the gather contains a failure to the smallest unit it can, so a partly-failed site is the normal case, not an anomaly (step 5).
     - `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
     - `consecutive_failures` counts consecutive runs the site's Rule-A admission returned no reachability verdict — every discovery feed failed, or the admission raised and so returned none at all.
@@ -182,10 +183,15 @@ For each site in `sites` with a non-null `error`, part of that site's gather fai
       - Withholding escalation is not a claim that the failure is transient: the counter only tracks whether the admission reached the site, so a Rule-B failure can repeat run after run without moving it.
         - So report what the fields say and let the counter do its job; never write a repeating failure up as self-healing.
 
+For each site in `sites` with `zero_links == true`, the forum's host answered but served no topic — the shape of a moved domain whose old host now serves a landing page.
+
+- Nothing else surfaces it: the admission reached the site, so the counter resets and the site never turns `persistent`, however many runs it repeats on.
+- Flag it as actionable in the run summary, recommending the same two-step investigation as for a `persistent` site, moved or renamed forum URL first.
+
 ## Run summary
 
 Emit a run summary as the run's text output — the pass's durable record.
-Lead with what is **actionable** and name the offending sites: a `persistent` site (step 5), or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
+Lead with what is **actionable** and name the offending sites: a `persistent` site or a `zero_links` site (step 5), or an operational failure (a `forum-remind` or `forum-poll-done` non-zero exit).
 A gather `error` on its own is reported, not led with.
 Routine keeps need no callout — they land in the `Feeds/` notes you'll see in the Feeds Base, and a no-op run is unremarkable too.
 A `persistent == true` site is **always** actionable — the escalation the durable counter exists to trigger, not a judgment call: surface it with the persistent site and whichever of step 5's two branches you took, noting the `error` verbatim when it is an `unexpected_error`.
@@ -195,6 +201,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 - Poll advances: topics finalized (the `polls` entries you called `forum-poll-done` for).
   - Any due topic not among them was withheld and re-polls next run — the cap cut it, or its gather did not complete — and the output does not distinguish the two, so report the count you finalized rather than inventing a breakdown.
   - A gather that did not complete surfaces through its site's `error` in step 5.
+- Zero admission: each `zero_links` site, with the moved-URL check step 5 recommends.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), and any `forum-remind` or `forum-poll-done` non-zero exit.
 
 ## Cost controls (state these hold)
