@@ -159,6 +159,24 @@ def test_refresh_skips_a_note_ticked_gone_and_takes_it_up_again_once_unticked(
     assert parse_frontmatter(gone.read_text())["refreshed_date"] == TODAY.isoformat()
 
 
+@pytest.mark.parametrize("value", ['"false"', '"true"', "yes"])
+def test_only_a_real_true_takes_a_note_out_of_the_refresh(
+    tmp_path: Path, monkeypatch, value: str
+) -> None:
+    # A quoted or mistyped value reads as a string, and a truthy test would skip a
+    # note nobody ticked — and, since the stat shares the predicate, drop it from
+    # the age that would otherwise notice. It is refreshed, and `kboat-validate`
+    # reports the value as `not_bool`.
+    note = _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    note.write_text(note.read_text().replace("gone: false\n", f"gone: {value}\n"))
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, r: (_meta(o, r), None))
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert report["counts"]["gone"] == 0
+    assert report["counts"]["updated"] == 1
+
+
 def test_refresh_adopts_rename_and_moves_file(tmp_path: Path, monkeypatch) -> None:
     old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")
     # gh resolves to the new owner (transfer) regardless of the queried owner.
