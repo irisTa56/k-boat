@@ -164,6 +164,25 @@ def test_what_is_not_a_readable_repo_note_is_an_anomaly_and_left_alone(
     assert (repos / "stray.md").read_text() == "---\ntype: source\n---\n"
 
 
+def test_a_note_naming_a_key_twice_is_left_for_a_human(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Re-assembling the note would keep only the second `summary`, deleting the
+    # line a human editing the note sees, with nothing to say which was meant.
+    path = _legacy_note(tmp_path)
+    path.write_text(path.read_text().replace("summary: 要約。\n", "summary: 一\nsummary: 二\n"))
+    before = path.read_text()
+
+    rc, report = _run(["--apply", "--vault", str(tmp_path)], capsys)
+
+    assert rc == 1
+    assert path.read_text() == before
+    assert report["failed"] == [
+        {"path": path.relative_to(tmp_path).as_posix(), "error": "note names 'summary' on 2 lines"}
+    ]
+    assert report["marked"] == []
+
+
 def test_a_write_that_fails_is_reported_and_exits_nonzero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

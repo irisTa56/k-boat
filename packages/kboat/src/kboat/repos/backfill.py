@@ -33,6 +33,7 @@ from kboat.frontmatter import (
     names_key,
     parse_entries,
     parse_frontmatter,
+    repeated_keys,
 )
 from kboat.io_utils import atomic_write_text
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
@@ -70,6 +71,14 @@ def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
         # the reader cannot model is still the note's mark, and adding a second
         # one would leave the note holding two.
         if any(names_key(entry.lines[0], _FIELD) for entry in entries):
+            continue
+        # Re-assembling the note keeps only the last line of a repeated key, which
+        # would delete the one a human editing the note sees, and which of the two
+        # was meant is not in the note — so the note is left for a human first.
+        repeated = repeated_keys(text)
+        if repeated:
+            names = ", ".join(f"'{key}' on {count} lines" for key, count in repeated.items())
+            failed.append({"path": rel, "error": f"note names {names}"})
             continue
         if apply:
             content = build_note(
