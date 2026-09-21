@@ -15,7 +15,8 @@ The one-time migration of the legacy catalogue is deliberately NOT a subcommand
 — it was a throwaway script that imports this package's helpers, run once and
 deleted. `backfill-readme` is the exception: it rewrites every note in the live
 catalogue, so it is tested like the rest rather than run as an untested script,
-and it is run again for any note that was evicted the first time.
+and it is run again for a note the first run could not mark (`kboat-notes`
+"Procedure: backfill the repo readme mark").
 """
 
 from __future__ import annotations

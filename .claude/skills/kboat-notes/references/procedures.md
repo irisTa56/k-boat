@@ -13,6 +13,7 @@
 - [Procedure: create or update a Kindle note](#procedure-create-or-update-a-kindle-note)
 - [Procedure: create or update a repo note](#procedure-create-or-update-a-repo-note)
 - [Procedure: refresh repo metadata](#procedure-refresh-repo-metadata)
+- [Procedure: backfill the repo readme mark](#procedure-backfill-the-repo-readme-mark)
 
 ## Procedure: create or update a source note
 
@@ -671,3 +672,17 @@ It is mechanical and runs over the whole catalogue, so the `kboat-repos` tool do
 2. It prints a JSON report.
    - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `evicted`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
      - A `failed` note is not quite an untouched one, and which `reason` needs a human rather than the next run is the `kboat-repos` skill's to say ("Procedure: refresh the catalogue" step 2); read it before relaying the report.
+
+## Procedure: backfill the repo readme mark
+
+A repo note written before the `readme` field existed has no `readme` line, and which of those were classified without their README was never recorded, so each gets `unknown` ([Repo note](repo-note.md#repo-note-reposmd)).
+A human runs this, not the routine:
+
+1. Run `kboat-repos backfill-readme --dry-run`, then `--apply` (defaults to `$OBSIDIAN_VAULT_PATH`).
+   - It writes `readme: unknown` on every `Repos/*.md` with no line naming `readme`, and leaves every other line as it was, `refreshed_date` included.
+   - A note already carrying a `readme` line is skipped, whatever it holds, so a re-run touches only the notes still unmarked.
+2. It prints a JSON report.
+   - `marked` names the notes it wrote, or under `--dry-run` would write.
+   - An `anomalies` entry is a note it could not read as a repo note — most often an evicted `.icloud` placeholder — and a `failed` entry one whose write failed; neither was marked.
+     - `kboat-validate` reports each as a `missing_field` on `readme` until a re-run, once the note is back or writable, marks it.
+   - It exits 1 when `Repos/` itself could not be read or a write failed.
