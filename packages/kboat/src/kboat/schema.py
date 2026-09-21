@@ -22,7 +22,7 @@ tools cannot disagree about the same folder.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 
 
 class Kind(Enum):
@@ -89,6 +89,19 @@ class NoteSchema:
 
     def get(self, name: str) -> Field | None:
         return next((f for f in self.fields if f.name == name), None)
+
+
+class ReadmeMark(StrEnum):
+    """The values of a repo note's `readme` field.
+
+    Declared as an enum rather than only as the field's tuple because the writer
+    names single values of it, and `test_doc_value_sets` compares `kboat-notes`'
+    enumeration of the set against this one declaration.
+    """
+
+    READ = "read"
+    UNAVAILABLE = "unavailable"
+    UNKNOWN = "unknown"
 
 
 def _bool(name: str) -> Field:
@@ -164,6 +177,14 @@ REPO = NoteSchema(
         Field("role", Kind.STR),
         Field("domain", Kind.STR_LIST, empty_ok=True, list_style="inline"),
         Field("summary", Kind.STR, empty_ok=True),
+        Field(
+            "readme",
+            Kind.ENUM,
+            enum=tuple(ReadmeMark),
+            # `unknown` for the reason `status` defaults to its no-data member: a
+            # create that says nothing about the README must not claim it was read.
+            default=ReadmeMark.UNKNOWN,
+        ),
         Field(
             "status",
             Kind.ENUM,

@@ -44,6 +44,7 @@ RECORD: dict[str, Any] = {
     "role": "framework",
     "domain": ["ai-agents"],
     "summary": "エージェント間通信のプロトコル。",
+    "readme_error": None,
 }
 
 
@@ -68,6 +69,52 @@ def test_write_creates_note(tmp_path: Path) -> None:
     assert "topics: [a2a, agents]" in note  # repo lists render inline, one line each
     assert "domain: [ai-agents]" in note
     assert note.rstrip().endswith("## Notes")  # somewhere to put notes, still empty
+
+
+def test_a_record_whose_readme_fetch_failed_writes_a_note_marked_unavailable(
+    tmp_path: Path,
+) -> None:
+    # The classification was made from the metadata alone, and the note is the
+    # only place that survives the run, so the note has to say so.
+    write_note(
+        {**RECORD, "readme_error": "HTTP 403: rate limited"}, tmp_path, today_iso="2026-06-06"
+    )
+
+    note = _note(tmp_path).read_text()
+    fm = parse_frontmatter(note)
+    assert fm["readme"] == "unavailable"
+    # The mark is the fact of the failure; `gh`'s message is untrusted text and
+    # stays out of the vault.
+    assert "rate limited" not in note
+    assert check_note("repo", dict(fm), f"Repos/{SLUG}.md") == []
+
+
+def test_a_record_whose_readme_was_fetched_writes_a_note_marked_read(tmp_path: Path) -> None:
+    write_note(RECORD, tmp_path, today_iso="2026-06-06")
+
+    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "read"
+
+
+def test_cataloguing_a_repo_again_marks_the_note_for_the_new_classification(
+    tmp_path: Path,
+) -> None:
+    # A second write re-judges `role`/`domain`/`summary`, so the mark follows the
+    # record that judged them rather than the one before.
+    write_note({**RECORD, "readme_error": "HTTP 404: Not Found"}, tmp_path, today_iso="2026-06-06")
+    write_note(RECORD, tmp_path, today_iso="2027-01-01")
+
+    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "read"
+
+
+def test_the_fields_block_cannot_claim_a_readme_the_record_did_not_fetch(tmp_path: Path) -> None:
+    result = write_note(
+        {**RECORD, "fields": {**RECORD["fields"], "readme": "read"}, "readme_error": "boom"},
+        tmp_path,
+        today_iso="2026-06-06",
+    )
+
+    assert parse_frontmatter(_note(tmp_path).read_text())["readme"] == "unavailable"
+    assert result["dropped_fields"] == ["readme"]
 
 
 @pytest.mark.parametrize(

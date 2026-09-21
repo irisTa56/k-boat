@@ -27,7 +27,7 @@ So a command that reads an input in the set holds it to the same rule rather tha
 - A required folder that is **absent, not a directory, or refused** makes the command that reads it exit 1, and so does a `Questions.md` the daily pick cannot read — absent, evicted, not a file, refused, or not UTF-8, each of which loses the whole backlog.
   - It still prints its JSON report, naming the path and which of these it met in the entry the report already keeps for what it could not read, and it still processes and reports whatever else it could read.
   - It does so the first time, with no threshold, since none of these clears itself.
-  - The commands are `kboat-lifecycle`, `kboat-pick` (`candidates` and `set`), `kboat-queue list`, `kboat-repos refresh`, and `kboat-note migrate-slugs`; the skill that reads each one names the entry and says what to do with the rest of the report.
+  - The commands are `kboat-lifecycle`, `kboat-pick` (`candidates` and `set`), `kboat-queue list`, `kboat-repos refresh` and `backfill-readme`, and `kboat-note migrate-slugs`; the skill that reads each one names the entry and says what to do with the rest of the report.
 - A reader tells that exit from the vault lock's two by what is on stdout: the lock's are a `{"status": "locked", …}` record and an empty stdout ("Durability and the vault lock"), and this one is the command's own report.
 - `kboat-validate` is the exception: it is report-only by design, and `--strict` already exits 1 on its `unreadable_dir` violation.
 - Creating a missing folder belongs to declaring the note type rather than to the run.
@@ -305,7 +305,7 @@ What buys that is a premise worth stating, because it is the one thing that woul
 `~/Library/Mobile Documents/…` is not a network mount but a local APFS directory with a file-provider sync extension, so `flock` there is ordinary APFS advisory locking — verified against this vault, including that a holder killed without releasing leaves the lock free.
 A vault on a genuine network filesystem would need that re-checked, since `flock` over NFS or SMB is where the semantics stop holding.
 
-- **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-note migrate-slugs --dry-run`, `kboat-pick candidates`, `kboat-queue list`, `kboat-validate`, and `kboat-recall`'s search all read a vault another run is writing.
+- **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-repos backfill-readme --dry-run`, `kboat-note migrate-slugs --dry-run`, `kboat-pick candidates`, `kboat-queue list`, `kboat-validate`, and `kboat-recall`'s search all read a vault another run is writing.
   - **`kboat-doctor` takes none either**, though its writability probe does write.
     - It creates and removes one uniquely-named file of its own and touches no note, and it runs to find out whether the vault can be written at all.
     - Holding the lock first would be circular, and a pre-flight check that refused whenever a run was in progress would be useless exactly when it is wanted.
@@ -323,7 +323,7 @@ A vault on a genuine network filesystem would need that re-checked, since `flock
     - That is why the wait matters more to it than to a K-Boat phase, whose work survives being deferred — the dispositions, the cooldown clock and the queue are all still on disk and every phase is idempotent.
 - **A lock that cannot be taken at all is not a refusal.**
   - A missing vault root, a denied iCloud tree, a filesystem that will not take an `flock`, or — only on the run that first creates the lock file — a vault root that cannot be written to, is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
-  - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
+  - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh`, `kboat-repos backfill-readme --apply`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
     - What is common to all of them is the shape, not the wording.
   - Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
   - `kboat-doctor` diagnoses two of its causes and not the rest: its `vault_root` and `vault_writable` checks cover a missing or unwritable root, but nothing there inspects the lock file, so a `.kboat.lock` that is a directory, *any* symlink (the open is `O_NOFOLLOW`, so a live one fails as surely as a dangling one), or one on a filesystem refusing `flock` leaves doctor reporting `ok` while every write fails.

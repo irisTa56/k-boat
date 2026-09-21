@@ -29,6 +29,7 @@ RECORD: dict[str, Any] = {
     "role": "framework",
     "domain": ["ai-agents"],
     "summary": "エージェント間通信のプロトコル。",
+    "readme_error": None,
 }
 
 
@@ -123,6 +124,14 @@ def test_write_refuses_an_evicted_note_and_reports_no_dropped_fields(
         ('["slug"]', "must be a JSON object"),
         ('{"slug": "s"}', "missing required keys: url, title"),
         (json.dumps({**RECORD, "fields": "not an object"}), "'fields' must be a JSON object"),
+        # A record that lost `readme_error` on the way from `gather` cannot say
+        # whether the README was read, and a missing key must not read as `null`.
+        (
+            json.dumps({k: v for k, v in RECORD.items() if k != "readme_error"}),
+            "missing required keys: readme_error",
+        ),
+        (json.dumps({**RECORD, "readme_error": ""}), "'readme_error' must be null or"),
+        (json.dumps({**RECORD, "readme_error": 403}), "'readme_error' must be null or"),
     ],
 )
 def test_write_rejects_a_record_it_cannot_use(

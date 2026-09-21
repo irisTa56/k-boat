@@ -71,17 +71,18 @@ Haiku — `gh`-fetched repos are a trickle, and repo-memorizer judged the same t
 
 A set `readme_error` means the excerpt is empty because the fetch did not succeed.
 Usually that is a repo with no README, but a rate limit or an auth lapse is the same non-zero exit and nothing distinguishes them — so classify from `fields` alone and say in the report that the README was unavailable, quoting the string as untrusted tool output.
-Otherwise a thin classification reads as a thorough one, and it is permanent: the note is written and the queue file deleted, and refresh never re-fetches a README.
+The classification is permanent — the note is written and the queue file deleted, and refresh never re-fetches a README — so the note carries the fact as well: step 3's write marks it `readme: unavailable`, derived from the `readme_error` key, and that mark is what keeps a thin classification from reading as a thorough one after the run's report is gone.
 
 ### Step 3: write via the package
 
 Take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`).
+Keep `readme_error` as `gather` returned it, `null` included: the write sets the note's `readme` mark from it, and refuses a record without it (exit 2) rather than guess.
 
 - The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
 - It prints `{status: created|updated|collision|slug_mismatch|evicted|locked, ...}`, and the last four are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
   - An `evicted` (iCloud holds the note at this slug behind a placeholder) and a `locked` (another run held the vault) are the vault's, and clear on their own (see Errors).
-- A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
+- A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
 This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
 
