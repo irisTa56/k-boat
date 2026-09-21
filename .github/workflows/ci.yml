@@ -98,9 +98,9 @@ jobs:
           cache: false # as in `python-qa`
       - run: mise run qa:links:offline
 
-  # Stays red while dotfiles `main` is past the shared-task pin in mise.toml, and
-  # for the reason below is a reminder rather than a required check, and skipped
-  # on the schedule. Exit 2 (it could not tell) fails it too.
+  # Stays red while dotfiles `main` carries other shared tasks than the pin in
+  # mise.toml does, and for the reason below is a reminder rather than a required
+  # check, and skipped on the schedule. Exit 2 (it could not tell) fails it too.
   shared-tasks-check:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
