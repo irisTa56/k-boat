@@ -28,8 +28,8 @@ import pytest
 from feed_filter.cli import SiteStatus
 from feed_filter.discover import RejectionReason
 
-# tests → feed-filter → packages → the workspace root, which holds `.claude/skills`.
-SKILLS = Path(__file__).resolve().parents[3] / ".claude/skills"
+# tests → feed-filter → packages → the workspace root, which holds `skills/`.
+SKILLS = Path(__file__).resolve().parents[3] / "skills"
 
 _ADD_SITE = "kboat-add-feed-site/SKILL.md"
 _FEED_RUN = "kboat-feed-run/SKILL.md"

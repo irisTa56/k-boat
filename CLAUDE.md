@@ -7,11 +7,14 @@ This file is the umbrella project doc — the shared conventions plus the K-Boat
 ## What this repo is
 
 A uv workspace (mise + uv). K-Boat is not an application.
-It is a Claude Code skill package plus a thin Python environment: K-Boat's skills at the repo-root `.claude/skills/` are the product, and most "code" is prose an agent executes.
+It is a Claude Code skill package plus a thin Python environment: K-Boat's skills at the repo-root `skills/` are the product, and most "code" is prose an agent executes.
 The exception is the deterministic, purely-mechanical core, extracted into a tested Python library — the `kboat` package (`packages/kboat/`) — so the model neither re-derives it nor pays tokens for it.
 The browser-driven NotebookLM CLI (`notebooklm-py`) is a uv project of its own at `tools/notebooklm/`, kept out of the workspace resolution.
 
-Product skills stay at the root rather than in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name.
+Claude Code finds each skill through `.claude/skills/<name>`, a relative symlink to `skills/<name>/`, one link per skill; a new skill needs its link in the same change.
+Edit a skill under `skills/`, never through its link: Entire records no edit under `.claude/`, which Claude Code declares protected, and whether it records one made through a link is unverified.
+The links are one per skill because Claude Code's docs promise a symlinked skill directory, not a symlinked `.claude/skills` as a whole.
+They sit at the root rather than in a package: Claude Code only surfaces a nested `packages/x/.claude/skills/` skill when working under that dir, and a scheduled task cannot invoke it by unqualified name.
 
 Two workspace members under `packages/`:
 
