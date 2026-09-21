@@ -201,6 +201,7 @@ def test_valid_kindle_and_repo() -> None:
         "url": "https://github.com/owner/repo",
         "homepage": "",
         "reading": False,
+        "gone": False,
         "description": "desc",
         "language": "[Python]",  # inline list parses as raw string
         "topics": [],

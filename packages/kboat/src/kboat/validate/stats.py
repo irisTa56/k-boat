@@ -10,7 +10,8 @@ Nothing here re-derives a predicate. The source and Kindle counts come from
 `kboat.lifecycle.core` — the same `Source`/`Kindle` views and the same
 `compute_plan` the routine acts on — so a count and the work set it describes can
 never disagree. The repo and queue counts are over what the refresh and ingest
-read: every repo note's `refreshed_date`, and every capture's file name.
+read: the `refreshed_date` of every repo note the refresh takes up, and every
+capture's file name.
 """
 
 from __future__ import annotations
@@ -78,8 +79,9 @@ def compute_stats(
 ) -> Stats:
     """The backlog counts as of `today`.
 
-    `repo_refreshed` is each repo note's `refreshed_date` as read, and `captures`
-    each queue capture's file name.
+    `repo_refreshed` is the `refreshed_date`, as read, of each repo note the
+    refresh takes up (not one ticked `gone`), and `captures` each queue capture's
+    file name.
     """
     plan = compute_plan(sources, today)
     blocked = [s for s in sources if s.blocked]

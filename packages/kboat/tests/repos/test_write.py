@@ -60,7 +60,8 @@ def test_write_creates_note(tmp_path: Path) -> None:
     assert fm["type"] == "repo"
     assert fm["role"] == "framework"
     assert fm["status"] == "recent"
-    assert fm["reading"] is False  # the always-present boolean the Base filters on
+    assert fm["reading"] is False  # the always-present booleans the Bases filter on
+    assert fm["gone"] is False
     assert fm["added_date"] == "2026-06-06"
     assert fm["refreshed_date"] == "2026-06-06"
     assert fm["stars"] == "100"  # the parser returns scalars as strings
@@ -176,13 +177,17 @@ def test_write_update_preserves_body_reading_and_added_date(tmp_path: Path) -> N
 
 
 def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path: Path) -> None:
-    # `reading` is the human's, the date stamps are the schema's, and `title` is
-    # read off the top level. A `fields` block carrying any of them (a
+    # `reading` and `gone` are the human's, the date stamps are the schema's, and
+    # `title` is read off the top level. A `fields` block carrying any of them (a
     # hand-assembled record, or a gather record fed back in) must not reach
     # them — nor may a key no schema knows reach the frontmatter.
     write_note(RECORD, tmp_path, today_iso="2026-06-06")
     path = _note(tmp_path)
-    path.write_text(path.read_text().replace("reading: false", "reading: true"))
+    path.write_text(
+        path.read_text()
+        .replace("reading: false", "reading: true")
+        .replace("gone: false", "gone: true")
+    )
 
     result = write_note(
         {
@@ -190,6 +195,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
             "fields": {
                 **RECORD["fields"],
                 "reading": False,
+                "gone": False,
                 "added_date": "1999-01-01",
                 "refreshed_date": "1999-01-01",
                 "title": "someone/else",
@@ -203,6 +209,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     note = path.read_text()
     fm = parse_frontmatter(note)
     assert fm["reading"] is True
+    assert fm["gone"] is True
     assert fm["added_date"] == "2026-06-06"
     assert fm["refreshed_date"] == "2027-01-01"
     assert fm["title"] == "google/A2A"  # the top-level value, not the one under `fields`
@@ -210,6 +217,7 @@ def test_write_cannot_be_told_to_overwrite_what_the_record_does_not_own(tmp_path
     # Dropped, but not in silence — the caller is told what it sent that did not land.
     assert result["dropped_fields"] == [
         "reading",
+        "gone",
         "added_date",
         "refreshed_date",
         "title",

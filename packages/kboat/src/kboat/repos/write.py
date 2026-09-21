@@ -36,10 +36,10 @@ from kboat.write import WROTE_A_NOTE, BadInputError, upsert
 REQUIRED = ("slug", "url", "title", "fields", "role", "domain", "summary", "readme_error")
 
 # Schema fields the `fields` block may not carry, because they are not its to
-# know: `reading` is the human's checkbox and the stamps are the schema's.
-# `upsert` preserves a field the write leaves alone and overwrites one it is
-# given, so dropping these is what keeps them the human's and the schema's.
-_NOT_FROM_THE_RECORD = frozenset({"reading"} | {f.name for f in REPO.fields if f.stamp})
+# know: `reading` and `gone` are the human's checkboxes and the stamps are the
+# schema's. `upsert` preserves a field the write leaves alone and overwrites one
+# it is given, so dropping these is what keeps them the human's and the schema's.
+_NOT_FROM_THE_RECORD = frozenset({"reading", "gone"} | {f.name for f in REPO.fields if f.stamp})
 
 
 def readme_mark(record: dict) -> ReadmeMark:

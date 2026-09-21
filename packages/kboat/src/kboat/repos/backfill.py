@@ -1,13 +1,20 @@
-"""`kboat-repos backfill-readme`: give every repo note that lacks one `readme: unknown`.
+"""`kboat-repos backfill`: give a repo note each backfilled field it has no line for.
 
-Every note written before the `readme` field existed was classified with or
-without its README, and which it was is not recoverable, so the only value that
-does not overclaim is `unknown` (`kboat-notes` "Repo note"). This writes that and
-nothing else: a note already carrying a `readme` line is left as it is, whatever
-it holds, so a mark `kboat-repos write` set is never downgraded and a malformed one
-stays for `kboat-validate` to report.
+A field added to the repo schema after the catalogue was written is missing from
+every older note. For the fields in `BACKFILLED` the schema default is also the
+only value that does not overclaim for such a note (`kboat-notes` "Repo note"):
+`readme: unknown`, since whether its README was read is not recoverable, and
+`gone: false`, since nobody has ticked it. This writes those defaults and nothing
+else: a field the note already has a line for is left as it is, whatever it
+holds, so a value `kboat-repos write` or a human set is never overwritten and a
+malformed one stays for `kboat-validate` to report.
 
-The note is re-assembled the way every update write assembles it — the new entry
+One command for every such field rather than one per field: what differs between
+them is only the name, and the default is the schema's. A field joins the tuple
+only where its default is the honest value for a note written before it existed;
+most defaults are not (`stars: 0` would hide a note that lost its count).
+
+The note is re-assembled the way every update write assembles it — the new entries
 rendered, every other entry put back verbatim — but not through `upsert`, which
 would stamp `refreshed_date` on a note whose metadata nobody refreshed.
 """
@@ -37,10 +44,11 @@ from kboat.frontmatter import (
 )
 from kboat.io_utils import atomic_write_text
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
-from kboat.schema import DIR_BY_TYPE, REPO, ReadmeMark
+from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import build_note
 
-_FIELD = "readme"
+BACKFILLED = ("readme", "gone")
+_DEFAULTS = {field.name: field.default for field in REPO.fields if field.name in BACKFILLED}
 
 
 def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
@@ -48,7 +56,7 @@ def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
 
     A note that cannot be read as a repo note, or an evicted one, is an `anomalies`
     entry and is not marked: it is outside `total`, and a re-run once it is readable
-    marks it, since a marked note is skipped.
+    marks it, since a field already written is skipped.
     """
     found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["repo"])
     total = 0
@@ -67,10 +75,15 @@ def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
             anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'repo'"})
             continue
         total += 1
-        # Asked of what each entry is about, not of what decoded: a `readme` line
-        # the reader cannot model is still the note's mark, and adding a second
-        # one would leave the note holding two.
-        if any(names_key(entry.lines[0], _FIELD) for entry in entries):
+        # Asked of what each entry is about, not of what decoded: a line the reader
+        # cannot model is still the note's value for that field, and adding a
+        # second one would leave the note holding two.
+        missing = [
+            name
+            for name in BACKFILLED
+            if not any(names_key(entry.lines[0], name) for entry in entries)
+        ]
+        if not missing:
             continue
         # Re-assembling the note keeps only the last line of a repeated key, which
         # would delete the one a human editing the note sees, and which of the two
@@ -81,9 +94,8 @@ def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
             failed.append({"path": rel, "error": f"note names {names}"})
             continue
         if apply:
-            content = build_note(
-                REPO, {_FIELD: ReadmeMark.UNKNOWN}, body_after_frontmatter(text), entries
-            )
+            defaults = {name: _DEFAULTS[name] for name in missing}
+            content = build_note(REPO, defaults, body_after_frontmatter(text), entries)
             try:
                 atomic_write_text(path, content)
             except OSError as exc:
@@ -107,15 +119,15 @@ def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="kboat-repos backfill-readme",
-        description="Write `readme: unknown` on every Repos/*.md note that has no readme line.",
+        prog="kboat-repos backfill",
+        description="Write each backfilled field a Repos/*.md note has no line for, at its default.",
     )
     add_vault_argument(parser)
     mode = parser.add_mutually_exclusive_group(required=True)
     # Required and exclusive, as for `kboat-note migrate-slugs`: a bare invocation
     # must not be the one that writes.
     mode.add_argument("--dry-run", action="store_true", help="Report the notes only.")
-    mode.add_argument("--apply", action="store_true", help="Write the mark.")
+    mode.add_argument("--apply", action="store_true", help="Write the fields.")
     args = parser.parse_args(argv)
     vault = vault_path(parser, args)
 

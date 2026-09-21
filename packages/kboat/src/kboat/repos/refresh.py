@@ -1,7 +1,7 @@
 """Refresh every repo note's GitHub-derived frontmatter.
 
 Drain ingestion takes a repo snapshot once; this keeps it fresh. It re-fetches
-every `Repos/*.md` note via `gh` (in parallel), rewrites only the
+every `Repos/*.md` note not ticked `gone` via `gh` (in parallel), rewrites only the
 GitHub-derived fields plus `status` and `refreshed_date`, and preserves the
 judgement layer (role/domain/summary) and the human-edited `## Notes` body.
 
@@ -169,8 +169,20 @@ def set_fields(text: str, updates: Mapping[str, object]) -> str:
     return _set_rendered_fields(text, rendered)
 
 
-def _load_repo_notes(vault: Path) -> tuple[list[dict], list[dict[str, str]], bool]:
+def is_gone(fm: Mapping[str, object]) -> bool:
+    """Whether the human ticked `gone`, which takes the note out of the refresh.
+
+    One predicate for the refresh that skips the note and the backlog stat that
+    leaves it out, so the two cannot disagree about which notes are not behind.
+    Only a real `true` counts: anything else is refreshed, and a value that is not
+    a boolean is `kboat-validate`'s `not_bool` to report.
+    """
+    return fm.get("gone") is True
+
+
+def _load_repo_notes(vault: Path) -> tuple[list[dict], list[dict[str, str]], bool, int]:
     notes: list[dict] = []
+    gone = 0
     # One listing, and it can refuse: a directory the OS will not list would
     # otherwise come back empty and the pass would report a catalogue it never
     # read as one with nothing to say. An evicted note is the other half of the
@@ -188,13 +200,16 @@ def _load_repo_notes(vault: Path) -> tuple[list[dict], list[dict[str, str]], boo
         if fm.get("type") != "repo":
             anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'repo'"})
             continue
+        if is_gone(fm):
+            gone += 1
+            continue
         url = fm.get("url")
         owner, repo = parse_repo(url) if isinstance(url, str) else (None, None)
         if not owner or not repo:
             anomalies.append({"path": rel, "error": f"unparseable github url: {url!r}"})
             continue
         notes.append({"path": path, "rel": rel, "owner": owner, "repo": repo})
-    return notes, anomalies, unread
+    return notes, anomalies, unread, gone
 
 
 def _fetch(note: dict) -> dict:
@@ -360,7 +375,7 @@ def refresh(
     and a report of a different shape was one more for every reader to branch on.
     """
     repos_dir = vault / DIR_BY_TYPE["repo"]
-    notes, anomalies, unread = _load_repo_notes(vault)
+    notes, anomalies, unread, gone = _load_repo_notes(vault)
     today_iso = today.isoformat()
     updated: list[str] = []
     adopted: list[dict[str, str]] = []
@@ -469,6 +484,9 @@ def refresh(
         "dry_run": dry_run,
         "counts": {
             "total": len(notes),
+            # Notes ticked `gone`, skipped by the human's choice and outside `total`;
+            # a count only, since there is nothing about them for anyone to act on.
+            "gone": gone,
             "updated": len(updated),
             "adopted": len(adopted),
             "rename_collisions": len(rename_collisions),

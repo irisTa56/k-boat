@@ -79,12 +79,12 @@ The classification is permanent — the note is written and the queue file delet
 Take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`).
 Keep `readme_error` as `gather` returned it, `null` included: the write sets the note's `readme` mark from it, and refuses a record without it (exit 2) rather than guess.
 
-- The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
+- The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `gone` / `added_date` on update — none of which the agent should hand-assemble.
 - It prints `{status: created|updated|collision|slug_mismatch|evicted|repeated_key|locked, ...}`, and the last five are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
   - A `repeated_key` (the note at this slug names a key on more than one line) is the note's, and waits on a human (see Errors).
   - An `evicted` (iCloud holds the note at this slug behind a placeholder) and a `locked` (another run held the vault) are the vault's, and clear on their own (see Errors).
-- A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
+- A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, `gone`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
 This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
 
@@ -96,7 +96,7 @@ Keep the GitHub-derived metadata fresh (drain ingestion snapshots a repo once).
 
 Run `kboat-repos refresh` (defaults to `$OBSIDIAN_VAULT_PATH`; pass `--dry-run` to preview).
 
-It re-fetches every `Repos/*.md` via `gh` in parallel, rewrites only the GitHub-derived frontmatter plus `status` and `refreshed_date`, and **preserves** the judged `role`/`domain`/`summary` and the `## Notes` body.
+It re-fetches every `Repos/*.md` not ticked `gone` via `gh` in parallel, rewrites only the GitHub-derived frontmatter plus `status` and `refreshed_date`, and **preserves** the judged `role`/`domain`/`summary` and the `## Notes` body.
 When `gh` resolves a new canonical `owner/repo`, it **adopts the rename**: updates `url`/`title` and renames the file to the new slug, carrying the judgement and body across.
 It reads the JSON report on stdout.
 
@@ -108,7 +108,8 @@ It reads the JSON report on stdout.
 
 ### Step 2: relay the report
 
-**Relay** the report: counts (`total`/`updated`/`adopted`/`rename_collisions`/`failed`/`anomalies`), and the entries below.
+**Relay** the report: counts (`total`/`gone`/`updated`/`adopted`/`rename_collisions`/`failed`/`anomalies`), and the entries below.
+`gone` is how many notes the human ticked `gone`, which the pass skipped and left out of `total`; it is a count only, with nothing to act on.
 
 The routine never deletes a note.
 
@@ -160,8 +161,8 @@ One of them needs a human, three are settled by the next run, and two are notes 
   - The next run tries again.
   - One that fails on every run stops advancing the note's `refreshed_date`, and the backlog stats' unrefreshed-repo age is what raises the hand (kboat-notes "Backlog stats").
 - `no_such_repo` — `gh` did not answer for that repo, and GitHub then answered that it shows this account no repository there: deleted, made private, or no longer visible to this account, and nothing in the 404 says which.
-  - No later run refreshes the note, and the routine never deletes one, so relay it as a human's decision: delete the note if the repository is gone, or restore the access if it should still be visible (`gh auth status`).
-  - Do not raise the hand for one entry: its `refreshed_date` stops advancing, and the unrefreshed-repo age does that if the note is left — for as long as it is kept.
+  - No later run refreshes the note, and nothing in a run changes it, so relay it as a human's decision among three: tick the note's `gone` to keep it, which stops the refresh and the age below from reaching it; restore the access if the repository should still be visible (`gh auth status`); or delete the note.
+  - Do not raise the hand for one entry: its `refreshed_date` stops advancing, and the unrefreshed-repo age does that if the choice is left unmade.
   - Never say the repository was deleted: the answer says only that this account is shown none.
 - `payload` — `gh` answered with something unusable, the same class as `gather`'s `defect-payload`.
   - **Escalate it**: surface it as needing a human rather than relaying it among the rest, since no later run clears it.

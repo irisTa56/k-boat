@@ -26,6 +26,7 @@ from kboat.cli import add_today_argument, add_vault_argument, vault_path
 from kboat.frontmatter import NOTE_READ_ERRORS, Value, parse_frontmatter
 from kboat.io_utils import list_note_dir
 from kboat.lifecycle.core import Kindle, Source
+from kboat.repos.refresh import is_gone
 from kboat.schema import DIR_BY_TYPE, QUEUE_DIR
 
 from .core import Violation, check_note, check_repeated_keys
@@ -98,8 +99,9 @@ def _validate_vault(vault: Path) -> tuple[dict[str, int], list[Violation], _Back
                 backlog.sources.append(Source.from_frontmatter(path.stem, rel, fm))
             elif note_type == "kindle" and fm.get("type") == "kindle":
                 backlog.kindles.append(Kindle.from_frontmatter(path.stem, rel, fm))
-            elif note_type == "repo" and fm.get("type") == "repo":
-                # The refresh reads a repo note by its `type` too.
+            elif note_type == "repo" and fm.get("type") == "repo" and not is_gone(fm):
+                # The refresh reads a repo note by its `type` too, and skips one
+                # the human ticked `gone`, so that one is not behind.
                 backlog.repo_refreshed.append(fm.get("refreshed_date"))
         checked[note_type] = count
     # The captures ingest drains, by name: the name is the capture's timestamp, and

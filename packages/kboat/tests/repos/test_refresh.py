@@ -108,6 +108,7 @@ def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, m
     report, _ = refresh(tmp_path, today=TODAY)
     assert report["counts"] == {
         "total": 1,
+        "gone": 0,
         "updated": 1,
         "adopted": 0,
         "rename_collisions": 0,
@@ -121,6 +122,41 @@ def test_refresh_updates_metadata_preserves_judgement_and_body(tmp_path: Path, m
     assert fm["role"] == "library" and fm["summary"] == "要約"  # judgement preserved
     assert fm["reading"] is True  # preserved
     assert "keep me" in note  # body preserved
+
+
+def test_refresh_skips_a_note_ticked_gone_and_takes_it_up_again_once_unticked(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # The tick is how a human keeps a repository GitHub no longer shows: asked
+    # about, it fails as `no_such_repo` on every run, so the pass must not ask.
+    gone = _write_note(tmp_path, "https://github.com/acme/gone", "acme/gone")
+    _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
+    gone.write_text(gone.read_text().replace("gone: false\n", "gone: true\n"))
+    before = gone.read_text()
+    asked: list[str] = []
+
+    def view(owner: str, name: str) -> tuple[dict | None, str | None]:
+        asked.append(f"{owner}/{name}")
+        return _meta(owner, name), None
+
+    monkeypatch.setattr(refresh_mod, "gh_repo_view", view)
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert asked == ["acme/tool"]
+    assert report["counts"]["gone"] == 1
+    assert report["counts"]["total"] == 1
+    assert report["counts"]["updated"] == 1
+    assert gone.read_text() == before
+
+    gone.write_text(before.replace("gone: true\n", "gone: false\n"))
+    asked.clear()
+
+    report, _ = refresh(tmp_path, today=TODAY)
+
+    assert sorted(asked) == ["acme/gone", "acme/tool"]
+    assert report["counts"]["gone"] == 0
+    assert parse_frontmatter(gone.read_text())["refreshed_date"] == TODAY.isoformat()
 
 
 def test_refresh_adopts_rename_and_moves_file(tmp_path: Path, monkeypatch) -> None:
@@ -387,6 +423,7 @@ def test_a_repos_directory_whose_own_stat_is_refused_is_an_anomaly_not_an_absenc
 # catalogue that refreshed nothing, and no reader branches on a second shape.
 _UNREAD_COUNTS = {
     "total": 0,
+    "gone": 0,
     "updated": 0,
     "adopted": 0,
     "rename_collisions": 0,
@@ -547,9 +584,11 @@ def test_refresh_survives_an_existence_probe_that_raises(tmp_path: Path, monkeyp
 
 
 def _counts_match_the_lists(report: dict) -> bool:
-    """Every count is the length of the list it summarises (`total` aside)."""
+    """Every count is the length of the list it summarises (`total` and `gone` aside)."""
     return all(
-        report["counts"][key] == len(report[key]) for key in report["counts"] if key != "total"
+        report["counts"][key] == len(report[key])
+        for key in report["counts"]
+        if key not in ("total", "gone")
     )
 
 
@@ -584,6 +623,7 @@ def test_refresh_isolates_an_unreadable_payload_to_the_one_note(
 
     assert report["counts"] == {
         "total": 2,
+        "gone": 0,
         "updated": 1,
         "adopted": 0,
         "rename_collisions": 0,
@@ -802,6 +842,7 @@ def test_refresh_reports_a_rename_that_left_both_files(tmp_path: Path, monkeypat
     assert old.exists() and new_path.exists()  # the state the report has to describe
     assert report["counts"] == {
         "total": 1,
+        "gone": 0,
         "updated": 0,
         "adopted": 0,
         "rename_collisions": 0,
@@ -957,6 +998,7 @@ def test_refresh_isolates_a_note_that_turns_unreadable_mid_pass(
 
     assert report["counts"] == {
         "total": 1,
+        "gone": 0,
         "updated": 0,
         "adopted": 0,
         "rename_collisions": 0,

@@ -375,6 +375,22 @@ def test_stats_age_a_repo_the_refresh_stopped_reaching_and_a_stuck_capture(
     assert stats["queued_oldest_age_days"] == 8
 
 
+def test_a_repo_note_ticked_gone_is_not_behind(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The refresh skips it on the human's say-so, so its date stops by design; were
+    # it counted, keeping such a note would trip the age threshold every day.
+    vault = _vault(tmp_path)
+    kept = _repo_note("2026-05-16").replace("url:", "gone: true\nurl:")
+    (vault / "Repos" / "kept.md").write_text(kept, encoding="utf-8")
+
+    main(["--vault", str(vault), "--stats", "--today", "2026-06-15"])
+    stats = json.loads(capsys.readouterr().out)["stats"]
+
+    assert stats["unrefreshed_repo_count"] == 0
+    assert stats["unrefreshed_repo_oldest_age_days"] is None
+
+
 def test_a_healthy_repo_catalogue_and_a_drained_queue_are_zero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

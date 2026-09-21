@@ -1,7 +1,8 @@
-"""Tests for `kboat-repos backfill-readme` — the `readme: unknown` backfill.
+"""Tests for `kboat-repos backfill` — `readme: unknown` and `gone: false` where missing.
 
-Each fixture note is written by the real writer and then has its `readme` line
-taken out, so it is the note a catalogue written before the field holds.
+Each fixture note is written by the real writer and then has its `readme` and
+`gone` lines taken out, so it is the note a catalogue written before both fields
+holds.
 """
 
 from __future__ import annotations
@@ -37,20 +38,22 @@ def _record(owner_repo: str) -> dict[str, Any]:
 
 
 def _legacy_note(vault: Path, owner_repo: str = "owner/repo") -> Path:
-    """A repo note as the catalogue held it before `readme` existed."""
+    """A repo note as the catalogue held it before `readme` and `gone` existed."""
     record = _record(owner_repo)
     write_note(record, vault, today_iso="2026-06-06")
     path = vault / "Repos" / f"{record['slug']}.md"
-    path.write_text(path.read_text().replace("readme: fetched\n", ""))
+    text = path.read_text()
+    assert "readme: fetched\n" in text and "gone: false\n" in text
+    path.write_text(text.replace("readme: fetched\n", "").replace("gone: false\n", ""))
     return path
 
 
 def _run(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, dict]:
-    rc = main(["backfill-readme", *argv])
+    rc = main(["backfill", *argv])
     return rc, json.loads(capsys.readouterr().out)
 
 
-def test_apply_marks_a_note_that_predates_the_field_unknown(
+def test_apply_gives_a_note_that_predates_the_fields_their_defaults(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = _legacy_note(tmp_path)
@@ -62,12 +65,47 @@ def test_apply_marks_a_note_that_predates_the_field_unknown(
     after = path.read_text()
     fm = parse_frontmatter(after)
     assert fm["readme"] == "unknown"
-    # The mark is the whole change: in its schema position, with nothing else
-    # re-rendered — `refreshed_date` above all, since nothing was refreshed.
-    assert after == before.replace("summary: 要約。\n", "summary: 要約。\nreadme: unknown\n")
+    assert fm["gone"] is False
+    # The two lines are the whole change: in their schema positions, with nothing
+    # else re-rendered — `refreshed_date` above all, since nothing was refreshed.
+    assert after == before.replace(
+        "summary: 要約。\n", "summary: 要約。\nreadme: unknown\n"
+    ).replace("reading: false\n", "reading: false\ngone: false\n")
     assert check_note("repo", dict(fm), "p") == []
     assert report["counts"] == {"total": 1, "marked": 1, "failed": 0, "anomalies": 0}
     assert report["marked"] == [path.relative_to(tmp_path).as_posix()]
+
+
+def test_a_note_missing_only_one_field_gets_only_that_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The catalogue #130 already backfilled holds `readme` and lacks only `gone`;
+    # its mark must come through untouched while `gone` is added.
+    record = {**_record("owner/repo"), "readme_error": "HTTP 403: rate limited"}
+    write_note(record, tmp_path, today_iso="2026-06-06")
+    path = tmp_path / "Repos" / f"{record['slug']}.md"
+    path.write_text(path.read_text().replace("gone: false\n", ""))
+
+    rc, report = _run(["--apply", "--vault", str(tmp_path)], capsys)
+
+    assert rc == 0
+    fm = parse_frontmatter(path.read_text())
+    assert fm["readme"] == "unavailable"
+    assert fm["gone"] is False
+    assert report["counts"]["marked"] == 1
+
+
+def test_a_ticked_gone_is_never_reset(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # The human's tick is the one value here that is known; writing the default
+    # over it would put the note back into the refresh they took it out of.
+    path = _legacy_note(tmp_path)
+    path.write_text(path.read_text().replace("reading: false\n", "reading: false\ngone: true\n"))
+
+    _run(["--apply", "--vault", str(tmp_path)], capsys)
+
+    fm = parse_frontmatter(path.read_text())
+    assert fm["gone"] is True
+    assert fm["readme"] == "unknown"
 
 
 def test_a_note_that_already_carries_a_mark_keeps_it(
@@ -95,11 +133,13 @@ def test_a_readme_line_the_reader_cannot_decode_is_still_a_mark(
     # whichever the reader took, `kboat-validate` could not report the first.
     path = _legacy_note(tmp_path)
     path.write_text(path.read_text().replace("summary: 要約。\n", 'summary: 要約。\n"readme": x\n'))
-    before = path.read_text()
 
     _run(["--apply", "--vault", str(tmp_path)], capsys)
 
-    assert path.read_text() == before
+    after = path.read_text()
+    assert after.count("readme") == 1
+    assert '"readme": x\n' in after
+    assert "gone: false\n" in after  # the other field is still owed
 
 
 def test_a_summary_spanning_several_lines_keeps_its_lines(
@@ -237,5 +277,5 @@ def test_dry_run_reads_a_locked_vault(tmp_path: Path, capsys: pytest.CaptureFixt
 
 def test_a_mode_is_required(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as excinfo:
-        main(["backfill-readme", "--vault", str(tmp_path)])
+        main(["backfill", "--vault", str(tmp_path)])
     assert excinfo.value.code == 2
