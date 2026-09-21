@@ -137,7 +137,7 @@ Both filter on `enabled` as well, so a paused site reaches no gather at all and 
 
 ## Skills (the orchestration layer)
 
-`.claude/skills/` holds the four skills that drive the CLI.
+Four skills in the repo-root `skills/` drive the CLI.
 `query-new` has no skill behind it yet — it is a CLI a human runs by hand, and the scheduled routine does not call it.
 `prompts/selection.md` is the keep/drop prompt each judging subagent reads for itself, from the path `selection-path` prints.
 

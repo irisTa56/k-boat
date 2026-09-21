@@ -31,8 +31,8 @@ from kboat.repos.refresh import CollisionReason, Reason
 from kboat.schema import ReadmeMark
 from kboat.write import WriteStatus
 
-# tests → kboat → packages → the workspace root, which holds `.claude/skills`.
-SKILLS = Path(__file__).resolve().parents[3] / ".claude/skills"
+# tests → kboat → packages → the workspace root, which holds `skills/`.
+SKILLS = Path(__file__).resolve().parents[3] / "skills"
 
 _REPOS_SKILL = "kboat-repos/SKILL.md"
 _NOTES_PROCEDURES = "kboat-notes/references/procedures.md"

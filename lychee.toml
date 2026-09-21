@@ -14,7 +14,7 @@ exclude = [
 # line. Each names this file with `--config`, so a config that cannot be found
 # fails the commit and the PR instead of narrowing the walk in silence.
 
-# `.claude/skills` is the product content, and lychee skips dotdirs by default.
+# `.claude/rules` holds tracked prose, and lychee skips dotdirs by default.
 # `.venv/` and the worktree copies stay out anyway: the call sites' `.` target is
 # gitignore-aware, where a `**` glob would not be.
 hidden = true

@@ -25,7 +25,7 @@ from kboat.validate.stats import Stats
 
 # The skills live at the workspace root; this test file sits at
 # packages/kboat/tests/, so walk up three levels (tests → kboat → packages → root).
-SKILLS = Path(__file__).resolve().parents[3] / ".claude/skills"
+SKILLS = Path(__file__).resolve().parents[3] / "skills"
 
 # Every table below has a file to itself — `kboat-notes` keeps a reference per
 # K-Boat note type plus one for the two code-derived tables, and `kboat-feed-notes`
