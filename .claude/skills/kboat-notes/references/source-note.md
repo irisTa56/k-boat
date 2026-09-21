@@ -81,6 +81,7 @@ The routine (kboat-distill) drives the transitions:
     - A pass that did not finish with the source stamps nothing and discards nothing: the source stays ripe, so the notebook still grounds what never landed, and a later run distils it again (kboat-distill says which endings those are, how the replay avoids writing anything twice, and why the unwritten concept goes to a human rather than to that run).
   - `dismiss` (alone) → discard the notebook, leaving `distilled_date` empty.
     - The note and any PDF stay as a de-dup tombstone, excluded from recall.
+    - A note naming a key on more than one line keeps its notebook, reported as an anomaly, until a human repairs it: the discard ends by clearing the note's coordinates, which the note writer refuses on such a note (`kboat-vault-conventions`, "The write contract"), so discarding first would leave an id naming no notebook.
   - `keep` (alone) → nothing to do: the notebook is retained and the source rests as a searchable "read later" entry.
     - `keep` alone has no deferred action — it is a stable state from the moment it is checked.
 

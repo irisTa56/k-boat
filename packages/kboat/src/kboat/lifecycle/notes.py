@@ -14,6 +14,7 @@ from kboat.frontmatter import (
     Value,
     is_iso_date,
     parse_frontmatter,
+    repeated_keys,
     set_field,
 )
 
@@ -24,6 +25,7 @@ __all__ = [
     "Value",
     "is_iso_date",
     "parse_frontmatter",
+    "repeated_keys",
     "set_filed_date",
 ]
 

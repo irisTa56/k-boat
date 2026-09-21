@@ -152,6 +152,23 @@ def test_ripe_and_dismiss_work_sets(vault: Path, capsys):
     assert out["counts"]["keep_noop"] == 1
 
 
+def test_a_dismissed_note_naming_a_key_twice_keeps_its_notebook(vault: Path, capsys):
+    # The discard deletes the notebook and then clears the note's coordinates,
+    # and the note writer refuses that clear on a note naming a key twice. Listed,
+    # the source would lose its notebook and keep an id naming nothing, so it is
+    # held back as an anomaly until a human repairs the note.
+    sources = vault / "Sources"
+    write_note(sources, "drop", dismiss=True, filed_date="2026-06-01")
+    text = (sources / "drop.md").read_text(encoding="utf-8")
+    (sources / "drop.md").write_text(text.replace("reading: false\n", "reading: false\n" * 2))
+    out = run(vault, capsys)
+
+    assert out["phase_b"]["dismiss_discard"] == []
+    assert out["counts"]["dismiss_discard"] == 0
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/drop.md"]
+    assert "'reading'" in out["anomalies"][0]["error"]
+
+
 def test_blocked_excluded_from_everything(vault: Path, capsys):
     sources = vault / "Sources"
     write_note(sources, "b", distill=True, blocked=True, filed_date="2026-06-01")

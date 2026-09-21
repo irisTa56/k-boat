@@ -46,7 +46,7 @@ from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE
 
 from .core import Kindle, Source, compute_plan, select_ripe_kindles
-from .notes import NOTE_READ_ERRORS, parse_frontmatter, set_filed_date
+from .notes import NOTE_READ_ERRORS, parse_frontmatter, repeated_keys, set_filed_date
 
 
 def _source_json(s: Source) -> dict[str, object]:
@@ -81,14 +81,16 @@ def _load_sources(vault: Path) -> tuple[list[Source], list[dict[str, str]], bool
     for path in found:
         rel = path.relative_to(vault).as_posix()
         try:
-            fm = parse_frontmatter(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+            fm = parse_frontmatter(text)
         except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
         if fm.get("type") != "source":
             anomalies.append({"path": rel, "error": "frontmatter 'type' is not 'source'"})
             continue
-        sources.append(Source.from_frontmatter(path.stem, rel, fm))
+        repeated = tuple(sorted(repeated_keys(text)))
+        sources.append(Source.from_frontmatter(path.stem, rel, fm, repeated))
     return sources, anomalies, unread
 
 
@@ -155,6 +157,14 @@ def _run(vault: Path, today: date, *, dry_run: bool) -> tuple[dict[str, object],
     """
     sources, anomalies, sources_unread = _load_sources(vault)
     plan = compute_plan(sources, today)
+    anomalies += [
+        {
+            "path": s.path,
+            "error": f"notebook not discarded: the note names {', '.join(map(repr, s.repeated_keys))}"
+            " on more than one line, so the note writer would refuse to clear its coordinates",
+        }
+        for s in plan.dismiss_held
+    ]
 
     # No on-disk writes for Kindle notes — Kindle has no cooldown clock — only
     # ripe selection.

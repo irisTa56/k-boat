@@ -40,7 +40,7 @@ def make(slug: str, **over: object) -> Source:
         "topics_empty": False,
     }
     base.update(over)
-    return Source(**base)  # type: ignore[arg-type]
+    return Source(**base)  # ty: ignore[invalid-argument-type]
 
 
 class TestCooldown:

@@ -64,9 +64,14 @@ class Source:
     notebooklm_id: str | None
     summary_empty: bool
     topics_empty: bool
+    # The keys the note names on more than one line, which the note writer
+    # refuses the whole note over.
+    repeated_keys: tuple[str, ...] = ()
 
     @classmethod
-    def from_frontmatter(cls, slug: str, path: str, fm: dict[str, Value]) -> Source:
+    def from_frontmatter(
+        cls, slug: str, path: str, fm: dict[str, Value], repeated_keys: tuple[str, ...] = ()
+    ) -> Source:
         def boolean(key: str) -> bool:
             return fm.get(key) is True
 
@@ -99,6 +104,7 @@ class Source:
             topics_empty=not (
                 isinstance(topics, list) and any(isinstance(t, str) and t.strip() for t in topics)
             ),
+            repeated_keys=repeated_keys,
         )
 
     @property
@@ -191,6 +197,7 @@ class Plan:
     ambiguous: list[Source] = field(default_factory=list)
     ripe: list[Source] = field(default_factory=list)
     dismiss_discard: list[Source] = field(default_factory=list)
+    dismiss_held: list[Source] = field(default_factory=list)
     needs_summary: list[Source] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
 
@@ -241,6 +248,10 @@ def compute_plan(sources: list[Source], today: date) -> Plan:
                 awaiting_cooldown += 1
             elif s.notebooklm_id is None:
                 dismiss_already_discarded += 1
+            elif s.repeated_keys:
+                # The discard ends by clearing the note's coordinates, which the
+                # note writer refuses here — after the notebook is already gone.
+                plan.dismiss_held.append(s)
             else:
                 plan.dismiss_discard.append(s)
         elif s.keep and not s.distill:
