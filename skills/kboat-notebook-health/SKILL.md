@@ -56,6 +56,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Read the sources being read with `kboat-note list --type source --flagged reading --field title --field url --field source_type --field distill --field dismiss --field blocked --field distilled_date --field notebooklm_id` and take the set above from them.
      - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: stop and report that rather than sweeping, since the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
      - Then add every source the summary backfill, the distillation pass, and the daily pick reported this run, skipping one already in it.
+       - One the read above did not return is often not `reading`, so read it as the argument opening does, with the same `--field` set and the same handling of an exit 1 or an `anomalies` entry.
      - Those three arrive as **input** from the caller running the phases, not from disk, so **say which of the three you were given**.
      - A sweep given none covers its own set alone — the ripe sources have no other route in — and its counts must not read as the routine's coverage.
 2. **Confirm each notebook exists** before asking anything about its contents: `notebooklm --quiet list --json 2>/dev/null` once for the run, checking each `notebooklm_id` against it, the same check `kboat-distill` makes (Phase B, step 1).
