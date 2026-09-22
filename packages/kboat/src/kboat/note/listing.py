@@ -12,14 +12,16 @@ that the note holds in a shape the frontmatter reader does not model or names on
 more than one line — what `kboat-validate` reports as `missing_field` and
 `repeated_key` for such a field, and nothing further.
 
-A slug is answered from that same listing rather than by probing the name. The
-listing is what tells an evicted note from an absent one in the order
-`kboat-vault-conventions` gives: anything at `<slug>.md` comes first and is read
-(a directory or a dangling symlink there fails that read and is reported as
-such), a placeholder counts only where nothing is at the name (`evictions`), and
-only a name the listing holds neither of is absent. Probing the name instead
-would still need the folder listed, since an absent folder makes every name in
-it read as free.
+A slug is answered after that same listing, since an absent folder makes every
+name in it read as free. A listed `<slug>.md` answers it outright. Otherwise the
+volume is asked, as the writer asks it (`name_occupied`), in the order
+`kboat-vault-conventions` gives: anything at `<slug>.md` first, then the
+placeholder beside it, and only a name holding neither is absent. The listing
+alone would disagree with the writer on a volume that folds case, APFS's
+default: there `B0ABC.md` holds the slug `b0abc` for `lstat` and the write, and
+an exact match over the listing would answer that no note does. What the probe
+finds is then shown as the listed entry it is. Anything at the name is read, so
+a directory or a dangling symlink there fails that read and is reported as such.
 """
 
 from __future__ import annotations
@@ -36,11 +38,38 @@ from kboat.frontmatter import (
     parse_frontmatter,
     repeated_keys,
 )
-from kboat.io_utils import icloud_placeholder
+from kboat.io_utils import icloud_placeholder, name_occupied
 from kboat.schema import BY_TYPE, DIR_BY_TYPE
 
 _UNMODELLED = "field not readable: {} is held in a shape the frontmatter reader does not model"
 _REPEATED = "field named on more than one line: {}, of which the answer holds the last"
+
+
+def _at_slug(
+    vault: Path,
+    folder: str,
+    slug: str,
+    found: list[Path],
+    anomalies: list[dict[str, str]],
+) -> tuple[list[Path], list[dict[str, str]]]:
+    """The listed note, or the listed placeholder's entry, that holds `slug`."""
+    name = f"{slug}.md"
+    exact = [p for p in found if p.name == name]
+    if exact:
+        return exact, []
+    target = vault / folder / name
+    stub = icloud_placeholder(target)
+    try:
+        if name_occupied(target):
+            held = [p for p in found if p.name.casefold() == name.casefold()]
+            unshown = f"{name} is held, but by no name this listing shows"
+            return held, [] if held else [{"path": f"{folder}/{name}", "error": unshown}]
+        if name_occupied(stub):
+            rel = stub.relative_to(vault).as_posix().casefold()
+            return [], [a for a in anomalies if a["path"].casefold() == rel]
+    except OSError as exc:
+        return [], [{"path": f"{folder}/{name}", "error": str(exc)}]
+    return [], []
 
 
 def list_notes(
@@ -67,11 +96,8 @@ def list_notes(
     folder = DIR_BY_TYPE[note_type]
     shown_fields = set(fields) if fields else set(BY_TYPE[note_type].field_names())
     found, anomalies, unread = scan_required_dir(vault, folder)
-    if slug is not None:
-        name = f"{slug}.md"
-        placeholder = icloud_placeholder(Path(folder) / name).as_posix()
-        found = [p for p in found if p.name == name]
-        anomalies = [a for a in anomalies if a["path"] in (folder, placeholder)]
+    if slug is not None and not unread:
+        found, anomalies = _at_slug(vault, folder, slug, found, anomalies)
     notes: list[dict[str, object]] = []
     for path in found:
         rel = path.relative_to(vault).as_posix()

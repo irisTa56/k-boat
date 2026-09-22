@@ -285,7 +285,8 @@ A glob walks past an evicted note and reads a folder the OS refused to list as e
 `kboat-note list --type <type>` prints `{notes, anomalies, counts}`, each note a `{slug, path, frontmatter}` from the folder `DIR_BY_TYPE` names, read through `list_note_dir`.
 Its `anomalies` are `{path, error}` entries: one per evicted note under its placeholder's path, one per note that could not be read or parsed, one per field a listed note holds in a shape the frontmatter reader does not model (the note is listed without it) or names on more than one line (the note is listed with the last), which are the fields `kboat-validate` reports as `missing_field` and `repeated_key`, and one under the folder's own name where the folder is absent, not a directory, or refused, which also exits 1 ("Vault preconditions").
 
-- `--slug <slug>` answers that one name from the same listing, in the order "A name an iCloud placeholder holds is taken, not free" gives: a note, an anomaly for whatever else holds the name, the placeholder's anomaly where nothing does, or neither where the name is free.
+- `--slug <slug>` answers that one name as the writer resolves it, in the order "A name an iCloud placeholder holds is taken, not free" gives: a note, an anomaly for whatever else holds the name, the placeholder's anomaly where nothing does, or neither where the name is free.
+  - Where no listed name is exactly `<slug>.md`, it asks the volume through `name_occupied`, so on one that folds case, as APFS does by default, the note it names is the one the write would merge into.
 - `--field <name>` (repeatable) cuts each note's `frontmatter`, and its unreadable-field entries, to those fields.
 - `--flagged <name>` (repeatable) keeps only the notes whose boolean field is `true`, and a note it drops reports an unreadable field only where that is the flag.
 - Neither drops a note that could not be read, since nothing shows it to fail them.

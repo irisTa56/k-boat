@@ -185,6 +185,101 @@ def test_a_non_file_at_the_slug_is_reported_rather_than_read_as_evicted(
     assert _anomaly_paths(report) == ["Sources/held.md"]
 
 
+def _folds_case(directory: Path) -> bool:
+    probe = directory / "CaseProbe"
+    probe.write_bytes(b"")
+    try:
+        return (directory / "caseprobe").exists()
+    finally:
+        probe.unlink()
+
+
+def _fold_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer `name_occupied` as a volume that folds case does: by any casing."""
+
+    def occupied(path: Path) -> bool:
+        return any(p.name.casefold() == path.name.casefold() for p in path.parent.iterdir())
+
+    monkeypatch.setattr("kboat.note.listing.name_occupied", occupied)
+
+
+def _upper_note_and_stub(vault: Path) -> None:
+    _note(vault, "B0ABC", title="Recorded")
+    (vault / "Kindles" / "B0ABC.md").write_text("---\ntitle: K\n---\n", encoding="utf-8")
+    (vault / "Sources" / ".GONE.md.icloud").write_bytes(b"")
+
+
+def _assert_found_under_another_casing(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # The writer's `lstat` finds `B0ABC.md` for the slug `b0abc` on such a volume
+    # and merges into it, so the answer must be that note, never "absent".
+    code, report = _list(vault, capsys, "--slug", "b0abc")
+    assert code == 0
+    assert report["notes"] == [
+        {"slug": "B0ABC", "path": "Sources/B0ABC.md", "frontmatter": {"title": "Recorded"}}
+    ]
+    assert report["anomalies"] == []
+
+    code = main(["list", "--type", "kindle", "--vault", str(vault), "--slug", "b0abc"])
+    assert code == 0
+    assert _slugs(json.loads(capsys.readouterr().out)) == ["B0ABC"]
+
+    # The placeholder is asked about the same way, after the note.
+    code, report = _list(vault, capsys, "--slug", "gone")
+    assert report["notes"] == []
+    assert _anomaly_paths(report) == ["Sources/.GONE.md.icloud"]
+
+
+def test_a_slug_names_what_the_writer_finds_on_a_volume_that_folds_case(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real volume, where it folds case (APFS's default, which the vault is on).
+    if not _folds_case(vault):
+        pytest.skip("this volume does not fold case; the simulated test covers it")
+    _upper_note_and_stub(vault)
+    _assert_found_under_another_casing(vault, capsys)
+
+
+def test_a_slug_names_what_the_writer_finds_where_the_probe_folds_case(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same answer on any volume, with the probe answering as a folding one
+    # does; the listing is the real one either way.
+    _fold_case(monkeypatch)
+    _upper_note_and_stub(vault)
+    _assert_found_under_another_casing(vault, capsys)
+
+
+def test_a_name_held_by_nothing_the_listing_shows_is_reported(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The probe says the name is held and the listing shows nothing that holds
+    # it: reported, since "absent" is the one answer that is known to be wrong.
+    monkeypatch.setattr("kboat.note.listing.name_occupied", lambda path: True)
+
+    code, report = _list(vault, capsys, "--slug", "ghost")
+
+    assert code == 0
+    assert report["notes"] == []
+    assert _anomaly_paths(report) == ["Sources/ghost.md"]
+
+
+def test_a_probe_the_vault_refuses_is_reported_not_answered_absent(
+    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(path: Path) -> bool:
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr("kboat.note.listing.name_occupied", refused)
+
+    code, report = _list(vault, capsys, "--slug", "any")
+
+    assert code == 0
+    anomalies = report["anomalies"]
+    assert isinstance(anomalies, list)
+    assert [a["path"] for a in anomalies] == ["Sources/any.md"]
+    assert "Permission denied" in anomalies[0]["error"]
+
+
 def test_a_slug_in_an_unreadable_folder_is_not_answered_absent(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
