@@ -270,7 +270,9 @@ Two answers are not a missing original:
   - Confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null` before concluding anything.
   - **Read that listing against the vault's other stored `notebooklm_id`s, not against this one alone.**
     - A listing fetched under the wrong signed-in account returns that account's notebooks, so every id reads as absent, and one id absent out of one satisfies "absent" as readily as a genuinely deleted notebook does.
+    - Those ids come from a scan of `Sources/`, held to kboat-vault-conventions [The write contract](../../kboat-vault-conventions/SKILL.md#the-write-contract), "A scan an agent runs from a skill's prose owes the same two reports".
   - Where the vault's ids are absent wholesale, that is the account or auth problem: decide nothing about this source and report it.
+    - A `Sources/` that could not be listed leaves no other ids to read against, and decides nothing either.
   - Where the rest resolve and this one does not, the notebook is gone and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way on.
 
 **What decides whether to act is not that no match was found, but that nothing present could be the match.**
