@@ -314,7 +314,7 @@ The record is a diagnostic and nothing else; no decision is made from it.
 
 **The lock file lives outside the vault**, in `~/.k-boat/locks/` on every platform, or in `$KBOAT_LOCK_DIR` where that is set.
 All contention is same-host, so nothing is gained by syncing it, and inside the iCloud tree the file provider could evict it and bring it back as a different inode, which is the one thing exclusion cannot survive (below).
-The file is named by a fixed-length hash of the vault's resolved real path, so every spelling of one vault — through a symlink, with a trailing slash — reaches one lock, and two vaults never share one.
+The file is named by a fixed-length hash of the vault's resolved real path, as the filesystem stores it, so every spelling of one vault — through a symlink, with a trailing slash, in another letter case or Unicode form where the volume ignores those — reaches one lock, and two vaults never share one.
 The first acquisition creates the directory, owner-only.
 A directory standing in for it through `KBOAT_LOCK_DIR` has to be as local and as permanent: not a synced folder, and not a cache the OS may clear.
 A refusal's `holder.path` names the file, which is how a person whose write was refused finds it.

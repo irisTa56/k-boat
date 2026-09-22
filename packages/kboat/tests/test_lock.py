@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -274,13 +275,19 @@ def test_a_vault_that_is_not_a_directory_is_reported_rather_than_locked(tmp_path
 def test_every_spelling_of_one_vault_contends_for_one_lock(tmp_path: Path) -> None:
     # Exclusion only holds between writers that agree on the file, and the vault's path
     # arrives from `--vault` or `$OBSIDIAN_VAULT_PATH` spelled however the caller wrote it.
-    vault = tmp_path / "vault"
+    vault = tmp_path / unicodedata.normalize("NFC", "Café")
     vault.mkdir()
     via_symlink = tmp_path / "linked"
     via_symlink.symlink_to(vault)
-    via_dotdot = vault / ".." / "vault"
+    spellings = [via_symlink, vault / ".." / vault.name, Path(f"{vault}/")]
+    # A volume that ignores case and Unicode form, as macOS's default APFS does, finds
+    # the vault under these too; one that does not, as on Linux, holds no vault there.
+    for other in ("café", unicodedata.normalize("NFD", "Café")):
+        spelling = tmp_path / other
+        if spelling.exists() and os.path.samefile(spelling, vault):
+            spellings.append(spelling)
     with vault_lock(vault):
-        for spelling in (via_symlink, via_dotdot, Path(f"{vault}/")):
+        for spelling in spellings:
             with pytest.raises(VaultLockedError), vault_lock(spelling, wait_s=0.0):
                 pytest.fail(f"{spelling} is the held vault; acquisition must not succeed")
 

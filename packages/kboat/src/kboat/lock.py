@@ -64,12 +64,10 @@ the whole run.
 
 from __future__ import annotations
 
-import errno
 import fcntl
 import hashlib
 import json
 import os
-import stat
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -128,19 +126,40 @@ def lock_dir() -> Path:
     return Path(override).expanduser() if override else Path.home() / ".k-boat" / "locks"
 
 
+def _real_path(vault: Path) -> bytes:
+    """The vault directory's path as the filesystem itself spells it.
+
+    `realpath` settles symlinks, `..` and a trailing slash, but keeps the letter case
+    and Unicode form it was handed, and on macOS the default APFS volume ignores both
+    when it looks a path up — so `~/Vault` and `~/vault`, or a name pasted from Finder
+    in the other normalization form, would name one vault and hash apart.
+    `F_GETPATH` asks the open directory for the path it is stored under instead. Where
+    there is no `F_GETPATH`, as on Linux, paths are compared byte for byte by the
+    filesystem too, so `realpath` is already the whole answer.
+    """
+    real = os.path.realpath(vault, strict=True)
+    fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        get_path = getattr(fcntl, "F_GETPATH", None)
+        if get_path is None:
+            return os.fsencode(real)
+        # The buffer is `MAXPATHLEN` long, which the call requires.
+        return fcntl.fcntl(fd, get_path, bytes(1024)).rstrip(b"\0")
+    finally:
+        os.close(fd)
+
+
 def lock_file(vault: Path) -> Path:
     """The lock file for `vault`, named by a hash of its resolved real path.
 
-    Resolved, so a symlink or a trailing slash reaches the lock every other spelling
-    does — exclusion only holds between writers that agree on the file. Hashed, so the
-    name has one length and one alphabet whatever the path, and two vaults never share
-    one. Raises `OSError` when `vault` is not an existing directory, since a vault that
-    is not there has no lock to name.
+    Resolved, so every spelling of the vault — through a symlink, with a trailing slash,
+    in another case — reaches the lock every other one does: exclusion only holds
+    between writers that agree on the file. Hashed, so the name has one length and one
+    alphabet whatever the path, and two vaults never share one. Raises `OSError` when
+    `vault` is not an existing directory, since a vault that is not there has no lock to
+    name.
     """
-    real = os.path.realpath(vault, strict=True)
-    if not stat.S_ISDIR(os.stat(real).st_mode):
-        raise NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR), str(vault))
-    return lock_dir() / f"{hashlib.sha256(os.fsencode(real)).hexdigest()}.lock"
+    return lock_dir() / f"{hashlib.sha256(_real_path(vault)).hexdigest()}.lock"
 
 
 def _read_holder(fd: int, lock_path: Path) -> dict[str, object]:
