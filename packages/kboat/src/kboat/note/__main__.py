@@ -16,6 +16,12 @@
 - `migrate-slugs --dry-run|--apply` — bring the vault's URL-named notes to that
   same slug. Reports every stale name, and under `--apply` renames it. Mutating,
   so `--apply` holds the vault lock; `--dry-run` reads and takes none.
+- `list --type <t> [--slug <slug>] [--field <name>]... [--flagged <name>]...` —
+  one note folder's frontmatter, or one note's by slug, as `{notes, anomalies,
+  counts}` JSON (`kboat.note.listing`), so a skill reads the vault without
+  globbing or parsing frontmatter itself. Read-only, and it takes no lock. A
+  folder it could not read is an `anomalies` entry under its own name and exit 1,
+  with the report still printed (`kboat-vault-conventions` "Vault preconditions").
 """
 
 from __future__ import annotations
@@ -39,8 +45,9 @@ from kboat.cli import (
 )
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.naming import note_slug
+from kboat.note.listing import list_notes
 from kboat.note.migrate import UNREADABLE_DIR, migrate
-from kboat.schema import BY_TYPE
+from kboat.schema import BY_TYPE, DIR_BY_TYPE, Kind
 from kboat.write import upsert
 
 
@@ -171,7 +178,56 @@ def _migrate_slugs(argv: list[str]) -> int:
     return 1 if report.unresolved or report.counts()["unreadable_dirs"] else 0
 
 
-_COMMANDS = {"write": _write, "slug": _slug, "migrate-slugs": _migrate_slugs}
+def _list(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="kboat-note list",
+        description="Print one note folder's frontmatter, or one note's by slug, as JSON.",
+    )
+    parser.add_argument("--type", required=True, choices=sorted(DIR_BY_TYPE))
+    parser.add_argument("--slug", help="Report only the note at this slug.")
+    parser.add_argument(
+        "--field",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Print only this frontmatter field (repeatable; default: every field).",
+    )
+    parser.add_argument(
+        "--flagged",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Keep only the notes whose boolean field NAME is true (repeatable).",
+    )
+    add_vault_argument(parser)
+    args = parser.parse_args(argv)
+    vault = vault_path(parser, args)
+    # Checked against the type's schema: a misspelt name would otherwise print
+    # every note with no fields, or keep none, and either reads as an answer.
+    schema = BY_TYPE[args.type]
+    for name in args.field:
+        if schema.get(name) is None:
+            parser.error(f"--field {name!r} is not a {args.type} field")
+    for name in args.flagged:
+        field = schema.get(name)
+        if field is None or field.kind is not Kind.BOOL:
+            parser.error(f"--flagged {name!r} is not a {args.type} boolean field")
+    report, unread = list_notes(
+        vault, args.type, slug=args.slug, fields=args.field, flagged=args.flagged
+    )
+    json.dump(report, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
+    # A note it could not read is not an exit: the rest of the answer stands, and
+    # the entry says which note is missing from it.
+    return 1 if unread else 0
+
+
+_COMMANDS = {
+    "write": _write,
+    "slug": _slug,
+    "migrate-slugs": _migrate_slugs,
+    "list": _list,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
