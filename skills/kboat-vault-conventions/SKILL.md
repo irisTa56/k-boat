@@ -280,6 +280,13 @@ That is what `pathlib` will not do for them: from CPython 3.14 `Path.exists` swa
 `upsert` holds itself to this rule for its create-versus-merge decision, so a `created` status says nothing held the slug: no file, no placeholder, and nothing else.
 It asks at write time rather than leaning on the `kboat-doctor` placeholder scan, which is a precondition and not a substitute: it runs once, before the phases, and an eviction can land on a vault it passed.
 
+**A scan an agent runs from a skill's prose owes the same two reports.**
+A step telling an agent to read a folder — "read every `Sources/*.md` frontmatter" — is the scan `list_note_dir` makes, with nothing but the step to close its two silences.
+So it reports, beside its answer, every `.<name>.md.icloud` placeholder whose `<name>.md` it did not read, and a folder the OS refused to list, which a glob reads as empty and `is_dir()` still answers `True` for.
+List the folder with something that fails aloud — `ls -A` exits non-zero naming the refusal, where a glob, a shell's or a tool's, hands back nothing — and take the placeholders from that same listing.
+The unlistable folder is the sharper of the two, because the whole set is then empty and an empty set is what a folder with nothing in it looks like.
+So a step whose answer is drawn from that set says the folder could not be listed in place of giving the answer.
+
 ## Durability and the vault lock
 
 More than one writer runs against the vault, all on one Mac: the daily K-Boat routine, a feed-filter or forum run, and a human running a `kboat-*` command or editing in Obsidian.

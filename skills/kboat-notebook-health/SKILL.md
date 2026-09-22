@@ -52,7 +52,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
        - Name that as outstanding rather than reporting the source healthy and leaving it in the DLQ.
      - With no `notebooklm_id`, there is nothing to check: name kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook), or `kboat-rescue` where the note is `blocked`.
    - **With no argument** — the routine's sweep.
-     - Read every `Sources/*.md` frontmatter and take the set above.
+     - Read every `Sources/*.md` frontmatter and take the set above, listing the folder as kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract) says under "A scan an agent runs from a skill's prose owes the same two reports".
+     - Where `Sources/` could not be listed, stop and report that rather than sweeping: the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
      - Then add every source the summary backfill, the distillation pass, and the daily pick reported this run, skipping one already in it.
      - Those three arrive as **input** from the caller running the phases, not from disk, so **say which of the three you were given**.
      - A sweep given none covers its own set alone — the ripe sources have no other route in — and its counts must not read as the routine's coverage.
@@ -65,7 +66,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - A `list` that succeeded against the wrong signed-in account returns that account's notebooks, so every stored id reads as absent — and reactivation discards a notebook by its stored id, so a sweep that named it across sound notebooks would spend every one of them.
      - Do not decide this on the sweep set, whose size is an accident of what the reader has opened: a set of one whose notebook is genuinely gone satisfies "all absent" as readily as a wrong account does.
      - Check the listing against **every `notebooklm_id` in the vault**, not only the set's.
-     - The sweep opening already read that frontmatter; the argument opening read one note, so make the vault-wide read here — it is a frontmatter scan against a listing already fetched, not another call.
+     - The sweep opening already read that frontmatter; the argument opening read one note, so make the vault-wide read here — it is a frontmatter scan against a listing already fetched, not another call, and it lists the folder as step 1's does.
+       - Where it could not list `Sources/`, the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
    - **Then name the notebooks no note references**: every notebook in that listing whose id no `notebooklm_id` in the vault carries, by id and title, for the run summary.
@@ -124,8 +126,8 @@ Detect and report; do not work around.
   - Nothing reports it, the reporter being what died, and it leaves that same masquerading leftover.
   - Name the source whose restore was in flight where the summary can still be written.
   - Where it cannot, a resumed run re-checks that notebook by hand rather than trusting a healthy verdict.
-- A note that could not be read or parsed, and every `Sources/.<name>.md.icloud` placeholder beside one.
-  - A placeholder does not match the glob, so an evicted note leaves the set quietly and the counts read as full coverage.
+- A note that could not be read or parsed, every `Sources/.<name>.md.icloud` placeholder whose note the scan did not read, and a `Sources/` it could not list at all (steps 1 and 2).
+  - The glob returns neither an evicted note nor anything in an unlistable folder, so without these the counts read as full coverage.
 
 No vault write happens in this skill, so no `status: locked` refusal can arise.
 
