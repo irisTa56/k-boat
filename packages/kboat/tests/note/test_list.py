@@ -285,6 +285,32 @@ def test_an_unmodelled_flag_is_reported_whatever_the_filter(
 
 
 @pytest.mark.parametrize(
+    ("line", "names"),
+    [
+        ('"blocked": true', "blocked"),
+        ("blocked : true", "blocked"),
+        ("blocked: true\nblocked: false", "more than one line: blocked"),
+    ],
+    ids=["quoted-key", "space-before-colon", "repeated-key"],
+)
+def test_a_flag_the_reader_cannot_take_at_its_word_is_reported(
+    vault: Path, capsys: pytest.CaptureFixture[str], line: str, names: str
+) -> None:
+    # Each is a DLQ entry to its author, and each would otherwise drop out of a
+    # `--flagged blocked` listing with nothing said.
+    (vault / "Sources" / "odd.md").write_text(f"---\ntitle: T\n{line}\n---\n", encoding="utf-8")
+
+    code, report = _list(vault, capsys, "--flagged", "blocked", "--field", "title")
+
+    assert code == 0
+    assert report["notes"] == []
+    anomalies = report["anomalies"]
+    assert isinstance(anomalies, list)
+    assert [a["path"] for a in anomalies] == ["Sources/odd.md"]
+    assert names in anomalies[0]["error"]
+
+
+@pytest.mark.parametrize(
     "args",
     [
         ["--field", "no_such_field"],

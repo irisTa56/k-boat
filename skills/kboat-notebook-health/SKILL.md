@@ -127,7 +127,7 @@ Detect and report; do not work around.
   - Nothing reports it, the reporter being what died, and it leaves that same masquerading leftover.
   - Name the source whose restore was in flight where the summary can still be written.
   - Where it cannot, a resumed run re-checks that notebook by hand rather than trusting a healthy verdict.
-- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, one iCloud evicted, a field a note holds in a shape the reader does not model, and a `Sources/` it could not read at all.
+- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, one iCloud evicted, a field a note holds in a shape the reader does not model or on more than one line, and a `Sources/` it could not read at all.
   - Each is a note the counts do not cover, so without them the counts read as full coverage.
 
 No vault write happens in this skill, so no `status: locked` refusal can arise.

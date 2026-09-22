@@ -8,7 +8,9 @@ folder that is absent, not a directory, or refused is one entry under its own
 name (and exit 1, the folder being in the vault's required set), each note iCloud
 evicted is one under its placeholder's path, a note that could not be read or
 parsed is one under its own, and so is each field of a note it would have shown
-that the note holds in a shape the frontmatter reader does not model.
+that the note holds in a shape the frontmatter reader does not model or names on
+more than one line — what `kboat-validate` reports as `missing_field` and
+`repeated_key` for such a field, and nothing further.
 
 A slug is answered from that same listing rather than by probing the name. The
 listing is what tells an evicted note from an absent one in the order
@@ -26,11 +28,19 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from kboat.cli import scan_required_dir
-from kboat.frontmatter import NOTE_READ_ERRORS, Value, parse_entries, parse_frontmatter
+from kboat.frontmatter import (
+    NOTE_READ_ERRORS,
+    Value,
+    named_key,
+    parse_entries,
+    parse_frontmatter,
+    repeated_keys,
+)
 from kboat.io_utils import icloud_placeholder
 from kboat.schema import BY_TYPE, DIR_BY_TYPE
 
 _UNMODELLED = "field not readable: {} is held in a shape the frontmatter reader does not model"
+_REPEATED = "field named on more than one line: {}, of which the answer holds the last"
 
 
 def list_notes(
@@ -49,7 +59,8 @@ def list_notes(
 
     A note nobody could read cannot be shown to fail a filter, so it is reported
     whatever the filter was. So is a flagged field held in a shape the reader does
-    not model, since that note may be one the filter keeps. Any other such field is
+    not model, or named twice, since that note may be one the filter keeps. Any
+    other such field is
     reported only where the answer would have shown it: on a note the filter
     keeps, and among `fields` where they are given, or the schema's where not.
     """
@@ -71,14 +82,23 @@ def list_notes(
         except NOTE_READ_ERRORS as exc:
             anomalies.append({"path": rel, "error": str(exc)})
             continue
-        # A field held in a shape the scanner does not model (a block scalar, a
-        # nested mapping) is absent from `fm`, which would otherwise read as a
-        # note without it.
-        unmodelled = {e.key for e in entries if not e.modelled and e.key and e.key not in fm}
+        # The two ways `fm` misstates a field, which `kboat-validate` reports as a
+        # `missing_field` and a `repeated_key`: held in a shape the scanner does
+        # not model (a block scalar, a nested mapping, a key outside its grammar,
+        # which it names none for), so `fm` reads as a note without it; or named
+        # on more than one line, so `fm` holds whichever came last.
+        unmodelled = {
+            key
+            for e in entries
+            if not e.modelled and (key := e.key or named_key(e.lines[0])) and key not in fm
+        }
+        repeated = set(repeated_keys(text))
         kept = all(fm.get(flag) is True for flag in flagged)
-        reported = unmodelled & (shown_fields | set(flagged) if kept else set(flagged))
+        asked = shown_fields | set(flagged) if kept else set(flagged)
         anomalies.extend(
-            {"path": rel, "error": _UNMODELLED.format(key)} for key in sorted(reported)
+            {"path": rel, "error": message.format(key)}
+            for message, keys in ((_UNMODELLED, unmodelled), (_REPEATED, repeated))
+            for key in sorted(keys & asked)
         )
         if not kept:
             continue

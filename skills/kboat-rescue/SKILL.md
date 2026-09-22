@@ -35,7 +35,7 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
 ### Step 1: Pick the source
 
 With a slug or `url` argument, read the note with `kboat-note list --type source --slug <slug>`, resolving a `url` to its slug with `kboat-note slug` first, and confirm `blocked: true`; its `source_type` selects the PDF or web-page branch below.
-Name every `anomalies` entry beside the answer: with no note, the note is there but could not be read — evicted, under its placeholder's path, or unreadable — rather than absent, which only an empty answer means; beside a note, it names a field the note holds in a shape the reader does not model, which the answer therefore lacks.
+Name every `anomalies` entry beside the answer: with no note, the note is there but could not be read — evicted, under its placeholder's path, or unreadable — rather than absent, which only an empty answer means; beside a note, it names a field the answer lacks or holds only its last line of, because the note holds it in a shape the reader does not model or on more than one line.
 
 With no argument, list the DLQ with `kboat-note list --type source --flagged blocked --field title --field url --field source_type --field notebooklm_id`, show each entry's slug and those fields, and ask the user which to rescue.
 Name every `anomalies` entry beside the list: this listing is the only enumeration of the DLQ a human is shown, so an entry missing from it is a source nothing else raises.

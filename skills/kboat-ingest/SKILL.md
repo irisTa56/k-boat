@@ -207,7 +207,7 @@ Collect, per item, at least:
 - An evicted note or PDF: iCloud holds it behind a placeholder, so nothing was written.
   - Three places meet it, and they are one error: step 1's de-dup finding the source note evicted, the PDF path's check before its download finding the PDF evicted (both per kboat-notes), and the note write returning `status: evicted`, on the source path or the repo route alike.
   - Keep the queue file and report it by name, saying whether the note or the PDF is evicted and that a human downloading that file in Finder is what lets the capture drain on a later run, since nothing in a run brings it back; the next run's `kboat-doctor` reports the eviction itself.
-- A source note step 1's de-dup could not read for another reason — one that would not read or parse, a field it holds in a shape the reader does not model, or a `Sources/` the call exited 1 over: nothing was written.
+- A source note step 1's de-dup could not read for another reason — one that would not read or parse, a field it holds in a shape the reader does not model or on more than one line, or a `Sources/` the call exited 1 over: nothing was written.
   - Keep the queue file and report it by name with the `anomalies` entry's `path` and `error`; no run clears it until a human repairs the note or the folder.
 - Slug collisions: an existing `Sources/<slug>.md` cannot be shown to be this item — it holds a `url` naming a different page, or holds one in a shape the reader cannot compare (see kboat-notes de-dup).
   - A second link to a page already ingested is **not** this case: it shares the slug by design and is that note's source, which step 1 handles.
