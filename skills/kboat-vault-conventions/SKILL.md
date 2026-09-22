@@ -309,20 +309,27 @@ An existing file's permissions survive a rewrite; a file the writer *creates* ge
 
 **Every mutating run of the tools holds the vault lock.**
 Durability alone does not stop two runs from interleaving: each write lands whole, but a run that read a note before another run rewrote it silently overwrites that rewrite when it writes its own version back.
-So a process about to mutate the vault takes `kboat.lock.vault_lock(vault)` — an advisory `flock` on `<vault>/.kboat.lock`, whose contents are a JSON `{pid, started}` record each holder rewrites so a refusal can name who has the vault — and releases it on the way out, including on an exception.
+So a process about to mutate the vault takes `kboat.lock.vault_lock(vault)` — an advisory `flock` on a lock file whose contents are a JSON `{pid, started}` record each holder rewrites so a refusal can name who has the vault — and releases it on the way out, including on an exception.
 The record is a diagnostic and nothing else; no decision is made from it.
+
+**The lock file lives outside the vault**, in `~/.k-boat/locks/` on every platform, or in `$KBOAT_LOCK_DIR` where that is set.
+All contention is same-host, so nothing is gained by syncing it, and inside the iCloud tree the file provider could evict it and bring it back as a different inode, which is the one thing exclusion cannot survive (below).
+The file is named by a fixed-length hash of the vault's resolved real path, so every spelling of one vault — through a symlink, with a trailing slash — reaches one lock, and two vaults never share one.
+The first acquisition creates the directory, owner-only.
+A directory standing in for it through `KBOAT_LOCK_DIR` has to be as local and as permanent: not a synced folder, and not a cache the OS may clear.
+A refusal's `holder.path` names the file, which is how a person whose write was refused finds it.
 The lock is vault-wide rather than per-note so no writer has to know which folders another touches; one scoped to the folders each writer uses today would have to be re-derived every time a note type moved.
 Each tool holds it across its own read as well as its own writes, because a plan computed before another run's writes would act on notes that no longer call for it.
 
 **There is no stale lock to recover, because the kernel releases it.**
 An `flock` belongs to the open file description, so it goes when the file descriptor closes — including on a `SIGKILL`, an OOM kill or a panic.
 An interrupted run therefore leaves no lock behind at all: nothing here needs a stale window, an age heuristic, a liveness check on a recorded pid, or a takeover.
-**Do not delete `<vault>/.kboat.lock`.**
+**Do not delete the lock file.**
 It persists between holds — carrying the last holder's record, which is why it looks like leftover state and is not — because exclusion is an agreement about one inode: remove it mid-run and the next writer creates a different inode and locks that instead, leaving two runs writing at once.
 Nothing ever needs it cleared, which is the difference from a design with a stale window a human has to break.
-What buys that is a premise worth stating, because it is the one thing that would invalidate the design: **all contention is same-host on a local volume.**
-`~/Library/Mobile Documents/…` is not a network mount but a local APFS directory with a file-provider sync extension, so `flock` there is ordinary APFS advisory locking — verified against this vault, including that a holder killed without releasing leaves the lock free.
-A vault on a genuine network filesystem would need that re-checked, since `flock` over NFS or SMB is where the semantics stop holding.
+What buys that is a premise worth stating, because it is the one thing that would invalidate the design: **all contention is same-host, on a local lock directory.**
+There `flock` is ordinary local advisory locking, including that a holder killed without releasing leaves the lock free.
+A lock directory on a network filesystem would need that re-checked, since `flock` over NFS or SMB is where the semantics stop holding, and writers on two hosts would not share a lock at all.
 
 - **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-repos backfill --dry-run`, `kboat-note migrate-slugs --dry-run`, `kboat-note list`, `kboat-pick candidates`, `kboat-queue list`, and `kboat-validate` all read a vault another run is writing.
   - **`kboat-doctor` takes none either**, though its writability probe does write.
@@ -341,11 +348,11 @@ A vault on a genuine network filesystem would need that re-checked, since `flock
   - For feed-filter the entry is simply not written, and its never-lost contract carries it: nothing is recorded seen, so the next gather rediscovers it.
     - That is why the wait matters more to it than to a K-Boat phase, whose work survives being deferred — the dispositions, the cooldown clock and the queue are all still on disk and every phase is idempotent.
 - **A lock that cannot be taken at all is not a refusal.**
-  - A missing vault root, a denied iCloud tree, a filesystem that will not take an `flock`, or — only on the run that first creates the lock file — a vault root that cannot be written to, is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
+  - A vault root that is missing or cannot be looked up, a lock directory that cannot be created or used, or a filesystem that will not take an `flock` is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
   - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh`, `kboat-repos backfill --apply`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
     - What is common to all of them is the shape, not the wording.
   - Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
-  - `kboat-doctor` diagnoses two of its causes and not the rest: its `vault_root` and `vault_writable` checks cover a missing or unwritable root, but nothing there inspects the lock file, so a `.kboat.lock` that is a directory, *any* symlink (the open is `O_NOFOLLOW`, so a live one fails as surely as a dangling one), or one on a filesystem refusing `flock` leaves doctor reporting `ok` while every write fails.
+  - `kboat-doctor` diagnoses one of its causes and not the rest: its `vault_root` check covers a missing root, but nothing there inspects the lock directory, so one that cannot be created, a lock file that is a directory or *any* symlink (the open is `O_NOFOLLOW`, so a live one fails as surely as a dangling one), or one on a filesystem refusing `flock` leaves doctor reporting `ok` while every write fails.
     - Read the stderr line rather than assuming a green doctor means the lock is fine.
   - How an unattended run raises it belongs to the scheduled-task prompt, not here.
 

@@ -15,7 +15,7 @@ import pytest
 import kboat.repos.gather as gather_mod
 import kboat.repos.refresh as refresh_mod
 from kboat.frontmatter import FrontmatterError, body_after_frontmatter, parse_frontmatter
-from kboat.lock import vault_lock
+from kboat.lock import lock_file, vault_lock
 from kboat.repos.gather import PayloadError
 from kboat.repos.identity import canonical_slug
 from kboat.repos.refresh import main as refresh_main
@@ -1168,11 +1168,8 @@ def test_the_cli_reports_a_vault_whose_lock_cannot_be_opened(
     # Reported on stderr with an empty stdout, and no `locked` record to retry on.
     _write_note(tmp_path, "https://github.com/acme/tool", "acme/tool")
     monkeypatch.setattr(refresh_mod, "gh_repo_view", lambda o, n: (_meta(o, n), None))
-    tmp_path.chmod(0o555)
-    try:
-        rc = refresh_main(["--vault", str(tmp_path), "--today", "2026-06-06"])
-    finally:
-        tmp_path.chmod(0o755)
+    lock_file(tmp_path).mkdir()
+    rc = refresh_main(["--vault", str(tmp_path), "--today", "2026-06-06"])
     assert rc == 1
     captured = capsys.readouterr()
     assert "vault lock unavailable" in captured.err

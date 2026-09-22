@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from kboat.lock import LOCK_NAME, vault_lock
+from kboat.lock import lock_file, vault_lock
 from kboat.naming import note_slug, url_slug
 from kboat.note.__main__ import main
 
@@ -223,7 +223,7 @@ def test_an_unreadable_record_is_refused_before_the_lock_is_taken(
     bad = json.dumps({"slug": "s1", "fields": "oops"})
     assert _run(["write", "--type", "source", "--vault", str(vault)], bad, monkeypatch) == 2
     assert "'fields' must be a JSON object" in capsys.readouterr().err
-    assert not (vault / LOCK_NAME).exists()
+    assert not lock_file(vault).exists()
 
 
 def test_slug_prints_the_oracle_for_one_url(capsys: pytest.CaptureFixture[str]) -> None:
@@ -465,7 +465,7 @@ def test_migrate_slugs_reports_a_lock_it_cannot_operate(
     # A lock that cannot be taken at all has no holder to come back for, so it
     # gets the report-shaped CLIs' `vault lock unavailable:` line and an empty
     # stdout — not a `locked` record a caller would read as worth retrying.
-    (vault / LOCK_NAME).mkdir()
+    lock_file(vault).mkdir()
 
     assert main(["migrate-slugs", "--vault", str(vault), "--apply"]) == 1
     captured = capsys.readouterr()
