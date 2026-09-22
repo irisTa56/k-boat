@@ -27,9 +27,9 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 ## Procedure
 
 1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
-   - Read every `Sources/*.md` frontmatter once, listing the folder as kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract) says under "A scan an agent runs from a skill's prose owes the same two reports".
-   - Name every evicted note beside the answer, whatever it is: this mode has no `kboat-doctor` ahead of it, and a shelf entry it did not see reads as one the reader never saved, so they save it again.
-   - Where `Sources/` could not be listed, say so and stop, rather than reporting an empty shelf.
+   - Read the sources once, with only the fields the steps below use: `kboat-note list --type source --field title --field topics --field summary --field url --field source_type --field reading_link --field notebooklm_id --field gemini_url --field keep --field distill --field dismiss --field blocked`.
+   - Name every `anomalies` entry beside the answer, whatever it is: this mode has no `kboat-doctor` ahead of it, and a shelf entry it did not see reads as one the reader never saved, so they save it again.
+   - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: say so and stop, rather than reporting an empty shelf.
 2. Keep the in-scope notes (default `keep`, or the `--states` union above; always drop `blocked`).
 3. Rank by lexical overlap between the query and each note's `title`, `topics`, `summary`, and `url`.
    - `topics` and `title` are the strongest signals; `summary` adds recall; a bare URL match is weak.

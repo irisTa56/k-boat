@@ -46,14 +46,15 @@ The check is one `source list` per source, so the cost tracks a set that accumul
 1. **Build the set.** Two openings, as `kboat-rescue` has.
    - **With a slug or `url` argument** — the set is that source alone, whatever its dispositions.
      - The scope above bounds what the sweep seeks on its own, not what a human may ask after.
-     - Resolve a `url` with `kboat-note slug`, load `Sources/<slug>.md`, and route on `notebooklm_id` rather than on the flags.
+     - Resolve a `url` with `kboat-note slug`, read the note with `kboat-note list --type source --slug <slug>`, and route on `notebooklm_id` rather than on the flags.
+       - An exit 1, or an `anomalies` entry and no note, is a note this run cannot check: report the entry, since an empty answer is the only one meaning no note holds the slug.
      - With one, check it — including on a `blocked` note, which can still carry a live notebook (kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row).
        - Such a note needs `blocked` cleared once its notebook is sound, which `kboat-rescue`'s step 1 does and nothing else will.
        - Name that as outstanding rather than reporting the source healthy and leaving it in the DLQ.
      - With no `notebooklm_id`, there is nothing to check: name kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook), or `kboat-rescue` where the note is `blocked`.
    - **With no argument** — the routine's sweep.
-     - Read every `Sources/*.md` frontmatter and take the set above, listing the folder as kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract) says under "A scan an agent runs from a skill's prose owes the same two reports".
-     - Where `Sources/` could not be listed, stop and report that rather than sweeping: the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
+     - Read the sources with `kboat-note list --type source --field title --field url --field source_type --field reading --field distill --field dismiss --field blocked --field distilled_date --field notebooklm_id` and take the set above.
+     - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: stop and report that rather than sweeping, since the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
      - Then add every source the summary backfill, the distillation pass, and the daily pick reported this run, skipping one already in it.
      - Those three arrive as **input** from the caller running the phases, not from disk, so **say which of the three you were given**.
      - A sweep given none covers its own set alone — the ripe sources have no other route in — and its counts must not read as the routine's coverage.
@@ -66,8 +67,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - A `list` that succeeded against the wrong signed-in account returns that account's notebooks, so every stored id reads as absent — and reactivation discards a notebook by its stored id, so a sweep that named it across sound notebooks would spend every one of them.
      - Do not decide this on the sweep set, whose size is an accident of what the reader has opened: a set of one whose notebook is genuinely gone satisfies "all absent" as readily as a wrong account does.
      - Check the listing against **every `notebooklm_id` in the vault**, not only the set's.
-     - The sweep opening already read that frontmatter; the argument opening read one note, so make the vault-wide read here — it is a frontmatter scan against a listing already fetched, not another call, and it lists the folder as step 1's does.
-       - Where it could not list `Sources/`, the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
+     - The sweep opening already read every id; the argument opening read one note, so make the vault-wide read here with `kboat-note list --type source --field notebooklm_id` — a read of the vault against a listing already fetched, not another NotebookLM call.
+       - Where it exits 1, `Sources/` could not be read and the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
    - **Then name the notebooks no note references**: every notebook in that listing whose id no `notebooklm_id` in the vault carries, by id and title, for the run summary.
@@ -75,8 +76,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Make it on the **sweep opening only**, whose run has already ingested and written its ids; the argument opening answers one source a human named, and a notebook an ingest elsewhere made moments ago would sit on its list as one no note references.
      - Make the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names; a vault with no stored id at all gives that check nothing to go on, so make none there either.
      - Leave out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
-     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how.
-       - One that could not be read (see Errors) is the visible case; an evicted one is the quiet case, leaving only a `Sources/.<slug>.md.icloud` placeholder, which the glob does not match (see Errors) — count those in the listing this step already walks.
+     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry of the vault-wide read, an evicted note under its placeholder's path and an unreadable one under its own.
      - **The list is a report and nothing more.**
        - K-Boat names a notebook after its source's `title`, so nothing in the listing tells a notebook K-Boat built and lost track of — an ingest-time discard that failed, an id written over — from one the reader made by hand in the same account.
        - The account holds none of the second kind today, and nothing keeps it that way.
@@ -126,8 +126,8 @@ Detect and report; do not work around.
   - Nothing reports it, the reporter being what died, and it leaves that same masquerading leftover.
   - Name the source whose restore was in flight where the summary can still be written.
   - Where it cannot, a resumed run re-checks that notebook by hand rather than trusting a healthy verdict.
-- A note that could not be read or parsed, every `Sources/.<name>.md.icloud` placeholder whose note the scan did not read, and a `Sources/` it could not list at all (steps 1 and 2).
-  - The glob returns neither an evicted note nor anything in an unlistable folder, so without these the counts read as full coverage.
+- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, one iCloud evicted, and a `Sources/` it could not read at all.
+  - Each is a note the counts do not cover, so without them the counts read as full coverage.
 
 No vault write happens in this skill, so no `status: locked` refusal can arise.
 

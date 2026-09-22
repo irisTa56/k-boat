@@ -34,11 +34,13 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
 
 ### Step 1: Pick the source
 
-With a slug or `url` argument, load `Sources/<slug>.md` (or the note whose `url` matches) and confirm `blocked: true`; its `source_type` selects the PDF or web-page branch below.
+With a slug or `url` argument, read the note with `kboat-note list --type source --slug <slug>`, resolving a `url` to its slug with `kboat-note slug` first, and confirm `blocked: true`; its `source_type` selects the PDF or web-page branch below.
+An `anomalies` entry and no note means the note is there but could not be read — evicted, under its placeholder's path, or unreadable — so name it rather than reporting a slug no note holds; only an empty answer is that.
 
-With no argument, read every `Sources/*.md` frontmatter, list those with `blocked: true` (their slug, title, `url`, `source_type`, and `notebooklm_id`), and ask the user which to rescue.
-Both this listing and the search for the note a `url` matches scan the folder, so list it as kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract) says under "A scan an agent runs from a skill's prose owes the same two reports", and name every evicted note beside the answer: this listing is the only enumeration of the DLQ a human is shown, so an entry missing from it is a source nothing else raises.
-Where `Sources/` could not be listed, say so in place of the answer, which would otherwise read as an empty DLQ or a `url` no note holds.
+With no argument, list the DLQ with `kboat-note list --type source --flagged blocked --field title --field url --field source_type --field notebooklm_id`, show each entry's slug and those fields, and ask the user which to rescue.
+Name every `anomalies` entry beside the list: this listing is the only enumeration of the DLQ a human is shown, so an entry missing from it is a source nothing else raises.
+
+Either way, an exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: say so in place of the answer, which would otherwise read as an empty DLQ or a slug no note holds.
 
 **A third invocation is not a rescue at all**, and it is the one case where a source that is *not* `blocked` belongs here: a web source whose notebook lost its original, whose `url` has since gone walled, and which the routine's notebook-health step therefore reported it could not restore.
 What it needs is the browser this skill drives, not the DLQ.
