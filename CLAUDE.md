@@ -121,6 +121,11 @@ Where a test-driven development skill is available, work that red-green loop thr
 - Never push to `main` directly; branch first, then PR.
   - PRs are merged out-of-band, so verify the current branch before pushing — a merge can leave the tree on `main`.
 
+## Delegation
+
+- Pass `run_in_background: true` explicitly on every background Agent call, although it is the default.
+  - Entire [reads backgrounding from that argument alone](https://github.com/entireio/cli/blob/v0.10.6/cmd/entire/cli/hooks.go#L65-L78), so a subagent launched without it is dropped from every checkpoint.
+
 ## Writing conventions
 
 - In markdown prose (docs and skills), a paragraph runs one sentence to a line, and no line break falls inside a sentence.
