@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from kboat.frontmatter import repeated_keys
-from kboat.lock import vault_lock
+from kboat.lock import lock_file, vault_lock
 from kboat.pick.__main__ import main
 from kboat.pick.notes import Value, parse_frontmatter
 
@@ -490,11 +490,8 @@ def test_a_vault_whose_lock_cannot_be_opened_is_reported_not_dumped(
 ) -> None:
     # As in `kboat-lifecycle`: reported on stderr with an empty stdout, never a
     # traceback, and without a `locked` record that would invite a retry.
-    vault.chmod(0o555)
-    try:
-        rc = main(["--vault", str(vault), "set", "--slugs", "web1"])
-    finally:
-        vault.chmod(0o755)
+    lock_file(vault).mkdir()
+    rc = main(["--vault", str(vault), "set", "--slugs", "web1"])
     assert rc == 1
     captured = capsys.readouterr()
     assert "vault lock unavailable" in captured.err

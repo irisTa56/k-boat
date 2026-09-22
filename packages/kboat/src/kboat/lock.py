@@ -21,18 +21,22 @@ no lock behind, and this module needs no stale window, no age heuristic, no
 liveness check on a recorded pid, and no takeover — the failure all of that would
 exist to recover from cannot happen.
 
-**The premise that buys it: all contention is same-host on a local volume**, which
-`kboat-vault-conventions` states as the design's one invalidating assumption. What was
-measured, since a reader here will want it: `~/Library/Mobile Documents/…` is a local
-APFS directory behind a file-provider sync extension rather than a network mount, and
-against this vault a second process was denied while the first held the lock, granted
-once it released, and granted after it was killed without releasing. `fcntl` is
-POSIX-only, which this package already is.
+**The premise that buys it: all contention is same-host, on a local lock directory**,
+which `kboat-vault-conventions` states as the design's one invalidating assumption.
+`fcntl` is POSIX-only, which this package already is.
+
+**The lock lives outside the vault**, in `lock_dir()`, because the vault is synced and
+the lock has nothing to gain from syncing. The file provider behind an iCloud vault is
+the one thing on this host that could replace the lock's inode without any writer
+asking it to. What was measured there, for the record: a lock file at the vault root
+kept one inode (173841373) from 2026-07-27 to 2026-09-22, across about two months of
+daily runs; whether an eviction would have replaced it was never measured, and with the
+lock out of the synced tree it no longer bears on the design.
 
 **The file is never deleted, and that is load-bearing.** An `flock` excludes only
 writers holding the *same inode*, so two things protect that inode. The file is
 opened `O_NOFOLLOW`, since a symlink at the name would put the lock on a file
-outside the vault. And once created it stays: no writer unlinks it, and there is
+somewhere else. And once created it stays: no writer unlinks it, and there is
 nothing to clean up, because a crashed run leaves no lock to clear.
 
 Anything that replaces that inode mid-run therefore gives two holders, since the next
@@ -40,12 +44,6 @@ writer locks the new one. A human deleting the file is the case to guard against
 nothing here or in the docs asks anyone to — the difference from a design with a stale
 window to clear by hand. A release whose file was deleted under it still exits cleanly;
 the lock lives on the descriptor, not the name.
-
-One replacement path is *not* ruled out. The vault sits behind a file provider, and
-the verification above covers one session — not whether the provider can evict and
-re-materialize `.kboat.lock` with a new inode over days. If it can, two runs could
-overlap with nothing to show for it, and the lock would belong in a local, unsynced
-directory keyed by the vault instead.
 
 Its fd is close-on-exec, which Python has set by default since PEP 446. That matters
 here rather than being incidental: `kboat-repos refresh` runs `gh` under the hold, and
@@ -67,6 +65,7 @@ the whole run.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import time
@@ -75,7 +74,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-LOCK_NAME = ".kboat.lock"
+# Overrides where the lock files live, for a test or a machine whose home is not local.
+LOCK_DIR_ENV = "KBOAT_LOCK_DIR"
 # How long an acquisition waits before refusing. Long enough to cover overlapping a
 # note write, short enough that a person does not notice having waited.
 DEFAULT_WAIT_S = 5.0
@@ -105,14 +105,61 @@ class VaultLockUnavailableError(OSError):
 
     Distinct from `VaultLockedError`, which says another run holds the vault and this
     one should come back later. This one says the mechanism itself did not work — a
-    vault root that is not there, a denied iCloud tree, a filesystem that will not
-    take an `flock` — and no waiting fixes it.
+    vault root that is not there, a lock directory that cannot be created or used, a
+    filesystem that will not take an `flock` — and no waiting fixes it.
 
     An `OSError` subclass, so a caller that already reports "the write failed" for an
     `OSError` keeps working; a caller that wants to tell the two apart, as the K-Boat
     CLIs do, catches this before the operations that raise ordinary `OSError`s of
     their own.
     """
+
+
+def lock_dir() -> Path:
+    """The directory holding every vault's lock file: `$KBOAT_LOCK_DIR`, else `~/.k-boat/locks`.
+
+    Not a cache directory (`~/Library/Caches`, `$XDG_CACHE_HOME`), which the OS or a
+    cleanup tool may empty: a lock file deleted between two runs is harmless, but one
+    deleted during a run gives the next writer a new inode and so a second hold.
+    """
+    override = os.environ.get(LOCK_DIR_ENV)
+    return Path(override).expanduser() if override else Path.home() / ".k-boat" / "locks"
+
+
+def _real_path(vault: Path) -> bytes:
+    """The vault directory's path as the filesystem itself spells it.
+
+    `realpath` settles symlinks, `..` and a trailing slash, but keeps the letter case
+    and Unicode form it was handed, and on macOS the default APFS volume ignores both
+    when it looks a path up — so `~/Vault` and `~/vault`, or a name pasted from Finder
+    in the other normalization form, would name one vault and hash apart.
+    `F_GETPATH` asks the open directory for the path it is stored under instead. Where
+    there is no `F_GETPATH`, as on Linux, paths are compared byte for byte by the
+    filesystem too, so `realpath` is already the whole answer.
+    """
+    real = os.path.realpath(vault, strict=True)
+    fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        get_path = getattr(fcntl, "F_GETPATH", None)
+        if get_path is None:
+            return os.fsencode(real)
+        # The buffer is `MAXPATHLEN` long, which the call requires.
+        return fcntl.fcntl(fd, get_path, bytes(1024)).rstrip(b"\0")
+    finally:
+        os.close(fd)
+
+
+def lock_file(vault: Path) -> Path:
+    """The lock file for `vault`, named by a hash of its resolved real path.
+
+    Resolved, so every spelling of the vault — through a symlink, with a trailing slash,
+    in another case — reaches the lock every other one does: exclusion only holds
+    between writers that agree on the file. Hashed, so the name has one length and one
+    alphabet whatever the path, and two vaults never share one. Raises `OSError` when
+    `vault` is not an existing directory, since a vault that is not there has no lock to
+    name.
+    """
+    return lock_dir() / f"{hashlib.sha256(_real_path(vault)).hexdigest()}.lock"
 
 
 def _read_holder(fd: int, lock_path: Path) -> dict[str, object]:
@@ -193,16 +240,15 @@ def _write_record(fd: int) -> None:
     os.write(fd, payload.encode("utf-8"))
 
 
-def _unavailable(lock_path: Path, exc: OSError) -> VaultLockUnavailableError:
+def _unavailable(path: Path, exc: OSError) -> VaultLockUnavailableError:
     """Rename an `OSError` from the lock itself, so a caller can tell it apart.
 
     A CLI that also shells out to `gh` would otherwise report a missing binary as a
-    vault problem, and one whose whole output is a JSON report would answer an
-    unwritable vault root with a traceback and an empty stdout.
+    vault problem, and one whose whole output is a JSON report would answer a missing
+    vault root with a traceback and an empty stdout. `path` is the lock file where it
+    could be named, and the vault where the vault itself was the failure.
     """
-    return VaultLockUnavailableError(
-        exc.errno, f"cannot take the vault lock: {exc}", str(lock_path)
-    )
+    return VaultLockUnavailableError(exc.errno, f"cannot take the vault lock: {exc}", str(path))
 
 
 @contextmanager
@@ -227,8 +273,14 @@ def vault_lock(vault: Path, *, wait_s: float | None = None) -> Iterator[Path]:
     than grow a second, empty vault — as a `VaultLockUnavailableError`, since a vault
     that is not there is a vault whose lock cannot be taken.
     """
-    lock_path = vault / LOCK_NAME
     try:
+        lock_path = lock_file(vault)
+    except OSError as exc:
+        raise _unavailable(vault, exc) from exc
+    try:
+        # The lock directory is created owner-only; its parents get the umask's default,
+        # and an existing directory keeps its mode, since whoever made it chose that.
+        os.makedirs(lock_path.parent, mode=0o700, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     except OSError as exc:
         raise _unavailable(lock_path, exc) from exc

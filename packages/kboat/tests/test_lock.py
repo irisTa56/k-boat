@@ -13,28 +13,27 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import stat
 import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from pathlib import Path
 
 import pytest
 
 from kboat.lock import (
     DEFAULT_WAIT_S,
-    LOCK_NAME,
+    LOCK_DIR_ENV,
     VaultLockedError,
     VaultLockUnavailableError,
+    lock_file,
     vault_lock,
 )
 
 # Long enough to observe, short enough not to pad the suite.
 BRIEF = 0.1
-
-
-def _lock_file(vault: Path) -> Path:
-    return vault / LOCK_NAME
 
 
 def _hold_from_another_fd(vault: Path) -> int:
@@ -43,22 +42,24 @@ def _hold_from_another_fd(vault: Path) -> int:
     A separate open file description, so `flock` treats it as a separate holder — the
     same contention a second process produces, without the cost of one.
     """
-    fd = os.open(_lock_file(vault), os.O_CREAT | os.O_RDWR, 0o600)
+    fd = os.open(lock_file(vault), os.O_CREAT | os.O_RDWR, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     return fd
 
 
 def _plant_record(vault: Path, payload: str) -> None:
     """Put `payload` in the lock file without holding the lock."""
-    _lock_file(vault).write_text(payload, encoding="utf-8")
+    lock_file(vault).write_text(payload, encoding="utf-8")
 
 
 def test_holds_the_lock_for_the_block_and_releases_it_after(tmp_path: Path) -> None:
     with vault_lock(tmp_path) as lock_path:
-        assert lock_path == _lock_file(tmp_path)
+        assert lock_path == lock_file(tmp_path)
         record = json.loads(lock_path.read_text(encoding="utf-8"))
         assert record["pid"] == os.getpid()
         assert record["started"]
+    # Nothing lands in the vault: the lock lives outside the synced tree.
+    assert list(tmp_path.iterdir()) == []
     # The file stays — an `flock` lives on the open description, not on the name, so
     # there is nothing to clean up and nothing to race over. What must be gone is the
     # hold itself.
@@ -80,7 +81,7 @@ def test_a_held_lock_is_refused_once_the_wait_expires_naming_the_holder(tmp_path
 
     holder = excinfo.value.holder
     assert holder["pid"] == 4321
-    assert holder["path"] == str(_lock_file(tmp_path))
+    assert holder["path"] == str(lock_file(tmp_path))
     assert "4321" in str(excinfo.value)
 
 
@@ -213,14 +214,14 @@ def test_a_holder_that_dies_without_releasing_leaves_no_lock_behind(tmp_path: Pa
                 'os.write(fd, b\'{"pid": 1, "started": "never released"}\\n\')\n'
                 "os._exit(0)\n"  # no unwinding, no LOCK_UN, no close
             ),
-            str(_lock_file(tmp_path)),
+            str(lock_file(tmp_path)),
         ],
         capture_output=True,
         timeout=30,
         check=False,
     )
     assert child.returncode == 0, child.stderr.decode()
-    assert "never released" in _lock_file(tmp_path).read_text(encoding="utf-8")
+    assert "never released" in lock_file(tmp_path).read_text(encoding="utf-8")
 
     # No wait at all: had the dead holder's lock survived, this would refuse.
     with vault_lock(tmp_path, wait_s=0.0) as lock_path:
@@ -237,20 +238,82 @@ def test_a_missing_vault_root_is_reported_rather_than_created(tmp_path: Path) ->
 
 
 def test_a_lock_that_cannot_be_opened_is_named_rather_than_left_a_bare_oserror(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A CLI has to tell "someone holds the vault" from "the lock does not work", and it
     # also runs subprocesses that raise `OSError` of their own — so this one carries its
     # own type while staying catchable as the `OSError` it is.
-    (tmp_path / "Sources").mkdir()
-    tmp_path.chmod(0o555)  # a vault root nothing can be created in
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    parent = tmp_path / "read-only"
+    parent.mkdir(mode=0o555)  # a place no lock directory can be created in
+    monkeypatch.setenv(LOCK_DIR_ENV, str(parent / "locks"))
     try:
-        with pytest.raises(VaultLockUnavailableError) as excinfo, vault_lock(tmp_path):
-            pytest.fail("the lock could not be opened; acquisition must not succeed")
+        with pytest.raises(VaultLockUnavailableError) as excinfo, vault_lock(vault):
+            pytest.fail("the lock directory could not be made; acquisition must not succeed")
     finally:
-        tmp_path.chmod(0o755)
+        parent.chmod(0o755)
     assert isinstance(excinfo.value, OSError), "an existing OSError handler must still catch it"
     assert "cannot take the vault lock" in str(excinfo.value)
+    assert excinfo.value.filename == str(parent / "locks" / lock_file(vault).name)
+
+
+def test_a_lock_file_that_is_a_directory_is_reported_as_unusable(tmp_path: Path) -> None:
+    lock_file(tmp_path).mkdir()
+    with pytest.raises(VaultLockUnavailableError), vault_lock(tmp_path, wait_s=0.0):
+        pytest.fail("the lock name is a directory; acquisition must not succeed")
+
+
+def test_a_vault_that_is_not_a_directory_is_reported_rather_than_locked(tmp_path: Path) -> None:
+    not_a_vault = tmp_path / "vault.md"
+    not_a_vault.write_text("a file, not a vault\n", encoding="utf-8")
+    with pytest.raises(VaultLockUnavailableError) as excinfo, vault_lock(not_a_vault):
+        pytest.fail("there is no vault to lock; acquisition must not succeed")
+    assert excinfo.value.filename == str(not_a_vault)
+
+
+def test_every_spelling_of_one_vault_contends_for_one_lock(tmp_path: Path) -> None:
+    # Exclusion only holds between writers that agree on the file, and the vault's path
+    # arrives from `--vault` or `$OBSIDIAN_VAULT_PATH` spelled however the caller wrote it.
+    vault = tmp_path / unicodedata.normalize("NFC", "Café")
+    vault.mkdir()
+    via_symlink = tmp_path / "linked"
+    via_symlink.symlink_to(vault)
+    spellings = [via_symlink, vault / ".." / vault.name, Path(f"{vault}/")]
+    # A volume that ignores case and Unicode form, as macOS's default APFS does, finds
+    # the vault under these too; one that does not, as on Linux, holds no vault there.
+    for other in ("café", unicodedata.normalize("NFD", "Café")):
+        spelling = tmp_path / other
+        if spelling.exists() and os.path.samefile(spelling, vault):
+            spellings.append(spelling)
+    with vault_lock(vault):
+        for spelling in spellings:
+            with pytest.raises(VaultLockedError), vault_lock(spelling, wait_s=0.0):
+                pytest.fail(f"{spelling} is the held vault; acquisition must not succeed")
+
+
+def test_two_vaults_do_not_share_a_lock(tmp_path: Path) -> None:
+    one, other = tmp_path / "one", tmp_path / "other"
+    one.mkdir()
+    other.mkdir()
+    with vault_lock(one) as held, vault_lock(other, wait_s=0.0) as second:
+        assert held != second
+
+
+def test_the_lock_directory_defaults_to_one_under_home_created_owner_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `HOME` is moved as well as the override dropped, so the default is exercised
+    # somewhere other than the real home directory.
+    home = tmp_path / "home"
+    home.mkdir()
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.delenv(LOCK_DIR_ENV)
+    monkeypatch.setenv("HOME", str(home))
+    with vault_lock(vault) as lock_path:
+        assert lock_path.parent == home / ".k-boat" / "locks"
+    assert stat.S_IMODE(lock_path.parent.stat().st_mode) == 0o700
 
 
 def test_a_filesystem_that_refuses_to_lock_is_reported_not_treated_as_contention(
@@ -312,13 +375,13 @@ def test_the_shipped_wait_is_long_enough_to_cover_a_note_write(tmp_path: Path) -
 
 
 def test_a_release_whose_file_was_deleted_under_it_still_exits_cleanly(tmp_path: Path) -> None:
-    # The lock lives on the descriptor, not the name, so someone clearing the vault by
+    # The lock lives on the descriptor, not the name, so someone clearing the lock directory by
     # hand mid-run must not turn a successful run into a failure on its way out. It does
     # cost exclusion — the next writer creates a new inode and locks that instead —
     # which is why nothing here deletes the file and nothing asks a human to.
     with vault_lock(tmp_path) as lock_path:
         lock_path.unlink()
-    assert not _lock_file(tmp_path).exists()
+    assert not lock_file(tmp_path).exists()
 
     # And the lock is re-creatable afterwards rather than left in a broken state.
     with vault_lock(tmp_path, wait_s=0.0) as lock_path:
@@ -333,7 +396,7 @@ def test_a_symlink_at_the_lock_name_is_refused_rather_than_written_through(
     # truncate and overwrite whatever it points at. `O_NOFOLLOW` refuses it outright.
     outside = tmp_path / "not-the-lock"
     outside.write_text("someone else's file\n", encoding="utf-8")
-    _lock_file(tmp_path).symlink_to(outside)
+    lock_file(tmp_path).symlink_to(outside)
 
     with pytest.raises(VaultLockUnavailableError), vault_lock(tmp_path, wait_s=0.0):
         pytest.fail("the lock name is a symlink; acquisition must not succeed")
@@ -355,8 +418,8 @@ def test_the_refusal_reads_the_record_through_the_held_fd(
     real_sleep = time.sleep
 
     def swap_then_sleep(seconds: float) -> None:
-        _lock_file(tmp_path).unlink()
-        _lock_file(tmp_path).symlink_to(decoy)
+        lock_file(tmp_path).unlink()
+        lock_file(tmp_path).symlink_to(decoy)
         monkeypatch.setattr(time, "sleep", real_sleep)
         real_sleep(seconds)
 

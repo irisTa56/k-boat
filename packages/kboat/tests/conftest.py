@@ -4,13 +4,46 @@ from __future__ import annotations
 
 import fcntl
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
 import kboat.lock
-from kboat.lock import LOCK_NAME
+from kboat.lock import LOCK_DIR_ENV, lock_file
+
+# The home directory the suite started under, read before any test can move `HOME`.
+_REAL_LOCK_ROOT = Path(os.path.expanduser("~")) / ".k-boat"
+
+
+def _names_under(root: Path) -> frozenset[str]:
+    return (
+        frozenset(str(p.relative_to(root)) for p in root.rglob("*"))
+        if root.is_dir()
+        else frozenset()
+    )
+
+
+_REAL_LOCK_NAMES = _names_under(_REAL_LOCK_ROOT)
+
+
+@pytest.fixture(autouse=True)
+def isolate_lock_dir(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Keep every vault lock a test takes out of the real home directory.
+
+    A directory of its own rather than `tmp_path`, which many tests use as the vault
+    and some make read-only. Set through a `MonkeyPatch` of its own rather than the
+    test's, so a test calling `monkeypatch.undo()` mid-way does not undo it too. The
+    check after the test is what would notice a test that reached the real `~/.k-boat`
+    anyway; it compares names only, so a real run holding its own lock meanwhile does
+    not fail it.
+    """
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv(LOCK_DIR_ENV, str(tmp_path_factory.mktemp("locks")))
+        yield
+    assert _names_under(_REAL_LOCK_ROOT) == _REAL_LOCK_NAMES, (
+        f"a test created something under {_REAL_LOCK_ROOT}"
+    )
 
 
 @pytest.fixture
@@ -29,7 +62,7 @@ def lock_is_held() -> Callable[[Path], bool]:
     """
 
     def held(vault: Path) -> bool:
-        fd = os.open(vault / LOCK_NAME, os.O_CREAT | os.O_RDWR, 0o600)
+        fd = os.open(lock_file(vault), os.O_CREAT | os.O_RDWR, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:

@@ -25,7 +25,7 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 
 - `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side.
   - `kboat.schema` declares where the vault keeps things, and `kboat-vault-conventions` says what a missing one means and how far a run may proceed without it.
-  - The lock file's mechanics are `kboat.lock`'s.
+  - Its lock file lives outside it, under `~/.k-boat/locks/` (`kboat-vault-conventions`), and the lock's mechanics are `kboat.lock`'s.
   - Each Base belongs to whichever skill owns its note type.
 - `KBOAT_KNOWLEDGE_PATH` — the distilled side: concept notes managed as a Basic Memory knowledge graph.
   - It may live outside the vault (for K-Boat it is a Git-managed directory).

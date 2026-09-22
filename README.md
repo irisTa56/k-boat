@@ -34,9 +34,6 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 - `Feeds/` — one note per item the upstream feed-filter kept from your registered feeds, forums, and saved queries.
 - `Questions.md` — the open-questions backlog, a hand-maintained bullet list whose order is its priority; the daily pick reads it to infer what you are chewing on.
 - `Daily/` — your Obsidian daily notes, if you keep them. The daily pick reads recent ones as an ambient interest signal and ranks without them when absent, so this one is optional.
-- `.kboat.lock` — the vault lock, created on the first run that writes and then left in place for good.
-  - It is how two runs avoid overwriting each other, and **it should not be deleted**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
-  - Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
 - `Sources.base` — a standalone Base:
   - a Today view of the day's picks and what you are mid-read, shown by default;
   - to-read views — all-unread, plus web and PDF subsets;
@@ -51,7 +48,10 @@ The Obsidian vault (`OBSIDIAN_VAULT_PATH`) holds the reading side:
 Every folder above, plus `Questions.md`, must exist before a scheduled run: `kboat-doctor` checks them first and stops the run if one is absent, since a folder that has gone missing is indistinguishable from a vault that has not finished syncing.
 Create them once, when you set the vault up.
 `Daily/` and the `.base` files are outside that check — the first is optional, and a Base is Obsidian's own view, which no phase reads.
-`.kboat.lock` is outside it too: the first run that writes creates it.
+
+The vault lock, which keeps two runs from overwriting each other, is not in the vault: it is a file under `~/.k-boat/locks/` (or `$KBOAT_LOCK_DIR`), created on the first run that writes.
+**Do not delete it**: removing it while a run is in flight lets the next one lock a different file and write at the same time.
+Nothing ever needs it cleared — a crashed run does not leave it held, because the kernel releases the lock when the process goes.
 
 The knowledge root (`KBOAT_KNOWLEDGE_PATH`) holds the distilled concept notes as a Basic Memory knowledge graph, separate from the vault and (for K-Boat) under Git.
 

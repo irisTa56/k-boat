@@ -9,7 +9,7 @@ import pytest
 
 from kboat.frontmatter import parse_frontmatter
 from kboat.lifecycle.__main__ import main
-from kboat.lock import vault_lock
+from kboat.lock import lock_file, vault_lock
 
 NOTE_TEMPLATE = """\
 ---
@@ -520,16 +520,12 @@ def test_a_vault_whose_lock_cannot_be_opened_is_reported_not_dumped(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The contract is JSON on stdout and a diagnostic on stderr, never a traceback;
-    # before this was caught it aborted the run with an empty stdout. A vault root that
-    # cannot be written stands in for the reachable cases (a denied iCloud tree, a
-    # filesystem refusing the lock) — it reaches the same failure, and is the real one
-    # on the single run that creates the lock file.
+    # before this was caught it aborted the run with an empty stdout. A directory at the
+    # lock's name stands in for the other causes (a lock directory that cannot be made,
+    # a filesystem refusing the lock) — each reaches the same failure.
     write_note(vault / "Sources", "a", distill=True)
-    vault.chmod(0o555)
-    try:
-        rc = main(["--vault", str(vault), "--today", "2026-06-15"])
-    finally:
-        vault.chmod(0o755)
+    lock_file(vault).mkdir()
+    rc = main(["--vault", str(vault), "--today", "2026-06-15"])
     assert rc == 1
     captured = capsys.readouterr()
     assert "vault lock unavailable" in captured.err

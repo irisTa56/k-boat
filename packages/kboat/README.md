@@ -46,6 +46,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
     - `list_note_dir` — one directory's notes and the placeholders a `*.md` scan would walk past.
 - `kboat.lock` — `vault_lock`, the vault-wide mutual exclusion every mutating run holds so two runs cannot interleave over one vault.
   - An advisory `flock`, so a crashed holder's lock is released by the kernel and there is no stale state to recover.
+  - Its file lives outside the vault, under `~/.k-boat/locks/` or `$KBOAT_LOCK_DIR`.
   - A held vault is waited on for a few seconds and then refused with a record naming the holder.
 - `kboat.cli` — the plumbing the console scripts share.
   - The `--vault` and `--today` flags every vault CLI takes, feed-filter's note-writing subcommands too, so a date reaching the writer has been validated the same way whatever CLI it arrived at.
