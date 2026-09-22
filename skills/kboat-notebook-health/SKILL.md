@@ -46,8 +46,8 @@ The check is one `source list` per source, so the cost tracks a set that accumul
 1. **Build the set.** Two openings, as `kboat-rescue` has.
    - **With a slug or `url` argument** — the set is that source alone, whatever its dispositions.
      - The scope above bounds what the sweep seeks on its own, not what a human may ask after.
-     - Resolve a `url` with `kboat-note slug`, read the note with `kboat-note list --type source --slug <slug>`, and route on `notebooklm_id` rather than on the flags.
-       - An exit 1, or an `anomalies` entry and no note, is a note this run cannot check: report the entry, since an empty answer is the only one meaning no note holds the slug.
+     - Resolve a `url` with `kboat-note slug`, read the note with `kboat-note list --type source --slug <slug> --field title --field url --field source_type --field blocked --field notebooklm_id`, and route on `notebooklm_id` rather than on the flags.
+       - An exit 1, or any `anomalies` entry, is a note this run cannot check: report the entry, since an empty answer is the only one meaning no note holds the slug.
      - With one, check it — including on a `blocked` note, which can still carry a live notebook (kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules), the `blocked_has_notebook` row).
        - Such a note needs `blocked` cleared once its notebook is sound, which `kboat-rescue`'s step 1 does and nothing else will.
        - Name that as outstanding rather than reporting the source healthy and leaving it in the DLQ.
@@ -126,7 +126,7 @@ Detect and report; do not work around.
   - Nothing reports it, the reporter being what died, and it leaves that same masquerading leftover.
   - Name the source whose restore was in flight where the summary can still be written.
   - Where it cannot, a resumed run re-checks that notebook by hand rather than trusting a healthy verdict.
-- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, one iCloud evicted, and a `Sources/` it could not read at all.
+- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, one iCloud evicted, a field a note holds in a shape the reader does not model, and a `Sources/` it could not read at all.
   - Each is a note the counts do not cover, so without them the counts read as full coverage.
 
 No vault write happens in this skill, so no `status: locked` refusal can arise.

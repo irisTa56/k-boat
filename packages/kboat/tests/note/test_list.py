@@ -223,6 +223,65 @@ def test_a_filter_does_not_hide_a_note_it_could_not_read(
     assert _anomaly_paths(report) == ["Sources/.evicted.md.icloud", "Sources/bad.md"]
 
 
+def _block_scalar_note(vault: Path, slug: str, *, blocked: str = "false") -> None:
+    (vault / "Sources" / f"{slug}.md").write_text(
+        f"---\ntitle: T\nsummary: |\n  line one\n  line two\nblocked: {blocked}\n---\n",
+        encoding="utf-8",
+    )
+
+
+def test_a_field_the_reader_does_not_model_is_reported_not_dropped(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The note is listed, but without the entry its `summary` would read as one
+    # the note does not have.
+    _block_scalar_note(vault, "blk")
+
+    code, report = _list(vault, capsys)
+
+    assert code == 0
+    notes = report["notes"]
+    assert isinstance(notes, list)
+    assert [n["slug"] for n in notes] == ["blk"]
+    assert "summary" not in notes[0]["frontmatter"]
+    anomalies = report["anomalies"]
+    assert isinstance(anomalies, list)
+    assert [a["path"] for a in anomalies] == ["Sources/blk.md"]
+    assert "summary" in anomalies[0]["error"]
+
+
+def test_an_unmodelled_field_is_reported_only_where_the_answer_would_show_it(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _block_scalar_note(vault, "blk")
+    _block_scalar_note(vault, "dlq", blocked="true")
+
+    # Not asked for: nothing is hidden.
+    code, report = _list(vault, capsys, "--field", "title")
+    assert code == 0
+    assert report["anomalies"] == []
+
+    # Asked for, but on a note the filter drops: nothing is hidden either.
+    code, report = _list(vault, capsys, "--flagged", "blocked", "--field", "summary")
+    assert _slugs(report) == ["dlq"]
+    assert _anomaly_paths(report) == ["Sources/dlq.md"]
+
+
+def test_an_unmodelled_flag_is_reported_whatever_the_filter(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Nothing shows the note to fail the filter, so it may be one it keeps.
+    (vault / "Sources" / "odd.md").write_text(
+        "---\ntitle: T\nblocked:\n  nested: true\n---\n", encoding="utf-8"
+    )
+
+    code, report = _list(vault, capsys, "--flagged", "blocked", "--field", "title")
+
+    assert code == 0
+    assert report["notes"] == []
+    assert _anomaly_paths(report) == ["Sources/odd.md"]
+
+
 @pytest.mark.parametrize(
     "args",
     [

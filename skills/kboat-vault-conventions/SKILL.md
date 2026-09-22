@@ -283,12 +283,12 @@ It asks at write time rather than leaning on the `kboat-doctor` placeholder scan
 **A skill step that reads frontmatter from a note folder, or from one note by slug, does it through `kboat-note list`, never a glob, `ls`, or a direct read.**
 A glob walks past an evicted note and reads a folder the OS refused to list as empty, and a direct read cannot tell an evicted note from an absent one; the command reports each of those instead of answering around it.
 `kboat-note list --type <type>` prints `{notes, anomalies, counts}`, each note a `{slug, path, frontmatter}` from the folder `DIR_BY_TYPE` names, read through `list_note_dir`.
-Its `anomalies` are `{path, error}` entries: one per evicted note under its placeholder's path, one per note that could not be read or parsed, and one under the folder's own name where the folder is absent, not a directory, or refused, which also exits 1 ("Vault preconditions").
+Its `anomalies` are `{path, error}` entries: one per evicted note under its placeholder's path, one per note that could not be read or parsed, one per field a listed note holds in a shape the frontmatter reader does not model (the note is listed without it), and one under the folder's own name where the folder is absent, not a directory, or refused, which also exits 1 ("Vault preconditions").
 
 - `--slug <slug>` answers that one name from the same listing, in the order "A name an iCloud placeholder holds is taken, not free" gives: a note, an anomaly for whatever else holds the name, the placeholder's anomaly where nothing does, or neither where the name is free.
-- `--field <name>` (repeatable) cuts each note's `frontmatter` to those fields.
-- `--flagged <name>` (repeatable) keeps only the notes whose boolean field is `true`.
-- Neither of the last two drops an anomaly, since nothing shows a note that could not be read to fail them.
+- `--field <name>` (repeatable) cuts each note's `frontmatter`, and its unreadable-field entries, to those fields.
+- `--flagged <name>` (repeatable) keeps only the notes whose boolean field is `true`, and a note it drops reports an unreadable field only where that is the flag.
+- Neither drops a note that could not be read, since nothing shows it to fail them.
 
 The step names every anomaly beside its answer.
 Where the folder could not be read, it says so in place of the answer, because the set is then empty and an empty set is what a folder with nothing in it looks like.
