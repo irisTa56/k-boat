@@ -6,7 +6,7 @@ So a Kindle note is frontmatter plus a free-form body (the highlights/notes); th
 
 Identity is the Amazon **ASIN**, taken from the Kindle reader URL `https://read.amazon.co.jp/?asin=<ASIN>`.
 The note is named `Kindles/<ASIN>.md` — the ASIN is the stable id, so (as with a source's URL hash) the file is never renamed and the readable title lives in the `title` property, surfaced by the [Kindle Base](bases.md#kindle-base) via a `title_link` formula.
-De-dup is by the ASIN filename: if `Kindles/<ASIN>.md` exists it is the same book.
+De-dup is by the ASIN filename: a note `kboat-note list --type kindle --slug <ASIN>` returns is the same book ([Procedure: create or update a Kindle note](procedures.md#procedure-create-or-update-a-kindle-note), step 2).
 
 Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `reading`/`finished`/`distill` checkboxes and the routine-managed dates.
 The note **write is owned by `kboat-note write`** (`kboat-note write --type kindle`); the create/update procedure builds a `{slug, fields, body?}` record (slug = the ASIN) and pipes it, and an update that omits `body` preserves the highlights.

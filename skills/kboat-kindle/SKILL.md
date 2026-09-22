@@ -32,7 +32,9 @@ From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?a
 
 ### Step 2: De-dup
 
-If `Kindles/<ASIN>.md` already exists, this is the same book — report it as already recorded and stop (do not re-extract), unless the user asked to refresh its metadata, in which case update it in place.
+Read what holds the ASIN with `kboat-note list --type kindle --slug <ASIN>`.
+If it returns a note, this is the same book — report it as already recorded and stop (do not re-extract), unless the user asked to refresh its metadata, in which case update it in place.
+An `anomalies` entry with no note is a note there that could not be read — evicted, under its placeholder's path, or unreadable — and an exit 1 is a `Kindles/` that could not be read: stop and report the entry, since the note may be this book, and a Finder download or a repair is what lets it be recorded.
 
 - The filename, being the ASIN, never changes.
 

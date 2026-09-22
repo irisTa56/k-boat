@@ -650,7 +650,9 @@ This is the same split as source ingest (`kboat-ingest`) and rescue (`kboat-resc
 1. Resolve the ASIN.
    - From a Kindle reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim.
    - This is the de-dup key.
-2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete.
+2. Read what holds the ASIN with `kboat-note list --type kindle --slug <ASIN>`.
+   - An `anomalies` entry with no note, or an exit 1, stops the procedure: report it, since a note that could not be read may be this book.
+   - If it returns a note, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete.
    - The filename, being the ASIN, never changes.
 3. Otherwise create the note with `kboat-note write --type kindle` (it owns the file write, the same split as sources and repos): a `{slug, fields}` record where `slug` = the ASIN and `fields` carry `type: kindle`, `title`, `author` (a list), `reading_link` = the reader URL, `store_link` = `https://www.amazon.co.jp/dp/<ASIN>`, `published`, and `publisher`.
    - The tool starts `reading`/`finished`/`distill` `false`, leaves `distilled_date` and `tags` empty, and stamps `added_date`.
