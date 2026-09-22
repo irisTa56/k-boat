@@ -84,8 +84,10 @@ def list_notes(
             continue
         shown: dict[str, Value] = {k: fm[k] for k in fields if k in fm} if fields else fm
         notes.append({"slug": path.stem, "path": rel, "frontmatter": shown})
+    # `notes` last: a whole-folder report runs to hundreds of kilobytes, and a
+    # caller shown only its head must still meet what it could not read.
     return {
-        "notes": notes,
         "anomalies": anomalies,
         "counts": {"notes": len(notes), "anomalies": len(anomalies)},
+        "notes": notes,
     }, unread

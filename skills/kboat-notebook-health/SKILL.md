@@ -53,7 +53,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
        - Name that as outstanding rather than reporting the source healthy and leaving it in the DLQ.
      - With no `notebooklm_id`, there is nothing to check: name kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook), or `kboat-rescue` where the note is `blocked`.
    - **With no argument** — the routine's sweep.
-     - Read the sources with `kboat-note list --type source --field title --field url --field source_type --field reading --field distill --field dismiss --field blocked --field distilled_date --field notebooklm_id` and take the set above.
+     - Read the sources being read with `kboat-note list --type source --flagged reading --field title --field url --field source_type --field distill --field dismiss --field blocked --field distilled_date --field notebooklm_id` and take the set above from them.
      - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: stop and report that rather than sweeping, since the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
      - Then add every source the summary backfill, the distillation pass, and the daily pick reported this run, skipping one already in it.
      - Those three arrive as **input** from the caller running the phases, not from disk, so **say which of the three you were given**.
@@ -67,7 +67,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - A `list` that succeeded against the wrong signed-in account returns that account's notebooks, so every stored id reads as absent — and reactivation discards a notebook by its stored id, so a sweep that named it across sound notebooks would spend every one of them.
      - Do not decide this on the sweep set, whose size is an accident of what the reader has opened: a set of one whose notebook is genuinely gone satisfies "all absent" as readily as a wrong account does.
      - Check the listing against **every `notebooklm_id` in the vault**, not only the set's.
-     - The sweep opening already read every id; the argument opening read one note, so make the vault-wide read here with `kboat-note list --type source --field notebooklm_id` — a read of the vault against a listing already fetched, not another NotebookLM call.
+     - Step 1 read only the set's notes, so make the vault-wide read here with `kboat-note list --type source --field notebooklm_id` — a read of the vault against a listing already fetched, not another NotebookLM call.
        - Where it exits 1, `Sources/` could not be read and the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.

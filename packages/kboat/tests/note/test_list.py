@@ -51,6 +51,8 @@ def test_lists_every_note_with_its_frontmatter(
     code, report = _list(vault, capsys)
 
     assert code == 0
+    # What it could not read comes ahead of the notes, for a caller shown the head.
+    assert list(report) == ["anomalies", "counts", "notes"]
     assert report == {
         "notes": [
             {
