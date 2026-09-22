@@ -24,10 +24,12 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - This is the de-dup key, and the only name the note write will accept.
    - Run this step before anything fetches the `url` — ahead of the type sniff in [ingest a PDF source](#procedure-ingest-a-pdf-source), whichever path that sniff then picks.
      - The sniff sends a blocked PDF straight to [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq), whose write merges `blocked: true` onto whatever note stands at the slug, so only a de-dup that has already run keeps a wall met on a re-capture from landing on a note that already has its notebook.
-   - Ask what holds `Sources/<slug>.md` before reading it, in the order `kboat-vault-conventions` gives ("A name an iCloud placeholder holds is taken, not free"): a `Sources/.<slug>.md.icloud` placeholder with nothing at the name itself is a note iCloud has evicted, not an absent one.
-     - Stop the item there, with nothing fetched, built, or written: the note cannot be read to de-dup against, and the note write would refuse it as `status: evicted` anyway, after the PDF path had already downloaded.
-     - The caller keeps the queue file for a later run and reports it by name, as it does that refusal.
-   - If `Sources/<slug>.md` already exists, read its `url`: when it names the same page, this is the same source, so any write goes to that note rather than a new one (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes).
+   - Read what holds the slug, with the fields this step reads: `kboat-note list --type source --slug <slug> --field url --field blocked --field dismiss --field distilled_date --field notebooklm_id`.
+     - Any `anomalies` entry is a note that cannot be read to de-dup against, not an absent one: one iCloud has evicted (the entry under its `Sources/.<slug>.md.icloud` placeholder), one that would not read or parse, or one holding one of those fields in a shape the reader does not model or on more than one line.
+       - Stop the item there, with nothing fetched, built, or written: the note write would refuse an evicted one as `status: evicted` anyway, after the PDF path had already downloaded.
+       - The caller keeps the queue file for a later run and reports it by name with the entry's `error`, as it does that refusal.
+     - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how; stop the item the same way.
+   - If it returns a note, read its `url`: when it names the same page, this is the same source, so any write goes to that note rather than a new one (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes).
    - Compare the two URLs canonically, never as raw strings: run `kboat-note slug` on the note's stored `url` as well and compare the two `.canonical_url` values.
      - A page linked twice — with a trailing slash, or with a feed's tracking parameter — is one source, which is why both links reach this slug at all, and a raw-string comparison would read the second one as a different page and report a collision that is not there.
    - When the existing note's `url` names a **different** page, the slug collided across two distinct URLs (astronomically unlikely at 48 bits) — stop and report the collision instead of overwriting.
@@ -270,9 +272,9 @@ Two answers are not a missing original:
   - Confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null` before concluding anything.
   - **Read that listing against the vault's other stored `notebooklm_id`s, not against this one alone.**
     - A listing fetched under the wrong signed-in account returns that account's notebooks, so every id reads as absent, and one id absent out of one satisfies "absent" as readily as a genuinely deleted notebook does.
-    - Those ids come from a scan of `Sources/`, held to kboat-vault-conventions [The write contract](../../kboat-vault-conventions/SKILL.md#the-write-contract), "A scan an agent runs from a skill's prose owes the same two reports".
+    - Read those ids with `kboat-note list --type source --field notebooklm_id`, naming its `anomalies` beside the verdict.
   - Where the vault's ids are absent wholesale, that is the account or auth problem: decide nothing about this source and report it.
-    - A `Sources/` that could not be listed leaves no other ids to read against, and decides nothing either.
+    - An exit 1 from that read means `Sources/` could not be read, which leaves no other ids to read against and decides nothing either.
   - Where the rest resolve and this one does not, the notebook is gone and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way on.
 
 **What decides whether to act is not that no match was found, but that nothing present could be the match.**
@@ -482,7 +484,7 @@ A PDF and a web page differ only in how the content is obtained and where the re
 
 ### Step 1: resolve the note
 
-Resolve the note from the slug (`Sources/<slug>.md`) or `url`.
+Resolve the note from the slug, or from a `url` through `kboat-note slug`, and read it with `kboat-note list --type source --slug <slug>`.
 It must have `blocked: true`.
 Its `source_type` selects the branch below.
 
@@ -580,7 +582,7 @@ Abandoning is **the human's call, never the routine's** — confirm it with them
 `kboat-rescue` routes a human here, off its own inspection where the page turns out to be gone or off their word where they simply decide not to chase it.
 
 **Resolve the note and check it before writing anything.**
-Load `Sources/<slug>.md` and put it through three gates.
+Read it with `kboat-note list --type source --slug <slug>` and put it through three gates.
 
 1. **`blocked: true`.** `upsert` is create-or-update, so a slug matching no note would have it *create* a phantom tombstone with empty required fields rather than refuse.
 2. **`distilled_date` and `distill` agree.** A stamp standing with the flag unticked is the `distilled_without_distill` violation ([Cross-field rules](validation.md#cross-field-rules)); repair it first, because which write applies is read off the stamp and the violation would otherwise survive it.
@@ -648,7 +650,9 @@ This is the same split as source ingest (`kboat-ingest`) and rescue (`kboat-resc
 1. Resolve the ASIN.
    - From a Kindle reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim.
    - This is the de-dup key.
-2. If `Kindles/<ASIN>.md` already exists, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete.
+2. Read what holds the ASIN with `kboat-note list --type kindle --slug <ASIN>`.
+   - An `anomalies` entry with no note, or an exit 1, stops the procedure: report it, since a note that could not be read may be this book.
+   - If it returns a note, this is the same book — update it in place (the title or metadata may have changed) rather than creating a second note, and do not re-extract if it is already complete.
    - The filename, being the ASIN, never changes.
 3. Otherwise create the note with `kboat-note write --type kindle` (it owns the file write, the same split as sources and repos): a `{slug, fields}` record where `slug` = the ASIN and `fields` carry `type: kindle`, `title`, `author` (a list), `reading_link` = the reader URL, `store_link` = `https://www.amazon.co.jp/dp/<ASIN>`, `published`, and `publisher`.
    - The tool starts `reading`/`finished`/`distill` `false`, leaves `distilled_date` and `tags` empty, and stamps `added_date`.

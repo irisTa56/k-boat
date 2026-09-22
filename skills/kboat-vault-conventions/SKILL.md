@@ -27,7 +27,7 @@ So a command that reads an input in the set holds it to the same rule rather tha
 - A required folder that is **absent, not a directory, or refused** makes the command that reads it exit 1, and so does a `Questions.md` the daily pick cannot read — absent, evicted, not a file, refused, or not UTF-8, each of which loses the whole backlog.
   - It still prints its JSON report, naming the path and which of these it met in the entry the report already keeps for what it could not read, and it still processes and reports whatever else it could read.
   - It does so the first time, with no threshold, since none of these clears itself.
-  - The commands are `kboat-lifecycle`, `kboat-pick` (`candidates` and `set`), `kboat-queue list`, `kboat-repos refresh` and `backfill`, and `kboat-note migrate-slugs`; the skill that reads each one names the entry and says what to do with the rest of the report.
+  - The commands are `kboat-lifecycle`, `kboat-pick` (`candidates` and `set`), `kboat-queue list`, `kboat-repos refresh` and `backfill`, and `kboat-note migrate-slugs` and `list`; the skill that reads each one names the entry and says what to do with the rest of the report.
 - A reader tells that exit from the vault lock's two by what is on stdout: the lock's are a `{"status": "locked", …}` record and an empty stdout ("Durability and the vault lock"), and this one is the command's own report.
 - `kboat-validate` is the exception: it is report-only by design, and `--strict` already exits 1 on its `unreadable_dir` violation.
 - Creating a missing folder belongs to declaring the note type rather than to the run.
@@ -280,12 +280,19 @@ That is what `pathlib` will not do for them: from CPython 3.14 `Path.exists` swa
 `upsert` holds itself to this rule for its create-versus-merge decision, so a `created` status says nothing held the slug: no file, no placeholder, and nothing else.
 It asks at write time rather than leaning on the `kboat-doctor` placeholder scan, which is a precondition and not a substitute: it runs once, before the phases, and an eviction can land on a vault it passed.
 
-**A scan an agent runs from a skill's prose owes the same two reports.**
-A step telling an agent to read a folder — "read every `Sources/*.md` frontmatter" — is the scan `list_note_dir` makes, with nothing but the step to close its two silences.
-So it reports, beside its answer, every `.<name>.md.icloud` placeholder whose `<name>.md` it did not read, and a folder the OS refused to list, which a glob reads as empty and `is_dir()` still answers `True` for.
-List the folder with something that fails aloud — `ls -A` exits non-zero naming the refusal, where a glob, a shell's or a tool's, hands back nothing — and take the placeholders from that same listing.
-The unlistable folder is the sharper of the two, because the whole set is then empty and an empty set is what a folder with nothing in it looks like.
-So a step whose answer is drawn from that set says the folder could not be listed in place of giving the answer.
+**A skill step that reads frontmatter from a note folder, or from one note by slug, does it through `kboat-note list`, never a glob, `ls`, or a direct read.**
+A glob walks past an evicted note and reads a folder the OS refused to list as empty, and a direct read cannot tell an evicted note from an absent one; the command reports each of those instead of answering around it.
+`kboat-note list --type <type>` prints `{notes, anomalies, counts}`, each note a `{slug, path, frontmatter}` from the folder `DIR_BY_TYPE` names, read through `list_note_dir`.
+Its `anomalies` are `{path, error}` entries: one per evicted note under its placeholder's path, one per note that could not be read or parsed, one per field a listed note holds in a shape the frontmatter reader does not model (the note is listed without it) or names on more than one line (the note is listed with the last), which are the fields `kboat-validate` reports as `missing_field` and `repeated_key`, and one under the folder's own name where the folder is absent, not a directory, or refused, which also exits 1 ("Vault preconditions").
+
+- `--slug <slug>` answers that one name as the writer resolves it, in the order "A name an iCloud placeholder holds is taken, not free" gives: a note, an anomaly for whatever else holds the name, the placeholder's anomaly where nothing does, or neither where the name is free.
+  - Where no listed name is exactly `<slug>.md`, it asks the volume through `name_occupied`, so on one that folds case, as APFS does by default, the note it names is the one the write would merge into.
+- `--field <name>` (repeatable) cuts each note's `frontmatter`, and its unreadable-field entries, to those fields.
+- `--flagged <name>` (repeatable) keeps only the notes whose boolean field is `true`, and a note it drops reports an unreadable field only where that is the flag.
+- Neither drops a note that could not be read, since nothing shows it to fail them.
+
+The step names every anomaly beside its answer.
+Where the folder could not be read, it says so in place of the answer, because the set is then empty and an empty set is what a folder with nothing in it looks like.
 
 ## Durability and the vault lock
 
@@ -317,7 +324,7 @@ What buys that is a premise worth stating, because it is the one thing that woul
 `~/Library/Mobile Documents/…` is not a network mount but a local APFS directory with a file-provider sync extension, so `flock` there is ordinary APFS advisory locking — verified against this vault, including that a holder killed without releasing leaves the lock free.
 A vault on a genuine network filesystem would need that re-checked, since `flock` over NFS or SMB is where the semantics stop holding.
 
-- **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-repos backfill --dry-run`, `kboat-note migrate-slugs --dry-run`, `kboat-pick candidates`, `kboat-queue list`, `kboat-validate`, and `kboat-recall`'s search all read a vault another run is writing.
+- **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-repos backfill --dry-run`, `kboat-note migrate-slugs --dry-run`, `kboat-note list`, `kboat-pick candidates`, `kboat-queue list`, and `kboat-validate` all read a vault another run is writing.
   - **`kboat-doctor` takes none either**, though its writability probe does write.
     - It creates and removes one uniquely-named file of its own and touches no note, and it runs to find out whether the vault can be written at all.
     - Holding the lock first would be circular, and a pre-flight check that refused whenever a run was in progress would be useless exactly when it is wanted.

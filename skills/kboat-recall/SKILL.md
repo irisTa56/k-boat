@@ -27,10 +27,12 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 ## Procedure
 
 1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
-   - Read every `Sources/*.md` frontmatter once, listing the folder as kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract) says under "A scan an agent runs from a skill's prose owes the same two reports".
-   - Name every evicted note beside the answer, whatever it is: this mode has no `kboat-doctor` ahead of it, and a shelf entry it did not see reads as one the reader never saved, so they save it again.
-   - Where `Sources/` could not be listed, say so and stop, rather than reporting an empty shelf.
-2. Keep the in-scope notes (default `keep`, or the `--states` union above; always drop `blocked`).
+   - Read each state in scope with one call, carrying only the fields the steps below use: `kboat-note list --type source --flagged <state> --field title --field topics --field summary --field url --field source_type --field reading_link --field notebooklm_id --field gemini_url --field blocked`.
+     - `active` has no flag to ask for, so its call drops `--flagged` and adds `--field distill --field keep --field dismiss`, and step 2 keeps the notes where all four flags are false; it reads every source, so make it only where the scope names `active`.
+   - Read the DLQ for the separate mention with `kboat-note list --type source --flagged blocked --field title --field url`.
+   - Name every `anomalies` entry beside the answer, once however many calls returned it, whatever the answer is: this mode has no `kboat-doctor` ahead of it, and a shelf entry it did not see reads as one the reader never saved, so they save it again.
+   - An exit 1 from any call means `Sources/` could not be read, the entry under `Sources` saying how: say so and stop, rather than reporting an empty shelf.
+2. Keep the in-scope notes, each once however many calls returned it (always drop `blocked`).
 3. Rank by lexical overlap between the query and each note's `title`, `topics`, `summary`, and `url`.
    - `topics` and `title` are the strongest signals; `summary` adds recall; a bare URL match is weak.
    - A cheap subagent can read the top candidates and judge relevance against the question when the query is fuzzy.
