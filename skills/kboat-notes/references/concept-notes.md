@@ -43,6 +43,7 @@ A reader such as `ask-kboat` takes a claim's origin from the first provenance li
 Two writers name a new reading: kboat-distill, for a source that was read, and kboat-record-dialogue, for a kept `ask-kboat` answer ([Dialogue records](#dialogue-records)).
 A merge of two concept notes writes no new claim: it moves each reading's claims, as they stand, together with the provenance line below them, and places that unit in the surviving note by the same judgement a reading gets.
 Everything else that edits a concept note, kboat-curate included, adds no claim: it writes relations, tags, and titles, and at most a provenance line kboat-distill's run summary reported as not landed, which names a source that was read and brings no claim with it.
+Such a line goes at a boundary between readings, directly after another provenance line, and never between a claim and the provenance line below it, where it would take that claim from its reading.
 
 `## Observations` and `## Relations` each appear exactly once, in that order, and the `###` headings within a note are distinct.
 They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.

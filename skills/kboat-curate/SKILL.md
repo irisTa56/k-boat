@@ -21,7 +21,7 @@ It is the agreed home for tag-drift **detection**: the write-time guard in kboat
   - Merging concept notes is destructive — propose, never auto-merge (see kboat-distill "Never auto-merge").
 - **No new claims.** This pass writes no claim of its own, including one saying why a relation it adds holds: it has no reading to name in a provenance line, which kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups) requires of every claim.
   - A merge it applies moves claims rather than writing them, and moves each reading's claims with their provenance line, as that section says.
-  - A provenance line kboat-distill reported as not landed is not a claim, and this pass may write it for the reading it names.
+  - A provenance line kboat-distill reported as not landed is not a claim, and this pass may write it for the reading it names, at the boundary between readings that section sets out.
 
 ## Setup
 
