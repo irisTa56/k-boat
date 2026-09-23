@@ -88,7 +88,7 @@ Everything above is what any writer needs; the rest is in `references/`, read on
 | [Kindle note](references/kindle-note.md) | The `Kindles/*.md` schema and its notebook-free lifecycle. |
 | [Repo note](references/repo-note.md) | The `Repos/*.md` schema, the `gh`-resolved naming and de-dup, the `role`/`domain` vocabulary, and what a refresh preserves. |
 | [Review note](references/review-note.md) | The frontmatter block a review report carries, and why it is mandatory. |
-| [Concept notes](references/concept-notes.md) | What a distilled note's `## Observations` looks like once several readings have fed it, how provenance and grounding are tagged, what a claim recorded from a conversation with no source carries, and the math-notation rule. |
+| [Concept notes](references/concept-notes.md) | What a distilled note's `## Observations` looks like once several readings have fed it, how provenance and grounding are tagged, what a claim recorded from an `ask-kboat` answer carries, and the math-notation rule. |
 | [Schema authority and validation](references/validation.md) | Which side of a schema table is authoritative and what a field change owes the other; then what `kboat-validate` reports — the cross-field rules, and the backlog-health counts `--stats` adds. |
 | [Daily pick](references/daily-pick.md) | How the routine chooses which web sources to surface for today, and how many. |
 | [Bases](references/bases.md) | The standalone Bases, their views, and the filter discipline each follows. |

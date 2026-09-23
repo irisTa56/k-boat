@@ -14,7 +14,7 @@ Provenance back to a source is different: the source note lives in the vault, a 
 Record provenance instead as an observation carrying the source note's `url` as the note holds it, e.g. `- [source] <title> — <url>`.
 This is root-independent, stable, and greppable.
 Tag each distilled observation by grounding — `#grounded` for claims the source supports, `#dialogue` for external knowledge the reading-time conversation surfaced — so a chat-derived claim is never mistaken for a source claim (kboat-distill defines how the two are sorted and verified).
-A claim can also reach the base with no source read at all, from a later conversation the reader chose to keep — [Dialogue records](#dialogue-records) below.
+A claim can also reach the base with no source read at all, from an `ask-kboat` answer the reader chose to keep — [Dialogue records](#dialogue-records) below.
 A note's frontmatter facet tags (the snake_case categorisation tags, distinct from the per-observation grounding tags above) come from a controlled vocabulary that lives in the knowledge base itself, as the `meta/Tag vocabulary` note (`memory://k-boat-knowledge/meta/tag-vocabulary`), listing the canonical tags and the variant-to-canonical aliases to avoid.
 It is data, not skill config — the right tags depend on what the base accumulates — so kboat-distill reads it when tagging: reuse a canonical tag where one fits, and mint a new one only when none does, recording it in that note in the same change.
 

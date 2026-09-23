@@ -1,6 +1,6 @@
 ---
 name: kboat-record-dialogue
-description: Record into the K-Boat knowledge base (the `k-boat-knowledge` Basic Memory project) what a conversation with no source behind it turned up — typically an `ask-kboat` answer carrying general knowledge the base lacked, which the user has decided to keep. Use when the user brings back such a question and answer and says things like "record this", "add this answer to the KB", "save what ask-kboat told me". Interactive: it proposes every write and makes only the ones the user confirms. Defers to kboat-notes for what a dialogue record carries (its provenance line, the `#dialogue` tag, its place in reading groups) and to kboat-distill's accretion policy for where claims go in a concept note.
+description: Record into the K-Boat knowledge base (the `k-boat-knowledge` Basic Memory project) the general knowledge an `ask-kboat` answer carried that the base lacked, once the user has decided to keep it. Use when the user brings back an `ask-kboat` question and answer and says things like "record this ask-kboat answer", "add what ask-kboat told me to the KB". Only for `ask-kboat` answers: the provenance line it writes names `ask-kboat`. Interactive: it proposes every write and makes only the ones the user confirms. Defers to kboat-notes for what a dialogue record carries (its provenance line, the `#dialogue` tag, its place in reading groups) and to kboat-distill's accretion policy for where claims go in a concept note.
 ---
 
 # K-Boat record dialogue
@@ -8,7 +8,8 @@ description: Record into the K-Boat knowledge base (the `k-boat-knowledge` Basic
 `ask-kboat` answers from the knowledge base and never writes to it; where its answer carried general knowledge the base lacked, it leaves the decision to record that to the user.
 This skill is the path once they decide to.
 It turns the answer into concept-note writes that follow kboat-notes [Dialogue records](../kboat-notes/references/concept-notes.md#dialogue-records), and makes them only on the user's confirmation.
-kboat-distill writes from sources that were read; a conversation with no source reaches the base only through here.
+kboat-distill writes from sources that were read; an `ask-kboat` answer reaches the base only through here.
+A conversation that did not go through `ask-kboat` is not this skill's: the provenance line it writes says the claims came from `ask-kboat`, which would be false of it.
 
 ## Scope
 
