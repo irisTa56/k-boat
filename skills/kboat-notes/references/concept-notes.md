@@ -33,6 +33,11 @@ The section takes one of two shapes, and a write that half-landed leaves a third
 A group is a unit of **insight, not of reading**.
 So a group carries two readings' provenance wherever both landed on the same point, and a note whose second reading only deepened the first's insight stays flat rather than being split.
 One reading can carry more than one provenance line: a later pass over the same source that places claims the note lacked follows them with that source's line again, so no claim ever sits under another reading's provenance.
+
+That holds only while every claim arrives with its reading's line, so a writer with no reading to name writes no claim.
+A reader such as `ask-kboat` takes a claim's origin from the first provenance line below it, and a claim added without its own is credited to whichever reading follows it, with nothing in the text to show otherwise.
+Two writers name a reading: kboat-distill, for a source that was read, and kboat-record-dialogue, for a kept `ask-kboat` answer ([Dialogue records](#dialogue-records)).
+Everything else that edits a concept note, kboat-curate included, adds relations, tags, and titles, not observations.
 Groups run oldest insight first, so a new one is appended at the end of the section, immediately above `## Relations`.
 A reading that opens a new group on a flat note is what makes that note grouped, and it owes the claims already there a heading of their own in the same append: leaving them bare would make the earliest insight the one thing in the note that nothing names.
 That append is two edits, so a failure or a crash between them can leave the note in the third state — a `###` group with claims still bare above the first heading.

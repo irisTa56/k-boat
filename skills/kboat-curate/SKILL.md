@@ -19,6 +19,7 @@ It is the agreed home for tag-drift **detection**: the write-time guard in kboat
   - This skill never touches the vault.
 - **Writes only on confirmation.** Audit and report first; apply renames, merges, relation fixes, and tag edits only after the user agrees.
   - Merging concept notes is destructive — propose, never auto-merge (see kboat-distill "Never auto-merge").
+- **No new claims.** This pass writes no observation, including one saying why a relation it adds holds: it has no reading to name in a provenance line, which kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups) requires of every claim.
 
 ## Setup
 
@@ -47,7 +48,7 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
     ```
 
 - **Relations** — high-confidence missing edges, and contradictions (the same pair related one way from one side and another from the other); reconcile to one direction.
-- **Sparse notes** — thin bodies missing Observations or Relations; propose enrichment.
+- **Sparse notes** — thin bodies missing Observations or Relations; propose relations, and for missing claims a source to read or a question to put to `ask-kboat`, whose answer kboat-record-dialogue can then record.
 
 **Renaming a concept note** (Basic Memory resolves wikilinks by title, so a rename breaks inbound `[[...]]`):
 
