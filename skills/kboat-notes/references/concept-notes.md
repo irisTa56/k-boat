@@ -38,6 +38,10 @@ A reading that opens a new group on a flat note is what makes that note grouped,
 That append is two edits, so a failure or a crash between them can leave the note in the third state — a `###` group with claims still bare above the first heading.
 It is not a shape the format admits, and nothing self-heals it on its own: the next append to that note is what heads those claims, which is why kboat-distill owes the heading on any append to a note in it and not only on the one that opens a group.
 
+A reader such as `ask-kboat` takes a claim's origin from the first provenance line below it, so that line has to be the claim's own reading's: a claim without one is credited to whichever reading follows it, with nothing in the text to show otherwise.
+So no edit changes which line is the first below a claim already in the note, whoever makes it and whatever else it does, a merge or a hand correction included, and a claim an edit adds has its own reading's line as the first below it.
+A writer with no reading to name therefore adds no claim; the two that name one are kboat-distill, for a source that was read, and kboat-record-dialogue, for a kept `ask-kboat` answer ([Dialogue records](#dialogue-records)).
+
 `## Observations` and `## Relations` each appear exactly once, in that order, and the `###` headings within a note are distinct.
 They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.
 
