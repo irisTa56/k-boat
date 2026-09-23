@@ -19,7 +19,8 @@ It is the agreed home for tag-drift **detection**: the write-time guard in kboat
   - This skill never touches the vault.
 - **Writes only on confirmation.** Audit and report first; apply renames, merges, relation fixes, and tag edits only after the user agrees.
   - Merging concept notes is destructive — propose, never auto-merge (see kboat-distill "Never auto-merge").
-- **No new claims.** This pass writes no observation, including one saying why a relation it adds holds: it has no reading to name in a provenance line, which kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups) requires of every claim.
+- **No new claims.** This pass writes no observation of its own, including one saying why a relation it adds holds: it has no reading to name in a provenance line, which kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups) requires of every claim.
+  - A merge it applies moves observations rather than writing them, and moves each reading's claims with their provenance line, as that section says.
 
 ## Setup
 
