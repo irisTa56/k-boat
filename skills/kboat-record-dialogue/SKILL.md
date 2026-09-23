@@ -58,13 +58,14 @@ What that policy says about sources is the one part that changes: this conversat
 
 ### 3. Propose, then write
 
-Before any write, show the user, note by note:
+Before any write, show the user the whole of it:
 
-- whether the note is created or appended to;
+- for each note, whether it is created or appended to;
 - the exact observation lines, with the provenance line after them and any `###` heading the placement owes;
 - the relations to be added, and the notes that carry them;
 - a facet tag to be minted, with its entry in `meta/Tag vocabulary`;
-- the claims step 1 corrected or dropped.
+- the claims step 1 corrected or dropped;
+- the claims step 2 found no place for — no note they belong in, and a concept too vague or broad to create — each with why, so the user can name a note, accept a concept, or let the claim go.
 
 Write only what they confirm.
 This is `memory-ingest`'s approval gate applied to these writes, and nothing more of that skill: do not create its verbatim source note, since the provenance line is the dialogue's whole record in the base.

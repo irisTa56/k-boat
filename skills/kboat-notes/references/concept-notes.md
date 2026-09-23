@@ -68,7 +68,7 @@ That source's distillation writes the claim again, `#grounded`, as its own, unde
 - Retagging it `#grounded` would put a source-grounded claim under a line that says no source was read.
 - Moving it under the source's provenance line would credit the source with the dialogue's wording, which the source may not share.
 
-Removing the dialogue copy once a grounded one sits in the note is the reader's call, made by hand or through `kboat-curate` on confirmation, and never a distillation pass's.
+Removing the dialogue copy once a grounded one sits in the note is the reader's call, made by hand, and never a distillation pass's.
 
 ## Math and formula notation
 
