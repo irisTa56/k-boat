@@ -38,12 +38,9 @@ A reading that opens a new group on a flat note is what makes that note grouped,
 That append is two edits, so a failure or a crash between them can leave the note in the third state — a `###` group with claims still bare above the first heading.
 It is not a shape the format admits, and nothing self-heals it on its own: the next append to that note is what heads those claims, which is why kboat-distill owes the heading on any append to a note in it and not only on the one that opens a group.
 
-The provenance lines say which reading each claim came from only while every claim arrives with its own reading's line, so a writer with no reading to name writes no claim.
-A reader such as `ask-kboat` takes a claim's origin from the first provenance line below it, and a claim added without its own is credited to whichever reading follows it, with nothing in the text to show otherwise.
-Two writers name a new reading: kboat-distill, for a source that was read, and kboat-record-dialogue, for a kept `ask-kboat` answer ([Dialogue records](#dialogue-records)).
-A merge of two concept notes writes no new claim: it moves each reading's claims, as they stand, together with the provenance line below them, and places that unit in the surviving note by the same judgement a reading gets.
-Everything else that edits a concept note, kboat-curate included, adds no claim: it writes relations, tags, and titles, and at most a provenance line kboat-distill's run summary reported as not landed, which names a source that was read and brings no claim with it.
-Such a line goes at a boundary between readings, directly after another provenance line, and never between a claim and the provenance line below it, where it would take that claim from its reading.
+A reader such as `ask-kboat` takes a claim's origin from the first provenance line below it, so that line has to be the claim's own reading's: a claim without one is credited to whichever reading follows it, with nothing in the text to show otherwise.
+So no edit changes which line is the first below a claim already in the note, whoever makes it and whatever else it does, a merge or a hand correction included, and a claim an edit adds has its own reading's line as the first below it.
+A writer with no reading to name therefore adds no claim; the two that name one are kboat-distill, for a source that was read, and kboat-record-dialogue, for a kept `ask-kboat` answer ([Dialogue records](#dialogue-records)).
 
 `## Observations` and `## Relations` each appear exactly once, in that order, and the `###` headings within a note are distinct.
 They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.

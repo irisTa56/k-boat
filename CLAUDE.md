@@ -78,7 +78,7 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 - The daily pick is a routine step rather than a disposition, and reads its signals read-only.
 - A concept note's `## Observations` divides into per-reading groups; which group a claim joins is the writer's judgement, never the tool's.
 - Concept-to-source provenance is an observation carrying the URL, concept-to-concept a wikilink.
-- Every claim is followed by its own reading's provenance line, so only distillation and a dialogue record write new claims, and a merge moves each reading's claims with their line.
+- The first provenance line below a claim is its own reading's, so only distillation and a dialogue record add claims.
 - Concept facet tags come from a controlled vocabulary, enforced at write time and swept on demand.
 - Kindle books and GitHub repos are parallel simpler kinds, with no notebook.
 - A Base filters only over always-present values, never `!=` over one that may be missing and never a date-emptiness test (`kboat-vault-conventions`).
