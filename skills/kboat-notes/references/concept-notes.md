@@ -14,6 +14,7 @@ Provenance back to a source is different: the source note lives in the vault, a 
 Record provenance instead as an observation carrying the source note's `url` as the note holds it, e.g. `- [source] <title> — <url>`.
 This is root-independent, stable, and greppable.
 Tag each distilled observation by grounding — `#grounded` for claims the source supports, `#dialogue` for external knowledge the reading-time conversation surfaced — so a chat-derived claim is never mistaken for a source claim (kboat-distill defines how the two are sorted and verified).
+A claim can also reach the base with no source read at all, from an `ask-kboat` answer the reader chose to keep — [Dialogue records](#dialogue-records) below.
 A note's frontmatter facet tags (the snake_case categorisation tags, distinct from the per-observation grounding tags above) come from a controlled vocabulary that lives in the knowledge base itself, as the `meta/Tag vocabulary` note (`memory://k-boat-knowledge/meta/tag-vocabulary`), listing the canonical tags and the variant-to-canonical aliases to avoid.
 It is data, not skill config — the right tags depend on what the base accumulates — so kboat-distill reads it when tagging: reuse a canonical tag where one fits, and mint a new one only when none does, recording it in that note in the same change.
 
@@ -50,6 +51,24 @@ A `###` heading or an anchor inside a fenced code block is not one, because it i
 
 It answers that and nothing else, and in particular it is not a gate on whether the note can be written to.
 `edit_note` resolves its own anchors and hands back a failure it cannot resolve as part of its own result, which kboat-distill reads and records; a note whose anchors a hand edit broke still takes an insert in most shapes, so refusing one here would only lose claims that would have landed.
+
+## Dialogue records
+
+An `ask-kboat` answer can carry general knowledge the base lacked, and the reader may decide to keep it; `kboat-record-dialogue` is the path that writes it.
+Such a claim was never read from anything, so nothing about it can be source-grounded, and the note has to say so where it is read.
+
+- **Its provenance line** is the one form that names no source: `- [source] ask-kboat dialogue in Claude Code, from general knowledge, not a read source — YYYY-MM-DD`, dated the day of the conversation.
+  - It carries no URL because there is none, and says "not a read source" so that no reader of the note, `ask-kboat` included, takes the claims above it for something a source stated.
+- **Every claim it covers is `#dialogue`**, whatever the recorder's confidence in it: `#grounded` says a source supports the claim, and here no source was read.
+- **It is a reading** for [Reading groups](#reading-groups): its claims are followed by its own provenance line, and whether they deepen an insight the note carries or open a new one is the same judgement a source's claims get.
+
+A claim a dialogue record holds can later be grounded by a source that is actually read.
+That source's distillation writes the claim again, `#grounded`, as its own, under its own provenance — kboat-distill's replay rule for a claim another reading holds only as `#dialogue` — and the dialogue record's claim stays exactly as it is.
+
+- Retagging it `#grounded` would put a source-grounded claim under a line that says no source was read.
+- Moving it under the source's provenance line would credit the source with the dialogue's wording, which the source may not share.
+
+Removing the dialogue copy once a grounded one sits in the note is the reader's call, made by hand, and never a distillation pass's.
 
 ## Math and formula notation
 
