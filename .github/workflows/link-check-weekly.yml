@@ -3,12 +3,10 @@ name: Link check (weekly)
 # The full networked lychee run: every link in the repo, hitting the network,
 # same scope as `mise run check:links` locally. Kept out of ci.yml on purpose
 # (mirroring why `check:links` is kept out of `qa:**`) -- it is too slow and
-# too flaky on external hosts to gate a PR. Runs weekly instead, and
-# non-blocking (`fail: false`): never a red merge button over a link some
-# third-party site took down. `jobSummary` (the action's default) still writes
-# the results to this run's GitHub Actions summary page -- there is no active
-# notification (no failing status, no email) beyond that page, so a broken
-# link surfaces only to someone who opens the run.
+# too flaky on external hosts to gate a PR. Runs weekly instead, where a
+# failure blocks no merge: a broken link fails the run, and GitHub notifies the
+# user who last changed the `cron` line below. `jobSummary` (the action's
+# default) writes the results to the run's summary page.
 
 on:
   schedule:
@@ -22,11 +20,10 @@ jobs:
   link-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Shared settings come from `lychee.toml`. The action rather than `mise run
-      # check:links`: it already supplies the GitHub token, the job summary and a
-      # run that does not fail, so this one workflow staying different costs little.
-      - uses: lycheeverse/lychee-action@v2.9.0
+      # check:links`: it already supplies the GitHub token and the job summary,
+      # so this one workflow staying different costs little.
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --verbose --no-progress --config lychee.toml .
-          fail: false

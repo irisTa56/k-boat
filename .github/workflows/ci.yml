@@ -11,11 +11,11 @@ name: CI
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
-# the `ubuntu-latest` runner image; `actions/checkout@v7` and
-# `gitleaks/gitleaks-action@v3`, both floating major-version tags; the mise
-# binary, which `mise-action` resolves at run time since no step sets its
-# `version` input; the TruffleHog image, which its action pulls at `latest` for
-# the same reason; and every tool mise.toml tracks at `latest`, which each run
+# the `ubuntu-latest` runner image; the mise binary, which `mise-action`
+# resolves at run time since no step sets its `version` input; the TruffleHog
+# image, which its action pulls at `latest` for the same reason; the gitleaks
+# binary, which `GITLEAKS_VERSION: latest` below resolves at run time; and
+# every tool mise.toml tracks at `latest`, which each run
 # installs afresh (see `cache: false` below). `uv.lock` keeps dependency
 # resolution reproducible regardless (`UV_LOCKED` below). GitHub disables
 # a `schedule` trigger after 60 days with no repository activity, so this
@@ -52,8 +52,8 @@ jobs:
   python-qa:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           # mise resolves a `latest` tool to a version already installed, and the
           # action's cache key hashes the config rather than the date, so a
@@ -65,8 +65,8 @@ jobs:
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false # as in `python-qa`
       - run: mise run qa:md
@@ -74,21 +74,30 @@ jobs:
   shell-qa:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false # as in `python-qa`
       - run: mise run qa:sh
 
+  # On a pull request the action reads the PR's commits from one unpaginated API
+  # page, so it scans only the first 30 (gitleaks/gitleaks-action#187), and it
+  # scans `--no-merges --first-parent`, so it skips what a merge commit brings
+  # in (gitleaks/gitleaks-action#236).
   secret-scan-gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history so gitleaks can scan the PR's commits
-      - uses: gitleaks/gitleaks-action@v3
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unset, the action installs the gitleaks release hard-coded in it.
+          GITLEAKS_VERSION: latest
+          # Commenting on a PR needs `pull-requests: write`, which this
+          # workflow does not grant.
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   # The CI counterpart of `secrets:push-scan`, as `secret-scan-gitleaks` is of
   # `secrets:commit-scan`. Unlike the push scan it verifies candidates with their
@@ -100,19 +109,18 @@ jobs:
   secret-scan-trufflehog:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the action walks from the base commit to the head
-      # Pinned to a full version: the action publishes no floating major tag.
-      - uses: trufflesecurity/trufflehog@v3.97.9
+      - uses: trufflesecurity/trufflehog@4dd8831c5f12599465d4d45c3c447b4018a34c85 # v3.97.9
         with:
           extra_args: --results=verified,unknown --fail-on-scan-errors
 
   link-check-offline:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false # as in `python-qa`
       - run: mise run qa:links:offline
@@ -124,8 +132,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false # as in `python-qa`
       - run: mise run shared-tasks:check
@@ -137,9 +145,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v7
-      # Pinned to a full version: setup-uv publishes no floating major tag.
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: false
           # uv installs only the CPython releases it knew of when built, and
