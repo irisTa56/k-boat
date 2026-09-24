@@ -11,12 +11,14 @@ shellcheck = "latest"
 shfmt = "latest"
 uv = "latest"
 
+# Defaults only: a machine's real values go in a gitignored `mise.local.toml`
+# `[env]`, which outranks this file in the same directory. No secret goes in
+# either (CLAUDE.md, "Environment").
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
 # Where distilled concept notes live (a Basic Memory project root).
-# Defaults to a subdir of the vault; .env overrides it (for K-Boat, a Git-managed directory).
+# Defaults to a subdir of the vault (for K-Boat, a Git-managed directory instead).
 KBOAT_KNOWLEDGE_PATH = "~/Documents/K-Boat/Knowledge"
-_.file = ".env"
 # One workspace venv at the root: `uv sync` installs every workspace member
 # editable plus the shared dev tooling, so each package's console scripts are
 # callable bare.

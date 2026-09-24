@@ -6,6 +6,8 @@ __pycache__/
 .claude/worktrees/
 .DS_Store
 .env
+# A machine's real `[env]` values (mise.toml carries only defaults).
+mise.local.toml
 .venv/
 *.pyc
 .pytest_cache/

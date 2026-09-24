@@ -24,7 +24,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 ## Prerequisites
 
-- `OBSIDIAN_VAULT_PATH` must be set (it comes from the workspace `.env`, loaded by `eval "$(mise env)"`).
+- `OBSIDIAN_VAULT_PATH` must be set (`eval "$(mise env)"` loads it).
   - A keep becomes a `Feeds/<slug>.md` note there.
   - If the variable is unset, `forum-remind` exits non-zero — stop and report rather than judging candidates you cannot deliver.
 - Resolve the criteria file once with `feed-filter selection-path`, which prints `{path}`: `prompts/selection.md`, or wherever `FEED_FILTER_SELECTION` points.

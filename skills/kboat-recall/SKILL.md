@@ -26,7 +26,7 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 
 ## Procedure
 
-1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set from `.env` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
+1. Load the env with `eval "$(mise env)"` so `$OBSIDIAN_VAULT_PATH` is set (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
    - Read each state in scope with one call, carrying only the fields the steps below use: `kboat-note list --type source --flagged <state> --field title --field topics --field summary --field url --field source_type --field reading_link --field notebooklm_id --field gemini_url --field blocked`.
      - `active` has no flag to ask for, so its call drops `--flagged` and adds `--field distill --field keep --field dismiss`, and step 2 keeps the notes where all four flags are false; it reads every source, so make it only where the scope names `active`.
    - Read the DLQ for the separate mention with `kboat-note list --type source --flagged blocked --field title --field url`.

@@ -21,7 +21,7 @@ Two workspace members under `packages/`:
 - **`kboat`** — see [packages/kboat/CLAUDE.md](packages/kboat/CLAUDE.md).
 - **feed-filter** — the upstream triage stage, which writes into the same vault. See [packages/feed-filter/CLAUDE.md](packages/feed-filter/CLAUDE.md).
 
-Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
+Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only defaults):
 
 - `OBSIDIAN_VAULT_PATH` — an iCloud Obsidian vault, the reading side.
   - `kboat.schema` declares where the vault keeps things, and `kboat-vault-conventions` says what a missing one means and how far a run may proceed without it.
@@ -34,10 +34,9 @@ Two roots, both read from `.env` (the values in `mise.toml` are only defaults):
 ## Environment
 
 - Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke it bare.
-  - It loads `.env` over `mise.toml`'s defaults and puts the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
+  - It loads `mise.local.toml` over `mise.toml`'s defaults and puts the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
   - Re-run it per block — the Bash tool keeps no state.
-  - `mise env` prints the whole of `.env`, secrets included, so `eval` it and never read its output.
-    - To inspect the environment, filter to the one variable you need: `mise env | grep '^export PATH='`.
+- A secret never goes into mise's environment, so `mise env` prints none; a command that needs one gets it from a secret manager wrapping that command.
 - Run Python itself as `.venv/bin/python` from the repo root, never as a bare `python3`.
   - Only the workspace venv carries `kboat`, `feed_filter`, and `yaml`; a bare `python3` resolves by `PATH` order and lands on an interpreter without them.
 

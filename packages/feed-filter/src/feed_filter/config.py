@@ -74,12 +74,12 @@ ENV_DB = "FEED_FILTER_DB"
 ENV_SITES = "FEED_FILTER_SITES"
 ENV_SELECTION = "FEED_FILTER_SELECTION"
 
-# Exa API key for the query gather. Read from the workspace `.env` via mise, like
-# the vault path — a secret, never written to sites.toml or any emitted JSON.
+# Exa API key for the query gather — a secret, never written to sites.toml or any
+# emitted JSON. How it is supplied is the root CLAUDE.md's "Environment".
 ENV_EXA_KEY = "EXA_API_KEY"
 
 # The shared Obsidian vault kept entries are written into (as `Feeds/` notes).
-# Read from the workspace `.env` via mise; a member never has its own default.
+# Set by the workspace environment (mise); a member never has its own default.
 ENV_VAULT = "OBSIDIAN_VAULT_PATH"
 
 
@@ -123,7 +123,7 @@ def env_exa_key() -> str:
 def vault_path() -> Path:
     """The Obsidian vault root that kept entries are written into.
 
-    From ``OBSIDIAN_VAULT_PATH`` (the workspace ``.env``); unlike the local-state
+    From ``OBSIDIAN_VAULT_PATH`` (the workspace environment); unlike the local-state
     paths above there is no package-relative default — the vault is a shared,
     absolute location. Raises ``MissingEnvError`` when unset, which the CLI maps
     to a reported non-zero exit rather than a traceback.

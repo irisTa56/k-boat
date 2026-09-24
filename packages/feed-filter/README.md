@@ -20,9 +20,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the module-by-module map and the beha
 
 ## Prerequisites
 
-- `OBSIDIAN_VAULT_PATH` set (via the workspace `.env`) to the Obsidian vault; kept entries are written as `Feeds/` notes under it. An unset vault path makes a write fail loudly rather than silently dropping kept entries.
+- `OBSIDIAN_VAULT_PATH` set (by the workspace environment; see the root README's Setup) to the Obsidian vault; kept entries are written as `Feeds/` notes under it. An unset vault path makes a write fail loudly rather than silently dropping kept entries.
 - `mise` for the toolchain and tasks.
-- `EXA_API_KEY` (workspace `.env`) for the query gather only. The feed and forum paths need no key; without one, `query-new` reports the missing key rather than failing.
+- `EXA_API_KEY` in the environment of a `query-new` call, for the query gather only; export it for that command (from a secret manager, say) rather than into mise's environment. The feed and forum paths need no key; without one, `query-new` reports the missing key rather than failing.
 
 ## Setup
 
@@ -170,7 +170,7 @@ Guidance:
 
 - Schedule it on an **off-:00 minute** (e.g. `17 * * * *` or a few times a day) to avoid the top-of-hour congestion when many routines fire at once.
 - The task starts fresh each run with no memory of prior runs; the seen-store (`feed-filter.db`) is what carries state across runs, so the prompt only needs to point at this repo and the run skill.
-- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (loaded from the workspace `.env`); an unset vault path surfaces as a non-zero exit, not a silent drop.
+- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (`eval "$(mise env)"` loads it); an unset vault path surfaces as a non-zero exit, not a silent drop.
 - A scheduled task runs only while the Claude app is open; if the app was closed when the task was due, it runs on next launch.
 
 ## Failure and self-heal behavior
