@@ -94,8 +94,9 @@ jobs:
   # `secrets:commit-scan`. Unlike the push scan it verifies candidates with their
   # providers: by the time this runs the commits are already on GitHub, and
   # `--results` keeps an unverified candidate from failing the job.
-  # `--fail-on-scan-errors` because a base or head commit trufflehog cannot
-  # resolve (a re-run after a force-push, say) otherwise scans nothing and passes.
+  # `--fail-on-scan-errors` because a commit trufflehog cannot resolve otherwise
+  # scans nothing and passes: a force-push to `main`, which only a ruleset bypass
+  # allows, leaves the push run's `event.before` out of the checkout.
   trufflehog:
     runs-on: ubuntu-latest
     steps:
