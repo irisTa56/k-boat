@@ -6,8 +6,8 @@ name: CI
 # through its `qa:**` glob and CI does not: a new family needs its own job here,
 # and a place in the main ruleset's required checks, before a merge waits on it.
 # `secrets:commit-scan`, which `pre-commit` names outside that glob, has no job,
-# since it scans staged changes and `secret-scan` below scans a pull request's
-# commits instead.
+# since it scans staged changes and `secret-scan-gitleaks` below scans a pull
+# request's commits instead.
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
@@ -80,7 +80,7 @@ jobs:
           cache: false # as in `python-qa`
       - run: mise run qa:sh
 
-  secret-scan:
+  secret-scan-gitleaks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -90,14 +90,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # The CI counterpart of `secrets:push-scan`, as `secret-scan` is of
+  # The CI counterpart of `secrets:push-scan`, as `secret-scan-gitleaks` is of
   # `secrets:commit-scan`. Unlike the push scan it verifies candidates with their
   # providers: by the time this runs the commits are already on GitHub, and
   # `--results` keeps an unverified candidate from failing the job.
   # `--fail-on-scan-errors` because a commit trufflehog cannot resolve otherwise
   # scans nothing and passes: a force-push to `main`, which only a ruleset bypass
   # allows, leaves the push run's `event.before` out of the checkout.
-  trufflehog:
+  secret-scan-trufflehog:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
