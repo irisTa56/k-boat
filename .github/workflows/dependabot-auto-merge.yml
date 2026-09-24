@@ -20,7 +20,8 @@ name: Dependabot auto-merge
 # here is the only signal there is.
 #
 # PRECONDITION: this is only safe once the main ruleset requires every blocking
-# CI check (python-qa / markdown-lint / shell-qa / secret-scan / link-check-offline) — that
+# CI check (python-qa / markdown-lint / shell-qa / secret-scan / trufflehog /
+# link-check-offline) — that
 # requirement is what makes `--auto` wait for CI. Keep the repo's "Allow
 # auto-merge" setting OFF until the ruleset covers all of them; with it off,
 # `gh pr merge --auto` fails loudly here rather than merging a PR before its
