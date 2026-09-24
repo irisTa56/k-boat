@@ -12,9 +12,8 @@ shfmt = "latest"
 uv = "latest"
 
 # Defaults only: a machine's real values go in a gitignored `mise.local.toml`
-# `[env]`, which outranks this file in the same directory. Secrets stay out of
-# both — a command that needs one gets it from a secret manager wrapping that
-# command, so `mise env` never prints one.
+# `[env]`, which outranks this file in the same directory. No secret goes in
+# either (CLAUDE.md, "Environment").
 [env]
 OBSIDIAN_VAULT_PATH = "~/Documents/K-Boat"
 # Where distilled concept notes live (a Basic Memory project root).

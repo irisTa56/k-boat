@@ -74,9 +74,8 @@ ENV_DB = "FEED_FILTER_DB"
 ENV_SITES = "FEED_FILTER_SITES"
 ENV_SELECTION = "FEED_FILTER_SELECTION"
 
-# Exa API key for the query gather. Unlike the vault path it never passes through
-# mise: a secret, exported only for the one command that needs it, and never
-# written to sites.toml or any emitted JSON.
+# Exa API key for the query gather — a secret, never written to sites.toml or any
+# emitted JSON. How it is supplied is the root CLAUDE.md's "Environment".
 ENV_EXA_KEY = "EXA_API_KEY"
 
 # The shared Obsidian vault kept entries are written into (as `Feeds/` notes).
