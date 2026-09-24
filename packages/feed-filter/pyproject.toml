@@ -16,7 +16,7 @@ dependencies = [
     # OS trust store TLS verification; see fetch.build_client for the why.
     "truststore>=0.10",
     "feedparser>=6.0.14",
-    "selectolax>=0.4.10",
+    "selectolax>=0.4.12",
     "tomlkit>=0.15",
     # The shared note core: feed-filter writes Feeds/ notes through kboat.write /
     # kboat.schema rather than reimplementing frontmatter serialization. Resolved
