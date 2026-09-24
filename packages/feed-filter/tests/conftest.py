@@ -55,7 +55,7 @@ def isolate_lock_dir(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]
 def isolate_env_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     """Never let a test see the real ``OBSIDIAN_VAULT_PATH`` or ``EXA_API_KEY``.
 
-    The workspace ``mise.local.toml`` exports it (the iCloud vault) into the
+    mise exports it (the iCloud vault) into the
     environment the test suite runs under, so without this a ``remind`` test
     would write feed notes into the real vault. Clear it by default; a test that
     needs a vault sets it to a tmp dir (``state_dir`` does), and ``vault_path()``

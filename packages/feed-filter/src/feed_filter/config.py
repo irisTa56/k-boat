@@ -79,7 +79,7 @@ ENV_SELECTION = "FEED_FILTER_SELECTION"
 ENV_EXA_KEY = "EXA_API_KEY"
 
 # The shared Obsidian vault kept entries are written into (as `Feeds/` notes).
-# Read from the workspace `mise.local.toml` via mise; a member never has its own default.
+# Set by the workspace environment (mise); a member never has its own default.
 ENV_VAULT = "OBSIDIAN_VAULT_PATH"
 
 
@@ -123,7 +123,7 @@ def env_exa_key() -> str:
 def vault_path() -> Path:
     """The Obsidian vault root that kept entries are written into.
 
-    From ``OBSIDIAN_VAULT_PATH`` (the workspace ``mise.local.toml``); unlike the local-state
+    From ``OBSIDIAN_VAULT_PATH`` (the workspace environment); unlike the local-state
     paths above there is no package-relative default — the vault is a shared,
     absolute location. Raises ``MissingEnvError`` when unset, which the CLI maps
     to a reported non-zero exit rather than a traceback.
