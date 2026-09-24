@@ -13,10 +13,11 @@ Deterministic logic (fetch, parse, discover, canonicalize, seen-store, vault wri
 ## Environment gotchas
 
 - The routine MUST run locally. The vault is the local iCloud folder, so cloud routines cannot be used; the Mac must be awake and the Claude runtime idle at fire time.
-- `OBSIDIAN_VAULT_PATH` must be set (from the workspace `.env`); kept entries become `Feeds/` notes under it, and an unset vault path fails a write loudly rather than silently dropping it.
+- `OBSIDIAN_VAULT_PATH` must be set (from the workspace `mise.local.toml`); kept entries become `Feeds/` notes under it, and an unset vault path fails a write loudly rather than silently dropping it.
 - `feed-filter.db` (seen-store), `sites.toml` (the personal subscription list), and `prompts/selection.md` (the personal keep/drop criteria) are **gitignored local state** — personal config, never commit them. Only `prompts/selection.example.md` (an English template, overridable via `FEED_FILTER_SELECTION`) is version-controlled.
-- `EXA_API_KEY` (workspace `.env`) powers the `query-new` query gather.
-  - It is a secret: never write it into `sites.toml`, a skill, or emitted JSON.
+- `EXA_API_KEY` powers the `query-new` query gather.
+  - It is a secret: never write it into `sites.toml`, a skill, emitted JSON, or mise's environment.
+  - A `query-new` call gets it from a secret manager wrapping that one command.
   - Without it `query-new` reports the missing key per query instead of failing the run.
 - The browser ingestion path is an optional extra (`uv sync --extra browser && uv run playwright install chromium`).
   - The base install and the httpx path import no Playwright.

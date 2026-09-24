@@ -115,7 +115,7 @@ There is **no discovery** (there is no article cluster to pick) and **no cold-st
 
 6. **Confirm.** On success the output is `{site_id, kind, forum_url}` with `kind == "forum"`.
    - Tell the user the forum was registered and that keeps will be written as `Feeds/` notes in the vault (`feed_kind: forum`).
-   - Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (from the workspace `.env`).
+   - Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (`eval "$(mise env)"` loads it).
 
 A forum's per-site `selection` override is not an `add-forum` flag.
 Set it later by hand-editing the `selection = "..."` line under that forum's `[[site]]` block in `sites.toml` (the forum run honors it, replacing the Topics section for that forum only).

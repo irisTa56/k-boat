@@ -55,16 +55,16 @@ def isolate_lock_dir(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]
 def isolate_env_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     """Never let a test see the real ``OBSIDIAN_VAULT_PATH`` or ``EXA_API_KEY``.
 
-    The workspace ``.env`` exports it (the iCloud vault) into the environment the
-    test suite runs under, so without this a ``remind`` test would write feed
-    notes into the real vault. Clear it by default; a test that needs a vault
-    sets it to a tmp dir (``state_dir`` does), and ``vault_path()`` otherwise
-    raises, surfacing a test that forgot to.
+    The workspace ``mise.local.toml`` exports it (the iCloud vault) into the
+    environment the test suite runs under, so without this a ``remind`` test
+    would write feed notes into the real vault. Clear it by default; a test that
+    needs a vault sets it to a tmp dir (``state_dir`` does), and ``vault_path()``
+    otherwise raises, surfacing a test that forgot to.
 
-    ``EXA_API_KEY`` is the same hazard with worse stakes: the workspace ``.env``
-    exports a live API secret, so a test reaching the real ``exa.search`` would
-    spend real credit and could capture the key into an assertion or a failure
-    dump. Clear it here so "a test never sees the real key" is a property of the
+    ``EXA_API_KEY`` is the same hazard with worse stakes: a suite started under a
+    secret manager or from a shell that exported the live API secret would let a
+    test reaching the real ``exa.search`` spend real credit and capture the key
+    into an assertion or a failure dump. Clear it here so "a test never sees the real key" is a property of the
     harness; ``test_exa`` sets its own fake.
     """
     monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)

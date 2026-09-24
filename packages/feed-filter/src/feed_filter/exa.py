@@ -152,7 +152,7 @@ def search(client: httpx.Client, query: str, *, num_results: int) -> QueryOutcom
     """
     key = env_exa_key()
     if not key:
-        raise ExaError("EXA_API_KEY is unset — add it to the workspace .env")
+        raise ExaError("EXA_API_KEY is unset — export it for this command")
     body = {
         "query": query,
         "numResults": num_results,

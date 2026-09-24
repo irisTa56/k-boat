@@ -28,7 +28,7 @@ The trade-off is that ingest is interactive and macOS-only rather than determini
 From a reader URL take the `asin` query parameter (`https://read.amazon.co.jp/?asin=<ASIN>`); a bare ASIN is used verbatim.
 
 - This is the de-dup key.
-- Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded from `.env` by `eval "$(mise env)"` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
+- Read the vault from `$OBSIDIAN_VAULT_PATH`, loaded by `eval "$(mise env)"` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 
 ### Step 2: De-dup
 

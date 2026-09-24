@@ -24,7 +24,7 @@ It is the agreed home for tag-drift **detection**: the write-time guard in kboat
 
 ## Setup
 
-Load the env so `$KBOAT_KNOWLEDGE_PATH` is set from `.env`:
+Load the env so `$KBOAT_KNOWLEDGE_PATH` is set:
 
 ```bash
 eval "$(mise env)"
