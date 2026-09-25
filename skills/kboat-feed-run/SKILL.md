@@ -13,14 +13,13 @@ Forums are not this run's: `new-entries` skips them, and `kboat-forum-run` is th
 This is the periodic, cost-sensitive half of feed-filter's article path — the judging runs on **haiku** subagents, and the per-site/global caps, not subagent cleverness, are the primary cost bound.
 
 Run every `feed-filter` command from the repo root.
-The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
-Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
+The session already has the workspace venv on `PATH` (root [`CLAUDE.md`](../../CLAUDE.md#environment), "Environment"), so call `feed-filter` bare, each command a single Bash call.
 The routine must run **locally** — the vault is the local iCloud Obsidian folder (`OBSIDIAN_VAULT_PATH`), so a cloud run cannot write keeps into it.
 Each subcommand emits one JSON document on stdout and exits non-zero on an operational failure; parse the JSON and check the exit code.
 
 ## Prerequisites
 
-- `OBSIDIAN_VAULT_PATH` must be set (`eval "$(mise env)"` loads it).
+- `OBSIDIAN_VAULT_PATH` must be set (the session's environment carries it).
   - A keep becomes a `Feeds/<slug>.md` note there; the `Feeds/` folder is created on the first write.
   - If the variable is unset, `remind` exits non-zero — stop and report rather than judging entries you cannot deliver.
 - Resolve the criteria file once with `feed-filter selection-path`, which prints `{path}`: `prompts/selection.md`, or wherever `FEED_FILTER_SELECTION` points.
@@ -33,7 +32,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 ### Step 1: Gather
 
-Run `eval "$(mise env)" && feed-filter new-entries`.
+Run `feed-filter new-entries`.
 
 - The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
   - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap.

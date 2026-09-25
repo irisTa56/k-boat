@@ -17,8 +17,7 @@ Every Basic Memory call (`search_notes`, `write_note`, `edit_note`) must pass `p
 
 ## Run-level preamble
 
-Run `eval "$(mise env)"` at the top of every shell block here (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it loads the project environment and puts both venvs on `PATH`, so `notebooklm`, `kboat-lifecycle`, `kboat-concept`, and `$OBSIDIAN_VAULT_PATH` resolve bare.
-The Bash tool keeps no shell state between calls, so re-run it in each block.
+Call `notebooklm`, `kboat-lifecycle`, and `kboat-concept` bare, each as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 
 ### Step 1: refresh NotebookLM auth
 

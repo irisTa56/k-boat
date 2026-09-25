@@ -35,8 +35,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
 
 ## Prerequisites
 
-- Run `eval "$(mise env)"` at the top of every shell block (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
-  - Re-run it in each block — the Bash tool keeps no shell state.
+- Call `notebooklm` and the `kboat-*` CLIs bare, each as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 - `notebooklm auth refresh` must have run; the routine's single refresh covers this step.
   - If auth is unusable, stop and report rather than sweeping half the set.
     - A partial sweep would report healthy for notebooks it never reached.
