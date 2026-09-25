@@ -35,6 +35,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
 
 - A SessionStart hook in `.claude/settings.json` writes `mise env`'s output to `CLAUDE_ENV_FILE`, so every Bash call already has the project environment: invoke a project CLI bare, as a single command.
   - That environment is `mise.local.toml` over `mise.toml`'s defaults, with the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
+  - The hook runs only when a session starts, resumes, forks, clears or compacts, so a change to `mise.toml` or `mise.local.toml` does not reach Bash calls before one of those; a new session is the sure way to pick it up.
   - Claude Code matches each subcommand of a compound command against the allow rules and none matches `eval "$(mise env)"`, so no rule approves a prefixed call, and auto mode leaves it to the classifier, which can deny it.
   - No rule approves a command that expands a `$VAR` either, so give a vault path to a command as the vault's absolute path written out, never as `$OBSIDIAN_VAULT_PATH/…`.
     - `kboat-doctor` and `kboat-queue list` print that absolute path as `vault`.
