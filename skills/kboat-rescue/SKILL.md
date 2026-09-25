@@ -81,7 +81,7 @@ Navigate the user's Chrome to the note's `url`.
 If a CAPTCHA / "Human Verification" / sign-in page appears, ask the user to clear it in their browser, then continue once the real content loads.
 If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
 
-- **PDF**: save it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf`, only where Scope's check found no file there that verifies and none iCloud has evicted.
+- **PDF**: save it to `<vault>/PDFs/<slug>.pdf`, only where Scope's check found no file there that verifies and none iCloud has evicted.
   - **Preferred capture — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host (for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`), then run in-page JavaScript that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob.
     - Chrome writes it to `~/Downloads`; move it into the vault.
     - Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable.
@@ -94,7 +94,7 @@ If the page is **gone** instead of walled — a 404, a removed or retracted arti
 
 ### Step 4: Manual fallback
 
-If Claude in Chrome is unavailable or cannot get past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` under the same check as step 3, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
+If Claude in Chrome is unavailable or cannot get past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `<vault>/PDFs/<slug>.pdf` under the same check as step 3, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
 
 ### Step 5: Finish ingestion
 
@@ -105,7 +105,7 @@ Any status but `ready` surviving that is the notebook-not-built ending in step 6
 kboat-notes owns the full status policy.
 The add differs by branch:
 
-- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
+- **PDF**: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
   - No `--title`: NotebookLM resets a file source's title to the filename, and a PDF resolves by `type: pdf`.
 - **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
   - A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.

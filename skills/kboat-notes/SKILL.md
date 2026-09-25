@@ -28,6 +28,8 @@ Where this skill says "source" it means a `Sources/*.md` note; the Kindle and re
 - The session already carries the project environment (root `CLAUDE.md`, "Environment"), so invoke the CLIs bare, each as a single command — `notebooklm`, `kboat-lifecycle`, `kboat-repos`.
   - Both the workspace venv (the `kboat-*` scripts) and the NotebookLM CLI's own venv are on `PATH`, and the CLIs read `OBSIDIAN_VAULT_PATH` themselves (no `.venv/bin/` prefix, no `--vault` flag).
   - A bare CLI failing with `command not found` means the environment was not loaded; that section says what to do.
+- Where a command takes a path in the vault, `<vault>` below stands for the vault's absolute path written out, as the `vault` key of `kboat-doctor` or `kboat-queue list` prints it.
+  - A command that expands `$OBSIDIAN_VAULT_PATH` is not auto-approved (the same section), and an unattended run then stops at it.
 - When parsing `--json` output, pass the global `--quiet` flag (`notebooklm --quiet … --json`): some subcommands (e.g. `source list`) otherwise print status to stdout, where it corrupts the JSON.
   - **`--quiet` reaches the CLI's own output and not the library beneath it**, which writes to stderr — an `UnknownTypeWarning` naming a source kind the installed version does not know, or an `ERROR … rpc_code=…` line ahead of a failure.
     - The Bash tool merges the two streams, so an agent deciding whether a call succeeded meets that text first, and a warning naming a version problem reads like a failure.
