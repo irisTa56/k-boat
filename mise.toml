@@ -55,16 +55,18 @@ uv sync --project tools/notebooklm --no-active
 """
 
 # `secrets:commit-scan` (per commit, gitleaks), `secrets:push-scan` (per push,
-# trufflehog) and `shared-tasks:check` come from dotfiles' shared task library,
+# trufflehog), `link-check:staged` (per commit, lychee over the network) and
+# `shared-tasks:check` come from dotfiles' shared task library,
 # whose `tasks/README.md` is what to read before touching this: why `ref` is a
 # full sha on its `main`, and what an include that fails to load takes with it.
 # `shared-tasks:check` in CI says when the tasks on `main` differ from the pin's.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=f24b169316ddfded633ef4adc3d7ffc0aa217b9f",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=3c6309ba3e92185238e4908b30f5569872b495ae",
 ]
 
-# Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit.
+# Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit;
+# `link-check:staged` requests only the links of the files a commit stages.
 # Shared settings come from `lychee.toml`.
 [tasks."check:links"]
 description = "Check links in the repo"
@@ -86,11 +88,12 @@ description = "Check the authentication status"
 run = "notebooklm auth check --test --json"
 
 # `**`, not `*`: mise's `*` matches a single task segment, so `qa:*` left
-# `qa:links:offline` ungated. `secrets:commit-scan` is named on its own because it
-# is a shared task (see `[task_config]`) and so sits outside `qa:`.
+# `qa:links:offline` ungated. `secrets:commit-scan` and `link-check:staged` are
+# named on their own because they are shared tasks (see `[task_config]`) and so
+# sit outside `qa:`.
 [tasks.pre-commit]
 description = "Run all pre-commit checks"
-depends = ["qa:**", "secrets:commit-scan"]
+depends = ["qa:**", "secrets:commit-scan", "link-check:staged"]
 
 # Two commands, because `rumdl` cannot make the second check -- the house rule
 # and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
