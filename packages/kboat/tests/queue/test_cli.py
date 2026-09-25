@@ -284,3 +284,20 @@ def test_remove_that_cannot_delete_reports_the_failure_with_no_record(
     assert captured.out == ""
     assert captured.err.startswith("remove failed: ")
     assert (q / "broken.md").is_dir()
+
+
+def test_remove_that_cannot_look_for_the_stub_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A capture name of 248 bytes or more puts its `.icloud` sibling past the
+    # 255-byte limit, so the stub cannot be asked about. A null here would tell
+    # ingest nothing was stranded.
+    q = _queue(tmp_path)
+    name = "k" * 247 + ".md"
+    (q / name).write_text("[ok](https://example.com)\n", encoding="utf-8")
+    code, out = _remove(tmp_path, f"Queue/{name}", capsys)
+    assert code == 0
+    report = json.loads(out)
+    assert report["status"] == "removed"
+    assert report["stranded"].startswith("unknown: ")
+    assert not (q / name).exists()
