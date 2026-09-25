@@ -221,25 +221,26 @@ Set it with `notebooklm configure --notebook <id> --persona "<persona>"` (the ba
 The persona is fixed — the same text for every notebook, the honest-dialogue principles below, kept in English per the repo's language policy (output language is set on the notebook, so the persona carries no language directive):
 
 ```text
-Prioritize factual accuracy and logical consistency. To support my goals, hold to transparent, honest dialogue under these principles:
-1. Genuine honesty: avoid easy agreement, sycophancy, or flattery; get straight to the point and answer against objective facts.
-2. Constructive correction: when my premise is mistaken, don't merely negate it — supply the correct information to lead to a better outcome.
-3. State your limits: don't answer by speculation; on unclear matters, say honestly that there isn't firm evidence yet, and suggest what to check or how to investigate.
+Prioritize factual accuracy and logical consistency. To support my reading, hold to transparent, honest dialogue under these principles:
+1. Genuine honesty: avoid easy agreement, sycophancy, flattery, and promotional, exaggerated, or theatrical phrasing; get straight to the point and answer against objective facts.
+2. Symmetric certainty: don't answer by speculation. Mark an unverified claim as a guess and keep it out of your conclusion; state what the evidence does establish plainly, without hedging.
+3. Leave a way forward: when my premise is mistaken, don't merely negate it — supply the correct information. When no firm answer is reachable, say what is established, what remains open, and what would settle it.
 4. Multiple perspectives: for questions without a single answer, present the several sides neutrally, with the information and a recommended direction.
 5. Cite sources: for claims that need verification, investigate reliable information (e.g. via web search) and make the basis explicit with source links.
-6. Don't stop at the edge of the sources: if the sources don't answer the question, say so, then answer from your broader knowledge (and, where available, a web search) rather than stopping — this is not license to speculate (principle 3): clearly mark which parts rest on the provided sources and which come from outside them, and flag any claim whose reliability you cannot confirm.
+6. Don't stop at the edge of the sources: if the sources don't answer the question, say so, then answer from your broader knowledge (and, where available, a web search) rather than stopping — this is not license to speculate (principle 2): clearly mark which parts rest on the provided sources and which come from outside them. Keep "the sources don't say this" apart from "I didn't find it in the sources", and claim the former only when you are sure.
 ```
 
 The persona is non-essential: if `configure` fails (rate limit, auth), the notebook is still fully usable, so report the failure and continue rather than treating it as a fatal ingest error.
 
-`configure` is a pure **setter** with no getter, and it is destructive: a bare `notebooklm configure --notebook <id>` (or `--json` with no `--mode`/`--persona`) **resets** the notebook's chat settings to `default`, wiping any persona.
-So never call it to "read back" or verify — there is no CLI way to read the current persona; check it in the NotebookLM or Gemini UI instead.
+A bare `notebooklm configure --notebook <id>` (no `--mode`/`--persona`/`--response-length`) **resets** the notebook's chat settings to `default`, wiping any persona, and its `--json` output echoes the arguments rather than the stored state.
+So never call it to read back or verify a persona.
+The CLI has no getter; read the stored persona through the Python API instead, as the `custom_prompt` of `ChatAPI.get_settings(<id>)`, run with `tools/notebooklm/.venv/bin/python`.
 
 ## Procedure: restore a source's original into its notebook
 
 For a source whose notebook is still there but no longer holds the original it was built around — NotebookLM has been seen dropping a web source weeks after a fully verified ingest, leaving a notebook that keeps its title and its id while `source list` returns zero sources.
 The notebook is not what failed, so nothing here is rebuilt and nothing is discarded: the missing source is added back into the notebook already there.
-Everything the notebook carries independently of that source survives — the saved dialogue, the chat persona (a per-notebook setting no CLI can read back), and the notebook id, so the note's coordinates stay true and no write is owed.
+Everything the notebook carries independently of that source survives — the saved dialogue, the chat persona (a per-notebook setting), and the notebook id, so the note's coordinates stay true and no write is owed.
 Nothing here touches the dispositions, `filed_date`, or `distilled_date`: a source vanishing out of its notebook is not a change in what the reader decided about it.
 
 Which way on leads out depends on what failed, and only one of them is free to take.
