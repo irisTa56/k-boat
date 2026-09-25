@@ -29,3 +29,5 @@ htmlcov/
 # mise resolves external QA tools at `latest`; the lockfile is not pinned, so a
 # locally-generated one is never committed.
 mise.lock
+# lychee's request cache, written by the shared `link-check:staged` task.
+.lycheecache
