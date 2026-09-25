@@ -7,7 +7,9 @@ name: CI
 # and a place in the main ruleset's required checks, before a merge waits on it.
 # `secrets:commit-scan`, which `pre-commit` names outside that glob, has no job,
 # since it scans staged changes and `secret-scan-gitleaks` below scans a pull
-# request's commits instead.
+# request's commits instead. Nor has `link-check:staged`, named there too: it
+# requests the links of staged files over the network, and a third-party host
+# should not gate a PR (link-check-weekly.yml runs every link instead).
 #
 # The weekly schedule re-runs this same workflow so a drift in something no PR
 # exercises surfaces even during a quiet week with no open PRs. Concretely:
