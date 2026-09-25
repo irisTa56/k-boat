@@ -170,7 +170,7 @@ Guidance:
 
 - Schedule it on an **off-:00 minute** (e.g. `17 * * * *` or a few times a day) to avoid the top-of-hour congestion when many routines fire at once.
 - The task starts fresh each run with no memory of prior runs; the seen-store (`feed-filter.db`) is what carries state across runs, so the prompt only needs to point at this repo and the run skill.
-- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (`eval "$(mise env)"` loads it); an unset vault path surfaces as a non-zero exit, not a silent drop.
+- Ensure `OBSIDIAN_VAULT_PATH` is set in the task's environment (the project's SessionStart hook loads it into the task's session; see the root [`CLAUDE.md`](../../CLAUDE.md#environment), "Environment"); an unset vault path surfaces as a non-zero exit, not a silent drop.
 - A scheduled task runs only while the Claude app is open; if the app was closed when the task was due, it runs on next launch.
 
 ## Failure and self-heal behavior
