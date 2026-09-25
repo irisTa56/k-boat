@@ -72,9 +72,8 @@ So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a r
     - That is the file-before-placeholder precedence the writers apply when they claim a name, asked of the reporting side by `kboat.io_utils.evictions` so one rule covers both.
     - It has a second half, and skipping the pair is only safe with it: a writer that renames or unlinks the file makes that stub a lone placeholder, which fails `icloud_notes` and stops the routine every day out of a report that never mentioned it.
     - So the side that breaks the pair names what it left. There are three such sides, and a writer that vacates a name is one whether it renames or deletes.
-      - `migrate-slugs` puts it in the row's `detail` and `kboat-repos refresh` on the `adopted` entry as `stranded`, both via `kboat.io_utils.stranded_stub` (the reporting probe described under "The write contract"), each passing on a could-not-tell as itself.
-      - `kboat-ingest` is the third: it deletes a drained `Queue/` capture, and `Queue/` is a note directory, so a stub left there fails `icloud_notes` exactly as one under `Sources/` would.
-        - That deletion is an agent's rather than a tool's, so the check is prose in `kboat-ingest` rather than a call.
+      - `migrate-slugs` puts it in the row's `detail`, and `kboat-repos refresh` on the `adopted` entry and `kboat-queue remove` on its record as `stranded`, all via `kboat.io_utils.stranded_stub` (the reporting probe described under "The write contract"), each passing on a could-not-tell as itself.
+      - `kboat-queue remove` is how `kboat-ingest` deletes a drained `Queue/` capture, and `Queue/` is a note directory, so a stub left there fails `icloud_notes` exactly as one under `Sources/` would.
     - Removing the stub is a human's, deliberately: deleting a placeholder is how a file leaves iCloud.
   - The sweep is only as complete as `readable_notes` and `readable_assets`: a directory that could not be listed holds no findings for this check either, so an `icloud_notes` of `ok` beside a failing readability check says nothing was found rather than that nothing is there.
   - The vault root is not otherwise swept, so an evicted `Sources.base` is not caught — a Base is Obsidian's view, which no phase reads.
@@ -349,7 +348,7 @@ A lock directory on a network filesystem would need that re-checked, since `floc
     - That is why the wait matters more to it than to a K-Boat phase, whose work survives being deferred — the dispositions, the cooldown clock and the queue are all still on disk and every phase is idempotent.
 - **A lock that cannot be taken at all is not a refusal.**
   - A vault root that is missing or cannot be looked up, a lock directory that cannot be created or used, or a filesystem that will not take an `flock` is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
-  - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-repos refresh`, `kboat-repos backfill --apply`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
+  - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-queue remove`, `kboat-repos refresh`, `kboat-repos backfill --apply`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
     - What is common to all of them is the shape, not the wording.
   - Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
   - `kboat-doctor` diagnoses one of its causes and not the rest: its `vault_root` check covers a missing root, but nothing there inspects the lock directory, so one that cannot be created, a lock file that is a directory or *any* symlink (the open is `O_NOFOLLOW`, so a live one fails as surely as a dangling one), or one on a filesystem refusing `flock` leaves doctor reporting `ok` while every write fails.
@@ -359,7 +358,7 @@ A lock directory on a network filesystem would need that re-checked, since `floc
 **What is outside.**
 The unit these mechanics protect is one tool invocation writing one file's contents, and five things sit outside it.
 
-- **A file an agent writes itself**, rather than through a `kboat` tool: the distillation review report in `Reviews/`, a rescued source's PDF in `PDFs/`, and the deletion of a drained `Queue/` capture.
+- **A file an agent writes itself**, rather than through a `kboat` tool: the distillation review report in `Reviews/` and a rescued source's PDF in `PDFs/`.
   - No tool holds the lock on their behalf, and in the routine each belongs to one phase of one run.
 - **A change that spans two files.** Each write is atomic on its own; a pair of them is not.
   - `kboat-repos refresh` adopting a rename writes the new note and then unlinks the old one, so a crash in between leaves both — reported by the next run's `kboat-validate` as two notes for one repo, for a human to merge.
