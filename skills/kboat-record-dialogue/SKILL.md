@@ -23,7 +23,7 @@ A conversation that did not go through `ask-kboat` is not this skill's: the prov
 
 ## Setup
 
-Run `eval "$(mise env)"` at the top of each shell block, so `kboat-concept` resolves bare (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
+Call `kboat-concept` bare, as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 
 Probe Basic Memory once with `search_notes(project="k-boat-knowledge", …)`.
 If the call errors, stop and report it: the material is in the user's hands, so waiting for a healthy day loses nothing.

@@ -13,8 +13,7 @@ The split mirrors the rest of K-Boat: the package does the judgement-free work, 
 
 ## Prerequisites
 
-- Run `eval "$(mise env)"` at the top of every shell block (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it loads the project environment and puts the venv on `PATH`, so `kboat-repos` and `$OBSIDIAN_VAULT_PATH` resolve bare (no `--vault` needed).
-  - Re-run it in each block — the Bash tool keeps no shell state.
+- Call `kboat-repos` bare, as a single command with no `--vault` (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 - The [`gh`](https://cli.github.com/) CLI on `PATH`, authenticated (`gh auth status`).
   - Repos use `gh`, not NotebookLM auth.
 

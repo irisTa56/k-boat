@@ -24,11 +24,7 @@ It is the agreed home for tag-drift **detection**: the write-time guard in kboat
 
 ## Setup
 
-Load the env so `$KBOAT_KNOWLEDGE_PATH` is set:
-
-```bash
-eval "$(mise env)"
-```
+`KBOAT_KNOWLEDGE_PATH` is already in the session's environment, and the `kboat-*` CLIs are called bare (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 
 Basic Memory must be reachable (it is the search/query layer).
 If it is down, the tag census still works (it reads files on disk), but the graph audit (`memory-curate`) does not — say so and defer that half.

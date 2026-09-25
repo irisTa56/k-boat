@@ -33,9 +33,11 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
 
 ## Environment
 
-- Run `eval "$(mise env)"` at the top of any shell block that calls a project CLI, then invoke it bare.
-  - It loads `mise.local.toml` over `mise.toml`'s defaults and puts the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
-  - Re-run it per block — the Bash tool keeps no state.
+- A SessionStart hook in `.claude/settings.json` writes `mise env`'s output to `CLAUDE_ENV_FILE`, so every Bash call already has the project environment: invoke a project CLI bare, as a single command.
+  - That environment is `mise.local.toml` over `mise.toml`'s defaults, with the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
+  - Claude Code matches each subcommand of a compound command against the allow rules and none matches `eval "$(mise env)"`, so no rule approves a prefixed call, and auto mode leaves it to the classifier, which can deny it.
+- Where the hook did not run — a bare CLI fails with `command not found`, or `OBSIDIAN_VAULT_PATH` is unset — prefix each call with `eval "$(mise env)" &&`, since nothing carries between Bash calls.
+- A linked worktree has no `mise.local.toml`, so there the environment holds `mise.toml`'s defaults and no real vault; run what touches the vault from the main checkout.
 - A secret never goes into mise's environment, so `mise env` prints none; a command that needs one gets it from a secret manager wrapping that command.
 - Run Python itself as `.venv/bin/python` from the repo root, never as a bare `python3`.
   - Only the workspace venv carries `kboat`, `feed_filter`, and `yaml`; a bare `python3` resolves by `PATH` order and lands on an interpreter without them.

@@ -60,6 +60,10 @@
           {
             "type": "command",
             "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then printf \"%s\\n\" \"{\\\"systemMessage\\\":\\\"\\\\n\\\\nEntire CLI is enabled but not installed or not on PATH.\\\\nInstallation guide: https://docs.entire.io/cli/installation#installation-methods\\\"}\"; exit 0; fi; exec entire hooks claude-code session-start'"
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'if [ -z \"$CLAUDE_ENV_FILE\" ] || ! command -v mise >/dev/null 2>&1; then exit 0; fi; mise env -s zsh -C \"$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"'"
           }
         ]
       }

@@ -14,8 +14,7 @@ The queue is filled by the capture bookmarklet (run `kboat-bookmarklet` to print
 
 ## Prerequisites
 
-- Run `eval "$(mise env)"` at the top of every shell block (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)): it loads the project environment and puts both venvs on `PATH`, so `notebooklm` and `$OBSIDIAN_VAULT_PATH` resolve bare.
-  - Re-run it in each block — the Bash tool keeps no shell state.
+- Call `notebooklm` and the `kboat-*` CLIs bare, each as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 - Run `notebooklm auth refresh` before the batch, since NotebookLM cookies expire.
 - Read the queue with `kboat-queue list` → JSON `{files: [{path, url, title, error?}], counts, anomalies}`.
   - Each entry is one `Queue/*.md` capture written by the capture bookmarklet: `url` is the extracted `http(s)` URL (the ingest payload) and `title` the fallback link text.

@@ -17,14 +17,13 @@ Rule B's local per-post value call is within haiku's reach.
 The global cap (`DEFAULT_GLOBAL_CAP=80`) is the primary cost bound; a steady-state run judges only a handful of new topics, so the Sonnet cost is small except at cold start.
 
 Run every `feed-filter` command from the repo root.
-The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
-Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
+The session already has the workspace venv on `PATH` (root [`CLAUDE.md`](../../CLAUDE.md#environment), "Environment"), so call `feed-filter` bare, each command a single Bash call.
 The routine must run **locally** — the vault is the local iCloud Obsidian folder (`OBSIDIAN_VAULT_PATH`), so a cloud run cannot write keeps into it.
 Each subcommand emits one JSON document on stdout and exits non-zero on an operational failure; parse the JSON and check the exit code.
 
 ## Prerequisites
 
-- `OBSIDIAN_VAULT_PATH` must be set (`eval "$(mise env)"` loads it).
+- `OBSIDIAN_VAULT_PATH` must be set (the session's environment carries it).
   - A keep becomes a `Feeds/<slug>.md` note there.
   - If the variable is unset, `forum-remind` exits non-zero — stop and report rather than judging candidates you cannot deliver.
 - Resolve the criteria file once with `feed-filter selection-path`, which prints `{path}`: `prompts/selection.md`, or wherever `FEED_FILTER_SELECTION` points.
@@ -38,7 +37,7 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 ### Step 1: Gather candidates
 
-Run `eval "$(mise env)" && feed-filter forum-new`.
+Run `feed-filter forum-new`.
 
 - The output is `{topics: [...], polls: [...], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}], discourse_fetches: <int>}`.
   - `topics` are Rule-A and Rule-B candidates, already round-robin-interleaved across sites (and Rule-A/B interleaved within each site) and clamped to the global cap.
@@ -145,7 +144,7 @@ An apostrophe is ordinary in a topic title, and one left unescaped ends the quot
 
 After all candidates for a topic are dispositioned, call `forum-poll-done` **once per topic in `polls`**:
 
-- `eval "$(mise env)" && feed-filter forum-poll-done --site-id <site_id> --topic-id <topic_id> --like-count <like_count>`.
+- `feed-filter forum-poll-done --site-id <site_id> --topic-id <topic_id> --like-count <like_count>`.
   - The `like_count` comes from the `polls` worklist emitted by `forum-new`.
   - **This must be the last call for a topic in a run** — never call it before every candidate for that topic is disposed.
   - Topics not in `polls` are left un-finalized and re-poll next run automatically, whether the cap truncated them or their gather did not complete.

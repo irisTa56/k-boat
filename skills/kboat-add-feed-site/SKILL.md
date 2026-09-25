@@ -10,8 +10,7 @@ The user supplies only a URL; deterministic discovery decides whether it is a fe
 This is the infrequent, main-model half of feed-filter — the periodic keep/drop half lives in the `kboat-feed-run` skill for article sites and in the `kboat-forum-run` skill for forums.
 
 Run every `feed-filter` command from the repo root.
-The `feed-filter` binary lives in the workspace venv, on `PATH` only after `eval "$(mise env)"`; a bare `feed-filter …` otherwise fails with `command not found`.
-Each Bash call starts a fresh shell, so loading it once does not carry across calls — prefix every `feed-filter` command with `eval "$(mise env)" &&` (the first command below shows it; apply the same to every call).
+The session already has the workspace venv on `PATH` (root [`CLAUDE.md`](../../CLAUDE.md#environment), "Environment"), so call `feed-filter` bare, each command a single Bash call.
 The CLI emits one JSON document on stdout and exits non-zero on a transport/operational failure — parse the JSON, read the exit code, never scrape prose.
 
 ## Article site or Discourse forum?
@@ -29,7 +28,7 @@ When unsure which a URL is, confirm before registering — a Discourse instance 
 
 ### Step 1: Discover
 
-Run `eval "$(mise env)" && feed-filter discover <url>`.
+Run `feed-filter discover <url>`.
 
 The output is `{candidates: [...], rejection: {reason, message} | null}`.
 
@@ -115,7 +114,7 @@ There is **no discovery** (there is no article cluster to pick) and **no cold-st
 
 6. **Confirm.** On success the output is `{site_id, kind, forum_url}` with `kind == "forum"`.
    - Tell the user the forum was registered and that keeps will be written as `Feeds/` notes in the vault (`feed_kind: forum`).
-   - Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (`eval "$(mise env)"` loads it).
+   - Nothing else is needed: the `Feeds/` folder is created on the first write, and the run only needs `OBSIDIAN_VAULT_PATH` set (the session's environment carries it).
 
 A forum's per-site `selection` override is not an `add-forum` flag.
 Set it later by hand-editing the `selection = "..."` line under that forum's `[[site]]` block in `sites.toml` (the forum run honors it, replacing the Topics section for that forum only).
