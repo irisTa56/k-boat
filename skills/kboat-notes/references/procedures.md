@@ -135,7 +135,7 @@ Every web source pays for the `source get` round trip regardless (one call in a 
 1. Get the slug and de-dup exactly as step 1 of [create or update a source note](#procedure-create-or-update-a-source-note), and before the sniff above — the same `kboat-note slug` oracle, so nothing here is hashed by hand, and the same stops, so an item that step stops is never sniffed or downloaded.
    - What differs is only *which* URL the note stores: the queued one, even when it points straight at the PDF.
    - An item the de-dup lets through continues with steps 2–5.
-2. Download the PDF to `$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
+2. Download the PDF to `<vault>/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
    - First ask what holds that name, as the [`PDFs/` layout](../SKILL.md#layout) says.
      - Where iCloud has evicted the file, download nothing and write no note: kboat-ingest keeps the queue file and reports the item by name, and it drains on a later run once a human has downloaded the file in Finder.
      - Where something that is not a file holds the name, download nothing and write no note either, and report it as needing a human.
@@ -163,7 +163,7 @@ Every web source pays for the `source get` round trip regardless (one call in a 
    - Run `notebooklm --quiet create "<title>" --json 2>/dev/null` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
      - Non-fatal — on failure, report it and continue.
-   - Add the PDF as an uploaded file: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`, and read the returned source id.
+   - Add the PDF as an uploaded file: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`, and read the returned source id.
      - Use the absolute vault path and quote it — it contains a space — because `source add` silently ingests a path that does not exist on disk as inline *text* rather than erroring, so a wrong path would upload the path string instead of the PDF.
    - Wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`. Branch on `.status`, **not** the exit code — the code merges `not_found` and `error` into `1`, and those two want opposite handling. Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report a timeout instead of being killed mid-wait, which would yield no status at all.
      - `ready` → run the extraction check below.
@@ -302,7 +302,7 @@ A human looking at the listing beside the note finds one of two things:
 Add it back by the source's kind, and verify it exactly as the ingest path does.
 
 - **Web page**: `notebooklm --quiet source add "<url>" --notebook <notebooklm_id> --json 2>/dev/null`, with the note's own `url`.
-- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <notebooklm_id> --json 2>/dev/null`.
+- **PDF**: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <notebooklm_id> --json 2>/dev/null`.
   - Run step 5's own file verify first — there, starts with `%PDF-`, non-trivial in size — since a truncated file passes a bare magic-byte check and fails an add and a delete later.
   - **A file that is not there is two situations, and only one wants a replacement copy:** look for `PDFs/.<slug>.pdf.icloud` beside it, since an evicted file is simply gone under its own name (step 5 says so).
   - Report an eviction as an eviction and stop, rather than as a missing file — naming reactivation there would have the reader discard a working notebook over a file a Finder download restores.
@@ -532,7 +532,7 @@ A wall is what this step expects; a page that turns out to be **gone** rather th
 Build it from the supplied content: `create` (read `.notebook.id`) → set chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)) → add the one source, and read the returned source id from the `--json` output.
 Neither branch's source has a `url`; the web-page branch resolves by the note's `title`, which it is given as `--title`, and the PDF by its type:
 
-- **PDF**: `notebooklm --quiet source add "$OBSIDIAN_VAULT_PATH/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
+- **PDF**: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
 - **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
 
 Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`.

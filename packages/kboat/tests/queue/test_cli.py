@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from kboat.lock import vault_lock
 from kboat.queue.__main__ import main
 
 
@@ -151,3 +153,151 @@ def test_errors_without_vault(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit) as exc:  # argparse parser.error exits with code 2
         main(["list"])
     assert exc.value.code == 2
+
+
+def _remove(vault: Path, path: str, capsys: pytest.CaptureFixture[str]) -> tuple[int, str]:
+    code = main(["--vault", str(vault), "remove", path])
+    return code, capsys.readouterr().out
+
+
+def test_remove_deletes_the_capture(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    q = _queue(tmp_path)
+    (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
+    code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
+    assert code == 0
+    assert json.loads(out) == {
+        "path": "Queue/kboat-queue-1.md",
+        "status": "removed",
+        "stranded": None,
+    }
+    assert not (q / "kboat-queue-1.md").exists()
+
+
+def test_remove_names_the_stub_it_strands_and_leaves_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Once the capture is gone the stub beside it is a lone placeholder, which
+    # fails the next `kboat-doctor`; deleting it is how a file leaves iCloud.
+    q = _queue(tmp_path)
+    (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
+    (q / ".kboat-queue-1.md.icloud").write_bytes(b"")
+    code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
+    assert code == 0
+    report = json.loads(out)
+    assert report["status"] == "removed"
+    assert report["stranded"] == "Queue/.kboat-queue-1.md.icloud"
+    assert (q / ".kboat-queue-1.md.icloud").exists()
+
+
+def test_remove_of_a_capture_already_gone_is_absent_not_a_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A rerun after a crash between the note write and the removal lands here.
+    _queue(tmp_path)
+    code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
+    assert code == 0
+    assert json.loads(out)["status"] == "absent"
+
+
+def test_remove_of_an_evicted_capture_strands_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The stub is the capture itself, waiting on iCloud; `list` reports it as an
+    # anomaly, and a removal that deleted nothing did not strand it.
+    q = _queue(tmp_path)
+    (q / ".kboat-queue-1.md.icloud").write_bytes(b"")
+    code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
+    assert code == 0
+    assert json.loads(out) == {
+        "path": "Queue/kboat-queue-1.md",
+        "status": "absent",
+        "stranded": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Sources/note.md",
+        "Queue/../Sources/note.md",
+        "Queue/sub/note.md",
+        "Queue/note.txt",
+        "Queue/.note.md.icloud",
+        "Queue",
+    ],
+)
+def test_remove_refuses_anything_but_a_capture(
+    tmp_path: Path, path: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The allow rule that runs this unattended names the command, not the path,
+    # so the command itself is what keeps it inside the queue.
+    (tmp_path / "Sources").mkdir()
+    (tmp_path / "Sources" / "note.md").write_text("keep\n", encoding="utf-8")
+    q = _queue(tmp_path)
+    (q / "sub").mkdir()
+    for name in ("sub/note.md", "note.txt", ".note.md.icloud"):
+        (q / name).write_text("keep\n", encoding="utf-8")
+    before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    with pytest.raises(SystemExit) as exc:
+        main(["--vault", str(tmp_path), "remove", path])
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
+    assert sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*")) == before
+
+
+def test_remove_refuses_an_absolute_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    q = _queue(tmp_path)
+    capture = q / "kboat-queue-1.md"
+    capture.write_text("[ok](https://example.com)\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        main(["--vault", str(tmp_path), "remove", str(capture)])
+    assert exc.value.code == 2
+    assert capture.exists()
+
+
+def test_remove_refuses_a_locked_vault_without_deleting(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], brief_lock_wait: None
+) -> None:
+    q = _queue(tmp_path)
+    capture = q / "kboat-queue-1.md"
+    capture.write_text("[ok](https://example.com)\n", encoding="utf-8")
+    with vault_lock(tmp_path):
+        code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
+    assert code == 1
+    report = json.loads(out)
+    assert report["status"] == "locked"
+    assert report["holder"]["pid"] == os.getpid()
+    assert capture.exists()
+
+
+def test_remove_that_cannot_delete_reports_the_failure_with_no_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A directory shaped like a capture: the unlink raises, and a record on stdout
+    # would read as a removal ingest could go on from.
+    q = _queue(tmp_path)
+    (q / "broken.md").mkdir()
+    assert main(["--vault", str(tmp_path), "remove", "Queue/broken.md"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("remove failed: ")
+    assert (q / "broken.md").is_dir()
+
+
+def test_remove_that_cannot_look_for_the_stub_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A capture name of 248 bytes or more puts its `.icloud` sibling past the
+    # 255-byte limit, so the stub cannot be asked about. A null here would tell
+    # ingest nothing was stranded.
+    q = _queue(tmp_path)
+    name = "k" * 247 + ".md"
+    (q / name).write_text("[ok](https://example.com)\n", encoding="utf-8")
+    code, out = _remove(tmp_path, f"Queue/{name}", capsys)
+    assert code == 0
+    report = json.loads(out)
+    assert report["status"] == "removed"
+    assert report["stranded"].startswith("unknown: ")
+    assert not (q / name).exists()

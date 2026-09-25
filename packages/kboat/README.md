@@ -19,7 +19,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
   - iCloud placeholders.
 - `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name), and `list` (one note folder's frontmatter, or one note's by slug, with what it could not read in `anomalies`, for a skill that would otherwise read the files itself; `kboat-vault-conventions` has the contract).
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
-- `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain.
+- `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain (`list`), and delete a drained one under the vault lock, naming any iCloud stub that deletion strands (`remove`).
 - `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
   - That answer is the branch `kboat-distill` takes before adding to one.
   - Text carrying no `## Observations` heading at all is refused (exit 2, empty stdout) rather than answered.

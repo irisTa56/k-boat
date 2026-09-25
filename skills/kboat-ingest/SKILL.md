@@ -7,8 +7,8 @@ description: Ingest the vault's Queue/ folder into the Obsidian vault. Use when 
 
 Drain the vault's `Queue/` folder into the vault.
 Each queue file is one capture — a `Queue/*.md` note whose body is a `[title](url)` markdown link — and becomes one source note with its own 1:1 NotebookLM notebook.
-Every capture deletion in this skill carries one shared obligation, stated at step 4: name the iCloud stub it strands.
-The rule and its other two writers are in `kboat-vault-conventions` ("No iCloud placeholder shadows a file").
+Every capture deletion in this skill goes through `kboat-queue remove` and carries one shared obligation, stated at step 4: name the iCloud stub it reports stranded.
+Why that stub matters is `kboat-vault-conventions` ("No iCloud placeholder shadows a file").
 Follow the kboat-notes skill for the note schema, naming, and file writing.
 The queue is filled by the capture bookmarklet (run `kboat-bookmarklet` to print it), which drops one file per page through the Obsidian URI scheme; ingest owns draining and deleting them.
 
@@ -95,13 +95,16 @@ Create the source's 1:1 notebook (see kboat-notes [create or update a source not
 
 ### Step 4: delete the queue file
 
-Delete the queue file only after the source note is written, by removing its capture file (the entry's `path` from `kboat-queue list`).
+Delete the queue file only after the source note is written, with `kboat-queue remove <path>`, where `<path>` is the entry's `path` from `kboat-queue list` exactly as printed.
+Every other route in this skill that deletes a capture uses the same call.
 
-- **Before removing any capture — here, or at any other route in this skill that deletes one — look for a `Queue/.<name>.md.icloud` beside it.**
-  - If one is there, report it in the run summary and leave it.
-  - Deleting the capture strands that stub, and `Queue/` is a note directory, so a lone placeholder in it fails the next `kboat-doctor` and stops the whole routine.
-    - This summary is the only place that could say where it came from.
+- It prints `{path, status, stranded}`, `status` being `removed`, or `absent` where the capture was already gone, which leaves nothing to do.
+- **A non-null `stranded` names the iCloud stub the removal left beside the capture: report it in the run summary.**
+  - `Queue/` is a note directory, so that lone placeholder fails the next `kboat-doctor` and stops the whole routine, and this summary is the only place that could say where it came from.
   - Do not delete the stub: deleting a placeholder is how a file leaves iCloud.
+  - A value starting `unknown:` means the check itself could not be made; report it the same way.
+- A `status: locked` refusal (kboat-vault-conventions "Durability and the vault lock") deletes nothing, so the capture drains again on the next run, where step 1's de-dup finds the note already written.
+- An empty stdout with an error on stderr — `remove failed: …` or `vault lock unavailable: …` — deleted nothing and does not clear itself: report it as needing a human.
 
 A DLQ note counts as written, and so does a note step 1's de-dup read and stopped on — the durable note replaces the capture, so delete it.
 Keep the queue file only when no note was written, the write failed, or a **transient** failure left the source without a notebook and the next run could still get it one: an outright failed GET, a mid-stream download failure, a rate-limited `create`/`source add`, a `source wait` `not_found`/`timeout`, a failed `source get`, a failed `source guide` on a `wall` verdict's second look, a `status: locked` refusal from the note write (another run held the vault — kboat-vault-conventions "Durability and the vault lock"), or iCloud holding the note or the PDF behind a placeholder — found by step 1 or the PDF download's check, or returned by the note write as `status: evicted` (kboat-vault-conventions "The write contract").
@@ -235,7 +238,7 @@ End the run with a summary covering:
 - Backfill (the summary/topics retry sweep): candidates seen, backfilled this run, still empty after a retry (guide failed again), any whose original had gone out of its notebook, any whose notebook held something the identification rule could not match, and any whose `notebooklm_id` named no notebook at all.
   - Name all three: the notebook-health step later in the run takes the first two and has no other way to learn of them, and the third only a reactivation settles.
 - The queue listing's `anomalies`, by path: evicted captures, and a `Queue/` that could not be read at all — the latter as needing a human.
-- Stranded iCloud stubs: every `Queue/.<name>.md.icloud` a capture deletion left behind (step 4).
+- Stranded iCloud stubs: every `stranded` a `kboat-queue remove` reported (step 4).
   - Name each one.
     - It fails the next `kboat-doctor` and stops the routine, and this is the only report that says where it came from.
 - Errors: each collected error with the item it affected and the cause (e.g. bot-blocked PDF → DLQ, walled web page → DLQ, web page typed `pdf` → DLQ, unprocessable PDF upload (not the DLQ), undecidable type, transient PDF download failure, rate-limited `create`/`source add`, persona-configure failure (non-fatal), source-guide failure, note write failure, evicted note or PDF, slug collision, note naming a key twice).
