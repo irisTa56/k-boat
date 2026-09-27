@@ -78,7 +78,7 @@ It exposes ten tools over a shared frontmatter core, a code-authoritative schema
 - `kboat-repos` — the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh, which adopts repo renames automatically.
 - `kboat-pick` — the daily pick's Daily-note/candidate gather and `picked` flag.
 - `kboat-validate` — checks every vault note against the schema; `--stats` adds the backlog-health counts.
-- `kboat-doctor` — checks the vault's environment preconditions (root, writability, folders, the questions file, directory readability, iCloud placeholders) before a run.
+- `kboat-doctor` — checks the vault's environment preconditions (root, writability, folders, the questions file, directory readability) before a run, and warns about files iCloud has evicted.
 - `kboat-note` — schema-driven create-or-update of a note from a JSON record.
 - `kboat-bookmarklet` — prints the queue-capture bookmarklet to paste into a browser.
 - `kboat-queue` — parses the `Queue/` captures into `{url, title}` for ingest to drain, and deletes a drained one.

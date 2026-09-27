@@ -81,10 +81,10 @@ Keep `readme_error` as `gather` returned it, `null` included: the write sets the
 
 - The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.
 - An update to a note ticked `gone` clears the tick, since this `gather` found GitHub showing the repository, and the result carries `gone_cleared: true`; tell the human in one line that the tick was cleared because GitHub shows the repository again, and that the refresh takes the note up from the next run.
-- It prints `{status: created|updated|collision|slug_mismatch|evicted|repeated_key|locked, ...}`, and the last five are refusals, written nowhere.
+- It prints `{status: created|updated|collision|slug_mismatch|repeated_key|locked, ...}`, and the last four are refusals, written nowhere.
   - A `collision` (the slug's `url` cannot be shown to be this repo) and a `slug_mismatch` (the record's `slug` is not the one its own `url` names) are the record's, so report either and stop.
   - A `repeated_key` (the note at this slug names a key on more than one line) is the note's, and waits on a human (see Errors).
-  - An `evicted` (iCloud holds the note at this slug behind a placeholder) and a `locked` (another run held the vault) are the vault's, and clear on their own (see Errors).
+  - A `locked` (another run held the vault) is the vault's, and clears on its own (see Errors).
 - A `dropped_fields` list means the record's `fields` block carried keys it does not own — a misspelling, a field belonging to the human or the schema (`reading`, `gone`, the date stamps), or one the writer sets itself from the record's top level (`type`, `title`, `url`, `role`, `domain`, `summary`, and `readme`, from `readme_error`) — so the note is written without them; report the list, since a misspelled key is a field left silently unset.
 
 This skill writes only the note; deleting the queue file is `kboat-ingest`'s job (its step 4 commit-point rule), and applies once the note exists.
@@ -115,17 +115,13 @@ It reads the JSON report on stdout.
 The routine never deletes a note.
 
 - `adopted` — renames it healed: `was` → `now`, `from` → `to`.
-  - An entry may also carry `stranded`, where the rename leaves an iCloud stub behind at the old name.
-    - Name it: a lone placeholder under `Repos/` fails the next `kboat-doctor` and stops the routine, and only this report says where it came from.
-    - Its value is the stub's path, or `unknown: <error>` where the probe could not tell.
-    - Under `--dry-run` nothing was renamed, so it says an apply would strand that stub rather than that anything has.
-- `rename_collisions` — a rename blocked because the canonical slug is already spoken for, each entry naming which of four ways in its `reason`.
+- `rename_collisions` — a rename blocked because the canonical slug is already spoken for, each entry naming which of three ways in its `reason`.
 - `failed` — a note this run did not refresh.
 - An exit 1 carrying the report means `Repos/` itself could not be read: absent, not a directory, or refused, in the `anomalies` entry under the folder's own name (below).
   - Tell it from the vault lock's refusals by stdout: those carry a `locked` record or nothing, and this one carries the report.
 
-Each `rename_collisions` entry carries a `reason` for why the slug was spoken for — one of four, decided by the pass rather than inferred here.
-Branch on it; never on whether a file happens to be at the `conflict` path, which is empty in two of the four — and in three under `--dry-run`, where nothing has been written yet:
+Each `rename_collisions` entry carries a `reason` for why the slug was spoken for — one of three, decided by the pass rather than inferred here.
+Branch on it; never on whether a file happens to be at the `conflict` path, which is empty in one of the three — and in two under `--dry-run`, where nothing has been written yet:
 
 - `taken` — a note is there, and a human merges the two.
   - One caveat, answerable from the report alone:
@@ -133,9 +129,6 @@ Branch on it; never on whether a file happens to be at the `conflict` path, whic
     - On an applying run the slug is free by now, so the next run adopts it cleanly and nobody is needed.
     - Under `--dry-run` that entry is a prediction and the slug is still held: it means an apply would free it, not that anything has.
   - An `adopted` entry whose `from` and `to` are equal moved nothing: it is a note that adopted a new identity under the name it already had, and the collision it sits beside is a real one.
-- `evicted` — iCloud holds the note behind a placeholder.
-  - The merge waits on the download, not on the human.
-  - The same pass files the placeholder among the `anomalies`, under its own `.<name>.icloud` path.
 - `claimed_this_run` — two notes resolved to one slug and the first claimed it.
   - The apply writes that one and leaves the second to a human, whose merge is with a note that will exist by then.
 - `held_by_non_note` — the name is held by something that is not a note at all; a broken symlink is the one that occurs.
@@ -146,11 +139,9 @@ Do not sort them for the reader; branch on what the entry looks like.
 
 - **The note's own shape** — mangled frontmatter, a `type` that is not `repo`, a `url` that will not parse, bytes that are not UTF-8.
   - It stays that way until a human looks.
-- **A `.<name>.icloud` path** — iCloud has evicted that note, so the pass could not see it and the catalogue it refreshed was the local part of itself.
-  - It clears when the file is back, and several at once say the vault is half-synced rather than that the notes are broken.
 - **An `error` containing `No such file or directory` at a `Repos/*.md` path** — listed like a note and unopenable, so it reads like a transient failure.
-  - One sighting does not settle it: an eviction landing between the listing and the read gives the same error from a cause that clears itself, and its placeholder is not in the snapshot to say so.
-    - What tells them apart is the next run — a name that comes back as a placeholder or reads cleanly was the eviction; one that repeats identically is a broken symlink, and that one is a human's.
+  - One sighting does not settle it: a note removed between the listing and the read gives the same error from a cause that clears itself.
+    - What tells them apart is the next run — a name that is gone or reads cleanly was the removal; one that repeats identically is a broken symlink, and that one is a human's.
 - **A `path` that is the `Repos/` directory itself** — the catalogue was never read at all, so the run has nothing to say about any note in it.
   - Its `error` leads with which of the three it met — `absent`, `not a directory`, or `refused` — and the command exits 1.
   - Unlike a failed read of one file this clears on no later run until a human fixes the vault.
@@ -203,10 +194,6 @@ Detect and report; do not work around.
 - `write` returned `status: slug_mismatch` — the record's `slug` is not the one its own `url` names (`expected` and `got` carry the two), so the record is not internally consistent and nothing was written.
   - A `gather` record passed on as it came cannot produce it, since `gather` derives the slug from that same canonical `url` through the function the write recomputes it with; the pair was mangled after `gather`, on this path in the step-3 record the skill rebuilds to carry the judged fields.
   - Retrying the same record is refused identically — report it and stop; the defect is the record, not the vault.
-- `write` returned `status: evicted` — iCloud holds the note at this slug behind a placeholder, so nothing was written (kboat-vault-conventions "The write contract").
-  - The record is not at fault and the note's own fields are still in iCloud, so report it by name without escalating: it clears once the note is downloaded, and the next run's `kboat-doctor` reports the eviction.
-  - A repo `kboat-ingest` routed here keeps its queue file, so a later run writes the note; leave it to that run.
-  - A repo the user pasted has nothing that retries it: tell them the record can be written once the note is downloaded.
 - `write` returned `status: repeated_key` — the note at this slug names each key under `keys` on more than one line, so nothing was written (kboat-vault-conventions "The write contract").
   - The record is not at fault, and no run clears it: report the note's `path` and its `keys` as needing a human to delete the line not meant.
   - A repo `kboat-ingest` routed here keeps its queue file, so the run after that repair writes the note.
@@ -215,6 +202,6 @@ Detect and report; do not work around.
   - A repo `kboat-ingest` routed here keeps its queue file, so the next run writes the note; leave it to that run.
   - A repo the user pasted has nothing that retries it: tell them, since the same record can be written once the holding run has finished.
   - A refused `refresh` changed nothing: the next routine run refreshes the catalogue, and one run by hand can be run again once the holding run has finished.
-- `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the six `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the four `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
+- `refresh` `failed` entries (one note this run did not refresh — see "Procedure: refresh the catalogue" step 2 for the six `reason` values, for the one that is escalated — `payload` — and for the whole-report rule that outranks them all), `rename_collisions` (a rename blocked because the slug is spoken for — see step 2 for the three `reason` values and which of them needs a human), and `adopted` (renames healed) — surface them; never delete.
 - `gh` not authenticated.
   - Stop and report rather than producing empty records.

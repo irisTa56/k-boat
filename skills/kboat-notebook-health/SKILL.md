@@ -76,7 +76,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Make it on the **sweep opening only**, whose run has already ingested and written its ids; the argument opening answers one source a human named, and a notebook an ingest elsewhere made moments ago would sit on its list as one no note references.
      - Make the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names; a vault with no stored id at all gives that check nothing to go on, so make none there either.
      - Leave out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
-     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry of the vault-wide read, an evicted note under its placeholder's path and an unreadable one under its own.
+     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry of the vault-wide read, an unreadable note under its own path.
      - **The list is a report and nothing more.**
        - K-Boat names a notebook after its source's `title`, so nothing in the listing tells a notebook K-Boat built and lost track of — an ingest-time discard that failed, an id written over — from one the reader made by hand in the same account.
        - The account holds none of the second kind today, and nothing keeps it that way.
@@ -101,10 +101,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - The unattended run cannot clear a wall, so this ending is always a report.
      - Name the source and both ways on, which the restore procedure's step 3 sets out: a browser capture added into the surviving notebook in place, which keeps the dialogue, or reactivation, which spends it.
      - Do not name setting `blocked`, which reaches no rescue at all.
-   - A PDF whose `PDFs/<slug>.pdf` is not there splits two ways, and the restore's step 2 makes the check.
-     - A `.icloud` placeholder beside it means an eviction that materialising fixes.
-     - A genuinely absent file needs a replacement copy.
-     - Report which, since the wrong report costs a working notebook.
+   - A PDF whose `PDFs/<slug>.pdf` is not there needs a replacement copy, and the restore's step 2 makes the check.
 
 ## Errors
 
@@ -126,7 +123,7 @@ Detect and report; do not work around.
   - Nothing reports it, the reporter being what died, and it leaves that same masquerading leftover.
   - Name the source whose restore was in flight where the summary can still be written.
   - Where it cannot, a resumed run re-checks that notebook by hand rather than trusting a healthy verdict.
-- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, one iCloud evicted, a field a note holds in a shape the reader does not model or on more than one line, and a `Sources/` it could not read at all.
+- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, a field a note holds in a shape the reader does not model or on more than one line, and a `Sources/` it could not read at all.
   - Each is a note the counts do not cover, so without them the counts read as full coverage.
 
 No vault write happens in this skill, so no `status: locked` refusal can arise.

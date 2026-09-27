@@ -16,17 +16,17 @@ Change the relevant spec first, then this package and its tests — except GitHu
   - the required folders;
   - the questions file;
   - directory readability;
-  - iCloud placeholders.
+  - and, as a warning only, files iCloud has evicted from local storage.
 - `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name), and `list` (one note folder's frontmatter, or one note's by slug, with what it could not read in `anomalies`, for a skill that would otherwise read the files itself; `kboat-vault-conventions` has the contract).
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
-- `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain (`list`), and delete a drained one under the vault lock, naming any iCloud stub that deletion strands (`remove`).
+- `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain (`list`), and delete a drained one under the vault lock (`remove`).
 - `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
   - That answer is the branch `kboat-distill` takes before adding to one.
   - Text carrying no `## Observations` heading at all is refused (exit 2, empty stdout) rather than answered.
 - `kboat-knowledge` — the knowledge-base audits `kboat-curate` runs over `<knowledge root>/concepts/*.md`, the root taken from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
   - `titles` prints `{"flagged": [{"file", "title"}]}`: the notes whose title a filename-resolved wikilink cannot reach.
   - `tags` prints `{"counts": {tag: n}, "untagged": [file]}`: the facet-tag census.
-  - A root with no `concepts/` is refused (exit 2); an unreadable base, an iCloud-evicted note, or a note whose frontmatter does not parse fails (exit 1, empty stdout).
+  - A root with no `concepts/` is refused (exit 2); an unreadable base or a note whose frontmatter does not parse fails (exit 1, empty stdout).
 
 ## Shared modules
 
@@ -40,10 +40,9 @@ Change the relevant spec first, then this package and its tests — except GitHu
 - `kboat.io_utils` — `atomic_write_text`, the single writer for every durable file these tools write (feed-filter's `sites.toml` too): temp file in the same directory, `fsync`, `os.replace`, then an `fsync` of the parent directory, so a write is both atomic and durable past a power loss.
   - A raise means nothing was written.
   - It also answers what is there, and each probe below raises where the vault refuses the read rather than answering "nothing there", which is what `pathlib` would have said.
-    - `name_taken` — a file, an iCloud placeholder, or a symlink all take a name.
+    - `name_occupied` — anything at that name, a dangling symlink included, takes it.
     - `file_present` — a file, and so what a taken name is held *by*.
-    - `name_occupied` — anything at that name itself, which is what separates a stale stub from a non-file holding the name.
-    - `list_note_dir` — one directory's notes and the placeholders a `*.md` scan would walk past.
+    - `list_note_dir` — one directory's notes.
 - `kboat.lock` — `vault_lock`, the vault-wide mutual exclusion every mutating run holds so two runs cannot interleave over one vault.
   - An advisory `flock`, so a crashed holder's lock is released by the kernel and there is no stale state to recover.
   - Its file lives outside the vault, under `~/.k-boat/locks/` or `$KBOAT_LOCK_DIR`.
