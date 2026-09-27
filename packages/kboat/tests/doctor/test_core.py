@@ -620,6 +620,21 @@ class TestDatalessProbe:
         monkeypatch.setattr(Path, "lstat", lambda self: Flagged())
         assert _dataless(path)
 
+    def test_another_flag_alone_is_not_an_eviction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Local files carry flags too — Finder's `.DS_Store` is `hidden` — so a
+        # probe reading any flag as an eviction would warn on every run.
+        path = tmp_path / "a.md"
+        path.write_text("")
+
+        class Hidden:
+            st_mode = stat.S_IFREG
+            st_flags = stat.UF_HIDDEN | stat.UF_COMPRESSED
+
+        monkeypatch.setattr(Path, "lstat", lambda self: Hidden())
+        assert not _dataless(path)
+
     def test_a_platform_without_st_flags_has_nothing_evicted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
