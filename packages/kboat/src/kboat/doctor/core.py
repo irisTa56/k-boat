@@ -452,12 +452,15 @@ def _check_scanned(vault: Path) -> list[Check]:
             unreadable_assets or gone_assets,
         ),
         # A warning and never a failure: an evicted file keeps its name and is
-        # downloaded by whichever read reaches it, so a run over it succeeds. It
-        # says the vault folder is no longer kept downloaded.
+        # downloaded by whichever read reaches it, so a run over it succeeds. A
+        # file another device just added is dataless too until it downloads, so
+        # only one reported again on a later run says the folder is no longer
+        # kept downloaded.
         Check(
             "evicted_files",
             Status.WARNING if evicted else Status.OK,
-            f"{len(evicted)} file(s) evicted from local storage; a run downloads each one it reads"
+            f"{len(evicted)} file(s) not stored locally, evicted or not yet downloaded; "
+            "a run downloads each one it reads"
             if evicted
             else "",
             evicted,

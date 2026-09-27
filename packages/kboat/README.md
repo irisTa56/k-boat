@@ -16,7 +16,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
   - the required folders;
   - the questions file;
   - directory readability;
-  - and, as a warning only, files iCloud has evicted from local storage.
+  - and, as a warning only, files not stored locally — evicted by iCloud, or not yet downloaded.
 - `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name), and `list` (one note folder's frontmatter, or one note's by slug, with what it could not read in `anomalies`, for a skill that would otherwise read the files itself; `kboat-vault-conventions` has the contract).
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
 - `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain (`list`), and delete a drained one under the vault lock (`remove`).
