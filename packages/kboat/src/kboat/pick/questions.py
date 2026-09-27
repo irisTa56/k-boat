@@ -11,7 +11,7 @@ context the ranker may use.
 Only open questions are listed; the human resolves one by deleting its line, so the
 routine never writes here — it reads the file and nothing else. A question-less file
 is an empty backlog (no signal this run). A file that cannot be read at all — absent,
-evicted, not a file, refused, or not UTF-8 — is not: the backlog is the pick's
+not a file, refused, or not UTF-8 — is not: the backlog is the pick's
 deliberate signal and a required input (`kboat-vault-conventions` "Vault
 preconditions"), unlike an absent `Daily/`, which the pick degrades over by design.
 """
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kboat.frontmatter import split_lines, strip_frontmatter
-from kboat.io_utils import file_present, icloud_placeholder, name_occupied
+from kboat.io_utils import name_occupied
 
 # A top-level list item (marker at column 0, no leading indentation): one question.
 _TOP_ITEM = re.compile(r"^[-*+][ \t]+(\S.*)$")
@@ -49,17 +49,12 @@ class QuestionsUnreadableError(Exception):
 
 
 def _missing(questions_file: Path, exc: OSError) -> str:
-    """Why a file whose own `stat` found nothing is not there: evicted, held, or absent.
+    """Why a file whose own `stat` found nothing is not there: held, or absent.
 
-    Absent and evicted look identical to the `stat` and call for opposite remedies —
-    recreating a file iCloud still holds makes a sync conflict, where the fix is to
-    download it — so the placeholder is asked before "absent" is said, as
-    `kboat-doctor`'s `questions_file` check asks it. A name held without a file
-    behind it (a dangling symlink) is neither, and no download frees it.
+    A name held without a file behind it (a dangling symlink) is not absent: the
+    remedy for absent is to create the file, and creating one there fails.
     """
     try:
-        if file_present(icloud_placeholder(questions_file)):
-            return f"evicted: {questions_file.name} is an iCloud placeholder, not synced locally"
         if name_occupied(questions_file):
             return f"not a file: {questions_file}"
     except OSError as probe:

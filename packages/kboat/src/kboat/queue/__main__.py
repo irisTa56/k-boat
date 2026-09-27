@@ -5,13 +5,11 @@
   nothing. A malformed capture (no parseable
   `http(s)` link) comes back with `url: null` and `error: "no_url"` so the caller
   can report it rather than guess a URL. What never became a capture is in
-  `anomalies`: a queue folder that is absent, not a directory, or refused — which
-  also exits 1, the folder being in the vault's required set — and each capture
-  iCloud evicted to a placeholder.
+  `anomalies`: a queue folder that is absent, not a directory, or refused, which
+  also exits 1, the folder being in the vault's required set.
 - `remove <path>` — delete one capture `list` printed, once ingest has reached
-  its commit point, under the vault lock. It prints `{path, status, stranded}`:
-  `status` is `removed`, or `absent` when the capture was already gone, and
-  `stranded` names the iCloud stub the removal left beside it (null for none).
+  its commit point, under the vault lock. It prints `{path, status}`: `status`
+  is `removed`, or `absent` when the capture was already gone.
   It refuses, with a usage error and nothing deleted, any path that is not a
   `.md` file directly in the queue folder.
 
@@ -34,7 +32,6 @@ from kboat.cli import (
     vault_path,
 )
 from kboat.frontmatter import PLAIN_READ_ERRORS
-from kboat.io_utils import stranded_stub
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import QUEUE_DIR
 
@@ -44,10 +41,9 @@ from .parse import parse_capture
 def _cmd_list(vault: Path, folder: str) -> tuple[dict[str, object], bool]:
     """The queue report, and whether the queue folder itself could not be read.
 
-    Neither an unlistable folder nor an evicted capture may read as a drained
-    queue, which is what tells ingest there is nothing to do: the first is an
-    `anomalies` entry under the folder's name and exit 1, the second one under the
-    placeholder's path.
+    An unlistable folder may not read as a drained queue, which is what tells
+    ingest there is nothing to do: it is an `anomalies` entry under the folder's
+    name and exit 1.
     """
     files: list[dict[str, object]] = []
     found, anomalies, unread = scan_required_dir(vault, folder)
@@ -73,28 +69,16 @@ def _cmd_list(vault: Path, folder: str) -> tuple[dict[str, object], bool]:
 
 
 def _cmd_remove(vault: Path, rel: str) -> dict[str, object]:
-    """Delete one capture and report the stub the deletion strands, if any.
-
-    The probe runs before the unlink because a stub beside a present capture is
-    not yet an eviction; the unlink is what makes it one (`stranded_stub`). A
-    capture that was already gone vacated nothing, so it strands nothing either:
-    a stub there is the capture itself, evicted, and `list` reports it.
-    """
+    """Delete one capture, reporting whether it was still there to delete."""
     capture = vault / rel
     with vault_lock(vault):
-        probe = stranded_stub(capture)
         try:
             capture.unlink()
         except FileNotFoundError:
             status = "absent"
         else:
             status = "removed"
-    stranded: str | None = None
-    if status == "removed" and probe.stub is not None:
-        stranded = probe.stub.relative_to(vault).as_posix()
-    elif status == "removed" and probe.unknown is not None:
-        stranded = f"unknown: {probe.unknown}"
-    return {"path": rel, "status": status, "stranded": stranded}
+    return {"path": rel, "status": status}
 
 
 def main(argv: list[str] | None = None) -> int:

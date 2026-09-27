@@ -59,26 +59,15 @@ def _validate_vault(vault: Path) -> tuple[dict[str, int], list[Violation], _Back
         count = 0
         # `checked` counts what this pass could **list**; the stats count what it
         # could read, so a note that will not parse is in the first and not the
-        # second. What the two entries below buy is not a truer count either: it is
+        # second. What the entry below buys is not a truer count either: it is
         # that a vault this pass could not read whole says so in the same report,
-        # instead of handing back a short backlog that reads like a healthy one. A
-        # directory the OS will not give up and a note iCloud evicted are the same
-        # silence from two directions, and `*.md` alone sees neither.
+        # instead of handing back a short backlog that reads like a healthy one.
         try:
-            found, placeholders = list_note_dir(directory)
+            found = list_note_dir(directory)
         except OSError as exc:
             violations.append(Violation(subdir, "_dir", "unreadable_dir", str(exc)))
             checked[note_type] = count
             continue
-        for placeholder in placeholders:
-            violations.append(
-                Violation(
-                    placeholder.relative_to(vault).as_posix(),
-                    "_file",
-                    "icloud_placeholder",
-                    "evicted to an iCloud placeholder, so the note could not be read",
-                )
-            )
         for path in found:
             rel = path.relative_to(vault).as_posix()
             count += 1
@@ -109,7 +98,7 @@ def _validate_vault(vault: Path) -> tuple[dict[str, int], list[Violation], _Back
     # same silence as a note directory's, so it is reported the same way; an
     # absent `Queue/` is `kboat-doctor`'s to report, and reads here as empty.
     try:
-        found, _ = list_note_dir(vault / QUEUE_DIR)
+        found = list_note_dir(vault / QUEUE_DIR)
     except OSError as exc:
         violations.append(Violation(QUEUE_DIR, "_dir", "unreadable_dir", str(exc)))
     else:

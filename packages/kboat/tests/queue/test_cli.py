@@ -126,18 +126,6 @@ def test_a_queue_folder_the_os_will_not_list_is_refused(
         q.chmod(0o755)
 
 
-def test_an_evicted_capture_is_an_anomaly_not_a_drained_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    q = _queue(tmp_path)
-    (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
-    (q / ".kboat-queue-2.md.icloud").write_bytes(b"")
-    assert main(["--vault", str(tmp_path), "list"]) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert [f["path"] for f in out["files"]] == ["Queue/kboat-queue-1.md"]
-    assert [a["path"] for a in out["anomalies"]] == ["Queue/.kboat-queue-2.md.icloud"]
-
-
 def test_list_custom_folder(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     inbox = tmp_path / "Inbox"
     inbox.mkdir()
@@ -165,28 +153,8 @@ def test_remove_deletes_the_capture(tmp_path: Path, capsys: pytest.CaptureFixtur
     (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
     code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
     assert code == 0
-    assert json.loads(out) == {
-        "path": "Queue/kboat-queue-1.md",
-        "status": "removed",
-        "stranded": None,
-    }
+    assert json.loads(out) == {"path": "Queue/kboat-queue-1.md", "status": "removed"}
     assert not (q / "kboat-queue-1.md").exists()
-
-
-def test_remove_names_the_stub_it_strands_and_leaves_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Once the capture is gone the stub beside it is a lone placeholder, which
-    # fails the next `kboat-doctor`; deleting it is how a file leaves iCloud.
-    q = _queue(tmp_path)
-    (q / "kboat-queue-1.md").write_text("[ok](https://example.com)\n", encoding="utf-8")
-    (q / ".kboat-queue-1.md.icloud").write_bytes(b"")
-    code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
-    assert code == 0
-    report = json.loads(out)
-    assert report["status"] == "removed"
-    assert report["stranded"] == "Queue/.kboat-queue-1.md.icloud"
-    assert (q / ".kboat-queue-1.md.icloud").exists()
 
 
 def test_remove_of_a_capture_already_gone_is_absent_not_a_failure(
@@ -199,22 +167,6 @@ def test_remove_of_a_capture_already_gone_is_absent_not_a_failure(
     assert json.loads(out)["status"] == "absent"
 
 
-def test_remove_of_an_evicted_capture_strands_nothing(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The stub is the capture itself, waiting on iCloud; `list` reports it as an
-    # anomaly, and a removal that deleted nothing did not strand it.
-    q = _queue(tmp_path)
-    (q / ".kboat-queue-1.md.icloud").write_bytes(b"")
-    code, out = _remove(tmp_path, "Queue/kboat-queue-1.md", capsys)
-    assert code == 0
-    assert json.loads(out) == {
-        "path": "Queue/kboat-queue-1.md",
-        "status": "absent",
-        "stranded": None,
-    }
-
-
 @pytest.mark.parametrize(
     "path",
     [
@@ -222,7 +174,6 @@ def test_remove_of_an_evicted_capture_strands_nothing(
         "Queue/../Sources/note.md",
         "Queue/sub/note.md",
         "Queue/note.txt",
-        "Queue/.note.md.icloud",
         "Queue",
     ],
 )
@@ -235,7 +186,7 @@ def test_remove_refuses_anything_but_a_capture(
     (tmp_path / "Sources" / "note.md").write_text("keep\n", encoding="utf-8")
     q = _queue(tmp_path)
     (q / "sub").mkdir()
-    for name in ("sub/note.md", "note.txt", ".note.md.icloud"):
+    for name in ("sub/note.md", "note.txt"):
         (q / name).write_text("keep\n", encoding="utf-8")
     before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
     with pytest.raises(SystemExit) as exc:
@@ -284,20 +235,3 @@ def test_remove_that_cannot_delete_reports_the_failure_with_no_record(
     assert captured.out == ""
     assert captured.err.startswith("remove failed: ")
     assert (q / "broken.md").is_dir()
-
-
-def test_remove_that_cannot_look_for_the_stub_says_so(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A capture name of 248 bytes or more puts its `.icloud` sibling past the
-    # 255-byte limit, so the stub cannot be asked about. A null here would tell
-    # ingest nothing was stranded.
-    q = _queue(tmp_path)
-    name = "k" * 247 + ".md"
-    (q / name).write_text("[ok](https://example.com)\n", encoding="utf-8")
-    code, out = _remove(tmp_path, f"Queue/{name}", capsys)
-    assert code == 0
-    report = json.loads(out)
-    assert report["status"] == "removed"
-    assert report["stranded"].startswith("unknown: ")
-    assert not (q / name).exists()

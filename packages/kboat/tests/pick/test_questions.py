@@ -115,14 +115,6 @@ def test_a_questions_file_that_cannot_be_read_is_not_an_empty_backlog(tmp_path: 
         extract_questions(path)
 
 
-def test_an_evicted_file_is_named_as_evicted_not_absent(tmp_path: Path) -> None:
-    # The two call for opposite remedies: recreating a file iCloud still holds
-    # makes a sync conflict, where the fix is to download it.
-    (tmp_path / ".Questions.md.icloud").write_bytes(b"")
-    with pytest.raises(QuestionsUnreadableError, match=r"^evicted: "):
-        extract_questions(tmp_path / "Questions.md")
-
-
 def test_a_name_held_by_a_dangling_symlink_is_not_a_file(tmp_path: Path) -> None:
     (tmp_path / "Questions.md").symlink_to(tmp_path / "gone.md")
     with pytest.raises(QuestionsUnreadableError, match=r"^not a file: "):

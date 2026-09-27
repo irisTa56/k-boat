@@ -71,21 +71,6 @@ def test_lists_every_note_with_its_frontmatter(
     }
 
 
-def test_an_evicted_note_is_an_anomaly_not_a_missing_note(
-    vault: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A glob skips the placeholder, so without the entry the evicted note would
-    # simply not be in the answer and nothing would say so.
-    _note(vault, "aaa", title="A")
-    (vault / "Sources" / ".bbb.md.icloud").write_bytes(b"")
-
-    code, report = _list(vault, capsys)
-
-    assert code == 0
-    assert _slugs(report) == ["aaa"]
-    assert _anomaly_paths(report) == ["Sources/.bbb.md.icloud"]
-
-
 def test_a_note_that_does_not_parse_is_reported_and_the_rest_still_listed(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -131,52 +116,28 @@ def test_a_folder_it_cannot_read_exits_1_with_the_report(
     assert anomalies[0]["error"].startswith(lead)
 
 
-def test_the_slug_answers_present_evicted_and_absent_apart(
+def test_the_slug_answers_present_and_absent_apart(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _note(vault, "here", title="H")
     _note(vault, "other", title="O")
-    (vault / "Sources" / ".gone.md.icloud").write_bytes(b"")
-    (vault / "Sources" / ".elsewhere.md.icloud").write_bytes(b"")
 
     code, report = _list(vault, capsys, "--slug", "here")
     assert code == 0
     assert _slugs(report) == ["here"]
     assert report["anomalies"] == []
 
-    # Evicted: nothing at the name, a placeholder beside it — and only its own.
-    code, report = _list(vault, capsys, "--slug", "gone")
-    assert code == 0
-    assert report["notes"] == []
-    assert _anomaly_paths(report) == ["Sources/.gone.md.icloud"]
-
-    # Absent: neither.
+    # Absent: nothing at the name.
     code, report = _list(vault, capsys, "--slug", "nothing")
     assert code == 0
     assert report == {"notes": [], "anomalies": [], "counts": {"notes": 0, "anomalies": 0}}
 
 
-def test_a_stale_stub_beside_its_note_does_not_make_the_note_evicted(
+def test_a_non_file_at_the_slug_is_reported_rather_than_read_as_absent(
     vault: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # File before placeholder: the note is here, so the stub is not an eviction.
-    _note(vault, "here", title="H")
-    (vault / "Sources" / ".here.md.icloud").write_bytes(b"")
-
-    code, report = _list(vault, capsys, "--slug", "here")
-
-    assert code == 0
-    assert _slugs(report) == ["here"]
-    assert report["anomalies"] == []
-
-
-def test_a_non_file_at_the_slug_is_reported_rather_than_read_as_evicted(
-    vault: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A directory holds the name and a stale stub sits beside it: the stub must
-    # not answer for it, since no download frees a name a directory holds.
+    # A directory holds the name, which no run frees, and the writer would refuse it.
     (vault / "Sources" / "held.md").mkdir()
-    (vault / "Sources" / ".held.md.icloud").write_bytes(b"")
 
     code, report = _list(vault, capsys, "--slug", "held")
 
@@ -203,10 +164,9 @@ def _fold_case(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kboat.note.listing.name_occupied", occupied)
 
 
-def _upper_note_and_stub(vault: Path) -> None:
+def _upper_note(vault: Path) -> None:
     _note(vault, "B0ABC", title="Recorded")
     (vault / "Kindles" / "B0ABC.md").write_text("---\ntitle: K\n---\n", encoding="utf-8")
-    (vault / "Sources" / ".GONE.md.icloud").write_bytes(b"")
 
 
 def _assert_found_under_another_casing(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -223,11 +183,6 @@ def _assert_found_under_another_casing(vault: Path, capsys: pytest.CaptureFixtur
     assert code == 0
     assert _slugs(json.loads(capsys.readouterr().out)) == ["B0ABC"]
 
-    # The placeholder is asked about the same way, after the note.
-    code, report = _list(vault, capsys, "--slug", "gone")
-    assert report["notes"] == []
-    assert _anomaly_paths(report) == ["Sources/.GONE.md.icloud"]
-
 
 def test_a_slug_names_what_the_writer_finds_on_a_volume_that_folds_case(
     vault: Path, capsys: pytest.CaptureFixture[str]
@@ -235,7 +190,7 @@ def test_a_slug_names_what_the_writer_finds_on_a_volume_that_folds_case(
     # The real volume, where it folds case (APFS's default, which the vault is on).
     if not _folds_case(vault):
         pytest.skip("this volume does not fold case; the simulated test covers it")
-    _upper_note_and_stub(vault)
+    _upper_note(vault)
     _assert_found_under_another_casing(vault, capsys)
 
 
@@ -245,7 +200,7 @@ def test_a_slug_names_what_the_writer_finds_where_the_probe_folds_case(
     # The same answer on any volume, with the probe answering as a folding one
     # does; the listing is the real one either way.
     _fold_case(monkeypatch)
-    _upper_note_and_stub(vault)
+    _upper_note(vault)
     _assert_found_under_another_casing(vault, capsys)
 
 
@@ -311,13 +266,12 @@ def test_a_filter_does_not_hide_a_note_it_could_not_read(
 ) -> None:
     # Nothing shows an unreadable note to fail the filter, so it stays reported.
     (vault / "Sources" / "bad.md").write_text("no fence\n", encoding="utf-8")
-    (vault / "Sources" / ".evicted.md.icloud").write_bytes(b"")
 
     code, report = _list(vault, capsys, "--flagged", "blocked")
 
     assert code == 0
     assert report["notes"] == []
-    assert _anomaly_paths(report) == ["Sources/.evicted.md.icloud", "Sources/bad.md"]
+    assert _anomaly_paths(report) == ["Sources/bad.md"]
 
 
 def _block_scalar_note(vault: Path, slug: str, *, blocked: str = "false") -> None:

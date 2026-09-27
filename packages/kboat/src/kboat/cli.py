@@ -36,9 +36,6 @@ from kboat.io_utils import list_note_dir, unread_dir
 from kboat.lock import VaultLockedError, VaultLockUnavailableError
 from kboat.write import WROTE_A_NOTE, BadInputError, WriteStatus
 
-# The `error` of the anomaly a scan files under an evicted note's placeholder path.
-EVICTED_NOTE = "iCloud placeholder: the note is evicted, so this pass cannot read it"
-
 
 def _iso_date(value: str) -> str:
     """`value` as `YYYY-MM-DD`, or a usage error.
@@ -93,26 +90,21 @@ def vault_path(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Pat
 
 
 def scan_required_dir(vault: Path, folder: str) -> tuple[list[Path], list[dict[str, str]], bool]:
-    """A required folder's notes, the `{path, error}` anomalies for what they leave out,
-    and whether the folder itself could not be read.
+    """A required folder's notes, the `{path, error}` anomaly for a folder it could
+    not read, and whether that happened.
 
     For the report-shaped CLIs that read a folder in the vault's required set, which
     all carry the same `anomalies` entry and all owe the same exit
     (`kboat-vault-conventions` "Vault preconditions"): a folder that is absent, not
     a directory, or refused is one entry under the folder's own name and a `True`
-    the caller turns into exit 1, and each note iCloud evicted is an entry under
-    its placeholder's path. Neither is ever an empty folder: the first is a vault
-    that did not sync or cannot be read, and the second is a note this pass was
-    never shown.
+    the caller turns into exit 1. It is never an empty folder: it is a vault that
+    did not sync or cannot be read.
     """
     try:
-        found, placeholders = list_note_dir(vault / folder, required=True)
+        found = list_note_dir(vault / folder, required=True)
     except OSError as exc:
         return [], [{"path": folder, "error": unread_dir(exc)}], True
-    evicted = [
-        {"path": p.relative_to(vault).as_posix(), "error": EVICTED_NOTE} for p in placeholders
-    ]
-    return found, evicted, False
+    return found, [], False
 
 
 def require_readable_payload(record: dict) -> None:

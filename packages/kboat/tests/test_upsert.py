@@ -196,40 +196,10 @@ def _snapshot(vault: Path) -> dict[str, tuple[str, object]]:
     return out
 
 
-def test_an_evicted_note_is_refused_and_nothing_is_touched(vault: Path) -> None:
-    # iCloud's placeholder is all that stands at the slug. Taking that for a new
-    # note would rewrite it from the record alone — the human's fields gone, and a
-    # second copy for iCloud to settle later — so the write is refused instead.
-    stub = vault / "Sources" / f".{S}.md.icloud"
-    stub.write_bytes(b"bplist00 placeholder")
-    before = _snapshot(vault)
-
-    result = upsert(SOURCE, vault, _RECORD, today="2026-09-20")
-
-    assert result == {"status": "evicted", "slug": S, "path": f"Sources/{S}.md"}
-    assert result["status"] not in WROTE_A_NOTE  # every caller reads it as not written
-    assert _snapshot(vault) == before
-
-
-def test_a_stub_beside_its_own_file_does_not_make_the_note_evicted(vault: Path) -> None:
-    # File before placeholder: the note is here, so the write merges into it.
-    upsert(SOURCE, vault, _RECORD, today="2026-09-20")
-    (vault / "Sources" / f".{S}.md.icloud").write_bytes(b"stale")
-
-    result = upsert(SOURCE, vault, {"slug": S, "fields": {"title": "U"}}, today="2026-09-21")
-
-    assert result["status"] == "updated"
-    assert _fm(vault, f"Sources/{S}.md")["title"] == "U"
-
-
-@pytest.mark.parametrize("with_stub", [False, True], ids=["alone", "beside-a-stub"])
-def test_a_symlink_leading_nowhere_is_not_written_over(vault: Path, with_stub: bool) -> None:
+def test_a_symlink_leading_nowhere_is_not_written_over(vault: Path) -> None:
     # `exists()` follows the link and answers "free", and the atomic rename then
-    # puts a new note in the link's place. With a stale stub beside it, the stub
-    # must not answer for the link either: no download frees this name.
+    # puts a new note in the link's place.
     (vault / "Sources" / f"{S}.md").symlink_to(vault / "nowhere.md")
-    if with_stub:
-        (vault / "Sources" / f".{S}.md.icloud").write_bytes(b"stale")
     before = _snapshot(vault)
 
     with pytest.raises(FileExistsError):
@@ -248,16 +218,15 @@ def test_a_directory_at_the_slug_is_not_written(vault: Path) -> None:
     assert _snapshot(vault) == before
 
 
-def test_a_refused_probe_is_raised_not_reported_as_an_eviction(vault: Path) -> None:
-    # The slug is a link into a tree the vault will not let the writer into, with a
-    # stale stub beside it. Only asking whether a *file* is there meets the refusal:
-    # a probe that swallowed it would report a non-note holding the name, or an
-    # eviction, and send a human after something that is not the problem.
+def test_a_refused_probe_is_raised_not_reported_as_a_non_note(vault: Path) -> None:
+    # The slug is a link into a tree the vault will not let the writer into. Only
+    # asking whether a *file* is there meets the refusal: a probe that swallowed it
+    # would report a non-note holding the name and send a human after something
+    # that is not the problem.
     walled = vault / "walled"
     walled.mkdir()
     (walled / "note.md").write_text("x\n")
     (vault / "Sources" / f"{S}.md").symlink_to(walled / "note.md")
-    (vault / "Sources" / f".{S}.md.icloud").write_bytes(b"stale")
     walled.chmod(0o000)
     try:
         before = _snapshot(vault)

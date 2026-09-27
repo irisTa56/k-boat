@@ -93,23 +93,6 @@ def test_collision_exits_nonzero(
     assert json.loads(capsys.readouterr().out)["status"] == "collision"
 
 
-def test_an_evicted_note_exits_nonzero_with_the_refusal_on_stdout(
-    vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # What `kboat-ingest` reads to keep the capture queued: exit 1 and an
-    # `evicted` record, with the placeholder left exactly where it was.
-    stub = vault / "Sources" / f".{SLUG}.md.icloud"
-    stub.write_bytes(b"placeholder")
-    rec = json.dumps({"slug": SLUG, "fields": {"type": "source", "title": "T", "url": URL}})
-
-    assert _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch) == 1
-
-    out = json.loads(capsys.readouterr().out)
-    assert out == {"status": "evicted", "slug": SLUG, "path": f"Sources/{SLUG}.md"}
-    assert sorted(p.name for p in (vault / "Sources").iterdir()) == [stub.name]
-    assert stub.read_bytes() == b"placeholder"
-
-
 def test_a_note_naming_a_key_twice_exits_nonzero_with_the_refusal_on_stdout(
     vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

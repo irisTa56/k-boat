@@ -11,8 +11,8 @@ caller, which a run reading it would treat very differently.
 
 Stdin rather than a title or a path: the writer has just read the note through
 Basic Memory and already holds the text, so taking it directly keeps the tool off
-the knowledge root entirely -- no filename transform, no title resolution, no
-iCloud probe, and no shell quoting of a title that may hold anything.
+the knowledge root entirely -- no filename transform, no title resolution, and
+no shell quoting of a title that may hold anything.
 """
 
 from __future__ import annotations

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from kboat.doctor import core
 from kboat.doctor.core import REQUIRED_DIRS
 from kboat.schema import QUESTIONS_FILE
 
@@ -25,12 +26,21 @@ def healthy_vault(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def evict() -> Callable[[Path, str], Path]:
-    """Plant the placeholder iCloud leaves behind when it evicts a named file."""
+def evict(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, str], Path]:
+    """Make a named file one iCloud has evicted in place: there, under its own name.
+
+    Only the file provider sets the dataless flag, so a test cannot. The probe is
+    patched to answer for the files planted here, and the real one answers for
+    every other file.
+    """
+    evicted: set[Path] = set()
+    real = core._dataless
+    monkeypatch.setattr(core, "_dataless", lambda path: path in evicted or real(path))
 
     def plant(directory: Path, name: str) -> Path:
-        placeholder = directory / f".{name}.icloud"
-        placeholder.write_bytes(b"")
-        return placeholder
+        path = directory / name
+        path.write_bytes(b"")
+        evicted.add(path)
+        return path
 
     return plant

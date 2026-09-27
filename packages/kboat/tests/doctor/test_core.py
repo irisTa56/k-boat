@@ -17,7 +17,8 @@ from kboat.doctor.core import (
     NOTE_DIRS,
     Check,
     Status,
-    _placeholders,
+    _dataless,
+    _scan,
     run_checks,
 )
 from kboat.schema import DIR_BY_TYPE, PDFS_DIR, QUESTIONS_FILE, QUEUE_DIR, REVIEWS_DIR
@@ -33,8 +34,7 @@ CHECK_ORDER = (
     "questions_file",
     "readable_notes",
     "readable_assets",
-    "icloud_notes",
-    "icloud_assets",
+    "evicted_files",
 )
 
 
@@ -218,18 +218,6 @@ class TestQuestionsFile:
         assert check.status == Status.FAILED
         assert "missing" in check.detail
 
-    def test_an_evicted_questions_file_says_so_rather_than_missing(
-        self, healthy_vault: Path, evict: Evict
-    ) -> None:
-        # Recreating a file iCloud still holds makes a sync conflict, so the two
-        # cases must not share one message.
-        (healthy_vault / QUESTIONS_FILE).unlink()
-        evict(healthy_vault, QUESTIONS_FILE)
-        check = by_name(healthy_vault)["questions_file"]
-        assert check.status == Status.FAILED
-        assert "evicted" in check.detail
-        assert check.paths == (f".{QUESTIONS_FILE}.icloud",)
-
     def test_a_dangling_symlink_named_like_the_questions_file_is_not_missing(
         self, healthy_vault: Path
     ) -> None:
@@ -295,7 +283,7 @@ class TestUnreadableDirectories:
     def test_an_asset_directory_that_is_only_unlistable_warns(
         self, healthy_vault: Path, directory: str
     ) -> None:
-        # Split by cost, like the placeholder pair: no phase *lists* `PDFs/` — ingest
+        # Split by cost: no phase *lists* `PDFs/` — ingest
         # writes one path, `migrate` probes one by name — so an unlistable but still
         # traversable one must not stop the routine, which a failure would.
         (healthy_vault / directory).chmod(0o111)
@@ -310,15 +298,15 @@ class TestUnreadableDirectories:
     def test_an_unreadable_directory_does_not_masquerade_as_clean(
         self, healthy_vault: Path, evict: Evict
     ) -> None:
-        # The placeholder it hides is not found — nothing can find it — so the
-        # two checks have to be read together, which is why this one fails.
+        # The eviction it hides is not found — nothing can find it — so the two
+        # checks have to be read together, which is why this one fails.
         evict(healthy_vault / "Sources", "abc123.md")
         (healthy_vault / "Sources").chmod(0o111)
         try:
             checks = by_name(healthy_vault)
         finally:
             (healthy_vault / "Sources").chmod(0o755)
-        assert checks["icloud_notes"].status == Status.OK
+        assert checks["evicted_files"].status == Status.OK
         assert checks["readable_notes"].status == Status.FAILED
 
     def test_a_nested_directory_that_cannot_be_listed_fails(self, healthy_vault: Path) -> None:
@@ -364,9 +352,9 @@ class TestUnreadableDirectories:
     def test_a_directory_that_lists_but_cannot_be_opened_through_is_reported(
         self, healthy_vault: Path
     ) -> None:
-        # `r--`: the walk reads the names and raises nothing, and the placeholder
-        # sweep still matches by name — silent by construction. It is also the one
-        # state where a per-name probe answers "absent" for a file that is there.
+        # `r--`: the walk reads the names and raises nothing — silent by
+        # construction. It is also the one state where a per-name probe answers
+        # "absent" for a file that is there.
         directory = healthy_vault / "Sources"
         directory.chmod(0o444)
         try:
@@ -376,27 +364,6 @@ class TestUnreadableDirectories:
         assert check.status == Status.FAILED
         assert check.paths == ("Sources",)
         assert "not traversable" in check.detail
-
-    def test_a_stale_stub_beside_its_own_file_is_not_an_eviction(
-        self, healthy_vault: Path, evict: Evict
-    ) -> None:
-        # Failing here would stop the whole routine over a note that is present and
-        # readable, telling a human to wait for a download that already happened.
-        evict(healthy_vault / "Sources", "abc123.md")
-        (healthy_vault / "Sources" / "abc123.md").write_text("---\ntype: source\n---\n")
-
-        assert by_name(healthy_vault)["icloud_notes"].status == Status.OK
-
-    def test_a_directory_holding_a_notes_name_counts_as_present(
-        self, healthy_vault: Path, evict: Evict
-    ) -> None:
-        # The two copies of this predicate disagreed here on their first day: one
-        # saw every entry, the other only files. A disagreement between the
-        # precondition and the passes it gates is the one that stops the routine.
-        evict(healthy_vault / "Sources", "abc123.md")
-        (healthy_vault / "Sources" / "abc123.md").mkdir()
-
-        assert by_name(healthy_vault)["icloud_notes"].status == Status.OK
 
     @pytest.mark.parametrize("directory", ASSET_DIRS)
     @pytest.mark.parametrize("mode", (0o444, 0o000))
@@ -509,7 +476,7 @@ class TestUnreadableDirectories:
         raised: OSError,
         expected: str,
     ) -> None:
-        # Asked of `_placeholders` directly: both arms are races — the gate `stat`ed
+        # Asked of `_scan` directly: both arms are races — the gate `stat`ed
         # this path successfully a syscall earlier and only `os.access` ran in
         # between — so reaching them through `run_checks` would mean patching a
         # `stat` that the folder checks consume first. Without the split, a
@@ -531,7 +498,7 @@ class TestUnreadableDirectories:
             os, "access", lambda p, m: False if Path(p) == target else real_access(p, m)
         )
         monkeypatch.setattr(Path, "stat", gate_then_fail)
-        _found, refused, vanished, reasons = _placeholders(healthy_vault, ("Sources",))
+        _found, refused, vanished, reasons = _scan(healthy_vault, ("Sources",))
 
         if expected == "vanished":
             assert vanished == ("Sources",) and refused == ()
@@ -550,33 +517,24 @@ class TestUnreadableDirectories:
         assert checks["readable_assets"].status == Status.OK
 
 
-class TestIcloudPlaceholders:
-    @pytest.mark.parametrize("directory", NOTE_DIRS)
-    def test_placeholder_in_a_note_directory_fails(
+class TestEvictedFiles:
+    @pytest.mark.parametrize("directory", (*NOTE_DIRS, *ASSET_DIRS))
+    def test_an_evicted_file_only_warns(
         self, healthy_vault: Path, evict: Evict, directory: str
     ) -> None:
+        # An evicted file keeps its name and a read downloads it, so the run over
+        # it succeeds; failing would stop a run that has nothing wrong with it.
         evict(healthy_vault / directory, "abc123.md")
-        check = by_name(healthy_vault)["icloud_notes"]
-        assert check.status == Status.FAILED
-        assert check.paths == (f"{directory}/.abc123.md.icloud",)
-
-    @pytest.mark.parametrize("directory", ASSET_DIRS)
-    def test_placeholder_in_an_asset_directory_only_warns(
-        self, healthy_vault: Path, evict: Evict, directory: str
-    ) -> None:
-        # Distillation reads a PDF's content back from its notebook, so an
-        # evicted reading copy must not stop the routine.
-        evict(healthy_vault / directory, "abc123.pdf")
         checks = by_name(healthy_vault)
-        assert checks["icloud_assets"].status == Status.WARNING
-        assert checks["icloud_assets"].paths == (f"{directory}/.abc123.pdf.icloud",)
-        assert checks["icloud_notes"].status == Status.OK
+        assert checks["evicted_files"].status == Status.WARNING
+        assert checks["evicted_files"].paths == (f"{directory}/abc123.md",)
+        assert not any(c.status == Status.FAILED for c in checks.values())
 
-    def test_nested_placeholder_is_found(self, healthy_vault: Path, evict: Evict) -> None:
+    def test_nested_eviction_is_found(self, healthy_vault: Path, evict: Evict) -> None:
         nested = healthy_vault / "Sources" / "archive"
         nested.mkdir()
         evict(nested, "old.md")
-        assert by_name(healthy_vault)["icloud_notes"].paths == ("Sources/archive/.old.md.icloud",)
+        assert by_name(healthy_vault)["evicted_files"].paths == ("Sources/archive/old.md",)
 
     def test_a_symlinked_subdirectory_is_not_descended(
         self, healthy_vault: Path, evict: Evict, tmp_path_factory: pytest.TempPathFactory
@@ -586,40 +544,98 @@ class TestIcloudPlaceholders:
         outside = tmp_path_factory.mktemp("outside")
         evict(outside, "hidden.md")
         (healthy_vault / DIR_BY_TYPE["source"] / "sub").symlink_to(outside)
-        assert by_name(healthy_vault)["icloud_notes"].status == Status.OK
+        assert by_name(healthy_vault)["evicted_files"].status == Status.OK
 
-    def test_all_placeholders_are_listed_sorted(self, healthy_vault: Path, evict: Evict) -> None:
+    def test_all_evictions_are_listed_sorted(self, healthy_vault: Path, evict: Evict) -> None:
         evict(healthy_vault / "Sources", "b.md")
-        evict(healthy_vault / "Sources", "a.md")
+        evict(healthy_vault / "PDFs", "a.pdf")
         evict(healthy_vault / "Queue", "c.md")
-        check = by_name(healthy_vault)["icloud_notes"]
-        assert check.paths == (
-            "Queue/.c.md.icloud",
-            "Sources/.a.md.icloud",
-            "Sources/.b.md.icloud",
-        )
+        check = by_name(healthy_vault)["evicted_files"]
+        assert check.paths == ("PDFs/a.pdf", "Queue/c.md", "Sources/b.md")
 
-    def test_the_vault_root_is_not_swept(self, healthy_vault: Path, evict: Evict) -> None:
-        # The documented boundary: a Base is Obsidian's own view and no phase reads
-        # it, so an evicted one must not become a hard stop for the whole routine.
-        evict(healthy_vault, "Sources.base")
-        checks = by_name(healthy_vault)
-        assert checks["icloud_notes"].status == Status.OK
-        assert checks["icloud_assets"].status == Status.OK
+    def test_ordinary_files_are_not_evicted(self, healthy_vault: Path) -> None:
+        (healthy_vault / "Sources" / "abc.md").write_text("---\ntype: source\n---\n")
+        (healthy_vault / "PDFs" / "abc.pdf").write_bytes(b"%PDF-")
+        assert by_name(healthy_vault)["evicted_files"].status == Status.OK
 
-    def test_ordinary_notes_are_not_placeholders(self, healthy_vault: Path) -> None:
-        sources = healthy_vault / "Sources"
-        (sources / "abc.md").write_text("---\ntype: source\n---\n", encoding="utf-8")
-        (sources / "icloud.md").write_text("not a placeholder\n", encoding="utf-8")
-        assert by_name(healthy_vault)["icloud_notes"].status == Status.OK
-
-    def test_a_missing_folder_yields_no_placeholder_finding(self, healthy_vault: Path) -> None:
+    def test_a_missing_folder_yields_no_eviction_finding(self, healthy_vault: Path) -> None:
         # The absent folder is `required_folders`' finding; scanning it is not
         # this check's business, and it must not crash on one.
         (healthy_vault / "Reviews").rmdir()
         checks = by_name(healthy_vault)
         assert checks["required_folders"].status == Status.FAILED
-        assert checks["icloud_notes"].status == Status.OK
+        assert checks["evicted_files"].status == Status.OK
+
+    def test_a_file_whose_probe_is_refused_is_reported_not_passed(
+        self, healthy_vault: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Read as "not evicted", a refused probe would be a file this check never
+        # looked at reported as one it cleared.
+        note = healthy_vault / "Sources" / "abc.md"
+        note.write_text("")
+        real = Path.lstat
+
+        def refusing(self: Path) -> os.stat_result:
+            if self == note:
+                raise PermissionError(13, "Permission denied", str(self))
+            return real(self)
+
+        monkeypatch.setattr(Path, "lstat", refusing)
+        checks = by_name(healthy_vault)
+        assert checks["readable_notes"].status == Status.FAILED
+        assert checks["readable_notes"].paths == ("Sources/abc.md",)
+
+    def test_a_file_gone_before_its_probe_is_skipped(
+        self, healthy_vault: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        note = healthy_vault / "Sources" / "abc.md"
+        note.write_text("")
+        real = Path.lstat
+
+        def vanishing(self: Path) -> os.stat_result:
+            if self == note:
+                raise FileNotFoundError(2, "No such file or directory", str(self))
+            return real(self)
+
+        monkeypatch.setattr(Path, "lstat", vanishing)
+        checks = by_name(healthy_vault)
+        assert checks["readable_notes"].status == Status.OK
+        assert checks["evicted_files"].status == Status.OK
+
+
+class TestDatalessProbe:
+    def test_the_flag_is_what_marks_an_eviction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The flag the file provider sets, read off `lstat`. A test cannot set it,
+        # so the stat result is faked around a real file.
+        path = tmp_path / "a.md"
+        path.write_text("")
+        real = os.lstat(path)
+
+        class Flagged:
+            st_mode = real.st_mode
+            st_flags = stat.SF_DATALESS | 0x20
+
+        monkeypatch.setattr(Path, "lstat", lambda self: Flagged())
+        assert _dataless(path)
+
+    def test_a_platform_without_st_flags_has_nothing_evicted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "a.md"
+        path.write_text("")
+
+        class Bare:
+            st_mode = stat.S_IFREG
+
+        monkeypatch.setattr(Path, "lstat", lambda self: Bare())
+        assert not _dataless(path)
+
+    def test_an_ordinary_file_is_not_dataless(self, tmp_path: Path) -> None:
+        path = tmp_path / "a.md"
+        path.write_text("x")
+        assert not _dataless(path)
 
 
 class TestCheckJson:
@@ -653,7 +669,7 @@ class TestReportedPaths:
     def test_a_long_list_is_bounded_with_its_total_kept(self) -> None:
         # Bounded because the caller is an unattended agent and the failure this
         # check exists for can evict thousands of files at once.
-        many = tuple(f"Sources/.n{i}.md.icloud" for i in range(MAX_REPORT_PATHS + 4))
-        out = Check("icloud_notes", Status.FAILED, "many", many).to_json()
+        many = tuple(f"Sources/n{i}.md" for i in range(MAX_REPORT_PATHS + 4))
+        out = Check("evicted_files", Status.WARNING, "many", many).to_json()
         assert out["paths"] == list(many[:MAX_REPORT_PATHS])
         assert out["path_count"] == len(many)

@@ -26,7 +26,6 @@ import os
 import re
 import stat
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,11 +42,8 @@ from kboat.io_utils import (
     atomic_write_text,
     file_present,
     fsync_dir,
-    icloud_placeholder,
     list_note_dir,
     name_occupied,
-    name_taken,
-    stranded_stub,
     unread_dir,
 )
 from kboat.naming import note_slug
@@ -106,11 +102,6 @@ class Row:
     moves: list[str] = field(default_factory=list)
     status: str = "pending"
     detail: str = ""
-    # `(vacated name, what the report says about it)`, for each name this row
-    # gives up that a stale stub sits beside. Kept apart from `detail` and out of
-    # `to_json`, because a `--apply` that fails has to re-judge each line against
-    # what actually moved; the report contract stays `detail`.
-    strands: list[tuple[str, str]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, object]:
         out: dict[str, object] = {
@@ -192,29 +183,8 @@ def _reading_link(fm: Mapping[str, object], entries: Sequence[Entry]) -> object:
     return "\n".join(held.lines) if held is not None and not held.modelled else None
 
 
-def _pdf_state(vault: Path, current: str, expected: str) -> tuple[str, Path, Path, Path | None]:
-    """Where this source's PDF is: `moving`, `moved`, `conflict`, `evicted`, or `absent`.
-
-    The fourth value is **which** name a placeholder holds, for the `evicted`
-    state alone. Naming the other one instead sends a human to open a file that
-    is present and readable, with nothing in the report pointing at the blocker.
-
-    `evicted` is what a plain existence check gets wrong. The vault is
-    iCloud-synced, so a PDF that has been evicted is not gone — it is a
-    `.<slug>.pdf.icloud` placeholder, and `exists()` on the file says `False`
-    exactly as it would for a `web_page` source that never had one. At the source
-    name, moving past it strands the reading copy under its old name; at the
-    target name, it means writing over the identity of a file that is not gone
-    but only not here yet, which iCloud settles later by suffixing or dropping
-    one of the two.
-
-    Each name is settled on its own, file before placeholder, because the two can
-    sit side by side and a stale placeholder beside a live file must not speak for
-    it: asking the placeholder question of both names first turns a pair that
-    would migrate cleanly into a permanent conflict, reported against a file
-    anyone can open. Asking it per name is not the same as asking it last — a
-    placeholder at the **target** still blocks the move, since `os.replace` would
-    put the file beside it under a name iCloud is still holding.
+def _pdf_state(vault: Path, current: str, expected: str) -> tuple[str, Path, Path]:
+    """Where this source's PDF is: `moving`, `moved`, `conflict`, or `absent`.
 
     Every probe **raises** where the vault refuses the read, and each caller has a
     boundary for it. `exists()` swallowed the refusal and answered "no file", so
@@ -230,29 +200,19 @@ def _pdf_state(vault: Path, current: str, expected: str) -> tuple[str, Path, Pat
     old = vault / PDFS_DIR / f"{current}.pdf"
     new = vault / PDFS_DIR / f"{expected}.pdf"
     if _file_there(old):
-        if name_occupied(new):
-            return "conflict", old, new, None
-        if _file_there(icloud_placeholder(new)):
-            return "evicted", old, new, new
-        return "moving", old, new, None
-    if _file_there(icloud_placeholder(old)):
-        return "evicted", old, new, old
+        return ("conflict" if name_occupied(new) else "moving"), old, new
     # Nothing at the source name: the pair is either already across (a `--apply`
     # renames the file first, so a crash between the two leaves exactly this) or
-    # there was never a file. An evicted PDF at the target is across too — the
-    # note's rename is not blocked by it, and refusing the row would strand a
-    # pair that is one rename from done.
-    across = name_occupied(new) or _file_there(icloud_placeholder(new))
-    return ("moved" if across else "absent"), old, new, None
+    # there was never a file.
+    return ("moved" if name_occupied(new) else "absent"), old, new
 
 
 def _file_there(path: Path) -> bool:
     """`file_present`, for a name derived from a note's slug — raising where the vault refuses.
 
     One refusal is an answer rather than a refusal: a name too long for the
-    filesystem. A long title-derived slug produces one twice over — its PDF name
-    once the note's own name is at the limit, and its placeholder's name from 248
-    bytes on. The kernel will not look such a name up, so nothing can be held under
+    filesystem. A long title-derived slug produces one as its PDF name once the
+    note's own name is at the limit. The kernel will not look such a name up, so nothing can be held under
     it, and "no file" is known rather than guessed. Refusing there would make a
     permanent conflict of exactly the long names this repair exists to move.
     """
@@ -304,21 +264,19 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
         # slug in both — the ordinary case now that every type hashes the same
         # canonical URL, and not a clash between them.
         claimed: set[str] = set()
-        # An evicted note matches no `*.md` glob and a directory the OS will not
-        # list globs empty, so either would otherwise scan clean — the one answer
+        # A directory the OS will not list globs empty, so it would otherwise
+        # scan clean — the one answer
         # this must never give, since it is what the `--apply` is approved from and
         # "nothing to do" is terminal for a repair that runs once. An absent folder
         # is the same answer from a vault that has not synced, since every folder
         # scanned here is in the vault's required set.
         try:
-            found, placeholders = list_note_dir(directory, required=True)
+            found = list_note_dir(directory, required=True)
         except OSError as exc:
             skipped.append(
                 Skipped(DIR_BY_TYPE[schema.type], f"{UNREADABLE_DIR}: {unread_dir(exc)}")
             )
             continue
-        for placeholder in placeholders:
-            skipped.append(Skipped(placeholder.relative_to(vault).as_posix(), "icloud_placeholder"))
         for path in found:
             rel = path.relative_to(vault).as_posix()
             target, reason = _read_target(path, schema.identity)
@@ -329,21 +287,19 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
             if expected == path.stem:
                 continue
             row = Row(schema.type, rel, path.stem, expected, target.url)
-            stranded: list[tuple[str, str]] = []
-            vacating: list[Path] = []
             # What travels is worked out before any refusal, so a conflict row
             # says what the conflict costs — a reader triaging the dry run would
             # otherwise read an empty `moves` as a note with no file to strand.
             reasons: list[str] = []
             if schema.type == SOURCE.type:
-                state, evicted_pdf = None, None
+                state = None
                 if pdfs_unread is not None:
                     # Asked of every source, a web page included: whether a note
                     # has a PDF is what the probe below would have answered.
                     reasons.append(f"{PDFS_DIR}/ could not be read ({pdfs_unread})")
                 else:
                     try:
-                        state, _, _, evicted_pdf = _pdf_state(vault, path.stem, expected)
+                        state, _, _ = _pdf_state(vault, path.stem, expected)
                     except OSError as exc:
                         # This row's conflict rather than the pass's failure, as
                         # the target note's refusal below is: the remedy is the
@@ -351,66 +307,23 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
                         reasons.append(f"this source's PDF could not be looked for: {exc}")
                 if state in ("moving", "conflict"):
                     row.moves.append(f"{PDFS_DIR}/{path.stem}.pdf")
-                    # A stub beside the file it names is left where it is — removing
-                    # an iCloud placeholder is how a file leaves iCloud, which is not
-                    # this repair's call to make. But the move takes the file out
-                    # from under it, so the row says so rather than reading as clean:
-                    # otherwise nothing in the report mentions the stub, no later
-                    # pass revisits the note (its slug now matches), and `doctor`
-                    # warns about it for good with no account of where it came from.
-                    vacating.append(vault / PDFS_DIR / f"{path.stem}.pdf")
                 if state == "conflict":
                     reasons.append(f"{PDFS_DIR}/{expected}.pdf is taken")
-                elif state == "evicted" and evicted_pdf is not None:
-                    # The pair still travels: `_pdf_state` reaches `evicted` only
-                    # with the source name spoken for — by a file, or by a
-                    # placeholder of its own, which is a file that is coming back.
-                    # `moves` names that name, not necessarily a file present now.
-                    row.moves.append(f"{PDFS_DIR}/{path.stem}.pdf")
-                    reasons.append(
-                        f"{evicted_pdf.relative_to(vault).as_posix()} is an iCloud placeholder"
-                    )
                 if _retargeted_link(target.reading_link, path.stem, expected) is None:
                     # The link names this note's PDF in a shape the retarget
                     # cannot read, so moving the pair would dangle it. The note
                     # and its file move together or not at all, and this is the
                     # third way that can fail.
                     reasons.append(f"reading_link {target.reading_link!r} cannot be retargeted")
-            # The note's own name is vacated too, and stranding its stub is worse
-            # than the PDF's: a lone note placeholder fails `icloud_notes` and
-            # stops the routine rather than warning.
-            vacating.append(path)
             target_path = directory / f"{expected}.md"
             target_note = f"{DIR_BY_TYPE[schema.type]}/{expected}.md"
-            # Outside the boundary below, and deliberately: this probe reports
-            # rather than refuses, so a name it cannot even ask about — the long
-            # ones this repair exists for — does not make the row a conflict. The
-            # rename is what makes such a name probeable again.
-            for vacated in vacating:
-                probe = stranded_stub(vacated)
-                rel_vacated = vacated.relative_to(vault).as_posix()
-                if probe.stub is not None:
-                    text = f"{probe.stub.relative_to(vault).as_posix()} stays behind"
-                elif probe.unknown is not None:
-                    text = f"a stub beside {rel_vacated} could not be determined"
-                else:
-                    continue
-                stranded.append((rel_vacated, text))
             try:
-                taken = name_taken(target_path)
+                taken = name_occupied(target_path)
                 # Inside the same boundary, and with probes that refuse rather
                 # than guess: deciding the cause with a swallowing `exists()`
                 # reported a refused read as a name nothing will free, sending a
                 # human after a broken symlink that is not there.
                 has_file = taken and file_present(target_path)
-                # The name itself before the placeholder beside it: a directory or
-                # a dangling symlink there is a name no download frees, and a stale
-                # stub must not answer for it. So `has_stub` is claimed for a real
-                # placeholder rather than reached by elimination — it picks the one
-                # wording whose remedy is to wait.
-                has_stub = False
-                if taken and not has_file and not name_occupied(target_path):
-                    has_stub = file_present(icloud_placeholder(target_path))
             except OSError as exc:
                 # A refusal is not an answer: a scan reading it as a free name would
                 # rename onto whatever it could not read. It is this row's conflict
@@ -421,22 +334,12 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
                 # a human.
                 reasons.insert(0, f"{target_note} could not be read: {exc}")
             else:
-                # An evicted note at the target gets its own words rather than
-                # "is taken": the two rows would otherwise be byte-identical, and
-                # their remedies are opposite — a file there is a human's to
-                # merge, while a placeholder is a file that has to come back
-                # first, and cannot be merged with or even opened meanwhile.
                 if taken and not has_file:
-                    # The name is spoken for by something that is not a file, and
-                    # the two ways part on who acts: a placeholder is a file that
-                    # has to come back, while anything else — a dangling symlink is
-                    # the one that occurs — is a name nothing will free on its own.
-                    # Both would read as "is taken", which sends a human to merge
+                    # The name is spoken for by something that is not a file — a
+                    # dangling symlink is the one that occurs — and nothing will
+                    # free it on its own. "Is taken" would send a human to merge
                     # with a second note that is not there.
-                    if has_stub:
-                        reasons.insert(0, f"{target_note} is an iCloud placeholder")
-                    else:
-                        reasons.insert(0, f"{target_note} is a name held by something else")
+                    reasons.insert(0, f"{target_note} is a name held by something else")
                 elif taken:
                     reasons.insert(0, f"{target_note} is taken")
                 elif expected in claimed:
@@ -444,12 +347,6 @@ def plan(vault: Path) -> tuple[list[Row], list[Skipped]]:
                     # its own `reason`: in a dry run nothing has been written, so
                     # "is taken" sends a reader to a path that is empty.
                     reasons.insert(0, f"{target_note} is claimed by another note this pass")
-            if stranded:
-                # Not a conflict: the move goes ahead and the row says what it
-                # leaves, since the note's slug then matches and no later pass
-                # revisits it.
-                row.strands = sorted(stranded)
-                row.detail = "; ".join(text for _, text in row.strands)
             if reasons:
                 row.status = "conflict"
                 row.detail = "; ".join(reasons)
@@ -500,20 +397,6 @@ def _retarget_reading_link(path: Path, current: str, expected: str) -> None:
     atomic_write_text(path, set_field(text, "reading_link", rendered))
 
 
-def _vacated(vault: Path, name: str) -> bool:
-    """Whether this run really did give up `name` — a vault-relative path.
-
-    Asked only from the failure handler, which already has an error to report, so
-    a refusal here must not replace it. A name the vault will not answer for is
-    read as **still occupied**: the row then says less rather than sending a human
-    after a stub that is still paired with its own file, and deleting a
-    placeholder is how a file leaves iCloud.
-    """
-    with suppress(OSError):
-        return not name_occupied(vault / name)
-    return False
-
-
 def apply_row(vault: Path, row: Row) -> None:
     """Move one note (and its PDF) to the expected slug. Raises on any failure.
 
@@ -532,7 +415,7 @@ def apply_row(vault: Path, row: Row) -> None:
         # Probed before the link is retargeted: the probe can refuse, and a refusal
         # after the rewrite would leave the note at its old name pointing at a PDF
         # name nothing moved the file to.
-        state, old_pdf, new_pdf, _ = _pdf_state(vault, row.current, row.expected)
+        state, old_pdf, new_pdf = _pdf_state(vault, row.current, row.expected)
         _retarget_reading_link(path, row.current, row.expected)
         if state == "moving":
             os.replace(old_pdf, new_pdf)
@@ -596,18 +479,7 @@ def migrate(vault: Path, *, apply: bool) -> Report:
             # `apply_row` re-reads the note, which can have changed since `plan` read it.
             except NOTE_READ_ERRORS as exc:
                 row.status = "failed"
-                # `plan` names a strand before the move, and this row's move may
-                # have failed anywhere: before the first rename, between the PDF's
-                # and the note's, or after both — `fsync_dir` raises once its
-                # rename has landed. So each line is re-judged by asking the name
-                # back, and kept only where this run really did vacate it: the
-                # spec's condition is an apply that *vacates* a name, and a stub
-                # beside a file that is still there is not lone. What survives is
-                # appended rather than replacing the error, since that is the only
-                # account of a placeholder that stops the routine from the next
-                # day on.
-                kept = "; ".join(text for name, text in row.strands if _vacated(vault, name))
-                row.detail = f"{kept}; {exc}" if kept else str(exc)
+                row.detail = str(exc)
             else:
                 row.status = "renamed"
     return Report(vault, apply, rows, skipped)
