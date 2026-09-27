@@ -94,7 +94,6 @@ from feed_filter.sites import (
 )
 from feed_filter.vault import (
     VaultError,
-    VaultEvictedError,
     VaultRepeatedKeyError,
     write_feed_note,
 )
@@ -1375,10 +1374,6 @@ def main(argv: Sequence[str] | None = None) -> int:
       recur: the holder finishes. A run skill needs to tell it apart from a refused
       write or a disk error, which recur and mean stop, so it can leave this entry
       for the next run and keep reminding;
-    - ``VaultEvictedError`` — the ``VaultError`` for a note iCloud has evicted, which
-      prints ``{"status": "evicted", "slug", "path"}`` on stdout for the same reason:
-      it concerns this one note and clears once the note is downloaded, so a run
-      skill leaves the entry for a later run and keeps reminding the others;
     - ``VaultRepeatedKeyError`` — the ``VaultError`` for a note naming a key on more
       than one line, which prints ``{"status": "repeated_key", "slug", "path",
       "keys"}`` on stdout: it clears only once a human deletes the line not meant,
@@ -1413,10 +1408,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         exit_code: int = args.handler(args)
     except VaultLockedError as exc:
         _emit({"status": WriteStatus.LOCKED, "holder": exc.holder})
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    except VaultEvictedError as exc:
-        _emit({"status": WriteStatus.EVICTED, "slug": exc.slug, "path": exc.path})
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except VaultRepeatedKeyError as exc:

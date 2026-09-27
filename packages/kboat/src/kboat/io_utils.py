@@ -37,16 +37,7 @@ import errno
 import os
 import stat
 import tempfile
-from collections.abc import Container, Iterable
-from dataclasses import dataclass
-from fnmatch import fnmatch
 from pathlib import Path
-
-# iCloud replaces an evicted file with a placeholder of this shape beside where
-# the file was: `Sources/abc.md` becomes `Sources/.abc.md.icloud`. The vault is
-# iCloud-synced, so any tool that decides something from a file's absence has to
-# be able to tell "not there" from "not here yet".
-ICLOUD_GLOB = ".*.icloud"
 
 # A directory that lists but cannot be opened through — the message this module
 # raises with, the one `kboat.doctor` tags its own probe with, and the one
@@ -57,46 +48,23 @@ ICLOUD_GLOB = ".*.icloud"
 NOT_TRAVERSABLE = "Permission denied (not traversable)"
 
 
-def icloud_placeholder(path: Path) -> Path:
-    """Where iCloud leaves its marker when `path` is evicted."""
-    return path.parent / f".{path.name}.icloud"
+def name_occupied(path: Path) -> bool:
+    """Whether a name is spoken for — by a file or by anything else, a symlink included.
 
-
-def name_taken(path: Path) -> bool:
-    """Whether a name is spoken for — by a file, by one iCloud has evicted, or by a symlink.
-
-    The question to ask before claiming a name, and the one a bare `Path.exists()`
-    answers wrongly twice over. A placeholder means the file is not gone but not
-    here yet, so writing at that name claims an identity another file still holds;
-    iCloud settles the two later by suffixing or dropping one, which is a duplicate
-    arriving quietly, long after the run that made it. And presence is asked without
-    following symlinks, for the reason `kboat.doctor` gives where it asks the same
-    way: a dangling symlink is a name already taken, and a writer told it is free
-    replaces the link rather than the file it points at.
+    The question to ask before claiming a name, and one a bare `Path.exists()`
+    answers wrongly twice over. Presence is asked without following symlinks, for
+    the reason `kboat.doctor` gives where it asks the same way: a dangling symlink
+    is a name already taken, and a writer told it is free replaces the link rather
+    than the file it points at.
 
     **Raises** rather than answering when the vault refuses the read. `lstat`, not
     `Path.exists`, is what makes that possible: from CPython 3.14 `exists()` is
     `os.path.exists` (and `os.path.lexists` under `follow_symlinks=False`), and both
     swallow every `OSError` and return `False` — so on the interpreter this
     workspace runs, a permission-denied probe would come back as a free name, which
-    is the one wrong answer this exists to prevent. Only the
-    two errors that genuinely mean "no such name" are read as free; the caller
-    decides what the rest are, and each has a per-item boundary that says so.
-    """
-    return name_occupied(path) or name_occupied(icloud_placeholder(path))
-
-
-def name_occupied(path: Path) -> bool:
-    """Whether anything is at `path` itself — **raising** where the vault refuses.
-
-    `name_taken`'s first half, split out because the classifiers need it. They ask
-    three questions, not two: is a *file* there, is anything else there, is there
-    a placeholder. Without the middle one a directory or a dangling symlink at a
-    slug falls through to the placeholder test, and a stale stub beside it then
-    answers for it — reporting a name no download will ever free as one that is
-    only waiting on iCloud, which both skills route to nobody.
-
-    `lstat`, so a dangling symlink counts: the name is spoken for either way.
+    is the one wrong answer this exists to prevent. Only the two errors that
+    genuinely mean "no such name" are read as free; the caller decides what the
+    rest are, and each has a per-item boundary that says so.
     """
     try:
         path.lstat()
@@ -108,7 +76,7 @@ def name_occupied(path: Path) -> bool:
 def file_present(path: Path) -> bool:
     """Whether a file is at `path` — **raising** where the vault refuses the read.
 
-    `name_taken`'s companion, for the caller that has been told a name is spoken
+    `name_occupied`'s companion, for the caller that has been told a name is spoken
     for and has to say by what. `Path.exists()` cannot do that job: it swallows the
     refusal, so a symlink into an unreadable tree comes back as "no file here" and
     the caller reports a name held by something no run will free, sending a human
@@ -126,75 +94,18 @@ def file_present(path: Path) -> bool:
     return stat.S_ISREG(mode)
 
 
-@dataclass(frozen=True)
-class StubProbe:
-    """What a writer about to vacate a name learned about the stub beside it.
+def list_note_dir(directory: Path, *, required: bool = False) -> list[Path]:
+    """One note directory's `*.md` files, sorted.
 
-    Three answers, not two, and **no raise** — which is the opposite of the other
-    probes here and deliberate. They refuse because guessing wrong makes a writer
-    claim a name it should not have; this one is asked *after* that decision, about
-    a name the writer is giving up. Refusing to answer would abort a rename over a
-    stub, and the probe itself can fail on the very names this repair exists for: a
-    filename of 248 bytes or more makes its `.icloud` sibling exceed the 255-byte
-    limit, so the answer is unobtainable exactly where the note most needs moving —
-    and the rename is what makes the name probeable again.
-
-    So "I could not tell" is a report, never a refusal.
-    """
-
-    stub: Path | None = None
-    unknown: str | None = None
-
-
-def stranded_stub(path: Path) -> StubProbe:
-    """The placeholder beside `path`, for a writer about to vacate that name.
-
-    The other half of the rule `evictions` states. A stub beside its own present
-    file is not an eviction *while the file is there* — but a writer that renames
-    or unlinks the file makes it one, and from then on the stub is a lone
-    placeholder that fails `kboat-doctor`'s `icloud_notes` and stops the routine
-    every day, out of a report that never mentioned it. So the two halves belong
-    together: the reporting side skips the pair, and the side that breaks the pair
-    says so. Removing the stub is nobody's here — deleting a placeholder is how a
-    file leaves iCloud.
-    """
-    stub = icloud_placeholder(path)
-    try:
-        return StubProbe(stub=stub if file_present(stub) else None)
-    except OSError as exc:
-        return StubProbe(unknown=str(exc))
-
-
-def evictions(names: Iterable[str], present: Container[str]) -> list[str]:
-    """The placeholders among `names` that are evictions, given what is `present`.
-
-    A placeholder sitting beside its own present file is a stale stub, not an
-    eviction: the file is here, so reporting it would tell a reader the wait is on
-    a download that already happened, in the same report that shows the file was
-    read. It is the file-before-placeholder precedence the writers apply when they
-    claim a name, asked of the reporting side.
-
-    One function rather than the predicate written out at each report site, because
-    two copies of it are two specifications: they drifted on their first day over
-    what "present" means, and the sites they feed are a precondition and the passes
-    it gates — which must not disagree about whether a placeholder is an eviction.
-    """
-    return [n for n in names if fnmatch(n, ICLOUD_GLOB) and n[1 : -len(".icloud")] not in present]
-
-
-def list_note_dir(directory: Path, *, required: bool = False) -> tuple[list[Path], list[Path]]:
-    """One note directory's `*.md` files and its iCloud placeholders, both sorted.
-
-    One listing rather than two globs, and **raising** rather than coming back
-    empty, for the reason `name_taken` raises: `pathlib.glob` swallows the
-    `PermissionError` that `os.scandir` raises, so a directory the OS refuses to
-    list reads as an empty, clean one — and `is_dir()` still answers `True`, since
-    that `stat` goes through the parent. A scan that took the empty answer would
-    report a vault it never read as a vault with nothing in it, which is the same
-    silence an eviction produces and the same one this module exists to break.
+    **Raising** rather than coming back empty, for the reason `name_occupied`
+    raises: `pathlib.glob` swallows the `PermissionError` that `os.scandir` raises,
+    so a directory the OS refuses to list reads as an empty, clean one — and
+    `is_dir()` still answers `True`, since that `stat` goes through the parent. A
+    scan that took the empty answer would report a vault it never read as a vault
+    with nothing in it.
 
     A directory that is simply not there, or a name held by something that is not
-    one, comes back as two empty lists unless it is `required`, in which case the
+    one, comes back as an empty list unless it is `required`, in which case the
     `FileNotFoundError` or `NotADirectoryError` is raised like any refusal. A
     command reading a folder in the vault's required set passes `required`, since
     for it an absent folder is a vault that has not synced rather than one with
@@ -206,7 +117,7 @@ def list_note_dir(directory: Path, *, required: bool = False) -> tuple[list[Path
     except FileNotFoundError, NotADirectoryError:
         if required:
             raise
-        return [], []
+        return []
     # Listable is not usable, and `iterdir` only answers the first. An `r--`
     # directory lists its names and refuses every `read_text` beneath it, so a
     # caller would get one note-shaped failure per note for one vault-shaped
@@ -216,18 +127,8 @@ def list_note_dir(directory: Path, *, required: bool = False) -> tuple[list[Path
     if not os.access(directory, os.X_OK):
         raise PermissionError(errno.EACCES, NOT_TRAVERSABLE, str(directory))
     # `*.md` exactly as `glob` matched it, dot-prefixed names included, and matched
-    # on the name rather than on `suffix` because `Path(".md").suffix` is `""`. A
-    # name this split drops belongs to neither list and is reported by nothing,
-    # which is the silence the whole helper is against.
-    notes = [p for p in entries if p.name.endswith(".md")]
-    # Only the placeholders shadowing a `*.md` name: this helper answers about
-    # notes, and its callers say so in words ("the note could not be read"). An
-    # evicted attachment beside a note is a real eviction and not one of those,
-    # so it belongs to a sweep that reports files — `kboat-doctor`'s, which
-    # calls `evictions` directly and keeps its breadth.
-    by_name = {p.name: p for p in entries}
-    shadowed = evictions(by_name, by_name)
-    return notes, [by_name[n] for n in shadowed if n[1 : -len(".icloud")].endswith(".md")]
+    # on the name rather than on `suffix` because `Path(".md").suffix` is `""`.
+    return [p for p in entries if p.name.endswith(".md")]
 
 
 def unread_dir(exc: OSError) -> str:

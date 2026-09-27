@@ -3,8 +3,8 @@
 The spec is `kboat-vault-conventions` ("Vault preconditions"). An unattended run
 reads and writes an iCloud-synced directory it cannot see, so it establishes
 first that the vault is there, that it is writable, that the folders and the
-questions file the phases name exist, that every scanned directory can actually
-be listed, and that no file has been evicted to an iCloud placeholder.
+questions file the phases name exist, and that every scanned directory can
+actually be listed — and it says whether iCloud has evicted any file in them.
 
 Every check is read-only except the writability probe (see `_check_writable`).
 """
@@ -18,19 +18,19 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
-from kboat.io_utils import NOT_TRAVERSABLE, evictions, file_present, icloud_placeholder
+from kboat.io_utils import NOT_TRAVERSABLE
 from kboat.schema import DIR_BY_TYPE, PDFS_DIR, QUESTIONS_FILE, QUEUE_DIR, REVIEWS_DIR
 
 # The directories a run cannot be walked past: every schema-backed type's own
 # directory (so declaring a type requires its folder) plus the two that hold
 # files with no schema. Both of those earn their place: `Queue` is the ingest
 # inbox a run drains, and `Reviews` holds the dated report the distill pass
-# *appends* to — an evicted one reads as absent, so the append would start a
-# second file and the earlier sections would come back as a sync conflict.
+# *appends* to.
 NOTE_DIRS: tuple[str, ...] = (*sorted(set(DIR_BY_TYPE.values())), QUEUE_DIR, REVIEWS_DIR)
 
-# Directories where an evicted file only warns rather than failing the whole
-# routine. Rationale in `kboat-vault-conventions` ("Vault preconditions").
+# Directories whose listing only warns rather than failing the whole routine
+# while they can still be walked through. Rationale in `kboat-vault-conventions`
+# ("Vault preconditions").
 ASSET_DIRS: tuple[str, ...] = (PDFS_DIR,)
 
 REQUIRED_DIRS: tuple[str, ...] = (*NOTE_DIRS, *ASSET_DIRS)
@@ -221,24 +221,6 @@ def _check_questions(vault: Path) -> Check:
         return Check("questions_file", Status.FAILED, f"{QUESTIONS_FILE} could not be read: {exc}")
     if found is not None and stat.S_ISREG(found.st_mode):
         return Check("questions_file", Status.OK)
-    # Absent and evicted look identical from here but call for opposite remedies:
-    # recreating a file iCloud still holds makes a sync conflict, where the fix is
-    # to download it. The placeholder is what tells the two apart.
-    placeholder = icloud_placeholder(questions)
-    try:
-        evicted = file_present(placeholder)
-    except OSError as exc:
-        # Named for what was probed: the placeholder, not the file it stands for.
-        return Check(
-            "questions_file", Status.FAILED, f"{placeholder.name} could not be read: {exc}"
-        )
-    if evicted:
-        return Check(
-            "questions_file",
-            Status.FAILED,
-            f"{QUESTIONS_FILE} is evicted to an iCloud placeholder, not synced locally",
-            (placeholder.relative_to(vault).as_posix(),),
-        )
     # Presence without following symlinks, for the same reason `_check_folders`
     # uses it: a dangling symlink is a name already taken, and calling it missing
     # would send the human to create a file where one cannot be created.
@@ -247,15 +229,25 @@ def _check_questions(vault: Path) -> Check:
     return Check("questions_file", Status.FAILED, f"missing {QUESTIONS_FILE} at the vault root")
 
 
-def _placeholders(
+def _dataless(path: Path) -> bool:
+    """Whether iCloud has evicted `path` in place, keeping its name but not its content.
+
+    `lstat`, so a symlink answers for itself rather than for what it points at, and
+    `st_flags` read defensively because only BSD-derived systems have it: on any
+    other a file cannot be dataless, and the check has nothing to find.
+    """
+    return bool(getattr(path.lstat(), "st_flags", 0) & stat.SF_DATALESS)
+
+
+def _scan(
     vault: Path, dirs: tuple[str, ...]
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-    """Every iCloud placeholder under `dirs`, every directory that would not be read,
+    """Every evicted file under `dirs`, every directory that would not be read,
     every one that went away mid-scan, and the distinct reasons the refusals gave —
     the first three vault-relative, all sorted.
 
-    Recursive, because a placeholder in a subfolder a human made hides a file
-    just as completely as one at the top of the directory. It does not follow a
+    Recursive, because an eviction in a subfolder a human made says the vault is
+    not kept downloaded just as well as one at the top. It does not follow a
     symlinked *subdirectory*, since one symlink loop would hang the check that
     every run waits on. A symlinked note directory itself is still scanned, since
     the walk starts inside it.
@@ -266,8 +258,7 @@ def _placeholders(
     says `True` because that `stat` goes through the parent — so an unreadable
     folder would report exactly as a clean one. `os.walk` hands those refusals to
     `onerror` instead, and they come back as the second tuple for the caller to
-    report beside the placeholders: both mean the same thing, that part of the
-    vault was not read.
+    report: part of the vault was not read.
     """
     found: list[str] = []
     refused: list[str] = []
@@ -352,20 +343,18 @@ def _placeholders(
                 reasons.add(NOT_TRAVERSABLE)
         # `followlinks` stays off (the `os.walk` default), for the reason `rglob`
         # left it off: one symlink loop would hang the check every run waits on.
-        for dirpath, dirnames, filenames in os.walk(directory, onerror=_refused):
+        for dirpath, _, filenames in os.walk(directory, onerror=_refused):
             here = Path(dirpath)
             # Listable is not the same as usable: a directory the walk can read the
-            # names of but not open through raises nothing into `onerror`, and the
-            # sweep below still matches placeholders by name — so this state is
-            # silent by construction rather than by omission, and it is the one in
-            # which a per-name probe answers "absent" for a file that is there.
+            # names of but not open through raises nothing into `onerror` — so this
+            # state is silent by construction rather than by omission, and it is the
+            # one in which a per-name probe answers "absent" for a file that is there.
             #
             # `here != directory` because `os.walk` yields the walk root first and
             # the pre-walk probe already spoke for it with the accurate tag; without
             # that guard the root of a listable-but-not-traversable directory was
             # reported as having an untraversable *subdirectory* that does not
-            # exist. A `continue` would skip the same probe and cost a second copy
-            # of the collection below — the drift `evictions` was extracted to end.
+            # exist.
             if here != directory and not os.access(here, os.X_OK):
                 # `os.access` never raises and answers `False` for a path that is
                 # gone, so the two have to be told apart here or a directory that
@@ -391,13 +380,25 @@ def _placeholders(
                     # directory affects no phase and must not stop the routine.
                     refused.append(rel)
                     reasons.add("Permission denied (a subdirectory is not traversable)")
-            # `dirnames` counts as present too: a directory can hold a note's name,
-            # and `io_utils` — which owns this question — sees every entry. Two
-            # copies of the predicate drifted on exactly that, so there is one.
-            present = {*filenames, *dirnames}
-            found += [
-                (here / f).relative_to(vault).as_posix() for f in evictions(filenames, present)
-            ]
+            if not os.access(here, os.X_OK):
+                # Its files cannot be probed by name, and the directory itself is
+                # already reported, here or before the walk.
+                continue
+            for f in filenames:
+                path = here / f
+                try:
+                    if _dataless(path):
+                        found.append(path.relative_to(vault).as_posix())
+                except FileNotFoundError, NotADirectoryError:
+                    # Gone between the listing and the probe: nothing is there to
+                    # have been evicted, and the next run sees whatever replaced it.
+                    continue
+                except OSError as exc:
+                    # Not expected inside a directory the walk could traverse, but
+                    # a refusal is reported rather than read as "not evicted",
+                    # which is the silence every probe here is written against.
+                    refused.append(path.relative_to(vault).as_posix())
+                    reasons.add(exc.strerror or type(exc).__name__)
     return (
         tuple(sorted(found)),
         # De-duplicated: the directory-level probe and the walk's `onerror` can
@@ -409,13 +410,13 @@ def _placeholders(
     )
 
 
-def _check_icloud(vault: Path) -> list[Check]:
-    notes, unreadable, gone, why = _placeholders(vault, NOTE_DIRS)
-    assets, unreadable_assets, gone_assets, why_assets = _placeholders(vault, ASSET_DIRS)
+def _check_scanned(vault: Path) -> list[Check]:
+    notes, unreadable, gone, why = _scan(vault, NOTE_DIRS)
+    assets, unreadable_assets, gone_assets, why_assets = _scan(vault, ASSET_DIRS)
+    evicted = tuple(sorted((*notes, *assets)))
     return [
-        # Split by what the failure costs, exactly as the placeholder pair below is,
-        # and for the same reason: a doctor failure stops the whole routine, so it
-        # must not stop it over a directory no phase reads. For the scans not yet
+        # Split by what the failure costs: a doctor failure stops the whole
+        # routine, so it must not stop it over a directory no phase reads. For the scans not yet
         # under the rule this is the only place the finding is reported at all,
         # since an unlistable directory reads to them as an empty one; for the rest
         # it is the precondition that stops a run before they each report it.
@@ -431,7 +432,7 @@ def _check_icloud(vault: Path) -> list[Check]:
             ),
             unreadable or gone,
         ),
-        # A warning, like an evicted PDF: no phase lists `PDFs/` — ingest writes one
+        # A warning: no phase lists `PDFs/` — ingest writes one
         # path and `migrate` probes one by name — so an unlistable-but-traversable
         # one costs the run nothing it does not already handle per source, where a
         # download that cannot be written fails that source and keeps its queue file.
@@ -450,18 +451,19 @@ def _check_icloud(vault: Path) -> list[Check]:
             ),
             unreadable_assets or gone_assets,
         ),
+        # A warning and never a failure: an evicted file keeps its name and is
+        # downloaded by whichever read reaches it, so a run over it succeeds. A
+        # file another device just added is dataless too until it downloads, so
+        # only one reported again on a later run says the folder is no longer
+        # kept downloaded.
         Check(
-            "icloud_notes",
-            Status.FAILED if notes else Status.OK,
-            f"{len(notes)} note(s) evicted to an iCloud placeholder" if notes else "",
-            notes,
-        ),
-        Check(
-            "icloud_assets",
-            Status.WARNING if assets else Status.OK,
-            # Not a failure: a doctor failure stops the whole routine.
-            f"{len(assets)} asset(s) evicted to an iCloud placeholder" if assets else "",
-            assets,
+            "evicted_files",
+            Status.WARNING if evicted else Status.OK,
+            f"{len(evicted)} file(s) not stored locally, evicted or not yet downloaded; "
+            "a run downloads each one it reads"
+            if evicted
+            else "",
+            evicted,
         ),
     ]
 
@@ -482,5 +484,5 @@ def run_checks(vault: Path) -> list[Check]:
         _check_writable(vault),
         *_check_folders(vault),
         _check_questions(vault),
-        *_check_icloud(vault),
+        *_check_scanned(vault),
     ]

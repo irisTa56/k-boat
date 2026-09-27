@@ -133,10 +133,9 @@ def test_an_unreadable_daily_note_is_an_anomaly_and_the_pick_still_runs(
         (lambda q: q.unlink(), "absent"),
         (lambda q: q.write_bytes(b"- what about \xff\n"), "not UTF-8"),
         (lambda q: (q.unlink(), q.mkdir()), "not a file"),
-        (lambda q: (q.unlink(), (q.parent / ".Questions.md.icloud").write_bytes(b"")), "evicted"),
         (lambda q: q.chmod(0o000), "refused"),
     ],
-    ids=["absent", "not-utf8", "not-a-file", "evicted", "refused"],
+    ids=["absent", "not-utf8", "not-a-file", "refused"],
 )
 def test_a_questions_file_the_pick_cannot_read_fails_the_run_with_the_report(
     vault: Path, capsys: pytest.CaptureFixture[str], make: Callable[[Path], object], word: str
@@ -176,17 +175,6 @@ def test_a_daily_dir_the_os_will_not_list_is_reported_without_failing(
     finally:
         daily.chmod(0o755)
     assert _where(out) == [("Daily", "refused")]
-
-
-def test_an_evicted_daily_note_is_reported_only_inside_the_look_back_window(
-    vault: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    daily = vault / "Daily"
-    (daily / ".2026-06-10.md.icloud").write_bytes(b"")  # in the window
-    (daily / ".2026-05-01.md.icloud").write_bytes(b"")  # older than the window
-    (daily / ".scratch.md.icloud").write_bytes(b"")  # not a daily note at all
-    out = _candidates(vault, capsys, 0)
-    assert [a["path"] for a in out["anomalies"]] == ["Daily/.2026-06-10.md.icloud"]
 
 
 @pytest.mark.parametrize("command", [["candidates", "--today", "2026-06-12"], ["set"]])
@@ -260,14 +248,6 @@ def test_an_unreadable_vault_root_is_not_reported_as_a_missing_sources(
         vault.chmod(0o755)
     assert ("Sources", "refused") in _where(out)
     assert ("Questions.md", "refused") in _where(out)
-
-
-def test_an_evicted_source_note_is_an_anomaly_not_a_note_that_is_not_there(
-    vault: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (vault / "Sources" / ".web3.md.icloud").write_bytes(b"")
-    out = _candidates(vault, capsys, 0)
-    assert [a["path"] for a in out["anomalies"]] == ["Sources/.web3.md.icloud"]
 
 
 def test_candidates_lookback_window_drops_stale_notes(

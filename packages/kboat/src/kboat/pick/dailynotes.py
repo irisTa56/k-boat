@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from kboat.cli import EVICTED_NOTE
 from kboat.frontmatter import PLAIN_READ_ERRORS, strip_frontmatter
 from kboat.io_utils import list_note_dir, unread_dir
 
@@ -61,20 +60,10 @@ def extract_daily_notes(
     # the reader wrote nothing in — nothing else would tell the two apart, since
     # `kboat-doctor` deliberately does not check this folder.
     try:
-        found, placeholders = list_note_dir(daily_dir)
+        found = list_note_dir(daily_dir)
     except OSError as exc:
         return days, [{"path": daily_dir.name, "error": unread_dir(exc)}]
     earliest = today - timedelta(days=lookback_days)
-    for placeholder in placeholders:
-        # The same date-name test and window the readable notes take below. This is
-        # the only report an evicted daily note ever gets, and with Optimize
-        # Storage the oldest untouched notes are the first iCloud evicts — so
-        # reporting one the pick was never going to read would make a permanent
-        # daily anomaly out of the back of the folder.
-        stem = placeholder.name.removeprefix(".").removesuffix(".icloud").removesuffix(".md")
-        if _in_window(stem, today, earliest) is None:
-            continue
-        unreadable.append({"path": f"{daily_dir.name}/{placeholder.name}", "error": EVICTED_NOTE})
     for path in found:
         d = _in_window(path.stem, today, earliest)
         if d is None:

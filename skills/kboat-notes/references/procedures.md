@@ -25,9 +25,9 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - Run this step before anything fetches the `url` — ahead of the type sniff in [ingest a PDF source](#procedure-ingest-a-pdf-source), whichever path that sniff then picks.
      - The sniff sends a blocked PDF straight to [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq), whose write merges `blocked: true` onto whatever note stands at the slug, so only a de-dup that has already run keeps a wall met on a re-capture from landing on a note that already has its notebook.
    - Read what holds the slug, with the fields this step reads: `kboat-note list --type source --slug <slug> --field url --field blocked --field dismiss --field distilled_date --field notebooklm_id`.
-     - Any `anomalies` entry is a note that cannot be read to de-dup against, not an absent one: one iCloud has evicted (the entry under its `Sources/.<slug>.md.icloud` placeholder), one that would not read or parse, or one holding one of those fields in a shape the reader does not model or on more than one line.
-       - Stop the item there, with nothing fetched, built, or written: the note write would refuse an evicted one as `status: evicted` anyway, after the PDF path had already downloaded.
-       - The caller keeps the queue file for a later run and reports it by name with the entry's `error`, as it does that refusal.
+     - Any `anomalies` entry is a note that cannot be read to de-dup against, not an absent one: one that would not read or parse, or one holding one of those fields in a shape the reader does not model or on more than one line.
+       - Stop the item there, with nothing fetched, built, or written.
+       - The caller keeps the queue file and reports it by name with the entry's `error`.
      - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how; stop the item the same way.
    - If it returns a note, read its `url`: when it names the same page, this is the same source, so any write goes to that note rather than a new one (the title may have changed, but only the `title` property updates; neither the filename, being the URL hash, nor the stored `url`, being the identity the note was created with, ever changes).
    - Compare the two URLs canonically, never as raw strings: run `kboat-note slug` on the note's stored `url` as well and compare the two `.canonical_url` values.
@@ -48,7 +48,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
    - Pipe a `{slug, fields}` JSON record whose `fields` carry what is known now: `type: source`, `title`, `source_type: web_page`, `url`, and `reading_link` = the `url`.
    - The tool starts `reading`/`distill`/`keep`/`dismiss`/`blocked`/`picked` at `false`, leaves `summary`/`topics`/`filed_date`/`distilled_date` empty, and stamps `added_date`; step 3 fills `summary`/`topics`.
    - This write is the commit point.
-   - (The tool also re-makes step 1's checks and refuses rather than writing: `status: slug_mismatch` when the slug is not the one the `url` names — always a bug in how the record was assembled, since step 1's oracle is what to use — and `status: collision` with a `reason` of `identity_differs` or `unreadable_identity` when the note at that slug cannot be shown to be this page — and `status: evicted` when iCloud holds the note at that slug behind a placeholder, which step 1 stops first unless the eviction lands after it; kboat-ingest keeps the queue file for a later run — and `status: repeated_key` when that note names a key on more than one line, which kboat-ingest keeps the queue file for until a human repairs the note.)
+   - (The tool also re-makes step 1's checks and refuses rather than writing: `status: slug_mismatch` when the slug is not the one the `url` names — always a bug in how the record was assembled, since step 1's oracle is what to use — and `status: collision` with a `reason` of `identity_differs` or `unreadable_identity` when the note at that slug cannot be shown to be this page — and `status: repeated_key` when that note names a key on more than one line, which kboat-ingest keeps the queue file for until a human repairs the note.)
 3. Create the 1:1 notebook and record its coordinates:
    - Run `notebooklm --quiet create "<title>" --json 2>/dev/null` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
@@ -137,9 +137,8 @@ Every web source pays for the `source get` round trip regardless (one call in a 
    - An item the de-dup lets through continues with steps 2–5.
 2. Download the PDF to `<vault>/PDFs/<slug>.pdf` with a browser User-Agent (e.g. `curl -fsSL --create-dirs -A "<chrome-ua>" -o "<path>" "<url>"`); the same UA the detection used, since bot-protected hosts only serve the file to a browser-like client.
    - First ask what holds that name, as the [`PDFs/` layout](../SKILL.md#layout) says.
-     - Where iCloud has evicted the file, download nothing and write no note: kboat-ingest keeps the queue file and reports the item by name, and it drains on a later run once a human has downloaded the file in Finder.
-     - Where something that is not a file holds the name, download nothing and write no note either, and report it as needing a human.
-   - Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page, a truncated download, or an iCloud-evicted `.icloud` placeholder all fail this check.
+     - Where something that is not a file holds the name, download nothing and write no note, and report it as needing a human.
+   - Verify the saved file starts with `%PDF-` and is non-trivial in size; an HTML challenge/error page or a truncated download fails this check.
      - This same magic-byte check must still hold immediately before the upload — treat download → verify → upload as one uninterrupted sequence — which is why step 5 opens by making it again rather than trusting this one.
      - A failed verification is a **download failure**: do not write the note, and let kboat-ingest keep the queue file.
 3. Resolve the `title`.
@@ -152,13 +151,12 @@ Every web source pays for the `source get` round trip regardless (one call in a 
    - **Verify the file before building anything**: `PDFs/<slug>.pdf` starts with `%PDF-` and is non-trivial in size.
      - This is step 2's check, which it requires to still hold immediately before the upload; making it here rather than at the `source add` below costs a failure no notebook.
      - On an ingest it re-checks what step 2 downloaded moments ago, and is nearly free.
-     - It earns its place on the re-runs: [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) runs this step alone, on a file this run never downloaded and a human may have just replaced, so this is the only gate between an iCloud-evicted `.icloud` placeholder — where `PDFs/<slug>.pdf` is simply gone — and a `source add` that would take the path string for a text source and succeed at it.
+     - It earns its place on the re-runs: [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) runs this step alone, on a file this run never downloaded and a human may have just replaced or removed, so this is the only gate between a `PDFs/<slug>.pdf` that is not there and a `source add` that would take the path string for a text source and succeed at it.
      - If it fails, build nothing and report it.
        - On an ingest the note is already on disk (step 4 was the commit point), so it stays and the queue file is kept for the next run — the transient shape the `not_found`/`timeout` branch below takes, minus the notebook that branch has to discard.
-       - On a reactivation, ask what holds the name before saying what failed, as the [`PDFs/` layout](../SKILL.md#layout) says; four answers, each wanting its own report.
+       - On a reactivation, ask what holds the name before saying what failed, as the [`PDFs/` layout](../SKILL.md#layout) says; three answers, each wanting its own report.
          - A file there is one that is not a usable PDF, and a replacement copy is what helps.
          - Anything else at the name is a human's to clear, and nothing goes there either.
-         - An eviction is not a missing file: the human downloads it in Finder, and a copy put there instead lands beside the placeholder.
          - A name nothing holds is the file genuinely gone, which is the one answer a copy put at `PDFs/<slug>.pdf` by hand fixes, as [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source)'s dead-`url` route has the human do.
    - Run `notebooklm --quiet create "<title>" --json 2>/dev/null` and read `.notebook.id`.
    - Set the notebook's chat persona (see [Procedure: set the notebook chat persona](#procedure-set-the-notebook-chat-persona)).
@@ -305,8 +303,6 @@ Add it back by the source's kind, and verify it exactly as the ingest path does.
 - **Web page**: `notebooklm --quiet source add "<url>" --notebook <notebooklm_id> --json 2>/dev/null`, with the note's own `url`.
 - **PDF**: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <notebooklm_id> --json 2>/dev/null`.
   - Run step 5's own file verify first — there, starts with `%PDF-`, non-trivial in size — since a truncated file passes a bare magic-byte check and fails an add and a delete later.
-  - **A file that is not there is two situations, and only one wants a replacement copy:** look for `PDFs/.<slug>.pdf.icloud` beside it, since an evicted file is simply gone under its own name (step 5 says so).
-  - Report an eviction as an eviction and stop, rather than as a missing file — naming reactivation there would have the reader discard a working notebook over a file a Finder download restores.
 
 Read the returned source id, then run the same verification the matching ingest step runs after its own add.
 Both begin with `source wait` branched on `.status` — never the exit code, and never skipped, since `fulltext` before `ready` makes a sound upload read as an empty extraction.
@@ -461,8 +457,7 @@ Ingest does not drop a blocked source; it parks it in the DLQ:
 
 1. Ensure `Sources/<slug>.md` exists with `blocked: true`, via `kboat-note write --type source` (slug = `kboat-note slug` over the `url`, as in step 1 of the create procedure): a `{slug, fields}` record with `type: source`, `title`, `source_type`, `url` = the queued URL, `reading_link` = `url` (so a click goes to the original where the human can clear the wall themselves), and `blocked: true`.
    - The tool creates the note if absent, or merges onto a note the web path already wrote before verifying; either way the DLQ entry exists with its `url` preserved.
-     - A `status: evicted` refusal is the exception: iCloud holds a note at that slug and nothing was written, so no DLQ entry was recorded and kboat-ingest keeps the queue file for a later run rather than deleting it at step 3.
-       - A `status: repeated_key` refusal is the same exception, except that the later run has to wait on a human repairing the note.
+     - A `status: repeated_key` refusal is the exception: nothing was written, so no DLQ entry was recorded and kboat-ingest keeps the queue file rather than deleting it at step 3, for a run after a human has repaired the note.
    - For the PDF the sniff could not see, the merge also carries `source_type: pdf`, correcting the sniff: it is the one path where a note's `source_type` changes after it is written.
 2. Discard any notebook that was created, per [discard a source's notebook](#procedure-discard-a-sources-notebook) — **passing it the id `create` returned**, since the note does not carry one yet and a discard that reads the note would find it empty and leak the notebook.
    - Only the sniff-time blocked PDF never created one; the other three cases did.
@@ -522,7 +517,6 @@ A wall is what this step expects; a page that turns out to be **gone** rather th
   - This is the durable reading copy.
   - Check for the file before fetching: a re-captured entry may already hold one from its earlier ingest (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and there is nothing to pull through the browser if it verifies.
     - Ask what holds the name as the [`PDFs/` layout](../SKILL.md#layout) says, rather than only whether a file is there, and ask it again before placing a copy the human supplies.
-    - A file iCloud has evicted is one the entry holds: save nothing to that name, have the human download it in Finder, then verify it as the file that was there.
 - **Web page** (`source_type: web_page`): navigate to the `url` and capture the rendered article text once the real content is on screen, writing it to a temp file for step 3.
   - There is no vault file — the reading copy stays the live `url` (the human reads it in the logged-in browser).
   - Judge the captured text is the real article, not a wall, by reading it: the same wall-vs-article judgement as the ingest fetch (step 3 of [create or update a source note](#procedure-create-or-update-a-source-note)), searching the capture for the body as that step says.
@@ -622,7 +616,7 @@ Re-queueing the URL while it still stands gets nothing back: ingest's de-dup sto
 - A **web page** goes on to [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook), which re-fetches the `url`.
   - For a genuinely dead one that re-fetch records the source blocked again.
 - A **PDF** takes one of three routes, and `PDFs/<slug>.pdf` picks between them — check for the file first, since reactivation rebuilds from it and step 5 of [Procedure: ingest a PDF source](#procedure-ingest-a-pdf-source) builds nothing when it is missing.
-  - Ask what holds the name as the [`PDFs/` layout](../SKILL.md#layout) says: a file iCloud has evicted takes the first route once the human downloads it in Finder, never a "no file" one.
+  - Ask what holds the name as the [`PDFs/` layout](../SKILL.md#layout) says.
   - **The file is there** — the entry recorded over a note whose file an earlier ingest had downloaded. Set `reading_link` = `[[<slug>.pdf]]` in the record that unticks `dismiss` (recording the DLQ entry overwrote it with the `url`, and nothing on this route writes it back), then reactivate.
   - **No file, live `url`** — the entry ingest recorded. Re-queue the URL: ingest downloads and files the PDF where the wall has dropped, and where it still stands records the DLQ entry again, putting the source back within `kboat-rescue`'s reach.
   - **No file, dead `url`** — put the file at `PDFs/<slug>.pdf` by hand, set `reading_link` = `[[<slug>.pdf]]` in the same record that unticks `dismiss`, then reactivate.
@@ -667,7 +661,7 @@ The note **write itself is owned by the `kboat-repos` tool** (`kboat-repos write
 1. `gather` resolves the canonical owner/repo via `gh` and returns `slug`/`url`/`title` plus the ready-to-write `fields`, and the `readme_error` the write sets the note's `readme` mark from.
    - The subagent adds `role`/`domain`/`summary` to that record.
 2. Pipe the augmented record to `kboat-repos write`.
-   - It is a CLI over the shared write contract (Conventions "The write contract") with the repo record shape: it verifies the record's `slug` against the record's own `url` (a slug that is not the one that `url` names is `status: slug_mismatch`, written nowhere — a record `gather` handed over intact cannot be one, since step 1's `slug` and `url` come from the same canonical URL by the recipe the write recomputes), de-dups by slug (a `url` at the same slug that cannot be shown to be this repo is a collision → `status: collision` with a `reason` of `identity_differs` or `unreadable_identity`, written nowhere; a note iCloud has evicted at that slug is `status: evicted`, and one naming a key on more than one line `status: repeated_key`, both written nowhere too), preserves an existing note's body, `reading`, and original `added_date` on update, clears a ticked `gone` on update (reported as `gone_cleared: true`, since the record's `gather` found GitHub showing the repository), stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
+   - It is a CLI over the shared write contract (Conventions "The write contract") with the repo record shape: it verifies the record's `slug` against the record's own `url` (a slug that is not the one that `url` names is `status: slug_mismatch`, written nowhere — a record `gather` handed over intact cannot be one, since step 1's `slug` and `url` come from the same canonical URL by the recipe the write recomputes), de-dups by slug (a `url` at the same slug that cannot be shown to be this repo is a collision → `status: collision` with a `reason` of `identity_differs` or `unreadable_identity`, written nowhere; a note naming a key on more than one line is `status: repeated_key`, written nowhere too), preserves an existing note's body, `reading`, and original `added_date` on update, clears a ticked `gone` on update (reported as `gone_cleared: true`, since the record's `gather` found GitHub showing the repository), stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
 
 ## Procedure: refresh repo metadata
 
@@ -679,7 +673,7 @@ It is mechanical and runs over the whole catalogue, so the `kboat-repos` tool do
    - For every other `Repos/*.md` it re-fetches via `gh`, rewrites only the GitHub-derived frontmatter (`description`, `homepage`, `language`, `topics`, `stars`, `archived`, `created_at`, `last_commit`, `license`) plus `status` and `refreshed_date`, and leaves `role`/`domain`/`summary` and the `## Notes` body untouched.
    - When `gh` resolves a new canonical `owner/repo`, it adopts the rename (updates `url`/`title`, renames the file to the new slug).
 2. It prints a JSON report.
-   - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `evicted`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `no_such_repo`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
+   - The `kboat-repos` skill relays `adopted` (renames it healed), `rename_collisions` (a rename blocked because the slug is spoken for, each entry carrying a `reason` — `taken`, `claimed_this_run`, or `held_by_non_note`; `kboat-repos` step 2 says which of them needs a human), and `failed` (notes this run did not refresh, each with a `reason`: `fetch`, `no_such_repo`, `payload`, `note`, `vault`, or `write`) — the routine never deletes a note.
      - A `failed` note is not quite an untouched one, and which `reason` needs a human rather than the next run is the `kboat-repos` skill's to say ("Procedure: refresh the catalogue" step 2); read it before relaying the report.
 
 ## Procedure: backfill repo fields
@@ -693,6 +687,6 @@ A human runs this, not the routine:
 2. It prints a JSON report.
    - `marked` names the notes it wrote, or under `--dry-run` would write.
    - An `anomalies` entry is a note it could not read as a repo note, and a `failed` entry one it did not write — the write failed, or the note names a key on more than one line (`kboat-validate`'s `repeated_key`, `kboat-vault-conventions` "Schema authority and validation"), which rewriting the note would collapse to the last; neither was marked.
-     - Re-run once the cause is gone — an evicted `.icloud` placeholder downloaded in Finder, a write the vault refused writable again, the line not meant deleted — until neither list names a repo note.
+     - Re-run once the cause is gone — a write the vault refused writable again, the line not meant deleted — until neither list names a repo note.
      - An entry whose `type` is not `repo` is never marked, however often it re-runs: that note is misfiled or mistyped, and a human's to fix.
    - It exits 1 when `Repos/` itself could not be read or `failed` names a note.

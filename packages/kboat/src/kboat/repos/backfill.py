@@ -54,8 +54,8 @@ _DEFAULTS = {field.name: field.default for field in REPO.fields if field.name in
 def backfill(vault: Path, *, apply: bool) -> tuple[dict, bool]:
     """The backfill report, and whether `Repos/` itself could not be read.
 
-    A note that cannot be read as a repo note, or an evicted one, is an `anomalies`
-    entry and is not marked: it is outside `total`, and a re-run once it is readable
+    A note that cannot be read as a repo note is an `anomalies` entry and is not
+    marked: it is outside `total`, and a re-run once it is readable
     marks it, since a field already written is skipped.
     """
     found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["repo"])

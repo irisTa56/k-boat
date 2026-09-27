@@ -8,7 +8,6 @@ import pytest
 import yaml
 
 from kboat.knowledge import (
-    EvictedNotesError,
     UnreadableNotesError,
     flagged_titles,
     frontmatter,
@@ -107,21 +106,6 @@ def test_only_markdown_files_are_read(tmp_path: Path) -> None:
     _write(tmp_path, "Note", {"title": "Note"})
     (tmp_path / "concepts" / "image.png").write_bytes(b"\x89PNG")
     assert [note.file for note in read_concepts(tmp_path)] == ["concepts/Note.md"]
-
-
-def test_an_evicted_concept_note_is_refused(tmp_path: Path) -> None:
-    _write(tmp_path, "Present", {"title": "Present"})
-    placeholder = tmp_path / "concepts" / ".Evicted.md.icloud"
-    placeholder.write_bytes(b"")
-    with pytest.raises(EvictedNotesError) as exc:
-        read_concepts(tmp_path)
-    assert exc.value.placeholders == [placeholder]
-
-
-def test_a_stale_stub_beside_its_note_is_not_an_eviction(tmp_path: Path) -> None:
-    _write(tmp_path, "Present", {"title": "Present"})
-    (tmp_path / "concepts" / ".Present.md.icloud").write_bytes(b"")
-    assert [note.stem for note in read_concepts(tmp_path)] == ["Present"]
 
 
 def test_the_census_counts_block_and_flow_tags_most_used_first(tmp_path: Path) -> None:

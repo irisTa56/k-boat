@@ -388,15 +388,6 @@ def test_an_unreadable_vault_root_is_not_reported_as_a_missing_sources(vault: Pa
     ]
 
 
-def test_an_evicted_source_note_is_an_anomaly_not_a_note_that_is_not_there(vault: Path, capsys):
-    # iCloud placeholders are fabricated: none exists on a test machine.
-    write_note(vault / "Sources", "a", distill=True)
-    (vault / "Sources" / ".b.md.icloud").write_bytes(b"")
-    out = run(vault, capsys, "--dry-run")
-    assert [a["path"] for a in out["anomalies"]] == ["Sources/.b.md.icloud"]
-    assert [s["slug"] for s in out["phase_a"]["stamped"]] == ["a"]
-
-
 def test_kindle_ripe_selection(vault: Path, capsys):
     kindles = vault / "Kindles"
     write_kindle(kindles, "B001RIPE", distill=True)

@@ -87,7 +87,7 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 - Kindle books and GitHub repos are parallel simpler kinds, with no notebook.
 - A Base filters only over always-present values, never `!=` over one that may be missing and never a date-emptiness test (`kboat-vault-conventions`).
 - Every vault write is atomic and every mutating run holds the vault lock (`kboat-vault-conventions`).
-- On this iCloud vault "nothing there" is several different situations, and a run must tell them apart (`kboat-vault-conventions`).
+- On this vault "nothing there" is several different situations — absent, refused, or held by something that is not a file — and a run must tell them apart (`kboat-vault-conventions`).
 
 Automation:
 

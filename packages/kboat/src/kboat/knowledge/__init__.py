@@ -16,10 +16,9 @@ scanner does not model. `BaseLoader` reads every scalar as the string written, s
 title such as `yes` or `1.10` compares against its filename as text.
 
 The directory is listed with `kboat.io_utils.list_note_dir`, which raises where the OS
-refuses the listing. A concept note that an iCloud placeholder stands in for is
+refuses the listing. A note whose frontmatter does not parse as a YAML mapping is
 refused rather than left out: a census that skipped it would describe a base it never
-read in full. So is a note whose frontmatter does not parse as a YAML mapping. Read as
-empty, it would pass for a note with no title and no tags, and the curate pass would
+read in full, and read as empty, it would pass for a note with no title and no tags, and the curate pass would
 add a second `tags:` block to a note that already has one while its real break went
 unfixed.
 """
@@ -44,14 +43,6 @@ CONCEPTS_DIR = "concepts"
 WIKILINK_SYNTAX = "#^[]"
 
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)^---[ \t]*\r?$", re.DOTALL | re.MULTILINE)
-
-
-class EvictedNotesError(Exception):
-    """Concept notes that are iCloud placeholders, so their text cannot be read."""
-
-    def __init__(self, placeholders: list[Path]) -> None:
-        self.placeholders = placeholders
-        super().__init__(f"{len(placeholders)} concept note(s) are iCloud placeholders")
 
 
 class UnreadableNotesError(Exception):
@@ -90,13 +81,10 @@ def frontmatter(text: str) -> dict[str, object] | None:
 def read_concepts(root: Path) -> list[ConceptNote]:
     """Every concept note under `root`, sorted by filename.
 
-    Raises `EvictedNotesError` where any concept note is an iCloud placeholder,
-    `UnreadableNotesError` naming every note whose frontmatter does not parse, and
+    Raises `UnreadableNotesError` naming every note whose frontmatter does not parse, and
     `OSError` where the directory or a note cannot be read.
     """
-    notes, placeholders = list_note_dir(root / CONCEPTS_DIR)
-    if placeholders:
-        raise EvictedNotesError(placeholders)
+    notes = list_note_dir(root / CONCEPTS_DIR)
     concepts: list[ConceptNote] = []
     unreadable: list[str] = []
     for path in notes:

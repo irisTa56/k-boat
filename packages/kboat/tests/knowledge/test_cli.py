@@ -61,17 +61,6 @@ def test_a_root_without_concepts_is_a_usage_error(tmp_path: Path) -> None:
     assert exc.value.code == 2
 
 
-def test_an_evicted_note_fails_with_nothing_on_stdout(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _note(tmp_path, "Present", "---\ntitle: Present\n---\n")
-    (tmp_path / "concepts" / ".Evicted.md.icloud").write_bytes(b"")
-    assert main(["--knowledge", str(tmp_path), "tags"]) == 1
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert ".Evicted.md.icloud" in captured.err
-
-
 def test_a_note_whose_frontmatter_does_not_parse_fails_with_nothing_on_stdout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

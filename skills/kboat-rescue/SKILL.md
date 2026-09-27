@@ -25,7 +25,7 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
 - **PDF** (`source_type: pdf`): a blocked PDF has a `url` and, where ingest recorded it, no local file yet.
   - Rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it.
   - Check first — a re-captured entry may already hold the file from its earlier ingest, and there is nothing to fetch through the browser if it does.
-    - Ask what holds that name, as kboat-notes [Layout](../kboat-notes/SKILL.md#layout) says for `PDFs/`, before anything is saved or copied there: a file iCloud has evicted is one the entry holds, so the user downloads it in Finder and nothing is written to that name.
+    - Ask what holds that name, as kboat-notes [Layout](../kboat-notes/SKILL.md#layout) says for `PDFs/`, before anything is saved or copied there.
 - **Web page** (`source_type: web_page`): a member-only or otherwise walled article.
   - Rescue captures the rendered article text from the logged-in browser and ingests it as a NotebookLM text source.
   - There is no local file — the reading copy stays the live `url`.
@@ -35,7 +35,7 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
 ### Step 1: Pick the source
 
 With a slug or `url` argument, read the note with `kboat-note list --type source --slug <slug>`, resolving a `url` to its slug with `kboat-note slug` first, and confirm `blocked: true`; its `source_type` selects the PDF or web-page branch below.
-Name every `anomalies` entry beside the answer: with no note, the note is there but could not be read — evicted, under its placeholder's path, or unreadable — rather than absent, which only an empty answer means; beside a note, it names a field the answer lacks or holds only its last line of, because the note holds it in a shape the reader does not model or on more than one line.
+Name every `anomalies` entry beside the answer: with no note, the note is there but could not be read rather than absent, which only an empty answer means; beside a note, it names a field the answer lacks or holds only its last line of, because the note holds it in a shape the reader does not model or on more than one line.
 
 With no argument, list the DLQ with `kboat-note list --type source --flagged blocked --field title --field url --field source_type --field notebooklm_id`, show each entry's slug and those fields, and ask the user which to rescue.
 Name every `anomalies` entry beside the list: this listing is the only enumeration of the DLQ a human is shown, so an entry missing from it is a source nothing else raises.
@@ -81,7 +81,7 @@ Navigate the user's Chrome to the note's `url`.
 If a CAPTCHA / "Human Verification" / sign-in page appears, ask the user to clear it in their browser, then continue once the real content loads.
 If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
 
-- **PDF**: save it to `<vault>/PDFs/<slug>.pdf`, only where Scope's check found no file there that verifies and none iCloud has evicted.
+- **PDF**: save it to `<vault>/PDFs/<slug>.pdf`, only where Scope's check found no file there that verifies.
   - **Preferred capture — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host (for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`), then run in-page JavaScript that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob.
     - Chrome writes it to `~/Downloads`; move it into the vault.
     - Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable.

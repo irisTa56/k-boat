@@ -54,14 +54,7 @@ from kboat.frontmatter import (
     parse_frontmatter,
 )
 from kboat.frontmatter import set_fields as _set_rendered_fields
-from kboat.io_utils import (
-    atomic_write_text,
-    file_present,
-    icloud_placeholder,
-    name_occupied,
-    name_taken,
-    stranded_stub,
-)
+from kboat.io_utils import atomic_write_text, file_present, name_occupied
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DIR_BY_TYPE, REPO
 from kboat.write import render_field
@@ -88,49 +81,33 @@ Reason = Literal["fetch", "no_such_repo", "payload", "vault", "note", "write"]
 # is, and for one this pass learned the hard way: without it the report hands the
 # agent a bare `conflict` path and leaves it to reconstruct the cause from the
 # rest of the report and the vault — an inference that was wrong for a different
-# case in four separate reviews. The four are exhaustive by construction: the
+# case in four separate reviews. The three are exhaustive by construction: the
 # name is claimed by this run, or it is not and something holds it, which is a
-# placeholder, a file, or a name that lstat answers for and `exists` does not.
+# file or a name that lstat answers for and `exists` does not.
 # Not `unreadable`, though that is what the last one is: this workspace already
 # spends that word on a directory the OS refused, which is a retry and a vault to
 # fix, where this is a human and no run clears it. One word, two remedies, three
 # reports the same routine relays.
-CollisionReason = Literal["claimed_this_run", "evicted", "taken", "held_by_non_note"]
+CollisionReason = Literal["claimed_this_run", "taken", "held_by_non_note"]
 
 
 def _collision(target: Path, new_slug: str, claimed: set[str]) -> CollisionReason | None:
     """Why `target` cannot be renamed onto, or `None` when it can.
 
-    The causes are not mutually exclusive — a file and its own placeholder can sit
-    side by side — so the order is a precedence, chosen so that the answer is the
-    one whose remedy is not already satisfied.
-
-    - `claimed_this_run` first: in an applying run that name is also a file on
-      disk, and `taken` would send a human to merge with a note this same pass
-      wrote, when the pass already knows it put it there.
-    - A **file** outranks a placeholder beside it. Reporting `evicted` there would
-      say the merge waits on a download that has already happened, and the
-      duplicate would sit in the vault being re-reported that way every run.
+    `claimed_this_run` comes first: in an applying run that name is also a file on
+    disk, and `taken` would send a human to merge with a note this same pass
+    wrote, when the pass already knows it put it there. Every probe refuses rather
+    than guessing, so a name the vault will not let us read raises out of here
+    into `_plan`'s boundary and is reported as `reason: vault` — a re-run's
+    problem — instead of as a free name or a held one.
     """
     if new_slug in claimed:
         return "claimed_this_run"
-    if not name_taken(target):
+    if not name_occupied(target):
         return None
-    if file_present(target):
-        return "taken"
-    # No file, yet the name is spoken for — by something at the name itself, or by
-    # a placeholder beside it. The name itself is asked first: a directory or a
-    # dangling symlink there is a name no download will ever free, and a stale stub
-    # beside it must not answer for it.
-    if name_occupied(target):
-        return "held_by_non_note"
-    # Only the placeholder is left, and `evicted` is claimed for a real one: it is
-    # the one class both skills route to nobody, so it may not be reached by
-    # elimination. Every probe refuses rather than guessing, so a placeholder the
-    # vault will not let us read raises out of here into `_plan`'s boundary and is
-    # reported as `reason: vault` — a re-run's problem — instead of falling through
-    # to `held_by_non_note`, which sends a human after a link that is not there.
-    return "evicted" if file_present(icloud_placeholder(target)) else "held_by_non_note"
+    # A directory or a dangling symlink at the name is one no run will free, and
+    # the human it goes to has a link to remove rather than two notes to merge.
+    return "taken" if file_present(target) else "held_by_non_note"
 
 
 def _fetched(note: dict, *, meta: dict | None, error: str | None, reason: Reason | None) -> dict:
@@ -185,9 +162,7 @@ def _load_repo_notes(vault: Path) -> tuple[list[dict], list[dict[str, str]], boo
     gone = 0
     # One listing, and it can refuse: a directory the OS will not list would
     # otherwise come back empty and the pass would report a catalogue it never
-    # read as one with nothing to say. An evicted note is the other half of the
-    # same silence — it matches no `*.md` glob, so a half-synced catalogue scans
-    # clean and the pass reports a full refresh of the part that was local.
+    # read as one with nothing to say.
     found, anomalies, unread = scan_required_dir(vault, DIR_BY_TYPE["repo"])
     for path in found:
         rel = path.relative_to(vault).as_posix()
@@ -458,25 +433,7 @@ def refresh(
             # Reported only once the note is actually written (or, in a dry run,
             # once it would have been): `adopted` is the set of renames healed,
             # and a rewrite that failed healed nothing.
-            entry = {"from": rel, "to": plan.rel_target, "was": was, "now": plan.now}
-            # A stub beside the note this rename vacates becomes a lone placeholder
-            # the moment the old file goes, and a lone placeholder under `Repos/`
-            # fails `kboat-doctor`'s `icloud_notes` — so from the next day the whole
-            # routine stops, out of a report that never mentioned it. This pass runs
-            # unattended, so nobody approved the move; the least it owes is to name
-            # what it left. Removing the stub is not its call: deleting a
-            # placeholder is how a file leaves iCloud.
-            if plan.renaming:
-                # Gated on `renaming`, not `adopt`: a note can adopt a new identity
-                # under the name it already has (a reserved owner gives no slug), and
-                # nothing is vacated there — reporting `stranded` would raise an
-                # alarm about a routine stoppage that cannot happen.
-                probe = stranded_stub(plan.path)
-                if probe.stub is not None:
-                    entry["stranded"] = probe.stub.relative_to(vault).as_posix()
-                elif probe.unknown is not None:
-                    entry["stranded"] = f"unknown: {probe.unknown}"
-            adopted.append(entry)
+            adopted.append({"from": rel, "to": plan.rel_target, "was": was, "now": plan.now})
 
     return {
         "today": today_iso,

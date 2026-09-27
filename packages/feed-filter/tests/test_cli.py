@@ -1230,42 +1230,6 @@ def test_remind_reports_a_vault_it_could_not_lock_and_records_nothing(
         assert not is_seen(conn, canonical_url("https://e.example.com/a"))
 
 
-def _evict(url: str) -> Path:
-    """Leave only an iCloud placeholder where ``url``'s feed note would be."""
-    slug = url_slug(str(canonical_url(url)))
-    feeds = vault_path() / "Feeds"
-    feeds.mkdir(parents=True, exist_ok=True)
-    stub = feeds / f".{slug}.md.icloud"
-    stub.write_bytes(b"placeholder")
-    return stub
-
-
-def test_remind_reports_an_evicted_note_and_records_nothing(
-    state_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The note is behind an iCloud placeholder, so it is not written and the entry
-    # stays unseen for a later run. An `evicted` record on stdout, like `locked`,
-    # because it concerns this one note: the run skill carries on past it.
-    url = "https://e.example.com/a"
-    stub = _evict(url)
-
-    rc = cli.main(["remind", "--site-id", "f1", "--url", url, "--title", "T"])
-
-    assert rc == 1
-    captured = capsys.readouterr()
-    slug = url_slug(str(canonical_url(url)))
-    assert json.loads(captured.out) == {
-        "status": "evicted",
-        "slug": slug,
-        "path": f"Feeds/{slug}.md",
-    }
-    assert "error:" in captured.err
-    assert sorted(p.name for p in stub.parent.iterdir()) == [stub.name]
-    with contextlib.closing(open_db(db_path())) as conn:
-        assert not is_seen(conn, canonical_url(url))
-        assert count(conn) == 0
-
-
 def _repeat_a_key(url: str) -> Path:
     """Put a feed note at ``url``'s slug that names ``shelved`` on two lines."""
     cu = canonical_url(url)
@@ -1286,7 +1250,7 @@ def test_remind_reports_a_note_naming_a_key_twice_and_records_nothing(
 ) -> None:
     # The note is left for a human to say which line they meant, so it is not
     # written and the entry stays unseen. A `repeated_key` record on stdout, like
-    # `evicted`, because it concerns this one note: the run skill carries on past it.
+    # `locked`, because it concerns this one note: the run skill carries on past it.
     url = "https://e.example.com/a"
     note = _repeat_a_key(url)
     before = note.read_bytes()
@@ -2968,39 +2932,6 @@ def test_forum_remind_does_not_record_when_write_fails(
         from feed_filter.forum_store import is_post_seen
 
         assert not is_post_seen(conn, FORUM_SITE_ID, 5001)
-
-
-def test_forum_remind_reports_an_evicted_note_and_records_nothing(
-    state_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """forum-remind: an evicted note is not written, so neither axis is recorded."""
-    _add_forum_site()
-    url = f"{FORUM_URL}/t/topic/1234"
-    _evict(url)
-
-    for axis in (["--post-id", "5001"], ["--is-op"]):
-        rc = cli.main(
-            [
-                "forum-remind",
-                "--site-id",
-                FORUM_SITE_ID,
-                "--topic-id",
-                "1234",
-                *axis,
-                "--url",
-                url,
-                "--title",
-                "T",
-            ]
-        )
-        assert rc == 1
-        assert json.loads(capsys.readouterr().out)["status"] == "evicted"
-
-    with contextlib.closing(open_db(db_path())) as conn:
-        from feed_filter.forum_store import is_post_seen, op_interest_kept
-
-        assert not is_post_seen(conn, FORUM_SITE_ID, 5001)
-        assert op_interest_kept(conn, FORUM_SITE_ID, 1234) is None
 
 
 def test_forum_remind_reports_a_note_naming_a_key_twice_and_records_nothing(

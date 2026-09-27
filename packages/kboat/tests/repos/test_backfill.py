@@ -184,11 +184,9 @@ def test_a_second_apply_has_nothing_to_mark(
 def test_what_is_not_a_readable_repo_note_is_an_anomaly_and_left_alone(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An evicted note is marked by a re-run once it is back; a note of another
-    # type or with no frontmatter is not this command's to touch.
+    # A note of another type or with no frontmatter is not this command's to touch.
     _legacy_note(tmp_path)
     repos = tmp_path / "Repos"
-    (repos / ".evicted.md.icloud").write_bytes(b"placeholder")
     (repos / "stray.md").write_text("---\ntype: source\n---\n")
     (repos / "broken.md").write_text("no frontmatter here\n")
 
@@ -196,7 +194,6 @@ def test_what_is_not_a_readable_repo_note_is_an_anomaly_and_left_alone(
 
     assert rc == 0
     assert sorted(a["path"] for a in report["anomalies"]) == [
-        "Repos/.evicted.md.icloud",
         "Repos/broken.md",
         "Repos/stray.md",
     ]

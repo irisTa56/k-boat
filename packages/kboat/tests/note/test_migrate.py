@@ -171,91 +171,6 @@ def test_a_note_directory_that_cannot_be_listed_is_skipped_not_scanned_clean(vau
     assert (counts["skipped"], counts["unreadable_dirs"]) == (0, 1)
 
 
-def test_an_evicted_pdf_is_reported_against_the_name_that_holds_the_placeholder(
-    vault: Path,
-) -> None:
-    # Naming the other one sends a human to open a file that is present and
-    # readable, with nothing in the report pointing at the blocker.
-    _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
-    (vault / "PDFs" / f"{STALE}.pdf").write_bytes(b"%PDF-1.4\n")
-    (vault / "PDFs" / f".{FRESH}.pdf.icloud").write_bytes(b"")
-
-    rows, _ = plan(vault)
-
-    row = next(r for r in rows if r.current == STALE)
-    assert row.status == "conflict"
-    assert row.detail == f"PDFs/{FRESH}.pdf is an iCloud placeholder"
-    assert row.moves == [f"PDFs/{STALE}.pdf"]  # the source is there and travels
-
-
-def test_a_pdf_already_across_and_then_evicted_is_not_a_conflict(vault: Path) -> None:
-    # The half-applied case: a crash between the two renames leaves the PDF at the
-    # target, where iCloud later evicts it. The pair is one rename from done and
-    # nothing is overwritten, so refusing the row would strand it for good.
-    _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
-    (vault / "PDFs" / f".{FRESH}.pdf.icloud").write_bytes(b"")
-
-    rows, _ = plan(vault)
-
-    row = next(r for r in rows if r.current == STALE)
-    assert row.status == "pending"
-    assert row.detail == ""
-    assert row.moves == [], "nothing is at the old name to travel"
-
-
-def test_a_stale_placeholder_beside_a_live_pdf_does_not_speak_for_it(vault: Path) -> None:
-    # The two can coexist. Asking the placeholder question of both names first
-    # turned a pair that migrates cleanly into a permanent conflict, reported
-    # against a file anyone can open.
-    _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
-    (vault / "PDFs" / f"{STALE}.pdf").write_bytes(b"%PDF-1.4\n")
-    (vault / "PDFs" / f".{STALE}.pdf.icloud").write_bytes(b"")
-
-    rows, _ = plan(vault)
-
-    row = next(r for r in rows if r.current == STALE)
-    assert row.status == "pending"
-    assert row.moves == [f"PDFs/{STALE}.pdf"]
-    # The move takes the file out from under the stub, which stays: the row says so
-    # rather than reading as a clean rename, since no later pass revisits this note.
-    assert f"PDFs/.{STALE}.pdf.icloud stays behind" in row.detail
-
-
-def test_a_rename_names_the_notes_own_stub_it_strands(vault: Path) -> None:
-    # Worse than the PDF's: a lone note placeholder fails `icloud_notes`, so from
-    # the next day the whole routine stops — out of a report that never mentioned
-    # it. The reporting side skips a stub beside a present file, so the side that
-    # breaks the pair is the only one that can say so.
-    _source(vault, STALE, STALE_URL)
-    (vault / "Sources" / f".{STALE}.md.icloud").write_bytes(b"")
-
-    report = migrate(vault, apply=True)
-
-    row = next(r for r in report.rows if r.current == STALE)
-    assert row.status == "renamed"
-    assert f"Sources/.{STALE}.md.icloud stays behind" in row.detail
-    assert (vault / "Sources" / f".{STALE}.md.icloud").exists(), "left, not deleted"
-
-
-def test_the_stranded_stub_is_still_named_after_the_rename_lands(vault: Path) -> None:
-
-    # The message is worth nothing on the dry run alone: it exists for the report a
-    # completed `--apply` leaves, since the note's slug then matches and no later
-    # pass revisits it. `migrate` sets `renamed` without touching `detail`, which is
-    # incidental unless something holds it there.
-    _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
-    (vault / "PDFs" / f"{STALE}.pdf").write_bytes(b"%PDF-1.4\n")
-    (vault / "PDFs" / f".{STALE}.pdf.icloud").write_bytes(b"")
-
-    report = migrate(vault, apply=True)
-
-    row = next(r for r in report.rows if r.current == STALE)
-    assert row.status == "renamed"
-    assert f"PDFs/.{STALE}.pdf.icloud stays behind" in row.detail
-    assert (vault / "PDFs" / f"{FRESH}.pdf").exists()
-    assert (vault / "PDFs" / f".{STALE}.pdf.icloud").exists(), "the stub is left, not deleted"
-
-
 def _raise(exc: BaseException):
     """A stand-in that fails the way the real call would, wherever it is patched."""
 
@@ -263,45 +178,6 @@ def _raise(exc: BaseException):
         raise exc
 
     return fail
-
-
-def test_a_failed_apply_drops_the_strand_it_never_vacated(
-    vault: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `plan` names the strand before the move. An apply that fails before any
-    # rename vacated nothing, and the spec's condition is an apply that *vacates*
-    # a name — so the line has to go, or the report sends a human to delete a
-    # stub still paired with its own present file.
-    stale = _source(vault, STALE, STALE_URL)
-    stub = vault / "Sources" / f".{STALE}.md.icloud"
-    stub.write_bytes(b"")
-    monkeypatch.setattr(migrate_mod.os, "replace", _raise(PermissionError(13, "rename refused")))
-
-    report = migrate(vault, apply=True)
-
-    row = next(r for r in report.rows if r.current == STALE)
-    assert row.status == "failed"
-    assert "stays behind" not in row.detail
-    assert "rename refused" in row.detail
-    assert stale.exists() and stub.exists()
-
-
-def test_a_failed_apply_keeps_the_strand_whose_rename_did_land(
-    vault: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The other arm, and why the line is re-judged rather than dropped: `fsync_dir`
-    # raises *after* its rename landed, so the stub really is lone now — and it is
-    # a lone note placeholder that fails `icloud_notes` and stops the routine.
-    _source(vault, STALE, STALE_URL)
-    (vault / "Sources" / f".{STALE}.md.icloud").write_bytes(b"")
-    monkeypatch.setattr(migrate_mod, "fsync_dir", _raise(OSError(5, "flush failed")))
-
-    report = migrate(vault, apply=True)
-
-    row = next(r for r in report.rows if r.current == STALE)
-    assert row.status == "failed"
-    assert f"Sources/.{STALE}.md.icloud stays behind" in row.detail
-    assert "flush failed" in row.detail
 
 
 def test_a_note_that_stops_decoding_under_the_apply_is_a_failed_row(
@@ -322,42 +198,8 @@ def test_a_note_that_stops_decoding_under_the_apply_is_a_failed_row(
     assert "invalid start byte" in row.detail
 
 
-def test_an_evicted_note_at_the_target_is_not_reported_as_taken(vault: Path) -> None:
-    # Byte-identical rows for opposite remedies is the defect: a file there is a
-    # human's to merge, while a placeholder is a file that has to come back — and
-    # cannot be merged with, or even opened, until it does.
-    _source(vault, STALE, STALE_URL)
-    (vault / "Sources" / f".{FRESH}.md.icloud").write_bytes(b"")
-
-    rows, _ = plan(vault)
-
-    row = next(r for r in rows if r.current == STALE)
-    assert row.status == "conflict"
-    assert "is an iCloud placeholder" in row.detail
-    assert "is taken" not in row.detail
-
-
-def test_a_broken_symlink_with_a_stale_stub_beside_it_is_not_called_a_placeholder(
-    vault: Path,
-) -> None:
-    # The name itself is asked before the placeholder beside it. "is an iCloud
-    # placeholder" is the wording whose remedy is to wait for a download, and no
-    # download frees a symlink, so the row would be re-reported every run with
-    # nobody ever sent to clear it.
-    _source(vault, STALE, STALE_URL)
-    (vault / "Sources" / f"{FRESH}.md").symlink_to(vault / "Sources" / "nowhere.md")
-    (vault / "Sources" / f".{FRESH}.md.icloud").write_bytes(b"")
-
-    rows, _ = plan(vault)
-
-    row = next(r for r in rows if r.current == STALE)
-    assert row.status == "conflict"
-    assert "is a name held by something else" in row.detail
-    assert "placeholder" not in row.detail
-
-
 def test_a_target_name_held_by_a_broken_symlink_is_not_a_merge(vault: Path) -> None:
-    # `name_taken` answers yes for a dangling symlink, so without its own wording
+    # `name_occupied` answers yes for a dangling symlink, so without its own wording
     # this falls to "is taken" — which the spec routes to a human merging two
     # notes, and there is no second note. Nothing frees the name on its own.
     stale = _source(vault, STALE, STALE_URL)
@@ -370,23 +212,6 @@ def test_a_target_name_held_by_a_broken_symlink_is_not_a_merge(vault: Path) -> N
     assert "is a name held by something else" in row.detail
     assert "is taken" not in row.detail
     assert stale.exists(), "nothing was renamed onto it"
-
-
-def test_a_stub_probe_that_cannot_answer_does_not_refuse_the_rename(vault: Path) -> None:
-    # No permission games needed: a filename of 248 bytes or more makes its
-    # `.icloud` sibling exceed 255, so the probe cannot ask. Those are exactly the
-    # long title-derived names this repair exists for, and the rename is what makes
-    # the name probeable again — so "could not tell" is a report, not a refusal.
-    long_slug = "b" * 248
-    long_note = _source(vault, long_slug, "https://example.com/long-one/")
-
-    report = migrate(vault, apply=True)
-
-    row = next(r for r in report.rows if r.current == long_slug)
-    assert row.status == "renamed", "the note this repair exists for still moves"
-    assert "could not be determined" in row.detail
-    assert not long_note.exists()
-    assert (vault / "Sources" / f"{note_slug('https://example.com/long-one/')}.md").exists()
 
 
 def test_a_note_name_at_the_limit_still_moves_though_its_pdf_name_cannot_exist(
@@ -403,27 +228,6 @@ def test_a_note_name_at_the_limit_still_moves_though_its_pdf_name_cannot_exist(
     row = next(r for r in report.rows if r.current == long_slug)
     assert row.status == "renamed"
     assert (vault / "Sources" / f"{note_slug('https://example.com/long-two/')}.md").exists()
-
-
-def test_a_failed_apply_keeps_the_strand_account_it_was_given(vault: Path, monkeypatch) -> None:
-    # `fsync_dir` raises *after* its rename has landed, so this row is one whose
-    # move happened — the strand is real, nothing is at the old name for a later
-    # pass to find, and replacing the detail loses the only account of a lone
-    # placeholder that stops the routine from the next day on.
-    _source(vault, STALE, STALE_URL)
-    (vault / "Sources" / f".{STALE}.md.icloud").write_bytes(b"")
-
-    def refuse(_directory: Path) -> None:
-        raise OSError("no dir flush")
-
-    monkeypatch.setattr(migrate_mod, "fsync_dir", refuse)
-    report = migrate(vault, apply=True)
-
-    row = next(r for r in report.rows if r.current == STALE)
-    assert row.status == "failed"
-    assert f"Sources/.{STALE}.md.icloud stays behind" in row.detail
-    assert "no dir flush" in row.detail
-    assert not (vault / "Sources" / f"{STALE}.md").exists(), "the rename landed"
 
 
 def test_a_target_name_the_vault_refuses_to_read_is_this_row_s_conflict(
@@ -824,55 +628,6 @@ def test_a_conflict_row_says_what_the_conflict_would_have_moved(
 
     assert report.rows[0].status == "conflict"
     assert report.rows[0].moves == [f"PDFs/{STALE}.pdf"]
-
-
-def test_an_evicted_pdf_holds_the_pair_rather_than_reading_as_no_pdf(vault: Path) -> None:
-    # The vault is iCloud-synced, so an evicted PDF is a `.<slug>.pdf.icloud`
-    # placeholder and `exists()` says `False` for it exactly as it would for a
-    # web page that never had one. Moved past, the file arrives later under the
-    # old name with the note and its link already pointing elsewhere.
-    note = _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
-    (vault / "PDFs" / f".{STALE}.pdf.icloud").write_bytes(b"")
-
-    report = migrate(vault, apply=True)
-
-    assert report.rows[0].status == "conflict"
-    assert "iCloud placeholder" in report.rows[0].detail
-    assert report.rows[0].moves == [f"PDFs/{STALE}.pdf"]
-    assert note.exists()
-    assert f"[[{STALE}.pdf]]" in note.read_text(), "and the link still names the file coming back"
-
-
-@pytest.mark.parametrize("evicted", ["note", "pdf"])
-def test_a_target_name_held_by_an_evicted_file_is_taken(vault: Path, evicted: str) -> None:
-    # The target's name is spoken for by a file that is not gone, only not here
-    # yet. Renaming onto it claims an identity another note still holds, and
-    # iCloud settles that later by suffixing or dropping one — a duplicate for
-    # one page arriving quietly, which is what this whole change is against.
-    note = _source(vault, STALE, STALE_URL, source_type="pdf", reading_link=f"[[{STALE}.pdf]]")
-    (vault / "PDFs" / f"{STALE}.pdf").write_bytes(b"%PDF-1.7\n")
-    if evicted == "note":
-        (vault / "Sources" / f".{FRESH}.md.icloud").write_bytes(b"")
-    else:
-        (vault / "PDFs" / f".{FRESH}.pdf.icloud").write_bytes(b"")
-
-    report = migrate(vault, apply=True)
-
-    assert [r.status for r in report.rows] == ["conflict"]
-    assert note.exists() and not (vault / "Sources" / f"{FRESH}.md").exists()
-    assert (vault / "PDFs" / f"{STALE}.pdf").exists()
-
-
-def test_an_evicted_note_is_reported_rather_than_scanned_past(vault: Path) -> None:
-    # It matches no `*.md` glob, so without this a half-synced vault reports as
-    # canonical — and that report is what an `--apply` is approved from.
-    (vault / "Sources" / f".{STALE}.md.icloud").write_bytes(b"")
-
-    report = migrate(vault, apply=False)
-
-    assert [s.to_json() for s in report.skipped] == [
-        {"path": f"Sources/.{STALE}.md.icloud", "reason": "icloud_placeholder"}
-    ]
 
 
 def test_a_taken_pdf_name_costs_the_whole_pair(vault: Path) -> None:

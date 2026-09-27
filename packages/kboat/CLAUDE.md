@@ -16,7 +16,7 @@ Its **spec** is split (both at the repo-root `skills/`): the shared vault contra
 - `kboat.lock` and `kboat.io_utils` are the vault's concurrency and durability floor.
   - Take the lock at a CLI edge, never inside a writer: an `flock` is per open file description, so a nested acquisition waits out its own hold.
   - Never add a second file-writing path beside `atomic_write_text`.
-- `kboat.io_utils` also owns whether a name is free, which on this iCloud-synced vault is not what `Path.exists()` or a glob answers.
+- `kboat.io_utils` also owns whether a name is free, which is not what `Path.exists()` or a glob answers: both swallow a refusal, and `exists()` follows a dangling symlink.
   - Ask its probes rather than `pathlib`; they raise rather than guessing, so a caller owes a boundary.
   - Which to ask where, and at what granularity, is `kboat-vault-conventions` "The write contract".
 - Keep runtime dependencies few: add one only where it replaces logic this package would otherwise maintain by hand.

@@ -68,9 +68,9 @@ Run `kboat-pick candidates` once — one JSON with both interest signals and the
     - An `[]` beside an `anomalies` entry for `Questions.md` is not that: the backlog could not be read (below).
 - `candidates` — the active web inbox (undispositioned web pages you have not started, the Web view minus its in-progress (`reading`) reads), each with `summary`/`topics` for the pre-filter, `added_date` for diversification, and `notebooklm_id` for the Stage 2 fulltext fetch.
 - `anomalies` — what the tool could not read, each `{path, error}`; name every one in this mode's report (step 7), however early the mode stops, since an input that could not be read otherwise reads exactly like an empty one.
-  - A `Daily/` path — a Daily note that could not be read or was evicted inside the look-back window, or the `Daily/` folder itself refused — leaves the exit at 0.
+  - A `Daily/` path — a Daily note inside the look-back window that could not be read, or the `Daily/` folder itself refused — leaves the exit at 0.
     - The Daily notes are the ambient signal the pick degrades over by design, so carry on with those that were read.
-  - A path to one note under `Sources/` — one that did not parse, or that iCloud evicted — leaves the exit at 0 too: that source is missing from `candidates`, and the pick carries on over the rest.
+  - A path to one note under `Sources/` — one that would not read or parse — leaves the exit at 0 too: that source is missing from `candidates`, and the pick carries on over the rest.
   - A `path` of `Sources` or `Questions.md` comes with exit 1: a required input could not be read, and the `error` leads with how (kboat-vault-conventions "Vault preconditions").
     - Tell it from the vault lock's refusals by stdout: this one carries the report.
     - Do not pick, and do not run `kboat-pick set`: a pick made without the backlog reads exactly like one steered by it, and one over an unread `Sources/` has nothing to choose from.

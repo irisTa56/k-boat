@@ -32,7 +32,7 @@ from kboat.frontmatter import (
     yaml_list,
     yaml_scalar,
 )
-from kboat.io_utils import atomic_write_text, file_present, icloud_placeholder, name_occupied
+from kboat.io_utils import atomic_write_text, file_present, name_occupied
 from kboat.naming import note_slug
 from kboat.schema import DIR_BY_TYPE, Field, Kind, NoteSchema
 
@@ -192,7 +192,7 @@ NOTES_HEADING = "## Notes"
 class WriteStatus(StrEnum):
     """Every `status` a note write can print, wherever along its path it is composed.
 
-    `upsert` composes the first six. `LOCKED` is composed at the CLI edge — by
+    `upsert` composes the first five. `LOCKED` is composed at the CLI edge — by
     `kboat.cli.emit_locked`, and by feed-filter's `main` — for a vault another run
     holds: a write that never reached `upsert`, and a status its caller branches
     on all the same, so it is a member here rather than a bare string where it is
@@ -204,7 +204,6 @@ class WriteStatus(StrEnum):
     UPDATED = "updated"
     COLLISION = "collision"
     SLUG_MISMATCH = "slug_mismatch"
-    EVICTED = "evicted"
     REPEATED_KEY = "repeated_key"
     LOCKED = "locked"
 
@@ -416,12 +415,11 @@ def upsert(
 
     A record whose slug is not the one its `url` names is refused as a
     `slug_mismatch`, a different `identity` value at an existing slug as a
-    `collision` (never overwritten), a slug iCloud has evicted as `evicted`, and
-    a note naming any key on more than one top-level line as `repeated_key`, with
-    those keys under `keys`. Returns `{status, slug, path}` — which is also the
-    `evicted` record's shape — or one of the other refusals; a record that does not say a note — a slug
-    that is no filename, a field name that is no property key — raises
-    `BadInputError` and writes nothing. A slug held by something that is not a
+    `collision` (never overwritten), and a note naming any key on more than one
+    top-level line as `repeated_key`, with those keys under `keys`. Returns
+    `{status, slug, path}` or one of the refusals; a record that does not say a
+    note — a slug that is no filename, a field name that is no property key —
+    raises `BadInputError` and writes nothing. A slug held by something that is not a
     file, and a probe the vault refuses, raise an `OSError` and write nothing.
     """
     slug = _filename_slug(record.get("slug"))
@@ -443,22 +441,18 @@ def upsert(
     body_in = record.get("body", "")
     rel = f"{DIR_BY_TYPE[schema.type]}/{slug}.md"
     path = vault / DIR_BY_TYPE[schema.type] / f"{slug}.md"
-    # Create versus merge is the placeholder question, asked in the order
-    # `kboat-vault-conventions` gives it, never a bare `exists()`: that answers
-    # "free" for an evicted note, and taking one for a new note skips the merge
-    # and the collision check and rewrites it from the record alone. Each probe
-    # raises where the vault refuses, and that is left to the caller's boundary,
-    # so a refusal never comes back as an eviction.
+    # Create versus merge is asked in the order `kboat-vault-conventions` gives,
+    # never by a bare `exists()`: that swallows a refusal and answers "free", and
+    # taking a held name for a new note skips the merge and the collision check
+    # and rewrites the note from the record alone. Each probe raises where the
+    # vault refuses, and that is left to the caller's boundary.
     if file_present(path):
         created = False
     elif name_occupied(path):
-        # Asked before the placeholder, so a stale stub cannot answer for a
-        # directory or a symlink leading nowhere — a name no download frees.
+        # A directory or a symlink leading nowhere, which no run frees.
         # `os.replace` would put the note in place of such a link, so this
         # refuses rather than claiming a name something else holds.
         raise FileExistsError(errno.EEXIST, "held by something that is not a note", str(path))
-    elif name_occupied(icloud_placeholder(path)):
-        return {"status": WriteStatus.EVICTED, "slug": slug, "path": rel}
     else:
         created = True
 
