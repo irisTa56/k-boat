@@ -309,6 +309,24 @@ class TestUnreadableDirectories:
         assert checks["evicted_files"].status == Status.OK
         assert checks["readable_notes"].status == Status.FAILED
 
+    def test_the_files_of_a_nested_untraversable_directory_are_not_each_reported(
+        self, healthy_vault: Path
+    ) -> None:
+        # `r--` lists its names but refuses every `lstat` beneath it. The one
+        # directory is the finding; were each file probed, its notes would crowd
+        # the five reported paths and inflate the count.
+        nested = healthy_vault / "Sources" / "sub"
+        nested.mkdir()
+        for i in range(3):
+            (nested / f"n{i}.md").write_text("")
+        nested.chmod(0o444)
+        try:
+            check = by_name(healthy_vault)["readable_notes"]
+        finally:
+            nested.chmod(0o755)
+        assert check.status == Status.FAILED
+        assert check.paths == ("Sources/sub",)
+
     def test_a_nested_directory_that_cannot_be_listed_fails(self, healthy_vault: Path) -> None:
         # The scan is recursive and the failure deliberately wider than a phase's
         # input, which is the whole of what separates this check from a scan-shaped
