@@ -67,7 +67,7 @@ So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a r
 - **No file has been evicted** in the scanned set — the note directories and `PDFs/`, each recursively — reported as `evicted_files`, a **warning** that never fails.
   - iCloud evicts a file in place: the name stays and only the content leaves, marked by the `SF_DATALESS` flag, and the first read downloads it again.
     - So an evicted file is listed, probed, and read like any other, and a run that meets one pays a download rather than missing an input; failing over it would stop a run that would have succeeded.
-    - A read that cannot download fails as that one item's I/O error, which every reader already reports per item.
+    - What a read does when it cannot download — fail, or wait — has not been measured; the routine needs the network for NotebookLM in any case.
     - Before macOS Sonoma iCloud left a `.<name>.icloud` placeholder instead and the name itself went away; no host K-Boat runs on does that, so nothing here looks for one.
   - It warns at all because the vault folder is meant to be kept downloaded, and an eviction says that setting has lapsed.
   - Recursively, but not into a symlinked subdirectory, since one symlink loop would hang the check every run waits on.

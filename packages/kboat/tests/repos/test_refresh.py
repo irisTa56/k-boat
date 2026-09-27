@@ -682,7 +682,7 @@ def test_refresh_names_the_vault_when_the_rename_probe_cannot_be_read(
     # refuse that read. Reported as the vault's failure, not as a `gh` payload defect —
     # the wording is what sends the reader to the right place, and the payload wording
     # is the one the run summary escalates on.
-    # Patched at `lstat`, which is where `name_taken` asks: `Path.exists` swallows
+    # Patched at `lstat`, which is where `name_occupied` asks: `Path.exists` swallows
     # every `OSError` from CPython 3.14 on, so patching it would pin a raise the
     # runtime cannot produce and this arm would be green and unreachable.
     old = _write_note(tmp_path, "https://github.com/google/A2A", "google/A2A")

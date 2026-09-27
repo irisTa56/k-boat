@@ -175,7 +175,7 @@ def test_collision_never_overwrites(vault: Path) -> None:
     assert _fm(vault, f"Sources/{clashing}.md")["title"] == "A"  # untouched
 
 
-# --- what holds the slug: a file, an evicted note, a non-file, a refusal ---
+# --- what holds the slug: a file, a non-file, a refusal ---
 
 _RECORD = {"slug": S, "fields": {"type": "source", "title": "T", "url": SOURCE_URL}}
 
