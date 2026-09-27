@@ -130,6 +130,10 @@ Where a test-driven development skill is available, work that red-green loop thr
 
 - Pass `run_in_background: true` explicitly on every background Agent call, although it is the default.
   - Entire [reads backgrounding from that argument alone](https://github.com/entireio/cli/blob/v0.10.6/cmd/entire/cli/hooks.go#L65-L78), so a subagent launched without it is dropped from every checkpoint.
+  - The rule applies only where the Agent tool has that parameter, which Claude Code removes where its [fork mode](https://code.claude.com/docs/en/sub-agents#turn-fork-mode-on-or-off) is on.
+    - Fork mode runs every subagent in the background without the argument, so a fork-mode session records none of its subagents ([entireio/cli#2556](https://github.com/entireio/cli/issues/2556)).
+    - Fork mode is on by default in an interactive terminal session and off with `-p` and in the Agent SDK, and `CLAUDE_CODE_FORK_SUBAGENT` overrides either default.
+    - A desktop-app session of this repository has the parameter, so the rule holds there.
 
 ## Writing conventions
 
