@@ -39,9 +39,10 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
     - It overwrites the file rather than appending as [the hooks docs](https://code.claude.com/docs/en/hooks#persist-environment-variables) suggest, since appending grows it by a full set of exports on every rerun; that is safe only while Claude Code gives each hook a file of its own, which it does but does not document.
 - Invoke a project CLI bare, as a single command: Claude Code matches each subcommand of a compound command against the allow rules, and auto mode leaves a call no rule approves to the classifier, which can deny even an allowed CLI such as `notebooklm delete`.
   - No rule matches `eval "$(mise env)"`, so no rule approves a prefixed call.
-  - No rule approves a command that expands a `$VAR` either, so give a vault path to a command as the vault's absolute path written out, never as `$OBSIDIAN_VAULT_PATH/…`.
-    - `kboat-doctor` and `kboat-queue list` print that absolute path as `vault`.
-  - A suffix such as `; echo "EXIT=$?"` is both a subcommand no rule matches and an expansion, and the Bash tool already reports a non-zero exit status, so it adds nothing.
+  - No rule approves a command that expands a variable either, `$VAR` or `$?`.
+    - Give a vault path to a command as the vault's absolute path written out, never as `$OBSIDIAN_VAULT_PATH/…`.
+      - `kboat-doctor` and `kboat-queue list` print that absolute path as `vault`.
+    - Leave off a suffix such as `; echo "EXIT=$?"`, since the Bash tool already reports a non-zero exit status.
 - Where the session's environment is missing or stale — a bare CLI fails with `command not found`, `OBSIDIAN_VAULT_PATH` is unset, or `mise.toml` or `mise.local.toml` changed since the hook last ran — prefix each call with `eval "$(mise env)" &&`, since nothing carries between Bash calls.
 - A linked worktree has no `mise.local.toml`, so there the environment holds `mise.toml`'s defaults and no real vault; run what touches the vault from the main checkout.
 - A secret never goes into mise's environment, so `mise env` prints none; a command that needs one gets it from a secret manager wrapping that command.
