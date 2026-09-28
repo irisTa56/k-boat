@@ -37,7 +37,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
   - That environment is `mise.local.toml` over `mise.toml`'s defaults, with the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
   - The hook runs only when a session starts, resumes, forks, clears or compacts, so a change to `mise.toml` or `mise.local.toml` does not reach Bash calls before one of those.
     - It overwrites the file rather than appending as [the hooks docs](https://code.claude.com/docs/en/hooks#persist-environment-variables) suggest, since appending grows it by a full set of exports on every rerun; that is safe only while Claude Code gives each hook a file of its own, which it does but does not document.
-- Invoke a project CLI bare, so every part of the call matches an allow rule: Claude Code checks each subcommand of a compound command on its own, and auto mode leaves a call with any part no rule approves to the classifier, which can deny even an allowed CLI such as `notebooklm delete`.
+- Invoke a project CLI bare, as a single command: Claude Code checks each subcommand of a compound command against the allow rules on its own, and auto mode leaves the whole call to the classifier when any part matches none, so another part can get even an allowed CLI such as `notebooklm delete` denied.
   - No rule matches `eval "$(mise env)"`, so no rule approves a prefixed call.
   - No rule approves a command that expands a variable either, `$VAR` or `$?`.
     - Give a vault path to a command as the vault's absolute path written out, never as `$OBSIDIAN_VAULT_PATH/…`.
