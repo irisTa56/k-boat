@@ -43,7 +43,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
     - Give a vault path to a command as the vault's absolute path written out, never as `$OBSIDIAN_VAULT_PATH/…`.
       - `kboat-doctor` and `kboat-queue list` print that absolute path as `vault`.
     - Leave off a suffix such as `; echo "EXIT=$?"`, since the Bash tool already reports a non-zero exit status.
-  - A record a CLI reads on stdin goes in through a quoted here-doc, never through a pipe: `echo '…' | kboat-note write` is compound, and the `echo` matching no rule is what hands the write to the classifier.
+  - A record a CLI reads on stdin goes in through a quoted here-doc, never through a pipe, so the call stays one command.
 
     ```bash
     kboat-note write --type source <<'KBOAT_RECORD'
@@ -51,10 +51,15 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
     KBOAT_RECORD
     ```
 
+    - A piped `echo '…' | kboat-note write` was denied by the classifier once, although `kboat-note write` has an allow rule.
+      - The permissions doc counts `echo` as read-only, but does not say how a compound of an allow-matched part and a read-only part resolves.
+      - A session with server-side classifier review sends read-only shell commands to that review.
     - The quoted delimiter stops all expansion, so a `'`, `$` or backtick in a value reaches the CLI as written; a here-string breaks on the first `'` in a value.
     - A multi-line record, such as a concept note's text for `kboat-concept shape`, is checked for a line equal to `KBOAT_RECORD`, and takes another delimiter where it has one.
     - A temp file was rejected: it has to sit in a working directory to pass without approval, the Write tool will not overwrite one it has not read, parallel subagents clobber a shared name, and removing it costs a call.
-    - Whether the rule matching reads the here-doc body as part of the command, rather than splitting it at the newlines the permissions doc lists as separators, is unconfirmed: the docs do not say, and [a report of here-doc calls missing their rule](https://github.com/anthropics/claude-code/issues/25441) was closed as fixed without saying how, and a call that passes cannot settle it, since the classifier's approval looks the same.
+    - Whether the rule matching reads the here-doc body as part of the command, rather than splitting it at the newlines the permissions doc lists as separators, is unconfirmed.
+      - The docs do not say, and [a report of here-doc calls missing their rule](https://github.com/anthropics/claude-code/issues/25441) was closed as fixed without saying how.
+      - A call that passes cannot settle it, since the classifier's approval looks the same.
     - Content already captured to a file, such as an article for `notebooklm source add -`, goes in as `< <file>` instead, which the permissions doc checks against Read rules and the working directories.
 - Where the session's environment is missing or stale — a bare CLI fails with `command not found`, `OBSIDIAN_VAULT_PATH` is unset, or `mise.toml` or `mise.local.toml` changed since the hook last ran — prefix each call with `eval "$(mise env)" &&`, since nothing carries between Bash calls.
 - A linked worktree has no `mise.local.toml`, so there the environment holds `mise.toml`'s defaults and no real vault; run what touches the vault from the main checkout.
