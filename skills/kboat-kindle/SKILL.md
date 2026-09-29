@@ -18,7 +18,7 @@ This skill creates the entry with an empty body; the highlights are added afterw
 ## Why the browser
 
 Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), and a Kindle ASIN (`B0…`) is not an ISBN, so the ISBN-keyed metadata APIs cannot resolve it.
-The reliable path is the user's real, logged-in Chrome — the same mechanism kboat-rescue uses for walled PDFs.
+The reliable path is the user's real, logged-in Chrome — the browser kboat-rescue turns to for a wall that needs the user's logins.
 The trade-off is that ingest is interactive and macOS-only rather than deterministic; that is acceptable because adding a finished book is itself a manual moment.
 
 ## Procedure
