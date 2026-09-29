@@ -91,7 +91,7 @@ The scheduled routine runs `kboat-doctor` as a precondition, then `kboat-ingest`
 A failed precondition stops the run before any phase: a vault that is absent, unwritable, unreadable, or only half-synced would make every later report a report about a vault that was not there.
 
 A source ingest cannot fetch — a PDF behind a CAPTCHA wall, or a member-only web page, say — is not lost: it lands in a **DLQ** (a `blocked` note, shown in a DLQ view of the Base) instead of silently failing.
-Run `kboat-rescue` on it when convenient; it opens the page in your own Chrome (you solve any CAPTCHA or sign in once) and finishes the ingest, keeping the original URL.
+Run `kboat-rescue` on it when convenient; it pulls the page through a real browser (you may be asked to solve a CAPTCHA or sign in) and finishes the ingest, keeping the original URL.
 Where there is nothing to rescue — the URL has died, or you would rather not chase it — the same skill gives it up instead, so nothing sits in the DLQ with no way out.
 
 One progress checkbox plus three dispositions drive a source.

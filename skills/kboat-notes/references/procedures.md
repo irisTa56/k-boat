@@ -475,7 +475,7 @@ The `url` is preserved throughout, so identity and provenance survive and the re
 
 Driven by the `kboat-rescue` skill (interactive).
 Given a DLQ source by its slug or `url`, supply the content NotebookLM could not fetch and finish ingestion, keeping the same note and `url`.
-The content comes through the user's real browser, which is logged in and can clear the wall the unattended fetch could not.
+The content comes through a real browser, which can clear the wall the unattended fetch could not — by passing a JavaScript challenge, or by carrying the user's logins.
 A PDF and a web page differ only in how the content is obtained and where the reading copy lives; both end as a normal source in the inbox.
 
 ### Step 1: resolve the note
@@ -509,7 +509,7 @@ For a **`pdf` source the same record carries `reading_link` = `[[<slug>.pdf]]`**
 
 ### Step 2: obtain the content
 
-Obtain the content through the real browser (the `kboat-rescue` skill uses Claude in Chrome), letting the human solve any CAPTCHA or sign-in.
+Obtain the content through a real browser (which one, and in what order, is the `kboat-rescue` skill's), letting the human solve any CAPTCHA or sign-in.
 A wall is what this step expects; a page that turns out to be **gone** rather than walled — a 404, a removed article — has no content to obtain and no re-run will change that, so stop here and offer [Procedure: abandon a blocked source](#procedure-abandon-a-blocked-source) instead of driving on.
 
 - **PDF** (`source_type: pdf`): get the real file to `PDFs/<slug>.pdf` — by saving it from the browser, or by the human downloading it and pointing the skill at the file.

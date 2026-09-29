@@ -1,6 +1,6 @@
 ---
 name: kboat-rescue
-description: 'Work a blocked (DLQ) K-Boat source to one of its two exits: pull a bot-protected PDF or walled page through the real browser and finish ingesting it, or abandon one whose content cannot be had. It also handles the one browser errand that is not a rescue — putting a walled article back into a notebook whose original vanished, which notebook-health reports but cannot do unattended. Use when the user wants to complete a source ingest left blocked ("the Medium article is walled", "fetch <slug>"), or to give one up ("that URL is dead"). Interactive and Mac-only: it drives the user''s Chrome and may ask for a CAPTCHA or a sign-in.'
+description: 'Work a blocked (DLQ) K-Boat source to one of its two exits: pull a bot-protected PDF or walled page through the real browser and finish ingesting it, or abandon one whose content cannot be had. It also handles the one browser errand that is not a rescue — putting a walled article back into a notebook whose original vanished, which notebook-health reports but cannot do unattended. Use when the user wants to complete a source ingest left blocked ("the Medium article is walled", "fetch <slug>"), or to give one up ("that URL is dead"). Interactive and Mac-only: it drives the Claude Code desktop app''s built-in browser first and the user''s Chrome where a wall needs their logins, and may ask for a CAPTCHA or a sign-in.'
 ---
 
 # K-Boat rescue (DLQ → ingested, or given up)
@@ -8,14 +8,14 @@ description: 'Work a blocked (DLQ) K-Boat source to one of its two exits: pull a
 Some sources cannot be fetched unattended — a bot-protected PDF behind an AWS WAF / Cloudflare CAPTCHA is the motivating case, and kboat-notes [Procedure: record a blocked source (DLQ)](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq) lists them all.
 Ingest parks these in the **DLQ** as source notes with `blocked: true`, and with an empty `notebooklm_id` — one recorded over a note that already existed keeps any file an earlier ingest downloaded.
 An entry can also still hold a notebook, the state the `blocked_has_notebook` row describes (kboat-notes [Cross-field rules](../kboat-notes/references/validation.md#cross-field-rules)).
-This skill completes one: it obtains the content through the user's real browser — where a human can solve any CAPTCHA or sign in — builds the 1:1 notebook, and clears `blocked`, keeping the same note and `url`.
+This skill completes one: it obtains the content through a real browser — where a JavaScript bot challenge can pass and a human can solve a CAPTCHA or sign in — builds the 1:1 notebook, and clears `blocked`, keeping the same note and `url`.
 
 It also carries the DLQ's **other** exit, for the entry no rescue can complete: a `url` that now 404s, a page that is gone, or one the user simply decides not to chase.
 Nothing else drains those (kboat-notes [Procedure: abandon a blocked source](../kboat-notes/references/procedures.md#procedure-abandon-a-blocked-source) says what that costs the entry and why it matters).
 Abandoning is the user's decision — this skill inspects and offers, never writes it off on its own — and it lands the source as an ordinary dismissed tombstone rather than in a state of its own.
 
 Follow kboat-notes for the schema and [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source) (or [Procedure: abandon a blocked source](../kboat-notes/references/procedures.md#procedure-abandon-a-blocked-source) for the give-up branch); this skill adds the browser mechanics.
-It is **interactive and Mac-only** — it needs the user present and their Chrome connected.
+It is **interactive and Mac-only** — it needs the user present and one of the two browsers step 2 names: the Claude Code desktop app's built-in browser, or their Chrome connected through Claude in Chrome.
 Do not run it from the unattended routine.
 
 ## Scope
@@ -27,7 +27,7 @@ Both `source_type`s are handled — whatever sent the source to the DLQ, the not
   - Check first — a re-captured entry may already hold the file from its earlier ingest, and there is nothing to fetch through the browser if it does.
     - Ask what holds that name, as kboat-notes [Layout](../kboat-notes/SKILL.md#layout) says for `PDFs/`, before anything is saved or copied there.
 - **Web page** (`source_type: web_page`): a member-only or otherwise walled article.
-  - Rescue captures the rendered article text from the logged-in browser and ingests it as a NotebookLM text source.
+  - Rescue captures the rendered article text from the browser that got past the wall and ingests it as a NotebookLM text source.
   - There is no local file — the reading copy stays the live `url`.
 
 ## Procedure
@@ -43,9 +43,9 @@ Name every `anomalies` entry beside the list: this listing is the only enumerati
 Either way, an exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: say so in place of the answer, which would otherwise read as an empty DLQ or a slug no note holds.
 
 **A third invocation is not a rescue at all**, and it is the one case where a source that is *not* `blocked` belongs here: a web source whose notebook lost its original, whose `url` has since gone walled, and which the routine's notebook-health step therefore reported it could not restore.
-What it needs is the browser this skill drives, not the DLQ.
+What it needs is the browsers this skill drives, not the DLQ — and since a walled `url` is usually a sign-in wall, expect step 2's order to end at Chrome.
 Follow kboat-notes [Procedure: restore a source's original into its notebook](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook), step 3, which owns that branch and states it end to end; do not reassemble it from the steps below.
-What those steps lend it is the browser: capture the article as step 3 below does, then add it into the notebook the note already names rather than creating one, and verify with the `source wait` and extraction checks step 5 below runs — the capture alone is not the verification, and skipping the wait is what leaves a `pasted_text` upload carrying the note's `title` that every later check reads as the healthy original.
+What those steps lend it is the browser: pick it as step 2 below does, capture the article as step 3 does, then add it into the notebook the note already names rather than creating one, and verify with the `source wait` and extraction checks step 5 below runs — the capture alone is not the verification, and skipping the wait is what leaves a `pasted_text` upload carrying the note's `title` that every later check reads as the healthy original.
 Do not set `blocked` to bring the source into this skill's usual path — that reaches no rescue, and the gate below is what would send it back.
 
 **Read `notebooklm_id` before going further on either of the first two openings** — not on the third, whose source carries one by definition and whose whole errand is to put content back into the notebook that id names, never calling `create` at all.
@@ -68,33 +68,52 @@ A dead `url` or a page that is gone is the first; deciding not to pursue it is t
   - It is not a claim the page is gone, so there is nothing to verify, and requiring a browser the machine may not have would leave the entry ageing in the DLQ — which is the state this ending exists to end.
   - Confirm the decision and go to step 6.
 
-### Step 2: Confirm the browser
+### Step 2: Choose the browser
 
-Use Claude in Chrome: check `list_connected_browsers` returns a local browser.
+Two browsers are tried in this order, and each is for a different kind of wall:
 
-- If none, fall back to the manual path (step 4), or — on a give-up invocation — to the user's own account of the `url` per step 1.
+- **The built-in browser** — the Claude Code desktop app's browser pane, tools `mcp__Claude_Browser__*` — comes first.
+  - It needs no extension connection, and a JavaScript bot challenge (a Cloudflare-style interstitial, Springer's `Client Challenge` page) can pass in it by itself, with no CAPTCHA and no sign-in.
+  - It does not carry the user's logged-in sessions, so a sign-in or member-only wall — the typical web-page rescue — is expected to still stand in it.
+    - Whether the user signing in inside the pane gets past such a wall is untested; do not offer it as the way through.
+  - It is usable when its tools are in the session; a `navigate` with a URL opens the pane if it is closed.
+- **Claude in Chrome** — the user's real Chrome, tools `mcp__claude-in-chrome__*` — comes next, where the built-in browser is not usable or the wall still stands in it.
+  - It carries the user's logins, so it is the one for a sign-in or member-only wall, and the user can clear a CAPTCHA or sign in there themselves.
+  - Check `list_connected_browsers` returns a local browser, and that a `navigate` actually lands.
+    - A tab that reverts to `chrome://newtab/` within seconds of every `navigate`, even to a plain page, leaves nothing to fetch; treat Chrome as not usable.
+
+If neither is usable, or the wall stands in both, fall back to the manual path (step 4), or — on a give-up invocation — to the user's own account of the `url` per step 1.
 
 ### Step 3: Fetch through the real browser
 
-Navigate the user's Chrome to the note's `url`.
+Navigate the browser step 2 chose to the note's `url`, or for a PDF to the same-origin page the capture below starts from.
 
-If a CAPTCHA / "Human Verification" / sign-in page appears, ask the user to clear it in their browser, then continue once the real content loads.
+If a CAPTCHA / "Human Verification" / sign-in page appears and does not clear by itself, what to do depends on the browser:
+
+- **Built-in browser**: that is the wall step 2 says stands there, so move on to Chrome rather than asking the user to clear it in the pane.
+- **Chrome**: ask the user to clear it in their browser, then continue once the real content loads.
+
 If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
 
 - **PDF**: save it to `<vault>/PDFs/<slug>.pdf`, only where Scope's check found no file there that verifies.
-  - **Preferred capture — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host (for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`), then run in-page JavaScript that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob.
-    - Chrome writes it to `~/Downloads`; move it into the vault.
-    - Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable.
-    - Two things to expect, both needing the present user: Chrome may raise a **"download multiple files" permission popup** the user must approve (the JS download counts as an automatic download), and the file may take a moment to appear — poll `~/Downloads` briefly rather than concluding failure on the first miss.
+  - **Preferred capture, in either browser — same-origin in-page fetch.** Once the browser has cleared the wall, its cookies (e.g. Cloudflare's `cf_clearance`) carry the clearance, so the most reliable way to get the bytes is to let the page fetch them: navigate the tab to a same-origin HTML page on the host, then run in-page JavaScript (`javascript_tool`) that does `fetch("<pdfUrl>", {credentials:"include"})`, checks the first bytes are `%PDF-`, and triggers a download via an `<a download="<slug>.pdf">` of the blob.
+    - The same-origin page is the article's own HTML page: for an ACM `/doi/pdf/<doi>` PDF, the abstract `/doi/<doi>`; for a Springer `/content/pdf/<doi>.pdf`, the article `/article/<doi>`.
+    - Loading that page is often the whole clearance: in the built-in browser, Springer's challenge passed on it with nothing asked of the user.
+    - Both browsers write the file to `~/Downloads`; move it into the vault.
+    - The file may take a moment to appear, so poll briefly rather than concluding failure on the first miss.
+      - Look with `find ~/Downloads -maxdepth 1 -newermt "-3 minutes" -name '<slug>*'`, not `ls ~/Downloads | grep`: the rtk hook rewrites `ls`'s output, and the listing can miss a file that is there.
+    - In Chrome, two more things to expect:
+      - Do **not** try to click the inline PDF viewer's download button — its controls live in a closed shadow DOM and are not reachable.
+      - Chrome may raise a **"download multiple files" permission popup** the user must approve (the JS download counts as an automatic download); the built-in browser saved the file with no prompt.
   - After moving it, **verify the saved file starts with `%PDF-`** and is non-trivial in size.
-  - If it is not a real PDF (still a challenge), report and stop — leave `blocked: true`.
-- **Web page**: capture the rendered article text (`get_page_text` / `read_page`) once the real article is on screen, and write it to a temp file.
-  - **Read it back to confirm it is the article, not the wall** (a login form or paywall stub is short and generic); if it is still the wall, report and stop — leave `blocked: true`.
+  - If it is not a real PDF (still a challenge), the wall still stands: from the built-in browser, go on to Chrome per step 2; from Chrome, report and stop — leave `blocked: true`.
+- **Web page**: capture the rendered article text (`get_page_text` / `read_page`, which both browsers have) once the real article is on screen, and write it to a temp file.
+  - **Read it back to confirm it is the article, not the wall** (a login form or paywall stub is short and generic); if it is still the wall, go on to Chrome from the built-in browser, and from Chrome report and stop — leave `blocked: true`.
   - No file is saved under the vault — the reading copy stays the `url`.
 
 ### Step 4: Manual fallback
 
-If Claude in Chrome is unavailable or cannot get past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `<vault>/PDFs/<slug>.pdf` under the same check as step 3, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
+If neither browser in step 2 is usable, or none that is gets past the wall, ask the user to supply the content themselves and give a path: a downloaded PDF (copy it to `<vault>/PDFs/<slug>.pdf` under the same check as step 3, verify `%PDF-`), or the article text saved to a `.txt`/`.md` file (use it as the temp file in step 5).
 
 ### Step 5: Finish ingestion
 
