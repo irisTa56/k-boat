@@ -52,7 +52,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
     ```
 
     - The quoted delimiter stops all expansion, so a `'`, `$` or backtick in a value reaches the CLI as written; a here-string breaks on the first `'` in a value.
-    - A record with a line equal to `KBOAT_RECORD` takes a delimiter no line of it equals.
+    - A multi-line record, such as a concept note's text for `kboat-concept shape`, is checked for a line equal to `KBOAT_RECORD`, and takes another delimiter where it has one.
     - A temp file was rejected: it has to sit in a working directory to pass without approval, the Write tool will not overwrite one it has not read, parallel subagents clobber a shared name, and removing it costs a call.
     - Whether the rule matching reads the here-doc body as part of the command, rather than splitting it at the newlines the permissions doc lists as separators, is unconfirmed: the docs do not say, and [a report of here-doc calls missing their rule](https://github.com/anthropics/claude-code/issues/25441) was closed as fixed without saying how, and a call that passes cannot settle it, since the classifier's approval looks the same.
     - Content already captured to a file, such as an article for `notebooklm source add -`, goes in as `< <file>` instead, which the permissions doc checks against Read rules and the working directories.
