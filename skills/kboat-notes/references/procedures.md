@@ -45,7 +45,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
        - This stop reports nothing, so it comes last, where no state that owes a report can reach it first.
    - Any other matching note goes on like a new source, each write merging over it.
 2. Otherwise create the note with `kboat-note write --type source` (it owns the file write — schema field order, YAML quoting, the always-present defaults, de-dup, and the `added_date` stamp — so the agent never hand-assembles frontmatter).
-   - Pipe a `{slug, fields}` JSON record whose `fields` carry what is known now: `type: source`, `title`, `source_type: web_page`, `url`, and `reading_link` = the `url`.
+   - Give it on stdin a `{slug, fields}` JSON record whose `fields` carry what is known now: `type: source`, `title`, `source_type: web_page`, `url`, and `reading_link` = the `url`.
    - The tool starts `reading`/`distill`/`keep`/`dismiss`/`blocked`/`picked` at `false`, leaves `summary`/`topics`/`filed_date`/`distilled_date` empty, and stamps `added_date`; step 3 fills `summary`/`topics`.
    - This write is the commit point.
    - (The tool also re-makes step 1's checks and refuses rather than writing: `status: slug_mismatch` when the slug is not the one the `url` names — always a bug in how the record was assembled, since step 1's oracle is what to use — and `status: collision` with a `reason` of `identity_differs` or `unreadable_identity` when the note at that slug cannot be shown to be this page — and `status: repeated_key` when that note names a key on more than one line, which kboat-ingest keeps the queue file for until a human repairs the note.)
@@ -528,7 +528,7 @@ Build it from the supplied content: `create` (read `.notebook.id`) → set chat 
 Neither branch's source has a `url`; the web-page branch resolves by the note's `title`, which it is given as `--title`, and the PDF by its type:
 
 - **PDF**: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
-- **Web page**: pipe the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
+- **Web page**: redirect the captured text from the temp file with `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the text from stdin and forces a text source, so a long article hits no argument-length or shell-quoting limit).
 
 Then wait for the upload to process: `notebooklm --quiet source wait <source_id> --notebook <id> --timeout 90 --json 2>/dev/null`.
 Keep `--timeout` below the caller's own budget (the Bash tool allows 120s by default) so the CLI lives to report its own timeout.
@@ -660,7 +660,7 @@ The note **write itself is owned by the `kboat-repos` tool** (`kboat-repos write
 
 1. `gather` resolves the canonical owner/repo via `gh` and returns `slug`/`url`/`title` plus the ready-to-write `fields`, and the `readme_error` the write sets the note's `readme` mark from.
    - The subagent adds `role`/`domain`/`summary` to that record.
-2. Pipe the augmented record to `kboat-repos write`.
+2. Give the augmented record to `kboat-repos write` on stdin.
    - It is a CLI over the shared write contract (Conventions "The write contract") with the repo record shape: it verifies the record's `slug` against the record's own `url` (a slug that is not the one that `url` names is `status: slug_mismatch`, written nowhere — a record `gather` handed over intact cannot be one, since step 1's `slug` and `url` come from the same canonical URL by the recipe the write recomputes), de-dups by slug (a `url` at the same slug that cannot be shown to be this repo is a collision → `status: collision` with a `reason` of `identity_differs` or `unreadable_identity`, written nowhere; a note naming a key on more than one line is `status: repeated_key`, written nowhere too), preserves an existing note's body, `reading`, and original `added_date` on update, clears a ticked `gone` on update (reported as `gone_cleared: true`, since the record's `gather` found GitHub showing the repository), stamps `added_date`/`refreshed_date`, and writes `Repos/<slug>.md` in the canonical field order.
 
 ## Procedure: refresh repo metadata

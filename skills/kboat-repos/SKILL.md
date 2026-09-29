@@ -76,7 +76,7 @@ The classification is permanent — the note is written and the queue file delet
 
 ### Step 3: write via the package
 
-Take the gather record, add the judged `role`, `domain`, `summary` keys, and pipe the whole JSON object to `kboat-repos write` (defaults to `$OBSIDIAN_VAULT_PATH`).
+Take the gather record, add the judged `role`, `domain`, `summary` keys, and give the whole JSON object to `kboat-repos write` on stdin (defaults to `$OBSIDIAN_VAULT_PATH`).
 Keep `readme_error` as `gather` returned it, `null` included: the write sets the note's `readme` mark from it, and refuses a record without it (exit 2) rather than guess.
 
 - The package assembles `Repos/<slug>.md` in the canonical field order, quotes YAML safely (so a colon-bearing `description` can't break the note), de-dups by slug, and preserves an existing note's body / `reading` / `added_date` on update — none of which the agent should hand-assemble.

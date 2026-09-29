@@ -2,7 +2,7 @@
 
 Frontmatter only, no body.
 Fields are ordered for reading — the URLs you open and the `reading`/`distill`/`keep`/`dismiss` checkboxes first, then the source metadata (including `summary` and `topics`), then the routine-managed dates and the `blocked` flag, and finally the notebook coordinates.
-The note **write is owned by `kboat-note write`** (`kboat-note write --type source`), so field order, YAML quoting, the always-present defaults, de-dup, and the `added_date` stamp are guaranteed rather than hand-assembled — the create/update procedures build a `{slug, fields}` record and pipe it.
+The note **write is owned by `kboat-note write`** (`kboat-note write --type source`), so field order, YAML quoting, the always-present defaults, de-dup, and the `added_date` stamp are guaranteed rather than hand-assembled — the create/update procedures build a `{slug, fields}` record and give it on stdin.
 
 | Property | Meaning |
 | --- | --- |

@@ -43,6 +43,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
     - Give a vault path to a command as the vault's absolute path written out, never as `$OBSIDIAN_VAULT_PATH/…`.
       - `kboat-doctor` and `kboat-queue list` print that absolute path as `vault`.
     - Leave off a suffix such as `; echo "EXIT=$?"`, since the Bash tool already reports a non-zero exit status.
+  - Give a CLI its stdin from a quoted here-doc (`<<'KBOAT_RECORD'`) or a `<` redirect from a file inside the working directory, on its own command, never from a pipe, which adds a part the allow rule does not cover.
 - Where the session's environment is missing or stale — a bare CLI fails with `command not found`, `OBSIDIAN_VAULT_PATH` is unset, or `mise.toml` or `mise.local.toml` changed since the hook last ran — prefix each call with `eval "$(mise env)" &&`, since nothing carries between Bash calls.
 - A linked worktree has no `mise.local.toml`, so there the environment holds `mise.toml`'s defaults and no real vault; run what touches the vault from the main checkout.
 - A secret never goes into mise's environment, so `mise env` prints none; a command that needs one gets it from a secret manager wrapping that command.
