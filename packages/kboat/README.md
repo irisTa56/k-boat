@@ -20,9 +20,10 @@ Change the relevant spec first, then this package and its tests — except GitHu
 - `kboat-note` — `write` (create-or-update one note from a `{slug, fields, body?}` JSON record), `slug` (the slug oracle for one URL), `migrate-slugs` (rename the vault's URL-named notes to the slugs their URLs name), and `list` (one note folder's frontmatter, or one note's by slug, with what it could not read in `anomalies`, for a skill that would otherwise read the files itself; `kboat-vault-conventions` has the contract).
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
 - `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain (`list`), and delete a drained one under the vault lock (`remove`).
-- `kboat-concept` — `shape`, the reading-group classifier: reads a concept note on stdin and answers whether its `## Observations` carries any `###` group at all.
+- `kboat-concept` — `shape`, the reading-group classifier: reads the concept note at a path relative to the knowledge root and answers whether its `## Observations` carries any `###` group at all.
+  - The path is the `file_path` Basic Memory's `read_note` returns, and the root comes from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
   - That answer is the branch `kboat-distill` takes before adding to one.
-  - Text carrying no `## Observations` heading at all is refused (exit 2, empty stdout) rather than answered.
+  - Text carrying no `## Observations` heading at all, and a path with no file behind it, are refused (exit 2, empty stdout) rather than answered; a read the OS refuses exits 1.
 - `kboat-knowledge` — the knowledge-base audits `kboat-curate` runs over `<knowledge root>/concepts/*.md`, the root taken from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
   - `titles` prints `{"flagged": [{"file", "title"}]}`: the notes whose title a filename-resolved wikilink cannot reach.
   - `tags` prints `{"counts": {tag: n}, "untagged": [file]}`: the facet-tag census.
