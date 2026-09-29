@@ -223,11 +223,12 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
     - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups)).
     - A heading you mint must repeat no `###` the note already carries: `edit_note` refuses a section header it finds twice, so a repeated one is an anchor nothing can add to that group by again.
-  - **Which shape the note is in.** `read_note` the hit, and give `kboat-concept shape` the note's file as a `<` redirect: its `file_path` under the `k-boat-knowledge` project's `path` from `list_memory_projects`, written out as one absolute path.
+  - **Which shape the note is in.** `read_note` the hit and give its text to `kboat-concept shape` on stdin.
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
     - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
     - Read with `output_format="json"` and treat a null `content` as not having got the note: a miss in text mode composes a document that reads like one.
-    - The file rather than the text keeps the command short: a command over 10,000 characters matches no allow rule, and a concept note can pass that.
+    - Write the text to a temp file with your file-writing tool rather than through a heredoc.
+      - A concept note's observations carry backticks and `$` by the markup rules in kboat-notes, and an unquoted heredoc runs them.
   - **Whether these claims deepen an insight the note already carries or open a new one** is your judgement, not the tool's, and only the second case makes a **flat** note owe its claims a heading.
     - A note already carrying a `###` owes one on its own terms, below, whichever of the two this reading is.
   - **Where a placement goes.** `edit_note(operation="insert_before_section", …)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.
