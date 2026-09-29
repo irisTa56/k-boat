@@ -227,8 +227,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
     - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
     - Read with `output_format="json"` and treat a null `content` as not having got the note: a miss in text mode composes a document that reads like one.
-    - Write the text to a temp file with your file-writing tool rather than through a heredoc.
-      - A concept note's observations carry backticks and `$` by the markup rules in kboat-notes, and an unquoted heredoc runs them.
+    - Give it the text through the quoted here-doc the root [CLAUDE.md](../../CLAUDE.md#environment) sets for a stdin record, never an unquoted one.
+      - A concept note's observations carry backticks and `$` by the markup rules in kboat-notes, and an unquoted here-doc runs them.
+      - Unlike a one-line JSON record, the text runs to many lines, so check that none of them equals the delimiter before choosing it.
   - **Whether these claims deepen an insight the note already carries or open a new one** is your judgement, not the tool's, and only the second case makes a **flat** note owe its claims a heading.
     - A note already carrying a `###` owes one on its own terms, below, whichever of the two this reading is.
   - **Where a placement goes.** `edit_note(operation="insert_before_section", …)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.

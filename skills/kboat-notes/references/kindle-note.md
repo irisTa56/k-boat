@@ -9,7 +9,7 @@ The note is named `Kindles/<ASIN>.md` — the ASIN is the stable id, so (as with
 De-dup is by the ASIN filename: a note `kboat-note list --type kindle --slug <ASIN>` returns is the same book ([Procedure: create or update a Kindle note](procedures.md#procedure-create-or-update-a-kindle-note), step 2).
 
 Fields are ordered for reading — `title` then the reader link, then the rest of the metadata, then the `reading`/`finished`/`distill` checkboxes and the routine-managed dates.
-The note **write is owned by `kboat-note write`** (`kboat-note write --type kindle`); the create/update procedure builds a `{slug, fields, body?}` record (slug = the ASIN) and pipes it, and an update that omits `body` preserves the highlights.
+The note **write is owned by `kboat-note write`** (`kboat-note write --type kindle`); the create/update procedure builds a `{slug, fields, body?}` record (slug = the ASIN) and gives it on stdin, and an update that omits `body` preserves the highlights.
 
 | Property | Meaning |
 | --- | --- |
