@@ -297,6 +297,9 @@ The review report is the durable, **user-facing** record of what each distillati
 So it carries **only the distillation knowledge** below, and is **written only on a run that distilled at least one source or Kindle book** (Phase B/C) — a partial pass that stamped nothing included, since its creates and appends are logged there for the human to reverse.
 A run that distilled nothing writes no report: there is nothing to consolidate, and its operational outcome (the Phase A lifecycle counts, dismissed discards and notebook retentions, anomalies, the "nothing ripe" status) lives in the run summary, not the vault.
 
+No `kboat` tool writes the report, so there is no CLI to look for: it is a file an agent writes itself (`kboat-vault-conventions`, "A file an agent writes itself").
+Whether the day's file is there comes from reading it at its absolute path, the same read the look for this source's section below needs, and never from `ls | tail`: the rtk hook rewrites `ls`'s output, and the listing can leave out the newest files.
+
 The first write to the day's file **creates it with its frontmatter block** (see kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd)), then appends the first `###` section; every later write appends another.
 
 ```yaml
