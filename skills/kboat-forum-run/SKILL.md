@@ -65,6 +65,8 @@ Run `feed-filter forum-new`.
 
 - Use a **Sonnet** subagent for Rule A and a **haiku** subagent for Rule B (see the model split above).
 - Judging candidates in parallel is fine, but launch each judge in the foreground (`run_in_background: false`): step 3 needs every result, and a judge started in the background leaves the run with nothing to do but wait for it.
+  - At most 20 judges run at once, the harness's concurrent-subagent limit, and a launch past it fails with "Concurrent subagent limit reached".
+  - When there are more candidates than that, launch the first 20 and the rest as judges finish, since step 3 still needs every result before acting.
 
 The judge reads its task and not this skill, and the task hands it the criteria by path rather than by content:
 
