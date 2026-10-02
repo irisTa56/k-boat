@@ -130,6 +130,8 @@ Where a test-driven development skill is available, work that red-green loop thr
 
 - Never push to `main` directly; branch first, then PR.
   - PRs are merged out-of-band, so verify the current branch before pushing — a merge can leave the tree on `main`.
+- A session that opened as a scheduled run hands a change to the repository to a fresh session, as a task chip (`spawn_task`), rather than branching and implementing there.
+  - It runs in the main checkout, as the next scheduled run will, so a branch left checked out there is the tree that run reads its skills from.
 
 ## Delegation
 
