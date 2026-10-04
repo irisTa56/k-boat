@@ -1,6 +1,6 @@
 # feed-filter — feed, forum, and query triage
 
-A simplified, Claude-Code-native reimplementation of the sibling project `loose-feeds` (a local checkout at `../loose-feeds`, not a public repo).
+A simplified, Claude-Code-native reimplementation of [`loose-feeds`](https://github.com/irisTa56/loose-feeds), an archived project.
 
 A local Claude Code scheduled routine periodically discovers new pages from registered sites, filters them against a prompt using cheap subagents, and writes the survivors as `type: feed` notes in the Obsidian vault's `Feeds/` folder.
 A second routine does the same for registered Discourse forums, judging topics and popular posts on a sparse poll schedule and writing keeps as the same `Feeds/` notes.
