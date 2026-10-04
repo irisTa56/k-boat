@@ -102,7 +102,7 @@ Which URL a note type *stores* is still that type's own decision; only the step 
 - A feed note stores the canonical URL its gather deduped on.
 
 The slug names a file inside one note type's folder, so the namespace is per folder rather than vault-wide.
-One page triaged into `Feeds/` and later ingested into `Sources/` therefore holds the same slug in both — the ordinary case now that every type hashes the same canonical URL, and not a clash between the two.
+One page triaged into `Feeds/` and later ingested into `Sources/` therefore holds the same slug in both — the ordinary case, since every type hashes the same canonical URL, and not a clash between the two.
 
 One consequence every writer handles: 48 bits is collision-resistant but not collision-free, so de-dup by reading the existing note's identity field, never by filename alone — which is exactly what the write contract's collision check does.
 
@@ -239,7 +239,7 @@ And `exists()` follows symlinks, so a dangling one reads as a free name, and a w
 
 - `name_occupied(path)` — is anything at that name, a dangling symlink included; the question to ask before claiming it.
 - `file_present(path)` — is a **file** there, which is what says *by what* a taken name is held.
-  - This is where the swallow used to live: `exists()` answers "no file" for a link into an unreadable tree, so a caller reported a name nothing will free and sent a human after a broken symlink that was not there.
+  - `exists()` answers "no file" for a link into an unreadable tree, so a caller asking it reports a name nothing will free and sends a human after a broken symlink that is not there.
 - `list_note_dir(directory)` — one folder's notes.
 
 A caller classifying a taken name asks `file_present` first: a file is a note to merge with or a pair to report, and anything else at the name is one no run frees.
