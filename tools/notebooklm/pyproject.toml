@@ -16,7 +16,7 @@ version = "0"
 # runs this CLI, so an interpreter it was never checked on would reach the skills as
 # unreviewed as an unchecked release would.
 requires-python = ">=3.14,<3.15"
-dependencies = ["notebooklm-py[browser]==0.8.2"]
+dependencies = ["notebooklm-py[browser]==0.8.3"]
 
 # Nothing here is importable: this project exists to pin and install a CLI.
 [tool.uv]
