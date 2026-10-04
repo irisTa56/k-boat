@@ -284,7 +284,7 @@ No match also comes back when the rule was given something it cannot classify, a
 So **act on a listing in which nothing could be a source ingest added** (an empty one, or one holding only saved notes), and **stop on anything that could be**, whatever its type, reporting what the listing holds.
 
 Read the type names as version-local.
-With notebooklm-py 0.8.2 a fetched page is `web_page`, an uploaded file `pdf`, a pasted-text upload (a rescued page) `pasted_text`, a saved note `gemini_chat`, and a page NotebookLM classified its own way something outside this schema's two values (`youtube`, `epub`, …).
+With notebooklm-py 0.8.3 a fetched page is `web_page`, an uploaded file `pdf`, a pasted-text upload (a rescued page) `pasted_text`, a saved note `gemini_chat`, and a page NotebookLM classified its own way something outside this schema's two values (`youtube`, `epub`, …).
 A kind the installed version does not recognise reads as `unknown` instead, not as NotebookLM's answer but because the CLI has no name for the code and says so on stderr, printing `UnknownTypeWarning: Unknown source type code <n>`.
 So keep the test and not the literal string; a `notebooklm` bump is where to re-read this.
 
