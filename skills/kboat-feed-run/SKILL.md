@@ -37,7 +37,7 @@ Run `feed-filter new-entries`.
 - The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
   - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap.
     - Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
-  - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text, and is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
+  - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text; it and `title` are both `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
     - The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url '<url>'` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
   - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
     - `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
