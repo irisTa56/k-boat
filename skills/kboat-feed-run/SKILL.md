@@ -50,6 +50,7 @@ Run `feed-filter new-entries`.
 ### Step 2: Judge each entry
 
 **Judge each entry** with a **haiku** subagent.
+Launch it as the `kboat-feed-judge` agent type (`subagent_type: "kboat-feed-judge"`, `model: "haiku"`), never as a general-purpose one: `.claude/agents/kboat-feed-judge.md` is what keeps the session's task-chip tools from a judge, and says why.
 The judge reads its task and not this skill, and the task hands it the criteria by path rather than by content:
 
 - The criteria `path` from `selection-path`, with the instruction to Read the whole file before judging and to judge by it.
