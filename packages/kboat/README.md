@@ -28,6 +28,10 @@ Change the relevant spec first, then this package and its tests — except GitHu
   - `titles` prints `{"flagged": [{"file", "title"}]}`: the notes whose title a filename-resolved wikilink cannot reach.
   - `tags` prints `{"counts": {tag: n}, "untagged": [file]}`: the facet-tag census.
   - A root with no `concepts/` is refused (exit 2); an unreadable base or a note whose frontmatter does not parse fails (exit 1, empty stdout).
+- `kboat-notebooks` — the source notes' stored `notebooklm_id`s read against a `notebooklm list --json` the caller saved to a file (`--notebooks`); it makes no NotebookLM call.
+  - `sweep` prints `kboat-notebook-health`'s set, every stored id the listing lacks, the owned notebooks no note references, and the counts that tell a notebook gone from a listing fetched under another account.
+  - `resolve --id <id>…` prints whether each given id is in the listing, beside the same counts.
+  - A file that is not a listing is refused (exit 2, empty stdout); a `Sources/` that could not be read exits 1 with the report still printed.
 
 ## Shared modules
 
