@@ -29,7 +29,17 @@ from pathlib import Path
 from kboat.cli import add_vault_argument, vault_path
 from kboat.note.listing import list_notes
 
-from .core import READ_FIELDS, NotAListingError, Notebook, Source, parse_listing, resolve, sweep
+from .core import (
+    ID_FIELDS,
+    MEMBERSHIP_FIELDS,
+    SHOWN_FIELDS,
+    NotAListingError,
+    Notebook,
+    Source,
+    parse_listing,
+    resolve,
+    sweep,
+)
 
 
 def _read_listing(path: Path) -> list[Notebook]:
@@ -41,11 +51,38 @@ def _read_listing(path: Path) -> list[Notebook]:
         raise NotAListingError(f"not JSON ({exc})") from exc
 
 
-def _read_sources(vault: Path) -> tuple[list[Source], object, bool]:
-    report, unread = list_notes(vault, "source", fields=READ_FIELDS)
-    notes = report["notes"]
-    assert isinstance(notes, list)
-    return [Source(n["slug"], n["frontmatter"]) for n in notes], report["anomalies"], unread
+def _entries(report: dict[str, object], key: str) -> list[dict]:
+    entries = report[key]
+    assert isinstance(entries, list)
+    return entries
+
+
+def _cmd_resolve(
+    vault: Path, notebooks: list[Notebook], ids: list[str]
+) -> tuple[dict[str, object], bool]:
+    report, unread = list_notes(vault, "source", fields=ID_FIELDS)
+    sources = [Source(n["slug"], n["frontmatter"], {}) for n in _entries(report, "notes")]
+    return {**resolve(sources, notebooks, ids), "anomalies": report["anomalies"]}, unread
+
+
+def _cmd_sweep(vault: Path, notebooks: list[Notebook]) -> tuple[dict[str, object], bool]:
+    """Two reads of `Sources/`, so each `anomalies` entry means what its reader takes
+    it for: a note whose id or membership could not be read, anywhere in the vault,
+    or a field the report shows, on a note it shows. A shown field no entry carries
+    is no gap in the answer, and one read would report it for every note alike."""
+    report, unread = list_notes(vault, "source", fields=MEMBERSHIP_FIELDS)
+    shown_report, _ = list_notes(vault, "source", fields=SHOWN_FIELDS)
+    shown = {n["slug"]: n["frontmatter"] for n in _entries(shown_report, "notes")}
+    notes = _entries(report, "notes")
+    sources = [Source(n["slug"], n["frontmatter"], shown.get(n["slug"], {})) for n in notes]
+    output = sweep(sources, notebooks)
+    slugs = {e["slug"] for key in ("sweep_set", "absent") for e in _entries(output, key)}
+    paths = {n["path"] for n in notes if n["slug"] in slugs}
+    output["anomalies"] = [
+        *_entries(report, "anomalies"),
+        *(a for a in _entries(shown_report, "anomalies") if a["path"] in paths),
+    ]
+    return output, unread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,13 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"{args.notebooks}: not a notebook listing: {exc}\n")
         return 2
 
-    sources, anomalies, unread = _read_sources(vault)
-    output = (
-        sweep(sources, notebooks)
-        if args.command == "sweep"
-        else resolve(sources, notebooks, args.ids)
-    )
-    output["anomalies"] = anomalies
+    if args.command == "sweep":
+        output, unread = _cmd_sweep(vault, notebooks)
+    else:
+        output, unread = _cmd_resolve(vault, notebooks, args.ids)
     json.dump(output, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 1 if unread else 0

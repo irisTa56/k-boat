@@ -74,7 +74,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
    - **Tell a wrong account from a gone notebook before acting on either.**
      - A `list` that succeeded against the wrong signed-in account returns that account's notebooks, so every stored id reads as absent — and reactivation discards a notebook by its stored id, so a sweep that named it across sound notebooks would spend every one of them.
      - Do not decide this on the sweep set, whose size is an accident of what the reader has opened: a set of one whose notebook is genuinely gone satisfies "all absent" as readily as a wrong account does.
-     - Check the listing against **every `notebooklm_id` in the vault**, not only the set's, which is what `counts` holds: `stored_ids` source notes carry an id, and `resolved_ids` of those ids are among the `listed_notebooks`.
+     - Check the listing against **every `notebooklm_id` in the vault**, not only the set's, which is what `counts` holds: `stored_ids` source notes carry an id, and `resolved_ids` of those ids are in the listing.
        - Where the command exits 1, `Sources/` could not be read and the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
@@ -83,7 +83,7 @@ The check is one `source list` per source, so the cost tracks a set that accumul
      - Relay the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names.
        - It is `null` where no stored id resolved at all, a vault with no stored id included, which gives that check nothing to go on: say that no list was made.
      - It leaves out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
-     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry, an unreadable note under its own path.
+     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry for a note that could not be read, or for a `notebooklm_id` a note holds in a shape the reader does not model.
      - **The list is a report and nothing more.**
        - K-Boat names a notebook after its source's `title`, so nothing in the listing tells a notebook K-Boat built and lost track of — an ingest-time discard that failed, an id written over — from one the reader made by hand in the same account.
        - The account holds none of the second kind today, and nothing keeps it that way.

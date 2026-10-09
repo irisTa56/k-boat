@@ -127,7 +127,7 @@ def test_sweep_takes_an_id_the_listing_lacks_out_of_the_set_and_names_it(
             "in_sweep_set": False,
         },
     ]
-    assert report["counts"] == {"stored_ids": 4, "resolved_ids": 2, "listed_notebooks": 2}
+    assert report["counts"] == {"stored_ids": 4, "resolved_ids": 2}
 
 
 def test_sweep_names_the_owned_notebooks_no_note_references(
@@ -250,7 +250,7 @@ def test_resolve_answers_each_id_against_the_listing_and_the_vaults_other_ids(
             {"notebooklm_id": "nb-ripe", "listed": True},
             {"notebooklm_id": "nb-ripe-gone", "listed": False},
         ],
-        "counts": {"stored_ids": 3, "resolved_ids": 2, "listed_notebooks": 3},
+        "counts": {"stored_ids": 3, "resolved_ids": 2},
         "anomalies": [],
     }
 
@@ -270,3 +270,47 @@ def test_resolve_exits_1_with_its_report_where_sources_could_not_be_read(
     anomalies = report["anomalies"]
     assert isinstance(anomalies, list)
     assert [a["path"] for a in anomalies] == ["Sources"]
+
+
+def _unmodelled_title(vault: Path, slug: str, *, notebook: str, reading: bool) -> None:
+    text = (
+        "---\ntype: source\ntitle: |\n  a block scalar\nsource_type: web_page\n"
+        f"url: https://example.com/{slug}\nreading: {str(reading).lower()}\n"
+        f"distill: false\ndismiss: false\nblocked: false\nnotebooklm_id: {notebook}\n---\n"
+    )
+    (vault / "Sources" / f"{slug}.md").write_text(text, encoding="utf-8")
+
+
+def test_sweep_reports_an_unreadable_shown_field_only_on_a_note_it_shows(
+    vault: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An entry in `anomalies` is read as a note whose id the counts may not cover,
+    # which an unopened note with a readable id and an unreadable title is not.
+    _unmodelled_title(vault, "unopened", notebook="nb-unopened", reading=False)
+    _unmodelled_title(vault, "opened", notebook="nb-opened", reading=True)
+    _unmodelled_title(vault, "gone", notebook="nb-gone", reading=False)
+    listing = _listing(tmp_path, _nb("nb-unopened"), _nb("nb-opened"))
+
+    code, report = _run(vault, capsys, "sweep", "--notebooks", str(listing))
+
+    assert code == 0
+    anomalies = report["anomalies"]
+    assert isinstance(anomalies, list)
+    assert sorted(a["path"] for a in anomalies) == ["Sources/gone.md", "Sources/opened.md"]
+    assert all("title" in a["error"] for a in anomalies)
+    counts = report["counts"]
+    assert isinstance(counts, dict)
+    assert counts["stored_ids"] == 3
+
+
+def test_resolve_reports_no_field_it_does_not_read(
+    vault: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _unmodelled_title(vault, "opened", notebook="nb-opened", reading=True)
+    listing = _listing(tmp_path, _nb("nb-opened"))
+
+    code, report = _run(vault, capsys, "resolve", "--notebooks", str(listing), "--id", "nb-opened")
+
+    assert code == 0
+    assert report["anomalies"] == []
+    assert report["counts"] == {"stored_ids": 1, "resolved_ids": 1}

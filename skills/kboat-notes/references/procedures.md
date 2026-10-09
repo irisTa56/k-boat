@@ -273,7 +273,7 @@ Two answers are not a missing original:
     - An exit 2 with nothing on stdout means the file is not a listing, which is what a failed `list` call leaves: that is the failed call above, so stop and report.
   - **Read that listing against the vault's other stored `notebooklm_id`s, not against this one alone.**
     - A listing fetched under the wrong signed-in account returns that account's notebooks, so every id reads as absent, and one id absent out of one satisfies "absent" as readily as a genuinely deleted notebook does.
-    - The same report holds that reading as `counts`: `stored_ids` source notes carry an id, and `resolved_ids` of those ids are among the `listed_notebooks`; name its `anomalies` beside the verdict.
+    - The same report holds that reading as `counts`: `stored_ids` source notes carry an id, and `resolved_ids` of those ids are in the listing; name its `anomalies` beside the verdict.
   - Where the vault's ids are absent wholesale, that is the account or auth problem: decide nothing about this source and report it.
     - An exit 1 from the command means `Sources/` could not be read, which leaves no other ids to read against and decides nothing either.
   - Where the rest resolve and this one does not, the notebook is gone and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way on.

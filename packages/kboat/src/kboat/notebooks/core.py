@@ -14,9 +14,11 @@ from dataclasses import dataclass
 
 from kboat.frontmatter import Value
 
-# What a sweep entry shows of its note, and the fields the membership test reads.
-SHOWN_FIELDS = ("title", "url", "source_type", "notebooklm_id")
-READ_FIELDS = (*SHOWN_FIELDS, "reading", "distill", "dismiss", "blocked", "distilled_date")
+# The id alone answers `resolve`; the sweep also reads what its set turns on, across
+# the vault, and what an entry shows of its note, which matters only on a note shown.
+ID_FIELDS = ("notebooklm_id",)
+MEMBERSHIP_FIELDS = (*ID_FIELDS, "reading", "distill", "dismiss", "blocked", "distilled_date")
+SHOWN_FIELDS = ("title", "url", "source_type")
 
 
 class NotAListingError(ValueError):
@@ -34,6 +36,7 @@ class Notebook:
 class Source:
     slug: str
     frontmatter: dict[str, Value]
+    shown: dict[str, Value]
 
     @property
     def notebook_id(self) -> str:
@@ -80,7 +83,6 @@ def _counts(stored: Sequence[Source], listed: set[str]) -> dict[str, int]:
     return {
         "stored_ids": len(stored),
         "resolved_ids": sum(1 for s in stored if s.notebook_id in listed),
-        "listed_notebooks": len(listed),
     }
 
 
@@ -95,13 +97,19 @@ def sweep(sources: Sequence[Source], notebooks: Sequence[Notebook]) -> dict[str,
             absent.append(
                 {
                     "slug": source.slug,
-                    "title": fm.get("title"),
+                    "title": source.shown.get("title"),
                     "notebooklm_id": source.notebook_id,
                     "in_sweep_set": in_sweep_set(fm),
                 }
             )
         elif in_sweep_set(fm):
-            sweep_set.append({"slug": source.slug, **{k: fm.get(k) for k in SHOWN_FIELDS}})
+            sweep_set.append(
+                {
+                    "slug": source.slug,
+                    **{k: source.shown.get(k) for k in SHOWN_FIELDS},
+                    "notebooklm_id": source.notebook_id,
+                }
+            )
     counts = _counts(stored, listed)
     referenced = {s.notebook_id for s in stored}
     return {
