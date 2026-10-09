@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import kboat.cli
 from kboat.notebooks.__main__ import main
 
 
@@ -314,3 +315,31 @@ def test_resolve_reports_no_field_it_does_not_read(
     assert code == 0
     assert report["anomalies"] == []
     assert report["counts"] == {"stored_ids": 1, "resolved_ids": 1}
+
+
+def test_sweep_exits_1_where_sources_is_refused_between_its_two_reads(
+    vault: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The second read is what gives each entry its `url`, so losing it quietly
+    # hands the sweep a set of sources with nothing to identify an original by.
+    _source(vault, "opened", notebook="nb-opened", reading=True)
+    listing = _listing(tmp_path, _nb("nb-opened"))
+    real, calls = kboat.cli.list_note_dir, []
+
+    def refused_the_second_time(directory: Path, *, required: bool = False) -> list[Path]:
+        calls.append(directory)
+        if len(calls) == 2:
+            raise PermissionError(13, "Permission denied", str(directory))
+        return real(directory, required=required)
+
+    monkeypatch.setattr("kboat.cli.list_note_dir", refused_the_second_time)
+
+    code, report = _run(vault, capsys, "sweep", "--notebooks", str(listing))
+
+    assert code == 1
+    anomalies = report["anomalies"]
+    assert isinstance(anomalies, list)
+    assert [a["path"] for a in anomalies] == ["Sources"]

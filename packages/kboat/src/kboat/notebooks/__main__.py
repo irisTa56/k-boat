@@ -71,7 +71,7 @@ def _cmd_sweep(vault: Path, notebooks: list[Notebook]) -> tuple[dict[str, object
     or a field the report shows, on a note it shows. A shown field no entry carries
     is no gap in the answer, and one read would report it for every note alike."""
     report, unread = list_notes(vault, "source", fields=MEMBERSHIP_FIELDS)
-    shown_report, _ = list_notes(vault, "source", fields=SHOWN_FIELDS)
+    shown_report, shown_unread = list_notes(vault, "source", fields=SHOWN_FIELDS)
     shown = {n["slug"]: n["frontmatter"] for n in _entries(shown_report, "notes")}
     notes = _entries(report, "notes")
     sources = [Source(n["slug"], n["frontmatter"], shown.get(n["slug"], {})) for n in notes]
@@ -80,9 +80,16 @@ def _cmd_sweep(vault: Path, notebooks: list[Notebook]) -> tuple[dict[str, object
     paths = {n["path"] for n in notes if n["slug"] in slugs}
     output["anomalies"] = [
         *_entries(report, "anomalies"),
-        *(a for a in _entries(shown_report, "anomalies") if a["path"] in paths),
+        # A second read that met no folder holds that one entry, and every entry
+        # the report shows is then without the fields this read was for. Where the
+        # first met none either, its own entry already says so.
+        *(
+            a
+            for a in _entries(shown_report, "anomalies")
+            if (shown_unread and not unread) or a["path"] in paths
+        ),
     ]
-    return output, unread
+    return output, unread or shown_unread
 
 
 def main(argv: list[str] | None = None) -> int:
