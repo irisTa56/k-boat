@@ -100,6 +100,8 @@ def test_sweep_set_is_the_opened_sources_nothing_else_watches(
             "notebooklm_id": "nb-opened",
         },
     ]
+    # Every listed notebook is one some note names, in the set or out of it.
+    assert report["unreferenced"] == []
 
 
 def test_sweep_takes_an_id_the_listing_lacks_out_of_the_set_and_names_it(
