@@ -268,12 +268,14 @@ Two answers are not a missing original:
 - A call that **fails** (rate limit, auth, network) yields no listing rather than an empty one, so stop and report.
 - A `notebooklm_id` naming **no notebook** fails this call too, with a message reporting a `Not found` RPC and then suggesting a signed-in-account mismatch.
   - It therefore reads like an auth failure.
-  - Confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null` before concluding anything.
+  - Confirm the notebook is in the account's listing before concluding anything: save it with `notebooklm --quiet list --json 2>/dev/null > <file>`, `<file>` being one in the session's scratch directory, and run `kboat-notebooks resolve --notebooks <file> --id <notebooklm_id>`.
+    - It prints `ids`, a `{notebooklm_id, listed}` per `--id` given, which may be repeated for a run with several to confirm against one listing.
+    - An exit 2 with nothing on stdout means the file is not a listing, which is what a failed `list` call leaves: that is the failed call above, so stop and report.
   - **Read that listing against the vault's other stored `notebooklm_id`s, not against this one alone.**
     - A listing fetched under the wrong signed-in account returns that account's notebooks, so every id reads as absent, and one id absent out of one satisfies "absent" as readily as a genuinely deleted notebook does.
-    - Read those ids with `kboat-note list --type source --field notebooklm_id`, naming its `anomalies` beside the verdict.
+    - The same report holds that reading as `counts`: `stored_ids` source notes carry an id, and `resolved_ids` of those ids are among the `listed_notebooks`; name its `anomalies` beside the verdict.
   - Where the vault's ids are absent wholesale, that is the account or auth problem: decide nothing about this source and report it.
-    - An exit 1 from that read means `Sources/` could not be read, which leaves no other ids to read against and decides nothing either.
+    - An exit 1 from the command means `Sources/` could not be read, which leaves no other ids to read against and decides nothing either.
   - Where the rest resolve and this one does not, the notebook is gone and [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook) is the way on.
 
 **What decides whether to act is not that no match was found, but that nothing present could be the match.**
@@ -495,7 +497,7 @@ Confirm what that notebook holds (`notebooklm --quiet source list --notebook <no
   - Run that **first**, and clear `blocked` only where it ends with a verified original.
   - Clearing ahead of it would take a source whose content is still not obtained out of `blocked_count`, out of the DLQ view, and out of this skill's own eligibility, which is exactly where the walled ending that procedure says to expect lands.
   - Otherwise leave `blocked` standing and report.
-- **The call fails**, so confirm the notebook is in `notebooklm --quiet list --json 2>/dev/null`, as the restore procedure's step 1 does and for the same reason.
+- **The call fails**, so confirm the notebook is in the account's listing, as the restore procedure's step 1 does and for the same reason.
   - Where the id names nothing, there is no notebook to protect and this gate does not apply — go on with the rescue, **after** making the restore procedure's step 1 check that the id really names nothing rather than the listing being the wrong account's.
     - Going on under that mistake is what puts `create` over a live notebook and orphans it, which is the whole reason this gate exists.
   - Where the notebook is listed and the call still failed, decide nothing and report.

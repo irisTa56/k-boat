@@ -52,13 +52,21 @@ The check is one `source list` per source, so the cost tracks a set that accumul
        - Name that as outstanding rather than reporting the source healthy and leaving it in the DLQ.
      - With no `notebooklm_id`, there is nothing to check: name kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook), or `kboat-rescue` where the note is `blocked`.
    - **With no argument** — the routine's sweep.
-     - Read the sources being read with `kboat-note list --type source --flagged reading --field title --field url --field source_type --field distill --field dismiss --field blocked --field distilled_date --field notebooklm_id` and take the set above from them.
-     - An exit 1 means `Sources/` could not be read, the entry under `Sources` saying how: stop and report that rather than sweeping, since the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
+     - Save the account's listing once for the run with `notebooklm --quiet list --json 2>/dev/null > <file>`, `<file>` being one in the session's scratch directory, and run `kboat-notebooks sweep --notebooks <file>`.
+       - Its `sweep_set` is the set above, each entry a `{slug, title, url, source_type, notebooklm_id}` whose notebook the listing holds.
+       - Step 2 reads the rest of the report: `absent`, `unreferenced`, `counts` and `anomalies`.
+     - An exit 2 with nothing on stdout means the file is not a listing, which is what a failed `list` call leaves: stop and report, as for the failed call it is.
+     - An exit 1 means `Sources/` could not be read, the `anomalies` entry under `Sources` saying how: stop and report that rather than sweeping, since the set is then empty however many sources are being read, and step 2 has no ids to check a listing against.
      - Then add every source the summary backfill, the distillation pass, and the daily pick reported this run, skipping one already in it.
-       - One the read above did not return is often not `reading`, so read it as the argument opening does, with the same `--field` set and the same handling of an exit 1 or an `anomalies` entry.
+       - One `sweep_set` does not hold is often not `reading`, so read it as the argument opening does, with the same `--field` set and the same handling of an exit 1 or an `anomalies` entry.
      - Those three arrive as **input** from the caller running the phases, not from disk, so **say which of the three you were given**.
      - A sweep given none covers its own set alone — the ripe sources have no other route in — and its counts must not read as the routine's coverage.
-2. **Confirm each notebook exists** before asking anything about its contents: `notebooklm --quiet list --json 2>/dev/null` once for the run, checking each `notebooklm_id` against it, the same check `kboat-distill` makes (Phase B, step 1).
+2. **Confirm each notebook exists** before asking anything about its contents, against one listing for the run, the same check `kboat-distill` makes (Phase B, step 1).
+   - The sweep opening has the answer in the report step 1 printed: `absent` holds a `{slug, title, notebooklm_id, in_sweep_set}` for every stored id the listing lacks, across the vault.
+     - An entry with `in_sweep_set: true` is one of the sweep's own, already left out of `sweep_set`; one naming a source a phase reported is taken out of the set here.
+     - Any other entry is a source outside this sweep, and counts only toward the wrong-account check below.
+   - The argument opening asks `kboat-notebooks resolve --notebooks <file> --id <notebooklm_id>`, having saved the listing as step 1's sweep opening does.
+     - It prints `ids`, a `{notebooklm_id, listed}` per `--id`, beside the same `counts` and `anomalies`, and exits as `sweep` does.
    - An absent id means no notebook at all — report it, take the source out of the set, and name kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook).
    - Do this before step 3 rather than letting it discover the case.
      - `source list` against a deleted notebook does not answer "empty" but fails, with a message that reads like an auth problem.
@@ -66,17 +74,16 @@ The check is one `source list` per source, so the cost tracks a set that accumul
    - **Tell a wrong account from a gone notebook before acting on either.**
      - A `list` that succeeded against the wrong signed-in account returns that account's notebooks, so every stored id reads as absent — and reactivation discards a notebook by its stored id, so a sweep that named it across sound notebooks would spend every one of them.
      - Do not decide this on the sweep set, whose size is an accident of what the reader has opened: a set of one whose notebook is genuinely gone satisfies "all absent" as readily as a wrong account does.
-     - Check the listing against **every `notebooklm_id` in the vault**, not only the set's.
-     - Step 1 read only the set's notes, so make the vault-wide read here with `kboat-note list --type source --field notebooklm_id` — a read of the vault against a listing already fetched, not another NotebookLM call.
-       - Where it exits 1, `Sources/` could not be read and the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
+     - Check the listing against **every `notebooklm_id` in the vault**, not only the set's, which is what `counts` holds: `stored_ids` source notes carry an id, and `resolved_ids` of those ids are among the `listed_notebooks`.
+       - Where the command exits 1, `Sources/` could not be read and the one id in hand has nothing to be read against: stop and report, as for a listing that resolves none.
      - Where the vault's ids are absent wholesale, that is the account or auth problem: stop the sweep and report, as a failed call does.
      - Where a handful are absent against a listing that resolves the rest, those notebooks are gone and the per-source bullet above is what each one gets.
-   - **Then name the notebooks no note references**: every notebook in that listing whose id no `notebooklm_id` in the vault carries, by id and title, for the run summary.
-     - This is where the check costs nothing: the listing and the vault-wide read are already in hand.
-     - Make it on the **sweep opening only**, whose run has already ingested and written its ids; the argument opening answers one source a human named, and a notebook an ingest elsewhere made moments ago would sit on its list as one no note references.
-     - Make the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names; a vault with no stored id at all gives that check nothing to go on, so make none there either.
-     - Leave out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
-     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry of the vault-wide read, an unreadable note under its own path.
+   - **Then name the notebooks no note references**: `unreferenced`, every notebook in that listing whose id no `notebooklm_id` in the vault carries, by `id` and `title`, for the run summary.
+     - It is on the **sweep opening only**, whose run has already ingested and written its ids; the argument opening answers one source a human named, and a notebook an ingest elsewhere made moments ago would sit on its list as one no note references.
+     - Relay the list only where the wrong-account check above passed, since under the wrong account every notebook listed is one no note names.
+       - It is `null` where no stored id resolved at all, a vault with no stored id included, which gives that check nothing to go on: say that no list was made.
+     - It leaves out a notebook the account does not own (`is_owner: false`), which was shared into it by someone else.
+     - **A source note the scan did not see may be the one carrying a listed id**, so say beside the list how many it missed and how: each is an `anomalies` entry, an unreadable note under its own path.
      - **The list is a report and nothing more.**
        - K-Boat names a notebook after its source's `title`, so nothing in the listing tells a notebook K-Boat built and lost track of — an ingest-time discard that failed, an id written over — from one the reader made by hand in the same account.
        - The account holds none of the second kind today, and nothing keeps it that way.
@@ -109,7 +116,7 @@ Detect and report; do not work around.
 
 - A `notebooklm_id` naming no notebook (step 2).
   - Not transient and not this skill's to fix — report it against kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook).
-- The step 2 `notebooklm list` call itself failing, or resolving none of the vault's stored ids.
+- The `notebooklm list` call itself failing — which `kboat-notebooks` meets as a file that is not a listing, and exits 2 on — or resolving none of the vault's stored ids.
   - A missing notebook and a healthy one become indistinguishable, so stop the sweep and report.
 - A notebook holding a content-typed source the identification rule did not match (the stop side of kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1).
   - A PDF note reaches it as readily as a web one.
@@ -123,7 +130,7 @@ Detect and report; do not work around.
   - Nothing reports it, the reporter being what died, and it leaves that same masquerading leftover.
   - Name the source whose restore was in flight where the summary can still be written.
   - Where it cannot, a resumed run re-checks that notebook by hand rather than trusting a healthy verdict.
-- Every `anomalies` entry `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, a field a note holds in a shape the reader does not model or on more than one line, and a `Sources/` it could not read at all.
+- Every `anomalies` entry `kboat-notebooks` or `kboat-note list` returned in steps 1 and 2: a note that could not be read or parsed, a field a note holds in a shape the reader does not model or on more than one line, and a `Sources/` it could not read at all.
   - Each is a note the counts do not cover, so without them the counts read as full coverage.
 
 No vault write happens in this skill, so no `status: locked` refusal can arise.
