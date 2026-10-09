@@ -111,6 +111,8 @@ def test_sweep_takes_an_id_the_listing_lacks_out_of_the_set_and_names_it(
     _source(vault, "gone", notebook="nb-gone", reading=True)
     _source(vault, "unopened", notebook="nb-unopened")
     _source(vault, "ripe-gone", notebook="nb-ripe-gone", reading=True, distill=True)
+    # Opened, its notebook discarded on purpose: no id, so nothing to be absent.
+    _source(vault, "discarded", reading=True)
     listing = _listing(tmp_path, _nb("nb-sound"), _nb("nb-unopened"))
 
     code, report = _run(vault, capsys, "sweep", "--notebooks", str(listing))
@@ -233,6 +235,7 @@ def test_resolve_answers_each_id_against_the_listing_and_the_vaults_other_ids(
     _source(vault, "ripe", notebook="nb-ripe", reading=True, distill=True)
     _source(vault, "ripe-gone", notebook="nb-ripe-gone", distill=True)
     _source(vault, "other", notebook="nb-other")
+    _source(vault, "discarded", reading=True)
     listing = _listing(tmp_path, _nb("nb-ripe"), _nb("nb-other"), _nb("nb-stray"))
 
     code, report = _run(
