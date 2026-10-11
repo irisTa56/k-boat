@@ -641,7 +641,7 @@ Used when a source is `dismiss`ed, or as the final step of distilling a source t
 
 ## Procedure: create or update a Kindle note
 
-The browser mechanics — extracting the metadata from the Amazon product page through the user's logged-in Chrome — belong to the `kboat-kindle` skill, which defers here for the schema and these transitions.
+The browser mechanics — extracting the metadata from the Amazon product page through a real browser — belong to the `kboat-kindle` skill, which defers here for the schema and these transitions.
 This is the same split as source ingest (`kboat-ingest`) and rescue (`kboat-rescue`): the mechanics live in the action skill, the schema and state in this one.
 
 1. Resolve the ASIN.

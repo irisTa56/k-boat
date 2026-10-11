@@ -1,15 +1,15 @@
 ---
 name: kboat-kindle
-description: 'Ingest a Kindle book into the K-Boat vault from its reader URL. Use when the user wants to add a book they read (or are reading) on Kindle, or pastes a `https://read.amazon.co.jp/?asin=...` URL (or a bare ASIN) and says things like "add this book", "ingest this Kindle title", "save this to my Kindle shelf". Interactive and Mac-only: it reads the book''s metadata from Amazon through the user''s logged-in Chrome (Claude in Chrome). Defers to kboat-notes for the Kindle-note schema and the create transitions.'
+description: 'Ingest a Kindle book into the K-Boat vault from its reader URL. Use when the user wants to add a book they read (or are reading) on Kindle, or pastes a `https://read.amazon.co.jp/?asin=...` URL (or a bare ASIN) and says things like "add this book", "ingest this Kindle title", "save this to my Kindle shelf". Interactive and Mac-only: it reads the book''s metadata from the Amazon product page through the Claude Code desktop app''s built-in browser first and the user''s Chrome where that one is not usable or a wall stands in it. Defers to kboat-notes for the Kindle-note schema and the create transitions.'
 ---
 
 # K-Boat Kindle ingest
 
 Adds one Kindle book to the vault as a `type: kindle` note (`Kindles/<ASIN>.md`).
-Given a Kindle reader URL (`https://read.amazon.co.jp/?asin=<ASIN>`) or a bare ASIN, it reads the book's bibliographic metadata from the Amazon product page through the user's logged-in Chrome and writes the note, with the reader URL recorded as `reading_link`.
+Given a Kindle reader URL (`https://read.amazon.co.jp/?asin=<ASIN>`) or a bare ASIN, it reads the book's bibliographic metadata from the Amazon product page through a real browser and writes the note, with the reader URL recorded as `reading_link`.
 
 Follow kboat-notes for the schema and [Procedure: create or update a Kindle note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-kindle-note); this skill adds the browser mechanics.
-It is **interactive and Mac-only** — it needs the user present and their Chrome connected.
+It is **interactive and Mac-only** — it needs the user present and one of the two browsers step 3 names.
 Do not run it from the unattended routine.
 
 A Kindle note has no NotebookLM notebook and no fetched URL: it is a permanent catalogue entry whose **body** holds reading highlights that distillation later draws on.
@@ -18,7 +18,8 @@ This skill creates the entry with an empty body; the highlights are added afterw
 ## Why the browser
 
 Amazon JP serves a bot-defense stub to anonymous fetches (`curl`, `WebFetch`), and a Kindle ASIN (`B0…`) is not an ISBN, so the ISBN-keyed metadata APIs cannot resolve it.
-The reliable path is the user's real, logged-in Chrome — the browser kboat-rescue turns to for a wall that needs the user's logins.
+The reliable path is a real browser, which is served the product page where an anonymous fetch is served the stub.
+The page is public, so reading it needs none of the user's logins: the built-in browser, which carries none, has read it with no challenge raised.
 The trade-off is that ingest is interactive and macOS-only rather than deterministic; that is acceptable because adding a finished book is itself a manual moment.
 
 ## Procedure
@@ -38,15 +39,17 @@ An `anomalies` entry with no note is a note there that could not be read, and an
 
 - The filename, being the ASIN, never changes.
 
-### Step 3: Confirm the browser
+### Step 3: Choose the browser
 
-Use Claude in Chrome: check `list_connected_browsers` returns a local browser.
+Try the two browsers in the order kboat-rescue [Step 2: Choose the browser](../kboat-rescue/SKILL.md#step-2-choose-the-browser) gives, which also says how each is found usable.
 
-- If none, fall back to the manual path (step 5).
+- **The built-in browser** comes first, and is expected to be enough: the product page sits behind no sign-in.
+- **Claude in Chrome** comes next, where the built-in browser is not usable or a bot check stands in it.
+- If neither is usable, fall back to the manual path (step 5).
 
 ### Step 4: Extract metadata through the real browser
 
-Navigate the user's Chrome to `https://www.amazon.co.jp/dp/<ASIN>` and read the page:
+Navigate the browser step 3 chose to `https://www.amazon.co.jp/dp/<ASIN>` and read the page:
 
 - `title` — the product title, in the page's own language (keep a Japanese title Japanese).
 - `author` — every listed contributor (author/translator) from the **byline** under the title (the `by … (Author)` line), as a list.
@@ -54,12 +57,16 @@ Navigate the user's Chrome to `https://www.amazon.co.jp/dp/<ASIN>` and read the 
 - `publisher` and `published` — from the product-details / 登録情報 section.
   - Keep `published` at whatever precision is shown (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); do not zero-pad to fake precision.
 
-If a CAPTCHA / "Human Verification" / sign-in wall appears, ask the user to clear it in their browser, then continue once the product page loads.
+If a CAPTCHA / "Human Verification" / sign-in wall appears and does not clear by itself, what to do depends on the browser:
+
+- **Built-in browser**: move on to Chrome rather than asking the user to clear it in the pane.
+- **Chrome**: ask the user to clear it in their browser, then continue once the product page loads.
+
 If the page is unavailable or extraction is ambiguous (wrong product, missing fields), show the user what you found and ask them to confirm or supply the missing fields.
 
 ### Step 5: Manual fallback
 
-If Claude in Chrome is unavailable or the wall cannot be cleared, ask the user for the title, author(s), publisher, and publication date, and proceed with those.
+If neither browser is usable, or the wall stands in both, ask the user for the title, author(s), publisher, and publication date, and proceed with those.
 
 ### Step 6: Write the note
 
