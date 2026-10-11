@@ -2,7 +2,7 @@
 name = "feed-filter"
 version = "0.1.0"
 description = "Filter new feed/scrape pages by prompt and file survivors into the Obsidian vault"
-requires-python = ">=3.14,<3.15"
+requires-python = ">=3.15,<3.16"
 # The interpreter range is `kboat`'s, which says why it has a ceiling
 # (packages/kboat/pyproject.toml). One workspace environment serves both members and
 # uv enforces the intersection of their ranges, so a wider one here would state a
