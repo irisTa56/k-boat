@@ -33,6 +33,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Version updates cover only what a manifest names unless told otherwise, so
+    # a transitive dependency would move only when a direct one's requirement
+    # forced it, or for a security advisory.
+    allow:
+      - dependency-type: "all"
     groups:
       python-deps:
         patterns: ["*"]
