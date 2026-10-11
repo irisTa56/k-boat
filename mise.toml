@@ -3,6 +3,12 @@
 # wherever the inherited PATH happens to place mise's shims dir. Without this
 # a bare `python3` resolves to macOS's system Python in a `mise env` shell.
 activate_aggressive = true
+# mise skips a `git::` entry of `task_config.includes` unless this is on
+# (jdx/mise#14114), and every shared task below goes with it. Here rather than
+# in CI's environment, since `pre-commit` and the pre-push scan run those tasks
+# on each machine too. It turns on every feature mise marks experimental, not
+# this one alone.
+experimental = true
 
 [tools]
 lychee = "latest"
