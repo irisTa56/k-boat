@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 from feed_filter.feeds import Entry
 from kboat.canonical import CanonicalUrl, canonical_url, resolve_link
@@ -48,7 +48,7 @@ def scrape_index(
     so rotating tracking params on an index link don't fork an article.
     """
     rx = re.compile(pattern)
-    tree = HTMLParser(html)
+    tree = LexborHTMLParser(html)
     seen: set[CanonicalUrl] = set()
     out: list[Entry] = []
     for link in tree.css("a"):
