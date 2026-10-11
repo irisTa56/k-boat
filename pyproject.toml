@@ -39,7 +39,7 @@ required-version = ">=0.16,<0.17"
 line-length = 100
 # The minor the interpreter range admits (packages/kboat/pyproject.toml). Stated here
 # because ruff does not infer it: this root has no `requires-python` of its own.
-target-version = "py314"
+target-version = "py315"
 
 # Every violation is answered at the site: fixed, or suppressed by a `# noqa: CODE`
 # whose reason is stated there. Nothing is silenced repo-wide, so `ignore` is empty and
