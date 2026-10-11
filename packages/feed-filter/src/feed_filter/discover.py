@@ -38,7 +38,7 @@ from typing import Literal, NamedTuple
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 from feed_filter.feeds import Entry, parse_feed
 from feed_filter.fetch import FetchError, fetch
@@ -143,13 +143,12 @@ def _extract_alternate_links(html: str, base_url: str) -> list[str]:
     the discovery flow can't read is a page with nothing to declare.
     """
     try:
-        tree = HTMLParser(html)
-    # Blind by design. ``selectolax`` documents no exception contract, and its two
-    # backends do not share one: ``selectolax.parser`` (imported above) raises
-    # ``RuntimeError`` from its C parser, while ``selectolax.lexbor`` — the backend its
-    # docs now steer to — raises ``SelectolaxError``, straight off ``Exception``.
-    # Naming types here would leave a guard that stops guarding the day this module
-    # follows that advice, silently and with the tests still green.
+        tree = LexborHTMLParser(html)
+    # Blind by design. ``selectolax`` documents no exception contract, and what it
+    # raises shares no base to name: its own ``SelectolaxError`` comes straight off
+    # ``Exception``, beside builtin types such as ``ValueError``. Naming types here
+    # would leave a guard that stops guarding the day a release raises another one,
+    # silently and with the tests still green.
     except Exception:  # noqa: BLE001
         return []
     found: list[str] = []
@@ -236,7 +235,7 @@ def _cluster_link_patterns(html: str, base_url: str) -> list[tuple[str, list[str
     it likely renders its articles with JavaScript.
     """
     try:
-        tree = HTMLParser(html)
+        tree = LexborHTMLParser(html)
     # Blind for the reason ``_extract_alternate_links`` gives; that one returns its
     # empty result because a page it cannot read has nothing to declare, while this
     # one reports the failure, because what it would otherwise be taken to have

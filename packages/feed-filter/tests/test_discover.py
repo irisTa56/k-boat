@@ -396,9 +396,9 @@ def test_layer_c_caps_probes(monkeypatch: pytest.MonkeyPatch) -> None:
 class _StandInSelectolaxError(Exception):
     """Shaped like ``selectolax.lexbor.SelectolaxError`` — straight off ``Exception``.
 
-    Defined here rather than imported so the case survives a backend swap: what is
-    being pinned is that the guard holds for an exception sharing no base with
-    ``RuntimeError``, not that this one class in particular is caught.
+    Defined here rather than imported: what is being pinned is that the guard holds
+    for an exception sharing no base with ``RuntimeError``, not that this one class in
+    particular is caught.
     """
 
 
@@ -408,9 +408,9 @@ def test_unparseable_body_rejects_instead_of_raising(
 ) -> None:
     # The parser guard both HTML layers share: a body selectolax refuses contributes no
     # alternate links and no clusters, so `discover` returns a rejection instead of
-    # letting the parser's error reach the operator. Both backends' exception shapes are
-    # exercised because the guard's whole claim is that it does not enumerate types — a
-    # `RuntimeError`-only case would pass against a narrowed `except` and pin nothing.
+    # letting the parser's error reach the operator. Two exception shapes with no common
+    # base are exercised because the guard's whole claim is that it does not enumerate
+    # types — a single case would pass against an `except` narrowed to it and pin nothing.
     #
     # The body is HTML and non-blank, so it reaches clustering; `unparseable_body` is
     # the reason of its own that case now has. The six links below are what makes the
@@ -419,7 +419,7 @@ def test_unparseable_body_rejects_instead_of_raising(
     def boom(_html: str) -> object:
         raise raised("could not parse")
 
-    monkeypatch.setattr("feed_filter.discover.HTMLParser", boom)
+    monkeypatch.setattr("feed_filter.discover.LexborHTMLParser", boom)
     client = _client({"/blog": (200, _links_html([f"/blog/{s}" for s in "abcdef"]), "text/html")})
     with client:
         result = discover("https://example.com/blog", client=client)
