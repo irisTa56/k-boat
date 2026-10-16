@@ -20,6 +20,7 @@ The vault is one shared directory on an iCloud-synced volume, so before an unatt
 It is read-only apart from one probe file it creates and removes again.
 The root, folder, readability, and eviction checks are vault-wide: they assert the shared vault is present and readable, and say whether it is fully local, `Feeds/` included, because a member's folder missing or unreadable means the vault is, whoever reads it.
 Only `Questions.md` and the K-Boat-owned `Queue/`, `Reviews/`, and `PDFs/` narrow the set to the K-Boat routine, which is why the set as it stands is that routine's precondition and a second member wanting one needs its own.
+The `environment` check is the one about the checkout rather than the vault, and it is narrowed to that routine as well: it asks only about the environments the routine runs.
 
 The check runs once, before the phases, and a permission change can land on a vault it passed.
 So a command that reads an input in the set holds it to the same rule rather than leaning on the check: tolerating a folder that is not there is exactly how a vault that failed to sync gets processed as though it were complete.
@@ -36,8 +37,17 @@ The set is what a run cannot proceed without, not everything the vault holds.
 An input a phase degrades over by design is deliberately out — the daily pick's `Daily/` notes are its ambient signal and it ranks without them, so their absence is not a precondition failure, whereas `Questions.md` below is the deliberate signal the pick is steered by.
 So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a refused one, or a note in the look-back window it could not read, as an anomaly without failing.
 
+- **The environments the routine runs match the checkout's locks**, as `environment`, whose `paths` name each one that does not: `kboat` for kboat's runtime closure in the workspace venv, `tools/notebooklm` for the NotebookLM CLI's own venv.
+  - The case it is for is a checkout whose code has moved past its venvs — the post-merge hook did not run, or its sync failed — so a phase would fail with `command not found` mid-run, or run on a version the checkout no longer locks.
+    - The remedy is `mise install` in that checkout, whose `postinstall` runs both syncs.
+  - It asks uv itself (`uv sync --check`), so a console script the venv lacks is found as well as a stale version, and nothing here re-reads `pyproject.toml`.
+    - `--inexact --no-dev` keeps out what the routine does not import — the dev tooling, and the other members' dependencies — so a stale one of those does not stop it.
+    - `--offline`, so the check every run waits on does not wait on the network.
+  - The checkout is the one the running `kboat` sits in, not wherever the caller stands: a bare `kboat-doctor` is found on `PATH`, and its venv is the one the run's other bare calls land on.
+  - uv that cannot be run fails the check with the reason in `detail`, like an environment that is out of date, since the answer is then unknown.
+  - It comes first and runs whatever the vault's state, since nothing about the vault bears on it.
 - **The root exists** and is a directory.
-  - Absent, or a name held by something that is not one, short-circuits the rest: every other check would only restate the same fact.
+  - Absent, or a name held by something that is not one, short-circuits the vault checks after it: every one of them would only restate the same fact.
   - A root the vault **refuses to read** does not short-circuit, and this is the third answer rather than a shade of the first.
     - Writability and readability each have their own finding about such a root, and a run that stopped would report none of them — telling a human that a vault which is there and merely unreadable is a vault that is gone.
 - **The root is writable** — the root itself, not each folder the run writes into.

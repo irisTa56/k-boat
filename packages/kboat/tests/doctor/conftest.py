@@ -6,6 +6,7 @@ the core tests share the setup without depending on each other.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,6 +15,18 @@ import pytest
 from kboat.doctor import core
 from kboat.doctor.core import REQUIRED_DIRS
 from kboat.schema import QUESTIONS_FILE
+
+
+@pytest.fixture(autouse=True)
+def synced_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer `environment` as synced, so the vault tests do not run uv.
+
+    CI syncs no NotebookLM venv, so the real check would fail there and nowhere
+    else. `test_environment` patches uv's answers over this for its own cases.
+    """
+    monkeypatch.setattr(
+        subprocess, "run", lambda args, *_, **__: subprocess.CompletedProcess(args, 0, "", "")
+    )
 
 
 @pytest.fixture

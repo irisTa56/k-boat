@@ -27,6 +27,7 @@ Evict = Callable[[Path, str], Path]
 
 # The report order the JSON `checks` array exposes.
 CHECK_ORDER = (
+    "environment",
     "vault_root",
     "vault_writable",
     "required_folders",
@@ -59,10 +60,14 @@ class TestHealthyVault:
 class TestRoot:
     def test_missing_root_fails(self, tmp_path: Path) -> None:
         # The exact list is the assertion: one root cause, one finding, since the
-        # other checks would only restate it.
+        # other vault checks would only restate it. `environment` stays, since
+        # nothing about the vault bears on it.
         checks = run_checks(tmp_path / "nope")
-        assert [(c.name, c.status) for c in checks] == [("vault_root", Status.FAILED)]
-        assert "does not exist" in checks[0].detail
+        assert [(c.name, c.status) for c in checks] == [
+            ("environment", Status.OK),
+            ("vault_root", Status.FAILED),
+        ]
+        assert "does not exist" in checks[1].detail
 
     def test_file_as_root_fails(self, tmp_path: Path) -> None:
         # A different cause from an absent root, so a different message: one says
@@ -70,9 +75,12 @@ class TestRoot:
         target = tmp_path / "vault"
         target.write_text("not a directory\n", encoding="utf-8")
         checks = run_checks(target)
-        assert [(c.name, c.status) for c in checks] == [("vault_root", Status.FAILED)]
-        assert "not a directory" in checks[0].detail
-        assert "does not exist" not in checks[0].detail
+        assert [(c.name, c.status) for c in checks] == [
+            ("environment", Status.OK),
+            ("vault_root", Status.FAILED),
+        ]
+        assert "not a directory" in checks[1].detail
+        assert "does not exist" not in checks[1].detail
 
     def test_a_root_that_cannot_be_stat_ed_is_not_reported_as_absent(
         self, tmp_path_factory: pytest.TempPathFactory
@@ -89,8 +97,9 @@ class TestRoot:
         finally:
             parent.chmod(0o755)
 
-        assert checks[0].status == Status.FAILED
-        assert "could not be read" in checks[0].detail
+        root_check = next(c for c in checks if c.name == "vault_root")
+        assert root_check.status == Status.FAILED
+        assert "could not be read" in root_check.detail
         assert len(checks) == len(CHECK_ORDER), "a refusal must not short-circuit the rest"
 
 
