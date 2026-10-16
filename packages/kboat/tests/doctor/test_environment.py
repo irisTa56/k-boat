@@ -108,21 +108,28 @@ def test_the_detail_carries_uvs_error_line_rather_than_its_trailing_hint(
     assert "unexpected argument '--x' found" in check_environment().detail
 
 
-def test_every_invocation_stays_offline_and_leaves_out_the_dev_tooling(
+def test_every_invocation_is_bounded_and_asks_about_this_checkout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A synced checkout answers the same without either flag, so the real-uv test
-    # cannot see one dropped: `--no-dev` keeps a stale dev tool from stopping the
-    # routine, `--offline` keeps the network out of the gate.
-    seen: list[Sequence[str]] = []
+    # A synced checkout run from its root answers the same without any of these,
+    # so the real-uv test cannot see one dropped: `--no-dev` keeps a stale dev
+    # tool from stopping the routine, `--offline` and the timeout keep the network
+    # and a hung uv out of the gate, and `cwd` is what makes the checkout the one
+    # this module sits in rather than the caller's.
+    seen: list[tuple[Sequence[str], dict[str, object]]] = []
 
-    def run(args: Sequence[str], *_: object, **__: object):
-        seen.append(args)
+    def run(args: Sequence[str], **kwargs: object):
+        seen.append((args, kwargs))
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.chdir(Path("/"))
 
     check_environment()
 
+    root = Path(__file__).resolve().parents[4]  # this checkout's root
     assert len(seen) == 2
-    assert all({"--no-dev", "--offline"} <= set(args) for args in seen)
+    for args, kwargs in seen:
+        assert {"--no-dev", "--offline"} <= set(args)
+        assert kwargs["cwd"] == root
+        assert kwargs["timeout"]
