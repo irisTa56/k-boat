@@ -63,7 +63,7 @@
           },
           {
             "type": "command",
-            "command": "sh -c 'if [ -z \"$CLAUDE_ENV_FILE\" ] || ! command -v mise >/dev/null 2>&1; then exit 0; fi; dir=$(jq -r \".cwd // empty\"); dir=$(git -C \"${dir:-$CLAUDE_PROJECT_DIR}\" rev-parse --show-toplevel 2>/dev/null || echo \"$CLAUDE_PROJECT_DIR\"); export MISE_CEILING_PATHS=$(dirname \"$dir\"); out=$(mise env -s zsh -C \"$dir\") && printf \"%s\\nexport MISE_CEILING_PATHS=%s\\n\" \"$out\" \"$MISE_CEILING_PATHS\" > \"$CLAUDE_ENV_FILE\"'"
+            "command": "sh -c 'if [ -z \"$CLAUDE_ENV_FILE\" ] || ! command -v mise >/dev/null 2>&1; then exit 0; fi; dir=$(jq -r \".cwd // empty\"); dir=$(git -C \"${dir:-$CLAUDE_PROJECT_DIR}\" rev-parse --show-toplevel 2>/dev/null || echo \"$CLAUDE_PROJECT_DIR\"); export MISE_CEILING_PATHS=$(dirname \"$dir\"); out=$(mise env -s zsh -C \"$dir\") && printf \"%s\\nexport MISE_CEILING_PATHS=%s\\n\" \"$out\" \"$MISE_CEILING_PATHS\" > \"$CLAUDE_ENV_FILE\" && mise -C \"$dir\" exec -- uv sync --no-active --quiet --directory \"$dir\" && mise -C \"$dir\" exec -- uv sync --no-active --quiet --directory \"$dir\" --project tools/notebooklm'"
           }
         ]
       }

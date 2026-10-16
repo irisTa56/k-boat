@@ -33,7 +33,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
 
 ## Environment
 
-- A SessionStart hook in `.claude/settings.json` writes `mise env`'s output to `CLAUDE_ENV_FILE`, so every Bash call already has the project environment.
+- A SessionStart hook in `.claude/settings.json` writes `mise env`'s output to `CLAUDE_ENV_FILE` and syncs the two venvs it puts on `PATH`, so every Bash call already has the project environment.
   - It reads `mise env` at the checkout holding its input's `cwd`, with mise's config lookup stopped at that checkout for the session's own later `mise env` calls too, so a worktree session gets the worktree's environment: in a worktree session the desktop app starts, the hook runs at the main checkout ([Claude Code's docs](https://code.claude.com/docs/en/worktrees)), and the worktree sits inside it, so either would put the main checkout's `.venv` on `PATH` and tests there would import the main checkout's code.
   - That environment is `mise.local.toml` over `mise.toml`'s defaults, with the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
   - The hook runs only when a session starts, resumes, forks, clears or compacts, so a change to `mise.toml` or `mise.local.toml` does not reach Bash calls before one of those.
