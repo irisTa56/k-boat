@@ -114,13 +114,13 @@ def _unsynced(args: tuple[str, ...], cwd: Path) -> str | None:
     return (errors or lines or [f"uv exited {result.returncode}"])[0]
 
 
-def check_environment(start: Path = Path(__file__)) -> Check:
+def check_environment() -> Check:
     """Whether every environment the routine runs matches the checkout's locks.
 
-    The checkout is the one `start` sits in, by default this module's own: why
-    that and not the caller's is in `kboat-vault-conventions`.
+    The checkout is the one this module sits in; why that and not the caller's
+    is in `kboat-vault-conventions`.
     """
-    root = next(p for p in start.resolve().parents if (p / "uv.lock").is_file())
+    root = next(p for p in Path(__file__).resolve().parents if (p / "uv.lock").is_file())
     unsynced: list[str] = []
     reasons: list[str] = []
     for name, selector in SYNCED_PROJECTS:
