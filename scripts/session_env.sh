@@ -17,7 +17,9 @@ if [ -z "${CLAUDE_ENV_FILE:-}" ] || ! command -v mise >/dev/null 2>&1; then
 fi
 
 project_dir=${CLAUDE_PROJECT_DIR:-$PWD}
-cwd=$(mise -C "$project_dir" exec -- jq -r '.cwd // empty')
+# A failed lookup falls back to CLAUDE_PROJECT_DIR rather than leaving the
+# session with no environment at all.
+cwd=$(mise -C "$project_dir" exec -- jq -r '.cwd // empty') || cwd=
 # The repository root rather than `cwd` itself: a `uv sync` run inside a
 # member's directory syncs that member alone and removes the root's dev group.
 root=$(git -C "${cwd:-$project_dir}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$project_dir")
