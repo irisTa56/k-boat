@@ -5,6 +5,7 @@ reads and writes an iCloud-synced directory it cannot see, so it establishes
 first that the vault is there, that it is writable, that the folders and the
 questions file the phases name exist, and that every scanned directory can
 actually be listed — and it says whether iCloud has evicted any file in them.
+Ahead of those it establishes that the venvs the run uses match the checkout.
 
 Every check is read-only except the writability probe (see `_check_writable`).
 """
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -79,6 +81,67 @@ class Check:
             "paths": list(self.reported_paths),
             "path_count": len(self.paths),
         }
+
+
+# The environments the K-Boat routine runs, each as its name in the report and the
+# `uv sync` arguments that select it from the workspace root: kboat's own runtime
+# closure in the workspace venv, and the NotebookLM CLI's separate project.
+SYNCED_PROJECTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("kboat", ("--package", "kboat")),
+    ("tools/notebooklm", ("--project", "tools/notebooklm")),
+)
+
+# Why each flag: `kboat-vault-conventions` ("Vault preconditions").
+_UV_SYNC_CHECK = ("uv", "sync", "--check", "--offline", "--inexact", "--no-dev", "--no-active")
+
+
+def _unsynced(args: tuple[str, ...], cwd: Path) -> str | None:
+    """Why uv would change the environment `args` selects, or None if it would not."""
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,  # a non-zero exit is the finding, reported with uv's own words
+    )
+    if result.returncode == 0:
+        return None
+    # uv's `error:` line rather than its last one, which after a refusal is only
+    # the pointer to `--help`.
+    lines = result.stderr.strip().splitlines()
+    errors = [line for line in lines if line.startswith("error:")]
+    return (errors or lines or [f"uv exited {result.returncode}"])[0]
+
+
+def check_environment() -> Check:
+    """Whether every environment the routine runs matches the checkout's locks.
+
+    The checkout is the one this module sits in; why that and not the caller's
+    is in `kboat-vault-conventions`.
+    """
+    root = next(p for p in Path(__file__).resolve().parents if (p / "uv.lock").is_file())
+    unsynced: list[str] = []
+    reasons: set[str] = set()
+    for name, selector in SYNCED_PROJECTS:
+        try:
+            reason = _unsynced((*_UV_SYNC_CHECK, *selector), root)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            # A finding rather than a traceback: this runs inside the routine's
+            # gate, where a crash names no check at all.
+            reason = f"uv could not be run: {exc}"
+        if reason is not None:
+            unsynced.append(name)
+            reasons.add(reason)
+    return Check(
+        "environment",
+        Status.FAILED if unsynced else Status.OK,
+        f"{len(unsynced)} environment(s) not in sync with the checkout "
+        f"({'; '.join(sorted(reasons))})"
+        if unsynced
+        else "",
+        tuple(unsynced),
+    )
 
 
 def _check_root(vault: Path) -> tuple[Check, bool]:
@@ -471,15 +534,18 @@ def _check_scanned(vault: Path) -> list[Check]:
 def run_checks(vault: Path) -> list[Check]:
     """Every precondition check for `vault`, in report order.
 
-    A root that is absent, or whose name a non-directory holds, short-circuits:
-    with nothing to look inside, every remaining check would fail for that one
-    reason and bury it. A root the vault merely refuses to read does not — see
-    `_check_root`, which is where the three answers part.
+    A root that is absent, or whose name a non-directory holds, short-circuits
+    the vault checks after it: with nothing to look inside, every one would fail
+    for that one reason and bury it. A root the vault merely refuses to read does
+    not — see `_check_root`, which is where the three answers part. `environment`
+    is reported either way, since nothing about the vault bears on it.
     """
+    environment = check_environment()
     root, short_circuit = _check_root(vault)
     if short_circuit:
-        return [root]
+        return [environment, root]
     return [
+        environment,
         root,
         _check_writable(vault),
         *_check_folders(vault),

@@ -11,6 +11,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
 - `kboat-pick` — the daily-pick mechanics (`candidates`/`set`), no LLM and no NotebookLM.
 - `kboat-validate` — checks every vault note against `kboat.schema` and prints violations as JSON; `--stats` adds the backlog-health counts.
 - `kboat-doctor` — checks the vault's environment preconditions before a run:
+  - that the environments the run uses match the checkout's locks;
   - the vault root;
   - its writability;
   - the required folders;

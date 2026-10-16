@@ -45,7 +45,7 @@ def test_failure_exits_one_and_lists_every_failed_check(
     failed = {c["name"] for c in out["checks"] if c["status"] == "failed"}
     assert failed == {"required_folders", "questions_file", "readable_notes"}
     assert out["counts"]["failed"] == 3
-    assert out["counts"]["total"] == 8
+    assert out["counts"]["total"] == 9
     # Diagnostics on stderr, one line per finding, so an unattended log shows
     # the reason without parsing the JSON back.
     lines = captured.err.strip().splitlines()
@@ -95,10 +95,10 @@ def test_a_warning_neither_suppresses_nor_softens_a_failure(
 def test_missing_root_reports_only_that(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--vault", str(tmp_path / "nope")]) == 1
     out = json.loads(capsys.readouterr().out)
-    assert [c["name"] for c in out["checks"]] == ["vault_root"]
+    assert [c["name"] for c in out["checks"]] == ["environment", "vault_root"]
     # A short-circuited run reports fewer checks, not fewer keys — this is the
     # path where a reader most needs the counts to be there.
-    assert out["counts"] == {"total": 1, "ok": 0, "warning": 0, "failed": 1}
+    assert out["counts"] == {"total": 2, "ok": 1, "warning": 0, "failed": 1}
 
 
 def test_vault_from_environment(
