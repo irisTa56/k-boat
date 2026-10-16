@@ -122,7 +122,7 @@ def check_environment() -> Check:
     """
     root = next(p for p in Path(__file__).resolve().parents if (p / "uv.lock").is_file())
     unsynced: list[str] = []
-    reasons: list[str] = []
+    reasons: set[str] = set()
     for name, selector in SYNCED_PROJECTS:
         try:
             reason = _unsynced((*_UV_SYNC_CHECK, *selector), root)
@@ -132,11 +132,14 @@ def check_environment() -> Check:
             reason = f"uv could not be run: {exc}"
         if reason is not None:
             unsynced.append(name)
-            reasons.append(f"{name}: {reason}")
+            reasons.add(reason)
     return Check(
         "environment",
         Status.FAILED if unsynced else Status.OK,
-        "; ".join(reasons),
+        f"{len(unsynced)} environment(s) not in sync with the checkout "
+        f"({'; '.join(sorted(reasons))})"
+        if unsynced
+        else "",
         tuple(unsynced),
     )
 

@@ -45,6 +45,7 @@ def test_an_outdated_kboat_environment_fails(monkeypatch: pytest.MonkeyPatch) ->
     assert check.status == Status.FAILED
     assert check.paths == ("kboat",)
     assert OUTDATED in check.detail
+    assert "kboat" not in check.detail  # names live in `paths` alone
 
 
 @pytest.mark.parametrize(
@@ -105,3 +106,23 @@ def test_the_detail_carries_uvs_error_line_rather_than_its_trailing_hint(
     monkeypatch.setattr(subprocess, "run", run)
 
     assert "unexpected argument '--x' found" in check_environment().detail
+
+
+def test_every_invocation_stays_offline_and_leaves_out_the_dev_tooling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A synced checkout answers the same without either flag, so the real-uv test
+    # cannot see one dropped: `--no-dev` keeps a stale dev tool from stopping the
+    # routine, `--offline` keeps the network out of the gate.
+    seen: list[Sequence[str]] = []
+
+    def run(args: Sequence[str], *_: object, **__: object):
+        seen.append(args)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    check_environment()
+
+    assert len(seen) == 2
+    assert all({"--no-dev", "--offline"} <= set(args) for args in seen)

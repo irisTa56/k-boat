@@ -88,7 +88,7 @@ The report on stdout is a JSON object with `vault`, `ok` (true when nothing fail
 Each entry in `checks` carries `name`, `status` (`ok`, `warning`, or `failed`), `detail`, `paths`, and `path_count` — every key on every entry, and `counts` likewise carries `total` plus one count per status even at zero, so a reader never has to decide whether an absent key means empty or means nothing.
 A check's names live in its `paths` alone, never restated in `detail`, so a reader acting on one list is not left wondering whether the other holds more.
 `paths` names at most five, with `path_count` giving the true total: the failure these checks exist for can evict thousands of files at once, and the caller is an unattended agent whose context both streams land in, so the report is bounded rather than answering a question about the vault with the vault itself.
-A **short-circuiting** root failure — absent, or the name held by a non-directory — is reported alone, so that run has fewer entries but never fewer keys.
+A **short-circuiting** root failure — absent, or the name held by a non-directory — is reported without the vault checks after it, so that run has fewer entries but never fewer keys.
 Every non-`ok` check is also written to stderr, one line per finding, so an unattended log shows the reason without parsing the JSON back.
 
 ## Naming
