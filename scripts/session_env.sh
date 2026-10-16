@@ -18,8 +18,15 @@ fi
 
 project_dir=${CLAUDE_PROJECT_DIR:-$PWD}
 # A failed lookup falls back to CLAUDE_PROJECT_DIR rather than leaving the
-# session with no environment at all.
-cwd=$(mise -C "$project_dir" exec -- jq -r '.cwd // empty') || cwd=
+# session with no environment at all, and fails the hook once the rest has run:
+# in a worktree session that is the main checkout's environment, which Claude
+# Code would otherwise load without a word.
+status=0
+if ! cwd=$(mise -C "$project_dir" exec -- jq -r '.cwd // empty'); then
+  printf 'session_env: could not read the hook input; loaded the environment of %s\n' "$project_dir" >&2
+  cwd=
+  status=1
+fi
 # The repository root rather than `cwd` itself: a `uv sync` run inside a
 # member's directory syncs that member alone and removes the root's dev group.
 root=$(git -C "${cwd:-$project_dir}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$project_dir")
@@ -45,3 +52,4 @@ printf '%s\n' "$out" >"$CLAUDE_ENV_FILE"
 # one is a no-op in well under a second.
 mise -C "$root" exec -- uv sync --no-active --quiet --directory "$root"
 mise -C "$root" exec -- uv sync --no-active --quiet --directory "$root" --project tools/notebooklm
+exit "$status"
