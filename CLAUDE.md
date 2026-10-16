@@ -64,6 +64,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
 
 `mise.toml` is the task list and carries its own reasons; `mise run pre-commit` is the gate, run by the git hook its postinstall generates.
 The same postinstall installs a pre-push hook running `secrets:push-scan`, one of the shared tasks `mise.toml` includes from dotfiles.
+It also installs a post-merge hook, `scripts/post-merge-sync.sh`, which reruns `mise install` in the main checkout after a merge that changed what the environment is built from.
 
 ## Architecture (K-Boat)
 

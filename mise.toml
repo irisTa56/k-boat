@@ -51,11 +51,16 @@ _.path = ["tools/notebooklm/.venv/bin"]
 # runs beside a hook file, and the git it needs, is dotfiles' `tasks/README.md`.
 # A git that ignores those keys would leave pushes unscanned in silence, so the
 # line after them says so when `git hook list` does not name the scan.
+#
+# The post-merge sync is registered the same way; what it reruns and when is
+# `scripts/post-merge-sync.sh`'s header.
 postinstall = """
 mise generate git-pre-commit --write --task=pre-commit
 git config hook.secrets-push-scan.event pre-push
 git config hook.secrets-push-scan.command 'mise run secrets:push-scan'
 git hook list pre-push 2>/dev/null | grep -qx secrets-push-scan || echo "warning: this git ignores hook.* config, so pushes are not scanned; git 2.54 or later runs it" >&2
+git config hook.post-merge-sync.event post-merge
+git config hook.post-merge-sync.command scripts/post-merge-sync.sh
 uv sync
 uv sync --project tools/notebooklm --no-active
 """
