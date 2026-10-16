@@ -45,12 +45,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
     - Leave off a suffix such as `; echo "EXIT=$?"`, since the Bash tool already reports a non-zero exit status.
   - Give a CLI its stdin from a quoted here-doc (`<<'KBOAT_RECORD'`) or a `<` redirect from a file inside the working directory, on its own command, never from a pipe, which adds a part the allow rule does not cover.
 - Where the session's environment is missing or stale — a bare CLI fails with `command not found`, `OBSIDIAN_VAULT_PATH` is unset, or `mise.toml` or `mise.local.toml` changed since the hook last ran — prefix each call with `eval "$(mise env)" &&`, since nothing carries between Bash calls.
-- A session in a linked worktree still gets the main checkout's environment, since the hook reads `mise env` at `CLAUDE_PROJECT_DIR`, which is the main checkout there: its real vault, and its `.venv` on `PATH` and as `VIRTUAL_ENV`.
-  - The `eval "$(mise env)" &&` prefix above resolves at the worktree instead, so a call carrying it gets `mise.toml`'s defaults with no real vault, and the worktree's own `.venv`.
-  - Without that prefix, a bare `pytest`, `python`, or console script runs the main checkout's code, since that `.venv` installs both members editable from it.
-  - Test a worktree's change with `uv run` only after one `uv sync` at the worktree root, since `uv run` from a member's directory leaves the dev group out of the worktree's `.venv`, so `pytest` resolves to the main checkout's on `PATH` and runs against the main checkout's code.
-    - `--no-active` on either silences uv's warning that `VIRTUAL_ENV` is not this project's environment.
-  - Run what touches the vault from the main checkout, since `uv run` in a worktree runs an unmerged change against the real vault.
+- A linked worktree has no `mise.local.toml`, so there the environment holds `mise.toml`'s defaults and no real vault; run what touches the vault from the main checkout.
 - A secret never goes into mise's environment, so `mise env` prints none; a command that needs one gets it from a secret manager wrapping that command.
 - Run Python itself as `.venv/bin/python` from the repo root, never as a bare `python3`.
   - Only the workspace venv carries `kboat`, `feed_filter`, and `yaml`; a bare `python3` resolves by `PATH` order and lands on an interpreter without them.
