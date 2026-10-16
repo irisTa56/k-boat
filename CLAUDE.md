@@ -33,7 +33,7 @@ Two roots, both read from `mise.local.toml` (the values in `mise.toml` are only 
 
 ## Environment
 
-- A SessionStart hook (`scripts/session_env.sh`) writes `mise env`'s output for the session's own checkout to `CLAUDE_ENV_FILE` and syncs the venvs it puts on `PATH`, so every Bash call already has the project environment.
+- A SessionStart hook in `.claude/settings.json` writes `mise env`'s output to `CLAUDE_ENV_FILE`, so every Bash call already has the project environment.
   - That environment is `mise.local.toml` over `mise.toml`'s defaults, with the workspace `.venv` (both members' console scripts) and the NotebookLM CLI's own venv (`tools/notebooklm/.venv`) on `PATH`.
   - The hook runs only when a session starts, resumes, forks, clears or compacts, so a change to `mise.toml` or `mise.local.toml` does not reach Bash calls before one of those.
     - It overwrites the file rather than appending as [the hooks docs](https://code.claude.com/docs/en/hooks#persist-environment-variables) suggest, since appending grows it by a full set of exports on every rerun; that is safe only while Claude Code gives each hook a file of its own, which it does but does not document.

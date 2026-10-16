@@ -11,8 +11,6 @@ activate_aggressive = true
 experimental = true
 
 [tools]
-# Parses the SessionStart hook's input (`scripts/session_env.sh`).
-jq = "latest"
 lychee = "latest"
 rumdl = "latest"
 shellcheck = "latest"
