@@ -23,6 +23,19 @@ cwd=$(mise -C "$project_dir" exec -- jq -r '.cwd // empty') || cwd=
 # The repository root rather than `cwd` itself: a `uv sync` run inside a
 # member's directory syncs that member alone and removes the root's dev group.
 root=$(git -C "${cwd:-$project_dir}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$project_dir")
+# Only a checkout of this repository: a `cwd` in some other repository would
+# load that one's environment and sync its venv.
+common_dir() { git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null; }
+if [ "$(common_dir "$root")" != "$(common_dir "$project_dir")" ]; then
+  root=$project_dir
+fi
+
+# A worktree sits under the main checkout (`.claude/worktrees/`), and mise
+# reads config files up the tree, so without a ceiling the main checkout's
+# `.venv/bin` follows the worktree's on PATH and whatever the worktree's venv
+# lacks resolves to the main checkout's code.
+export MISE_CEILING_PATHS
+MISE_CEILING_PATHS=$(dirname "$root")
 
 out=$(mise env -s zsh -C "$root")
 printf '%s\n' "$out" >"$CLAUDE_ENV_FILE"
