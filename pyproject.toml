@@ -1,6 +1,13 @@
 # Virtual workspace root: no [project] table, so `uv sync` builds one environment
 # from the members under packages/ without installing a root package. Only the
 # shared dev tooling lives here; each member declares its own runtime deps.
+[tool.uv]
+# A hijacked release is usually pulled within hours, so the lock takes only versions
+# at least a day old. Dependabot's version updates already wait on their own; this
+# covers a lock moved by hand or by an agent (`uv add`, `uv lock --upgrade-package`).
+# An urgent fix younger than that goes through `exclude-newer-package`.
+exclude-newer = "1 day"
+
 [tool.uv.workspace]
 members = ["packages/*"]
 
