@@ -21,3 +21,5 @@ dependencies = ["notebooklm-py[browser]==0.8.4"]
 # Nothing here is importable: this project exists to pin and install a CLI.
 [tool.uv]
 package = false
+# The workspace root's release window, for the reason its pyproject.toml gives.
+exclude-newer = "1 day"
