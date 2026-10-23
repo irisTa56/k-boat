@@ -58,7 +58,7 @@ The judge reads its task and not this skill, and the task hands it the criteria 
 - What the bullets below tell the judge to do, including the `entry-body` statement under `wall == true`.
 
 The subagent returns `{keep, wall, title, summary, reason}` (see the criteria file's "Output").
-Judging the entries in parallel is fine, but launch each judge in the foreground (`run_in_background: false`): step 3 needs every result, and a judge started in the background leaves the run with nothing to do but wait for it.
+Judging the entries in parallel is fine. Step 3 needs every result, so go on only once each judge has reported, whether its result came back from the launch or in a completion notification; act on the batch once it is complete, not on each notification.
 At most 20 judges run at once, the harness's concurrent-subagent limit, and a launch past it fails with "Concurrent subagent limit reached".
 When there are more entries than that, launch the first 20 and the rest as judges finish, since step 3 still needs every result before acting.
 
