@@ -64,7 +64,7 @@ Run `feed-filter forum-new`.
 **Judge each candidate**.
 
 - Use a **Sonnet** subagent for Rule A and a **haiku** subagent for Rule B (see the model split above).
-- Judging candidates in parallel is fine. Step 3 needs every result, so go on only once each judge has reported, whether its result came back from the launch or in a completion notification; act on the batch once it is complete, not on each notification.
+- Judging candidates in parallel is fine, but step 3 needs every result, so go on only once each judge has reported, whether its result came back from the launch or in a completion notification; act on the batch once it is complete, not on each notification.
   - At most 20 judges run at once, the harness's concurrent-subagent limit, and a launch past it fails with "Concurrent subagent limit reached".
   - When there are more candidates than that, launch the first 20 and the rest as judges finish, since step 3 still needs every result before acting.
 
