@@ -754,7 +754,7 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
         assert count(conn) == 0
 
 
-def test_new_entries_caches_full_body_and_emits_only_preview(
+def test_new_entries_caches_full_body_and_emits_no_body_text(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The full feed body is stashed in the body cache and stdout carries no body
