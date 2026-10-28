@@ -118,7 +118,7 @@ The query gather takes one or more natural-language descriptions instead of a si
 feed-filter query-new --query "personal write-ups about building your own map rendering or GPS trace tooling"
 ```
 
-It emits the same entry shape as `new-entries` (plus the `query` that found each page), so the judging half of a run is identical — with one difference: a query entry has no cached body, so `entry-body` always misses for one and the judge fetches the page, exactly as it does for a scrape entry.
+It emits the entry shape of `new-entries` plus the `query` that found each page and a `summary` preview on stdout, since a query entry has no cached body: `entry-body` always misses for one and the judge fetches the page, exactly as it does for a scrape entry.
 Pages already dispositioned (kept or dropped), or snapshotted at registration are dropped against the shared seen-store, so a query overlapping a registered feed costs no *judging*; the Exa request itself is already paid for by then, since the search precedes the dedupe.
 Exa bills once per request, covering the first ten results; a result beyond ten is billed on top, so raising `--num-results` raises the per-query price.
 A failed query is reported against itself and retried on the next run, leaving the others' results intact.

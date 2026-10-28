@@ -166,9 +166,9 @@ def _emit(obj: Any) -> None:
 
 def _preview(text: str | None, limit: int) -> str | None:
     """First ``limit`` chars of ``text`` with an ellipsis when truncated, else
-    ``text`` unchanged (``None`` passes through). The stdout ``summary`` for a feed
-    entry whose full body is cached (``body_cache``); the judge pulls the full body
-    via ``entry-body``."""
+    ``text`` unchanged (``None`` passes through). What ``entry-body --preview``
+    serves from a cached feed body, and the stdout ``summary`` of a ``query-new``
+    entry, which nothing caches."""
     if text is None or len(text) <= limit:
         return text
     return text[:limit] + "…"
@@ -475,8 +475,8 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                             "site_id": site.id,
                             "url": str(e.canonical_url),
                             "title": e.title,
-                            # Full body here; capped to a preview after the global
-                            # clamp below, once the emitted set is known.
+                            # Full body here; moved into the body cache after the
+                            # global clamp below, once the emitted set is known.
                             "summary": e.summary,
                             "kind": e.kind,
                         }
@@ -508,13 +508,14 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
                 )
             # Interleave + global clamp *before* caching so only the
             # emitted set is cached. Then stash each emitted feed entry's full body
-            # in the transient cache and replace the stdout ``summary`` with a short
-            # preview, so the full body reaches only the judging haiku (via
-            # ``entry-body``), never this run's orchestrator context.
+            # in the transient cache and drop it from stdout, so neither the body
+            # nor its preview reaches this run's orchestrator context: the judging
+            # haiku pulls both via ``entry-body``, and a large run would otherwise
+            # carry one preview per entry through every later orchestrator turn.
             entries = _round_robin(groups)[: args.global_cap]
             body_cache.replace(conn, [(d["url"], d["summary"]) for d in entries if d["summary"]])
             for d in entries:
-                d["summary"] = _preview(d["summary"], SUMMARY_PREVIEW_CHARS)
+                del d["summary"]
     finally:
         close_browser()  # tear down a lazily-launched browser (no-op for httpx-only runs)
     _emit({"entries": entries, "sites": site_status})
@@ -592,11 +593,13 @@ def cmd_query_new(args: argparse.Namespace) -> int:
 
 
 def cmd_entry_body(args: argparse.Namespace) -> int:
-    """Emit one gathered entry's full cached body for the judging subagent.
+    """Emit one gathered entry's cached body, or its preview, for the judging subagent.
 
-    ``new-entries`` caches each emitted feed entry's full body and puts only a
-    preview on stdout; the judge fetches the full body here so it lands
-    only in the cheap judge's context. Output is ``{url, body}``; ``body`` is
+    ``new-entries`` caches each emitted feed entry's full body and puts none of it
+    on stdout; the judge fetches it here so it lands only in the cheap judge's
+    context. ``--preview`` caps ``body`` to ``SUMMARY_PREVIEW_CHARS``, the first
+    stage of a staged judgment that reads the full body only for an entry the
+    preview leaves in scope. Output is ``{url, body}``; ``body`` is
     ``null`` on a cache miss — a non-feed entry (scrape entries carry no body), an
     interrupted run, or a body evicted by a later ``new-entries`` — and the judge
     falls back to a full-page WebFetch, so never-lost holds.
@@ -609,6 +612,8 @@ def cmd_entry_body(args: argparse.Namespace) -> int:
     cu = _url_arg(args.url)
     with contextlib.closing(open_db(db_path())) as conn:
         body = body_cache.get(conn, cu)
+    if args.preview:
+        body = _preview(body, SUMMARY_PREVIEW_CHARS)
     _emit({"url": str(cu), "body": body})
     return 0
 
@@ -1219,6 +1224,7 @@ def build_parser() -> argparse.ArgumentParser:
         "entry-body", help="print one gathered entry's full cached body (for the judge)"
     )
     p_body.add_argument("--url", required=True)
+    p_body.add_argument("--preview", action="store_true", help="print only the body's first part")
     p_body.set_defaults(handler=cmd_entry_body)
 
     p_remind = sub.add_parser(

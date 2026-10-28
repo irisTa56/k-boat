@@ -147,7 +147,7 @@ _MIGRATIONS: list[tuple[str, ...]] = [
         """,
     ),
     # v5: transient per-run cache of full feed bodies. ``new-entries`` stores each
-    # emitted feed entry's full body here and puts only a short preview on stdout,
+    # emitted feed entry's full body here and puts none of it on stdout,
     # so the body reaches only the judging haiku (via the ``entry-body`` subcommand),
     # never the run orchestrator's context. Rewritten wholesale each
     # ``new-entries`` run, so it holds at most one run's bodies.

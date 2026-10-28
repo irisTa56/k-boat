@@ -197,7 +197,7 @@ def test_scrape_site_self_heal_end_to_end(
     entry = gathered["entries"]
     assert [e["url"] for e in entry] == ["https://example.com/blog/c"]
     assert entry[0]["kind"] == "scrape"
-    assert entry[0]["title"] is None and entry[0]["summary"] is None  # no feed metadata
+    assert entry[0]["title"] is None  # no feed metadata
     assert gathered["sites"] == [
         {
             "site_id": "blg",

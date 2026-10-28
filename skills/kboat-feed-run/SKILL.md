@@ -34,11 +34,12 @@ Each subcommand emits one JSON document on stdout and exits non-zero on an opera
 
 Run `feed-filter new-entries`.
 
-- The output is `{entries: [{site_id, url, title, summary, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
+- The output is `{entries: [{site_id, url, title, kind}], sites: [{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}]}`.
   - `entries` are the new, unseen items to judge, already round-robin-interleaved across sites and clamped to the global cap.
     - Items dropped by the cap are simply absent and stay unseen — they reappear next run, so do not try to recover them here.
-  - `summary` is a **short preview** of the entry body (the first ~500 chars), not the full text; it and `title` are both `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
-    - The **full** feed body is deliberately kept off stdout — pull it on demand with `feed-filter entry-body --url '<url>'` (step 2), which keeps the whole article out of this orchestrating context and loads it only into the judging subagent's.
+  - An entry carries no body text: the feed body is cached, and the judge pulls it in step 2 with `feed-filter entry-body --url '<url>'`, adding `--preview` for its first ~500 chars only.
+    - This keeps both the article and its preview out of this orchestrating context, which would otherwise carry one preview per entry through every later turn of the run, and loads them only into the judging subagent's.
+  - `title` is `null` for `kind == "scrape"` (scrape entries carry no feed metadata).
   - Each `sites` entry is `{site_id, zero_links, error, unexpected_error, consecutive_failures, persistent}`.
     - `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
     - `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
@@ -54,7 +55,7 @@ The judge reads its task and not this skill, and the task hands it the criteria 
 - The criteria `path` from `selection-path`, with the instruction to Read the whole file before judging and to judge by it.
   - Never restate the criteria in the task, in full or in part: a restatement is what the judge would then judge by, and restatements have come out abridged, dropping whole sections of the file.
 - The site's `selection` override word for word when it is set, stated as replacing the file's Topics section.
-- The entry's `site_id`, `kind`, `url`, `title` and preview `summary`.
+- The entry's `site_id`, `kind`, `url` and `title`.
 - What the bullets below tell the judge to do, including the `entry-body` statement under `wall == true`.
 
 The subagent returns `{keep, wall, title, summary, reason}` (see the criteria file's "Output").
@@ -62,9 +63,9 @@ Judging the entries in parallel is fine, but step 3 needs every result, so go on
 At most 20 judges run at once, the harness's concurrent-subagent limit, and a launch past it fails with "Concurrent subagent limit reached".
 When there are more entries than that, launch the first 20 and the rest as judges finish, since step 3 still needs every result before acting.
 
-- **`kind == "feed"`** — staged to save cost: give the subagent the `title` and the preview `summary` first.
+- **`kind == "feed"`** — staged to save cost: have the subagent run `feed-filter entry-body --url '<url>' --preview` first and judge from the `title` and that preview.
   - If those already place the entry **outside the Topics**, drop it from the preview alone — no body fetch (prompts/selection.md "Walls and unreadable pages").
-  - Otherwise the entry is plausibly in scope, so have the subagent run `feed-filter entry-body --url '<url>'` to load the **full** feed body into its own context and judge depth from that.
+  - Otherwise the entry is plausibly in scope, so have the subagent run `feed-filter entry-body --url '<url>'` without `--preview` to load the **full** feed body into its own context and judge depth from that.
     - It falls back to a `WebFetch` of the page for the full text when `entry-body` returns `body: null` (a cache miss), or a body too thin to judge depth from — a teaser that stops at a "read more" link.
 - **`kind == "scrape"`** — there is no feed metadata (and no cached body), so the subagent goes straight to a full `WebFetch` of the `url`.
   - The `title` it returns is authoritative — it is the **only** title source for the note.

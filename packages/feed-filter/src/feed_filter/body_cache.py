@@ -1,10 +1,10 @@
 """Transient per-run cache of full feed bodies (SH-sibling; keeps bodies out of
 the run orchestrator's context).
 
-``new-entries`` writes each emitted feed entry's full body here and puts only a
-short preview on stdout; the judging haiku subagent pulls the full body on demand
-via the ``entry-body`` subcommand, so the body lands only in the cheap judge's
-context, never the orchestrator's. The cache is rewritten wholesale each
+``new-entries`` writes each emitted feed entry's full body here and puts none of
+it on stdout; the judging haiku subagent pulls a preview and, on demand, the full
+body via the ``entry-body`` subcommand, so the body lands only in the cheap
+judge's context, never the orchestrator's. The cache is rewritten wholesale each
 ``new-entries`` run (``replace``), so it holds at most one run's bodies and never
 grows unbounded.
 
