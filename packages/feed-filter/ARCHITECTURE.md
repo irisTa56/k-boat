@@ -28,7 +28,7 @@ Pure primitives:
 - `site_health.py` — the durable per-site consecutive-failure counter (`site_health` table, v4 migration in `seen.py`); source-kind-agnostic, keyed by `site_id`.
   - Operational telemetry, **not** dedupe/never-lost state (see the site-health invariant below).
 - `body_cache.py` — a transient per-run cache of full feed bodies (`entry_body` table, v5 migration in `seen.py`), rewritten wholesale each `new-entries`.
-  - It keeps the full article off the run orchestrator's stdout/context: `new-entries` emits only a preview and the judge pulls the body via `entry-body`.
+  - It keeps the article off the run orchestrator's stdout/context: `new-entries` emits no body text and the judge pulls the body, or its preview, via `entry-body`.
   - Operational cache, **not** dedupe/never-lost state — a miss just falls the judge back to a `WebFetch`.
 - `sites.py` — `sites.toml` read/write (via `tomlkit`, preserving formatting).
 - `json_text.py` — the rule for a lone surrogate `json.loads` hands back, which every JSON reader (`discourse`, `exa`) applies to each string field at its read; the module docstring states the rule and its reasons.
@@ -39,7 +39,7 @@ Deterministic httpx ingestion:
 - `feeds.py` — feed parsing (`feedparser`).
   - The entry `summary` is the richest available body flattened to plain text (`html_to_text`) and capped at `MAX_BODY_CHARS` (50k): a full-text feed (WordPress/Medium/Substack, e.g. thenewstack.io) ships the whole article in `content:encoded` (exposed by feedparser as `entry.content`) while `<description>` (`entry.summary`) is a truncated excerpt, so `_entry_body` prefers `content:encoded` and falls back to `<description>`.
     - Handing the judge the full body lets it assess depth from the feed itself instead of forcing a per-article fetch that a gated site (Cloudflare) returns as a wall; the cap only guards against a pathological megabyte-scale body, never a normal article.
-    - That body reaches the judge through `body_cache` (not the run orchestrator's stdout, which carries only a preview), so the full article lands only in the cheap judge's context.
+    - That body reaches the judge through `body_cache` (not the run orchestrator's stdout, which carries none of it), so the full article lands only in the cheap judge's context.
   - The dedupe key is normally the resolved entry link, but a Medium item (`<guid>` of the form `medium.com/p/<hash>`) keys on that guid instead (`_dedupe_url`): Medium serves the same article under shifting link hosts (`medium.com/<pub>/` vs a publication custom domain like `netflixtechblog.com`), so the link forks the key and re-reminds when the host flips, while the `/p/<hash>` guid is invariant and 302-redirects to the live article.
     - The other historical fork, a `?source=` attribution param, is handled separately by `kboat.canonical`'s tracking-param stripping; the host shift is the residual cause the guid addresses.
 - `scrape.py` — index-page scraping (`selectolax`).
@@ -116,9 +116,9 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 | `add-site` | register a site (snapshots seen, then writes config) |
 | `list-sites` | list registered sites (with enabled/disabled status) as a bare JSON array, one object per site, naming it `id` where the other commands emit `site_id` |
 | `selection-path` | print the active keep/drop criteria file (`{path}`, honoring `FEED_FILTER_SELECTION`) that each judge reads; exits non-zero when the file is absent |
-| `new-entries` | gather new, unseen entries across non-forum sites (each entry's `summary` is a preview; the full body is cached for `entry-body`) |
-| `query-new` | gather new, unseen pages by neural-searching one or more `--query` descriptions (Exa); same entry shape as `new-entries`, plus `query` provenance. `queries[].new` counts pages that survived both dedupe layers, *before* the global cap, and `cost_dollars` is a floor (a request answered with an unparseable body reports nothing) |
-| `entry-body` | print one gathered entry's full cached body (`{url, body}` with `url` canonicalized; `body` is `null` on a cache miss) for the judge |
+| `new-entries` | gather new, unseen entries across non-forum sites (no body text on stdout; the full body is cached for `entry-body`) |
+| `query-new` | gather new, unseen pages by neural-searching one or more `--query` descriptions (Exa); the entry shape of `new-entries`, plus a `summary` preview (nothing caches a query entry's text) and `query` provenance. `queries[].new` counts pages that survived both dedupe layers, *before* the global cap, and `cost_dollars` is a floor (a request answered with an unparseable body reports nothing) |
+| `entry-body` | print one gathered entry's full cached body, or with `--preview` its first `SUMMARY_PREVIEW_CHARS`, for the judge (`{url, body}` with `url` canonicalized; `body` is `null` on a cache miss) |
 | `remind` | write a kept entry as a `Feeds/` note and record it seen (`--wall` flags a login/paywall page, `--summary` optional) |
 | `mark-seen` | record a dropped entry seen (`kept=0`) |
 | `heal-site` | rewrite a scrape pattern and re-snapshot |
@@ -133,7 +133,8 @@ The forum path deliberately re-writes the note as new posts qualify, which is wh
 `new-entries` filters to `kind != "forum"` and `forum-new` filters to `kind == "forum"` — neither path ever sees the other's sites.
 Both filter on `enabled` as well, so a paused site reaches no gather at all and appears in no run's per-site report.
 `query-new` is registry-free: it belongs to no site, stamps every entry `site_id: "exa"`, and shares only the seen-store, so a page another gather already dispositioned (kept or dropped), or snapshotted at registration is dropped rather than re-offered.
-`new-entries` puts only a preview of each entry's body on stdout and caches the full body (`body_cache`); the judge pulls it with `entry-body`, so a full article is loaded into the cheap judging subagent's context, never the run orchestrator's.
+`new-entries` puts none of an entry's body on stdout and caches the full body (`body_cache`); the judge pulls a preview and then, if needed, the whole body with `entry-body`, so neither is loaded into the run orchestrator's context, only the cheap judging subagent's.
+Leaving the preview off stdout too matters because the orchestrator re-reads its context on every later turn of the run, and a full run's previews (~500 chars × the global cap) would ride along through all of them.
 
 ## Skills (the orchestration layer)
 

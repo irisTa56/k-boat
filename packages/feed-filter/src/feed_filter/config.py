@@ -33,11 +33,11 @@ DEFAULT_GLOBAL_CAP = 80
 # concurrent requests (crawler politeness) — concurrency is across hosts only.
 DEFAULT_GATHER_CONCURRENCY = 16
 
-# Length of the entry-body preview ``new-entries`` puts on stdout. The full body
-# is cached (``body_cache``) and pulled by the judge via ``entry-body`` so it never
-# enters the run orchestrator's context; the preview is what the
-# orchestrator sees, enough to drop a clearly out-of-scope entry from title+preview
-# without fetching the body, and to keep the run transcript legible.
+# Length of the body preview ``entry-body --preview`` serves to the judge (and of
+# a ``query-new`` entry's stdout ``summary``). The full body is cached
+# (``body_cache``) and pulled by the judge via ``entry-body`` so it never enters
+# the run orchestrator's context; the preview is enough to drop a clearly
+# out-of-scope entry from title+preview without reading the body.
 SUMMARY_PREVIEW_CHARS = 500
 
 # Query gather (``query-new``). Exa's neural search endpoint, and how many results

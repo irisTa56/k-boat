@@ -754,12 +754,13 @@ def test_new_entries_round_robin_truncation_leaves_later_sites_unseen(
         assert count(conn) == 0
 
 
-def test_new_entries_caches_full_body_and_emits_only_preview(
+def test_new_entries_caches_full_body_and_emits_no_body_text(
     state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The full feed body is stashed in the body cache (pulled later via
-    ``entry-body``); stdout carries only a bounded preview, so the run orchestrator
-    never sees the body."""
+    """The full feed body is stashed in the body cache and stdout carries no body
+    text at all: the judge pulls a bounded preview via ``entry-body --preview`` and
+    the full body via ``entry-body``, so neither enters the run orchestrator's
+    context however many entries the run gathers."""
     _no_client(monkeypatch)
     add_site(sites_path(), SiteConfig(id="a", name="A", feed_url="https://a.example.com/f.xml"))
     body = "Full article body. " + "x" * 1000  # longer than SUMMARY_PREVIEW_CHARS
@@ -773,9 +774,12 @@ def test_new_entries_caches_full_body_and_emits_only_preview(
 
     assert cli.main(["new-entries"]) == 0
     entry = _out(capsys)["entries"][0]
-    # stdout summary is a bounded preview (with an ellipsis), not the full body.
-    assert entry["summary"] == body[:SUMMARY_PREVIEW_CHARS] + "…"
-    assert len(entry["summary"]) == SUMMARY_PREVIEW_CHARS + 1
+    assert entry == {"site_id": "a", "url": url, "title": "Deep", "kind": "feed"}
+
+    # entry-body --preview gives the judge a bounded preview (with an ellipsis).
+    assert cli.main(["entry-body", "--url", url, "--preview"]) == 0
+    preview = body[:SUMMARY_PREVIEW_CHARS] + "…"
+    assert _out(capsys) == {"url": url, "body": preview}
 
     # entry-body pulls the full body back from the cache for the judge.
     assert cli.main(["entry-body", "--url", url]) == 0
@@ -789,6 +793,8 @@ def test_entry_body_cache_miss_returns_null(
     run) returns ``body: null``, so the judge falls back to a WebFetch."""
     url = "https://x.example.com/gone"
     assert cli.main(["entry-body", "--url", url]) == 0
+    assert _out(capsys) == {"url": url, "body": None}
+    assert cli.main(["entry-body", "--url", url, "--preview"]) == 0
     assert _out(capsys) == {"url": url, "body": None}
 
 
