@@ -34,7 +34,7 @@ kboat-knowledge = "kboat.knowledge.__main__:main"
 kboat-notebooks = "kboat.notebooks.__main__:main"
 
 [build-system]
-requires = ["uv_build>=0.13.1,<0.14.0"]
+requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
