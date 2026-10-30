@@ -7,7 +7,6 @@ import pytest
 
 from feed_filter.discourse import (
     _EMPTY_TOPIC,
-    discover_topic_ids,
     latest_feed_url,
     parse_topic,
     top_feed_url,
@@ -296,39 +295,6 @@ def test_parse_topic_non_int_ids_degrade_to_zero() -> None:
     assert topic.like_count == 0
     assert posts[0].id == 0
     assert posts[0].number == 0
-
-
-# ---------------------------------------------------------------------------
-# discover_topic_ids
-# ---------------------------------------------------------------------------
-
-
-def test_discover_topic_ids_latest_rss_source_order() -> None:
-    body = (FIXTURES / "discourse_latest.rss").read_bytes()
-    ids = discover_topic_ids(body, "https://forum.example.com")
-    # latest.rss is already newest-first; source order matches date order here
-    assert ids == [101, 102, 103]
-
-
-def test_discover_topic_ids_top_rss_preserves_rank_order() -> None:
-    """Top feed ranks oldest-first in the fixture (Jun 01 > Jun 12 > Jun 14).
-
-    With sort=True the result would be [203, 202, 201] (date descending).
-    With sort=False the source order [201, 202, 203] must be preserved.
-    """
-    body = (FIXTURES / "discourse_top.rss").read_bytes()
-    ids = discover_topic_ids(body, "https://forum.example.com")
-    assert ids == [201, 202, 203]
-
-
-def test_discover_topic_ids_drops_non_topic_links() -> None:
-    feed = b"""<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"><channel><title>F</title><link>https://f.example.com</link>
-  <item><title>Topic</title><link>https://f.example.com/t/my-topic/99</link></item>
-  <item><title>Category</title><link>https://f.example.com/c/general/1</link></item>
-</channel></rss>"""
-    ids = discover_topic_ids(feed, "https://f.example.com")
-    assert ids == [99]
 
 
 # ---------------------------------------------------------------------------

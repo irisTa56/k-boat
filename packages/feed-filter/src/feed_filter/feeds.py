@@ -227,7 +227,7 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     downstream then keeps the newest.
 
     ``sort=False``: entries are returned in feed source order with no date sort.
-    Used by ``discourse.discover_topic_ids`` so a top-feed preserves rank order
+    Used by ``forum_pipeline`` so a top-feed preserves rank order
     rather than being re-sorted by date.
     """
     parsed = feedparser.parse(body)
