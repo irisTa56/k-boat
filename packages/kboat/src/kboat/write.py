@@ -8,8 +8,6 @@ multi-line, inline lists in flow style), plus an optional body appended verbatim
 this module is how a note is written from them.
 """
 
-from __future__ import annotations
-
 import errno
 import re
 from collections.abc import Collection, Mapping, Sequence

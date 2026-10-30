@@ -12,8 +12,6 @@ violations alone. The queue's counts come from a listing of `Queue/`, whose
 captures are not schema'd notes and are not validated.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

@@ -30,8 +30,6 @@ shape:
   Candidate-probe fetch failures are absorbed (a 404 typical-path is not a feed).
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from typing import Literal, NamedTuple

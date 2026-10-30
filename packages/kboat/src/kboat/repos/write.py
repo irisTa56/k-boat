@@ -14,8 +14,6 @@ vault prints a `locked` record and exits non-zero instead of racing the run that
 holds it.
 """
 
-from __future__ import annotations
-
 import argparse
 from pathlib import Path
 

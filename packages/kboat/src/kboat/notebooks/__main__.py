@@ -19,8 +19,6 @@ its own name and exit 1 with the report still printed (`kboat-vault-conventions`
 empty stdout: nothing can be read against it.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

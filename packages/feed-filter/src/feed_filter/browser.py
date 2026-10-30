@@ -22,8 +22,6 @@ gate ``require_playwright_if_needed`` fails fast with the install command if a
 flagged site is registered but the extra is missing.
 """
 
-from __future__ import annotations
-
 import contextlib
 import importlib.util
 from dataclasses import dataclass

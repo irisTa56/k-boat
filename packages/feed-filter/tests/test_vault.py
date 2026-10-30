@@ -5,8 +5,6 @@ defaults, the human-disposition preservation, and the collision contract are
 checked against real files written through ``kboat.write.upsert``.
 """
 
-from __future__ import annotations
-
 import json
 import threading
 import time

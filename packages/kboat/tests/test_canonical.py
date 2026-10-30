@@ -1,7 +1,5 @@
 """Table-driven tests for canonical URL normalization."""
 
-from __future__ import annotations
-
 import pytest
 
 from kboat.canonical import canonical_url, resolve_link

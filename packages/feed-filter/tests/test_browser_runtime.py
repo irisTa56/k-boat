@@ -12,8 +12,6 @@ starting and stopping its driver. What it does not cover: a Chromium launch, whi
 the browser binary that ``uv run playwright install chromium`` fetches separately.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 

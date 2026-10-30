@@ -1,7 +1,5 @@
 """Tests for queue-capture URL/title extraction."""
 
-from __future__ import annotations
-
 import time
 from datetime import date
 

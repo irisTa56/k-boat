@@ -4,8 +4,6 @@ The cache is exercised through its public API against a real (tmp) seen-store DB
 so the v5 ``entry_body`` migration and the SQL are covered end to end.
 """
 
-from __future__ import annotations
-
 import contextlib
 from pathlib import Path
 

@@ -23,8 +23,6 @@ add a second `tags:` block to a note that already has one while its real break w
 unfixed.
 """
 
-from __future__ import annotations
-
 import re
 from collections import Counter
 from collections.abc import Iterable

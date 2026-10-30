@@ -10,8 +10,6 @@ pick anchored to what the human is engaged with now rather than stale notes.
 Non-date-named files in `Daily/` are not daily notes and are ignored.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path

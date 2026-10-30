@@ -17,8 +17,6 @@ seen-store (the dedupe authority) can require, and ``ty`` can enforce,
 that every key it stores has actually been canonicalized.
 """
 
-from __future__ import annotations
-
 import re
 from typing import NewType
 from urllib.parse import SplitResult, parse_qsl, urlencode, urljoin, urlsplit, urlunsplit

@@ -19,8 +19,6 @@ rendered, every other entry put back verbatim — but not through `upsert`, whic
 would stamp `refreshed_date` on a note whose metadata nobody refreshed.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

@@ -1,7 +1,5 @@
 """End-to-end tests for the `kboat-repos` CLI: subcommand dispatch and `write`."""
 
-from __future__ import annotations
-
 import io
 import json
 import os

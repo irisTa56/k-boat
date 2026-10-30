@@ -65,8 +65,6 @@ document written by hand reaches, and every parse is asked where it stopped,
 because raising a cap only moves the cliff while asking removes it.
 """
 
-from __future__ import annotations
-
 import argparse
 import subprocess
 import sys

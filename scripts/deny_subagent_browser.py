@@ -7,8 +7,6 @@ blocks the call.
 Stdlib-only, so the hook's start-up stays at the interpreter's own.
 """
 
-from __future__ import annotations
-
 import json
 import sys
 

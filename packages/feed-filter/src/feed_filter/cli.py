@@ -29,8 +29,6 @@ Ordering invariants enforced here, not in the skills:
   candidate post has been dispositioned.
 """
 
-from __future__ import annotations
-
 import argparse
 import contextlib
 import json

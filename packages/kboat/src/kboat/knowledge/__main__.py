@@ -15,8 +15,6 @@ frontmatter does not parse exit 1 with an empty stdout and the cause on stderr, 
 outside the caller.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

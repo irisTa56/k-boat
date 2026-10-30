@@ -16,8 +16,6 @@ deliberate signal and a required input (`kboat-vault-conventions` "Vault
 preconditions"), unlike an absent `Daily/`, which the pick degrades over by design.
 """
 
-from __future__ import annotations
-
 import re
 import stat
 from dataclasses import dataclass

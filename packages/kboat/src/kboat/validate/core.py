@@ -11,8 +11,6 @@ with no `filed_date` is reported as a backlog stat instead (`kboat.validate.stat
 and `kboat-notes` "Backlog stats" for why).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 

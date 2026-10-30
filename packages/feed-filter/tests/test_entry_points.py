@@ -11,8 +11,6 @@ than shared: each package is tested as a self-contained unit, with no
 test-time import from the other, and the two entry-point lists are unrelated.
 """
 
-from __future__ import annotations
-
 import subprocess
 import tomllib
 from pathlib import Path

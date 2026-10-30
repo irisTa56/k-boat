@@ -11,8 +11,6 @@ mobile where Obsidian registers the scheme). `--vault` and `--folder` are baked 
 the emitted script; the page title and URL are read in the browser at click time.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

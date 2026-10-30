@@ -19,8 +19,6 @@ downstream. The title is a best-effort fallback only (ingest re-derives a better
 from the page), so its extraction is lenient.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime

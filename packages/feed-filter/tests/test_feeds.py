@@ -1,7 +1,5 @@
 """Behavior tests for feed parsing."""
 
-from __future__ import annotations
-
 import time
 from pathlib import Path
 from types import SimpleNamespace

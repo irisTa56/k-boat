@@ -49,8 +49,6 @@ Design constraints honoured here:
 - ``now`` and ``client`` are injected seams for unit testing.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from dataclasses import dataclass, field
 

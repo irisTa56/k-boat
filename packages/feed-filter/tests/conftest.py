@@ -5,8 +5,6 @@ HTTP. Tests hang their fakes (a tmp vault via `state_dir`, MockTransport clients
 off this file.
 """
 
-from __future__ import annotations
-
 import os
 from collections.abc import Iterator
 from pathlib import Path

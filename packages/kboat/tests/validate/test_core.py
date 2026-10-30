@@ -1,7 +1,5 @@
 """Tests for the per-field and cross-field note checks."""
 
-from __future__ import annotations
-
 import pytest
 
 from kboat.frontmatter import Value

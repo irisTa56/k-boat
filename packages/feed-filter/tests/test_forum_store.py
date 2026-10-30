@@ -5,8 +5,6 @@ call ``time.time()``.  The ``conn`` fixture uses ``seen.open_db``
 so the v2 migration runs and the forum tables are present.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path

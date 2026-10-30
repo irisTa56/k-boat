@@ -5,8 +5,6 @@ routes by path so the self-feed / alternate-link / typical-path / clustering and
 rejection paths are exercised without touching the network.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from pathlib import Path
 

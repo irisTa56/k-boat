@@ -17,8 +17,6 @@ script knows CommonMark, but that it never again answers CommonMark's question
 itself.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 from pathlib import Path

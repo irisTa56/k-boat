@@ -6,8 +6,6 @@ calls, ``feeds.parse_feed`` with ``sort=False`` for rank-ordered discovery, and
 those live in ``forum_store`` and ``forum_pipeline``.
 """
 
-from __future__ import annotations
-
 import json
 import re
 from dataclasses import dataclass

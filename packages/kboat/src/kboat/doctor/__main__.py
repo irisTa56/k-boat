@@ -11,8 +11,6 @@ unreadable, or half-synced makes every later report a report about a vault that
 was not there.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

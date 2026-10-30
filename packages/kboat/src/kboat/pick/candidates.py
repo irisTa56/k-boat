@@ -13,8 +13,6 @@ may be empty (a candidate whose notebook is gone), which the ranker treats as
 un-fetchable.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from .notes import Value

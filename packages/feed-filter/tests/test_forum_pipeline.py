@@ -23,8 +23,6 @@ Coverage:
 - No writes to the DB during ``gather_forum``.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Callable, Iterator
 from pathlib import Path

@@ -6,8 +6,6 @@ startup-gate paths all run under coverage. The module-global bundle is reset
 around every test so the lazy singleton starts cold each time.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from pathlib import Path
 

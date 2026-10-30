@@ -1,7 +1,5 @@
 """End-to-end tests for the `kboat-knowledge` CLI."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

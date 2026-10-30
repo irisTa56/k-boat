@@ -1,7 +1,5 @@
 """Tests for frontmatter reading and the scoped `picked` rewrite."""
 
-from __future__ import annotations
-
 import pytest
 
 from kboat.pick.notes import FrontmatterError, parse_frontmatter, set_picked

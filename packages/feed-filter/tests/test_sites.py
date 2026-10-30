@@ -1,7 +1,5 @@
 """Behavior tests for the sites registry: validation, round-trip, atomic writes."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

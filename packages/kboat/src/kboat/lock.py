@@ -62,8 +62,6 @@ first opens a second description and waits out its own hold. `upsert` and
 the whole run.
 """
 
-from __future__ import annotations
-
 import fcntl
 import hashlib
 import json

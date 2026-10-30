@@ -23,8 +23,6 @@ anchors resolve to when the writer inserts. A heading inside a fenced code block
 an anchor to neither.
 """
 
-from __future__ import annotations
-
 OBSERVATIONS_SECTION = "## Observations"
 RELATIONS_SECTION = "## Relations"
 

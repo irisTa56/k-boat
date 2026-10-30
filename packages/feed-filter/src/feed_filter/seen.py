@@ -10,8 +10,6 @@ Keys are typed ``CanonicalUrl`` so a caller that forgets to canonicalize is a
 ``ty`` error, not a silent duplicate note.
 """
 
-from __future__ import annotations
-
 import sqlite3
 import time
 from pathlib import Path

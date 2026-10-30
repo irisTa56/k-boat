@@ -13,8 +13,6 @@ Buckets (mirroring the spec):
     dormant   — > 730 days
 """
 
-from __future__ import annotations
-
 from datetime import date
 
 

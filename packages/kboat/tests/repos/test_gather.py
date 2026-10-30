@@ -2,8 +2,6 @@
 the GitHub-payload -> frontmatter mapping. `gather` itself is covered with `gh`
 monkeypatched."""
 
-from __future__ import annotations
-
 import json
 from datetime import date
 

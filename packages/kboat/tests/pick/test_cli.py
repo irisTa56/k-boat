@@ -1,7 +1,5 @@
 """End-to-end tests for the `kboat-pick` CLI."""
 
-from __future__ import annotations
-
 import json
 import os
 from collections.abc import Callable

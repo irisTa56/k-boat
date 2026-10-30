@@ -4,8 +4,6 @@
 the entrypoint forwards to `cli.main` and returns its exit code.
 """
 
-from __future__ import annotations
-
 import pytest
 
 import feed_filter.__main__ as entry

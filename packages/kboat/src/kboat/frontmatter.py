@@ -35,8 +35,6 @@ So the split is YAML's own (`\\n`, `\\r`, `\\r\\n`), and every other character
 that could pass for a break is escaped on the way out rather than written raw.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass

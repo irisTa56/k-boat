@@ -5,8 +5,6 @@ success / redirect / status-error / transport-error paths are exercised without
 touching the network.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterator
 from typing import Any
 

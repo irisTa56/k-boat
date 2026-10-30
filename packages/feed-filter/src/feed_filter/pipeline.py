@@ -24,8 +24,6 @@ also drives separately so it can fetch hosts concurrently:
   main thread.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from dataclasses import dataclass
 

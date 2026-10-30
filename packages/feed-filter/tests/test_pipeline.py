@@ -5,8 +5,6 @@ SQLite db so the seen-filtering and "records nothing on error" contracts are
 exercised against actual storage.
 """
 
-from __future__ import annotations
-
 import contextlib
 from collections.abc import Callable, Iterator
 from pathlib import Path

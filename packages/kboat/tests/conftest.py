@@ -1,7 +1,5 @@
 """Shared fixtures and helpers for the `kboat` suite."""
 
-from __future__ import annotations
-
 import fcntl
 import os
 from collections.abc import Callable, Iterator

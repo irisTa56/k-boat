@@ -22,8 +22,6 @@ is the project-relative `file_path` Basic Memory's `read_note` returns, so there
 no filename transform and no title resolution; the caller single-quotes it.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

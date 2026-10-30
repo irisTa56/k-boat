@@ -8,8 +8,6 @@ supplies a title for any keep. ``canonical_url`` is the dedupe key,
 so it is typed ``CanonicalUrl`` and always set.
 """
 
-from __future__ import annotations
-
 import calendar
 import re
 from dataclasses import dataclass

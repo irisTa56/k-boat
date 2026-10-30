@@ -16,8 +16,6 @@ going unchecked. Order is not compared, but a missing, extra, or repeated value
 is.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Callable
 from pathlib import Path

@@ -1,7 +1,5 @@
 """Tests for the vault precondition checks."""
 
-from __future__ import annotations
-
 import json
 import os
 import stat

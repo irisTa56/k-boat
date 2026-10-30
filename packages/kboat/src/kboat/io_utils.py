@@ -30,8 +30,6 @@ of the four guarantees rather than the caller's contract. Every other step runs
 before the rename, so raising from one is the contract rather than a breach of it.
 """
 
-from __future__ import annotations
-
 import contextlib
 import errno
 import os

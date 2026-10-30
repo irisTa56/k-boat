@@ -10,8 +10,6 @@ Ahead of those it establishes that the venvs the run uses match the checkout.
 Every check is read-only except the writability probe (see `_check_writable`).
 """
 
-from __future__ import annotations
-
 import os
 import stat
 import subprocess

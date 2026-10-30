@@ -1,7 +1,5 @@
 """Sanity checks on the declarative schema itself."""
 
-from __future__ import annotations
-
 import ast
 from pathlib import Path
 

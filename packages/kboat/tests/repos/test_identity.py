@@ -1,7 +1,5 @@
 """Tests for repo identity: parsing, canonicalization, and slug stability."""
 
-from __future__ import annotations
-
 import pytest
 
 from kboat.repos.identity import (

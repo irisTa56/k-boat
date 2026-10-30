@@ -4,8 +4,6 @@ Only `--today`'s default is covered here; the rest of `kboat.cli` is exercised
 through the console scripts that use it, which pass every flag explicitly.
 """
 
-from __future__ import annotations
-
 import argparse
 import time
 from collections.abc import Callable, Iterator
