@@ -24,6 +24,8 @@ Take the forum branch when the user is registering a forum (they say "forum" or 
 A forum is a distinct source kind: registering it through `add-site` would mis-file it as a feed/scrape site (an `article` note), and the forum rules would never run.
 When unsure which a URL is, confirm before registering — a Discourse instance serves a feed at `<url>/latest.rss`.
 
+A URL whose path points at one article rather than at a site's front, feed, or listing page may mean that article, not its site; unless the user has said they want the site, confirm which they mean before registering, since `add-site` marks the back-catalog seen and nothing un-sees it.
+
 ## Procedure (article site)
 
 ### Step 1: Discover
