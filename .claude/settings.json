@@ -33,6 +33,15 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "mcp__Claude_Browser__.*|mcp__claude-in-chrome__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/deny_subagent_browser.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
