@@ -244,7 +244,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
   - A create that did not land — the `write_note` call failed or returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
     - Read the note back before marking it: a `write_note` that timed out can still have created the note, and one that exists carrying this source's claims was created, whatever the call returned.
-  - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title.
+  - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title, and open its content under no `# <title>` heading, as that section also says.
 - **Cap creates per source.** `create_cap` is **5** new concept notes for each ripe source or Kindle book, counting the notes this pass creates for that one source; this skill is the one place the value is set, so adjust it here.
   - Once a source has had `create_cap` notes created for it, stop creating for that source and finish its appends; the next source or book starts with the whole cap again.
   - Log each concept left to create under `uncreated candidates:` marked `deferred (create cap reached)`.
