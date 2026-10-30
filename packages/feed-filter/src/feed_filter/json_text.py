@@ -25,8 +25,6 @@ boundary already absorbs. Nothing downstream repairs one it is
 handed, so a field is repaired at the read even where it is transformed later.
 """
 
-from __future__ import annotations
-
 
 def display_text(text: str) -> str:
     """``text`` with any character UTF-8 cannot encode replaced by ``?``."""

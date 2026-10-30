@@ -11,8 +11,6 @@ questions: `note_slug` answers "where does this page's note live", `url_slug`
 "what is the hash of this exact string".
 """
 
-from __future__ import annotations
-
 import hashlib
 
 from kboat.canonical import canonical_url

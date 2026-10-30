@@ -1,7 +1,5 @@
 """Tests for the backlog-health counts behind `kboat-validate --stats`."""
 
-from __future__ import annotations
-
 import time
 from datetime import date
 

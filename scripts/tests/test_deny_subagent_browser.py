@@ -5,8 +5,6 @@ lets the call through, so each test pins the exact code. `conftest.py` puts
 `scripts/` on `sys.path` so the import below resolves.
 """
 
-from __future__ import annotations
-
 import io
 import json
 

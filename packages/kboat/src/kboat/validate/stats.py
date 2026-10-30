@@ -14,8 +14,6 @@ read: the `refreshed_date` of every repo note the refresh takes up, and every
 capture's file name.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass

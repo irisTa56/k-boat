@@ -1,7 +1,5 @@
 """Tests for `kboat-note list` — a note folder's frontmatter, read for a skill."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

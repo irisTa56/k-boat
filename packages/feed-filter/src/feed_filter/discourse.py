@@ -1,12 +1,8 @@
 """Discourse forum adapter — URL builders, JSON parsing, topic-id extraction.
 
-Reuses ``fetch.build_client`` / ``fetch.fetch`` / ``FetchError`` for all HTTP
-calls, ``feeds.parse_feed`` with ``sort=False`` for rank-ordered discovery, and
-``canonical.canonical_url`` for topic-id extraction.  No state, no pipeline —
-those live in ``forum_store`` and ``forum_pipeline``.
+Uses ``canonical.canonical_url`` for topic-id extraction.  No HTTP, no state, no
+pipeline — those live in ``forum_pipeline`` and ``forum_store``.
 """
-
-from __future__ import annotations
 
 import json
 import re
@@ -14,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from feed_filter.feeds import html_to_text, parse_feed
+from feed_filter.feeds import html_to_text
 from feed_filter.json_text import display_text, identity_text
 from kboat.canonical import canonical_url
 
@@ -190,24 +186,3 @@ def parse_topic(json_bytes: bytes) -> tuple[ForumTopic, list[ForumPost]]:
         )
 
     return topic, posts
-
-
-# ---------------------------------------------------------------------------
-# Feed-based topic-id discovery
-# ---------------------------------------------------------------------------
-
-
-def discover_topic_ids(feed_bytes: bytes, base_url: str) -> list[int]:
-    """Return topic ids from an RSS feed, preserving feed source order.
-
-    Passes ``sort=False`` to ``parse_feed`` so a ``top.rss`` feed keeps its
-    rank order rather than being re-sorted by date.
-    Non-topic links (``topic_id_from_url`` returns ``None``) are dropped.
-    """
-    entries = parse_feed(feed_bytes, base_url, sort=False)
-    ids: list[int] = []
-    for entry in entries:
-        tid = topic_id_from_url(entry.canonical_url)
-        if tid is not None:
-            ids.append(tid)
-    return ids

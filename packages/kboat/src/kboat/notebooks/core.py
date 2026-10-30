@@ -7,8 +7,6 @@ listing is another account's is the caller's to decide from `counts`
 (`kboat-notes`, the restore procedure's step 1).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 

@@ -9,8 +9,6 @@ Deterministic and network-only, like ``fetch``/``feeds`` — no dedupe, no seen-
 no vault. ``cli.cmd_query_new`` composes those around it.
 """
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from typing import Any

@@ -1,7 +1,5 @@
 """Tests for `kboat.write.upsert` — create/update, merge-preserve, stamps, body."""
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 

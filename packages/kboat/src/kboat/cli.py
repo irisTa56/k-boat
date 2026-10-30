@@ -21,8 +21,6 @@ diagnostics for a record it refuses, and any key it adds to the result.
 *name*, for the Obsidian URI, not a path to read.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

@@ -1,7 +1,5 @@
 """Tests for active-web candidate selection."""
 
-from __future__ import annotations
-
 from kboat.pick.candidates import candidate_from, is_active_web
 from kboat.pick.notes import Value
 

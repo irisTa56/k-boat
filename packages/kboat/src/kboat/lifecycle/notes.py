@@ -5,8 +5,6 @@ adds the one lifecycle-specific write — stamping/clearing `filed_date` — as 
 wrapper, and re-exports the primitives the lifecycle code imports.
 """
 
-from __future__ import annotations
-
 from kboat.frontmatter import (
     NOTE_READ_ERRORS,
     FrontmatterError,

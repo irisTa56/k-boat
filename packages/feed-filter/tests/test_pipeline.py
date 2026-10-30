@@ -5,9 +5,8 @@ SQLite db so the seen-filtering and "records nothing on error" contracts are
 exercised against actual storage.
 """
 
-from __future__ import annotations
-
 import contextlib
+import sqlite3
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -17,12 +16,17 @@ from _fake_playwright import FakeContext, FakeResponse, install_fake_playwright
 
 from feed_filter import browser
 from feed_filter.config import DEFAULT_PER_SITE_CAP
-from feed_filter.pipeline import FetchOutcome, fetch_site, filter_gathered, gather_new
+from feed_filter.pipeline import FetchOutcome, GatherResult, fetch_site, filter_gathered
 from feed_filter.seen import count, open_db, snapshot
 from feed_filter.sites import SiteConfig
 from kboat.canonical import canonical_url
 
 Handler = Callable[[httpx.Request], httpx.Response]
+
+
+def _gather(conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client) -> GatherResult:
+    """Both halves in sequence, for a test about the whole of a single-site gather."""
+    return filter_gathered(conn, site, fetch_site(site, client=client))
 
 
 def _no_http(_: httpx.Request) -> httpx.Response:
@@ -67,7 +71,7 @@ def test_filters_already_seen(tmp_path: Path) -> None:
     with contextlib.closing(open_db(tmp_path / "db")) as conn:
         snapshot(conn, "f1", [canonical_url("https://example.com/posts/1")])
         with _client(handler) as client:
-            result = gather_new(conn, _FEED, client=client)
+            result = _gather(conn, _FEED, client=client)
 
     urls = [str(e.canonical_url) for e in result.entries]
     assert result.index_matches == 3
@@ -84,7 +88,7 @@ def test_per_site_cap_clamps(tmp_path: Path) -> None:
         return httpx.Response(200, text=_rss(n), headers={"content-type": "application/rss+xml"})
 
     with contextlib.closing(open_db(tmp_path / "db")) as conn, _client(handler) as client:
-        result = gather_new(conn, _FEED, client=client)
+        result = _gather(conn, _FEED, client=client)
 
     assert result.index_matches == n
     assert len(result.entries) == DEFAULT_PER_SITE_CAP
@@ -97,7 +101,7 @@ def test_broken_pattern_sets_zero_links(tmp_path: Path) -> None:
         return httpx.Response(200, text=html, headers={"content-type": "text/html"})
 
     with contextlib.closing(open_db(tmp_path / "db")) as conn, _client(handler) as client:
-        result = gather_new(conn, _SCRAPE, client=client)
+        result = _gather(conn, _SCRAPE, client=client)
 
     assert result.index_matches == 0
     assert result.zero_links is True
@@ -121,7 +125,7 @@ def test_quiet_healthy_scrape_is_not_zero_links(tmp_path: Path) -> None:
             ],
         )
         with _client(handler) as client:
-            result = gather_new(conn, _SCRAPE, client=client)
+            result = _gather(conn, _SCRAPE, client=client)
 
     assert result.index_matches == 2
     assert result.zero_links is False
@@ -134,7 +138,7 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
 
     with contextlib.closing(open_db(tmp_path / "db")) as conn:
         with _client(handler) as client:
-            result = gather_new(conn, _FEED, client=client)
+            result = _gather(conn, _FEED, client=client)
         assert count(conn) == 0  # nothing recorded seen
 
     assert result.error is not None
@@ -209,12 +213,12 @@ def test_browser_feed_yields_same_entries_as_httpx(
 
     httpx_feed = SiteConfig(id="hf", name="HF", feed_url="https://example.com/feed.xml")
     with contextlib.closing(open_db(tmp_path / "a")) as conn, _client(serve) as client:
-        baseline = gather_new(conn, httpx_feed, client=client)
+        baseline = _gather(conn, httpx_feed, client=client)
 
     resp = FakeResponse(status=200, url="https://example.com/feed.xml", body=rss.encode())
     install_fake_playwright(monkeypatch, context=FakeContext(response=resp))
     with contextlib.closing(open_db(tmp_path / "b")) as conn, _client(_no_http) as client:
-        gathered = gather_new(conn, _BROWSER_FEED, client=client)
+        gathered = _gather(conn, _BROWSER_FEED, client=client)
 
     assert [str(e.canonical_url) for e in gathered.entries] == [
         str(e.canonical_url) for e in baseline.entries
@@ -230,7 +234,7 @@ def test_browser_scrape_routes_through_fetch_html(
     ctx = FakeContext(html=_index(["/blog/a", "/blog/b"]), response=FakeResponse(status=200))
     install_fake_playwright(monkeypatch, context=ctx)
     with contextlib.closing(open_db(tmp_path / "db")) as conn, _client(_no_http) as client:
-        gathered = gather_new(conn, _BROWSER_SCRAPE, client=client)
+        gathered = _gather(conn, _BROWSER_SCRAPE, client=client)
 
     assert [str(e.canonical_url) for e in gathered.entries] == [
         "https://example.com/blog/a",
@@ -254,7 +258,7 @@ def test_browser_scrape_resolves_links_against_post_redirect_url(
     )
     install_fake_playwright(monkeypatch, context=ctx)
     with contextlib.closing(open_db(tmp_path / "db")) as conn, _client(_no_http) as client:
-        gathered = gather_new(conn, _BROWSER_SCRAPE, client=client)
+        gathered = _gather(conn, _BROWSER_SCRAPE, client=client)
 
     assert [str(e.canonical_url) for e in gathered.entries] == ["https://www.example.com/blog/a"]
 
@@ -267,7 +271,7 @@ def test_browser_fetch_error_sets_error_and_records_nothing(
     install_fake_playwright(monkeypatch, context=FakeContext(response=FakeResponse(status=403)))
     with contextlib.closing(open_db(tmp_path / "db")) as conn:
         with _client(_no_http) as client:
-            gathered = gather_new(conn, _BROWSER_FEED, client=client)
+            gathered = _gather(conn, _BROWSER_FEED, client=client)
         assert count(conn) == 0
 
     assert gathered.error is not None

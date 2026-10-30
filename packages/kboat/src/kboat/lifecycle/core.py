@@ -20,8 +20,6 @@ keep/dismiss/blocked. The only predicate is the ripe one — `distill &&
 distilled_date` empty — handled by `select_ripe_kindles`, with no on-disk writes.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from dataclasses import dataclass, field
 from datetime import date, timedelta

@@ -1,7 +1,5 @@
 """Tests for recent Daily-note body extraction."""
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 

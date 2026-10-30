@@ -5,8 +5,6 @@ flat directory of one-off tooling scripts, so there is no installed
 distribution for anything in it to be importable through.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

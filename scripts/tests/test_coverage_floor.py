@@ -6,8 +6,6 @@ is what the `qa:py:*` gate actually invokes. `conftest.py` puts `scripts/` on
 `sys.path` so the import below resolves.
 """
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 

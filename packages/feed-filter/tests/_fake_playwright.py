@@ -14,8 +14,6 @@ a response with status/url/body, or an error to raise) and passes it to
 ``browser.closed`` / ``playwright.stopped`` for the lifecycle).
 """
 
-from __future__ import annotations
-
 import importlib.machinery
 import sys
 import types

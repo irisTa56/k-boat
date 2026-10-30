@@ -4,8 +4,6 @@ Network-free: every client is an ``httpx.MockTransport``, so the success,
 malformed-payload, and failure paths are exercised without touching Exa.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from typing import Any
 

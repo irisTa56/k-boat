@@ -2,8 +2,6 @@
 judgement/body preservation, and the adopt-rename of renamed/transferred/
 case-changed repos. `gh` is monkeypatched."""
 
-from __future__ import annotations
-
 import json
 import os
 from collections.abc import Callable

@@ -1,7 +1,5 @@
 """Tests for open-questions backlog extraction."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

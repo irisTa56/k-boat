@@ -1,7 +1,5 @@
 """Tests for the shared frontmatter primitives' public helpers."""
 
-from __future__ import annotations
-
 import pytest
 import yaml
 

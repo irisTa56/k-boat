@@ -61,8 +61,8 @@ Side effects and orchestration:
 
 - `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run.
   - Raises `VaultError` on a write the writer refused — its subclass `VaultRepeatedKeyError` where the note names a key on more than one line — and `VaultLockedError` when the lock's bounded wait expires with another run still holding it; whichever it is, a failed write is never recorded seen.
-- `pipeline.py` — per-site `gather_new` plus `fetch_entries`, branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
-  - `gather_new` is the sequential composition of `fetch_site` (network-only, DB-free, thread-safe) and `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
+- `pipeline.py` — the per-site gather, with `fetch_entries` branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
+  - A gather is `fetch_site` (network-only, DB-free, thread-safe) then `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
   - Each browser-using command (`new-entries`, `add-site`, `heal-site`, `resnapshot-site`) gates on the Playwright install and tears the browser down in a `finally`.
 

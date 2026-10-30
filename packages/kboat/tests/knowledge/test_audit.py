@@ -1,7 +1,5 @@
 """Tests for `kboat.knowledge`: which concept titles are flagged, and the tag census."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

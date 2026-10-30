@@ -22,8 +22,6 @@ reading the existing note's `url`, never by filename alone — exactly as
 `kboat-notes` prescribes for sources.
 """
 
-from __future__ import annotations
-
 import re
 
 from kboat.naming import note_slug

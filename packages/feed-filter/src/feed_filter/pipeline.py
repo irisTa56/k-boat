@@ -1,6 +1,6 @@
 """Per-site new-entry aggregation.
 
-``gather_new`` is the read-only half of a run: fetch a site's current entries,
+Gathering is the read-only half of a run: fetch a site's current entries,
 count how many the live page yields *before* dedupe (``index_matches``), then
 filter out already-seen URLs and clamp to the per-site cap. It records nothing —
 the seen-store is written only by the ``remind`` / ``mark-seen`` CLI paths, after
@@ -13,8 +13,8 @@ scrape site whose stored pattern no longer matches the live page (``index_matche
 == 0`` → ``zero_links``, self-heal fires) versus a quiet-but-healthy day
 (``index_matches > 0`` but every match already seen → no heal).
 
-``gather_new`` is the sequential composition of two halves that ``cmd_new_entries``
-also drives separately so it can fetch hosts concurrently:
+A gather has two halves, which ``cmd_new_entries`` drives separately so it can fetch
+hosts concurrently:
 
 - ``fetch_site`` — the **network-only** half (``fetch_entries`` with the fetch
   failure absorbed into ``FetchOutcome.error``). It touches no DB, so it is safe
@@ -23,8 +23,6 @@ also drives separately so it can fetch hosts concurrently:
   cap + the ``zero_links`` signal). It reads the seen-store, so it stays on the
   main thread.
 """
-
-from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
@@ -94,8 +92,10 @@ def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
     on the browser branch (F2). Raises ``FetchError`` (httpx) or ``BrowserFetchError``
     (browser) on a fetch failure.
 
-    Used both by ``gather_new`` (then filtered) and by registration's cold-start
-    snapshot, which needs the full back-catalog, not the filtered slice.
+    Used both by ``fetch_site`` (then filtered) and by the snapshot paths
+    (``cmd_add_site``, ``cmd_heal_site`` and ``cmd_resnapshot_site``), which need the
+    full index. Capping there would leave the rest of the index unseen, which is the
+    flood each of those snapshots exists to prevent.
     """
     if site.feed_url is not None:
         if site.requires_browser:
@@ -122,11 +122,10 @@ def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
 def fetch_site(site: SiteConfig, *, client: httpx.Client) -> FetchOutcome:
     """Fetch ``site``'s current entries, absorbing a fetch failure into ``error``.
 
-    The network-only half of ``gather_new``: it touches no DB, so it is safe to
+    The network-only half of a gather: it touches no DB, so it is safe to
     run in a worker thread (``cmd_new_entries`` fetches independent hosts
     concurrently). A ``FetchError``/``BrowserFetchError`` becomes an ``error`` with
-    an empty entry list, exactly as ``gather_new`` absorbed it inline;
-    nothing is recorded seen, so the next run retries naturally.
+    an empty entry list; nothing is recorded seen, so the next run retries naturally.
 
     A ``requires_browser`` site still routes through Playwright, whose sync API is
     not thread-safe — ``cmd_new_entries`` keeps those fetches on the main thread.
@@ -143,7 +142,7 @@ def filter_gathered(
 ) -> GatherResult:
     """Turn a completed ``FetchOutcome`` into a ``GatherResult``.
 
-    The DB-touching half of ``gather_new``: drop already-seen entries (``is_seen``),
+    The DB-touching half of a gather: drop already-seen entries (``is_seen``),
     clamp to the per-site cap, and derive the ``zero_links`` self-heal signal. It
     reads the seen-store, so it runs on the main thread only. A fetch failure
     passes straight through as an empty, error-bearing result.
@@ -167,20 +166,3 @@ def filter_gathered(
         zero_links=zero_links,
         error=None,
     )
-
-
-def gather_new(conn: sqlite3.Connection, site: SiteConfig, *, client: httpx.Client) -> GatherResult:
-    """Fetch ``site``, drop already-seen entries, clamp to the per-site cap.
-
-    The sequential composition of ``fetch_site`` then ``filter_gathered``; a
-    ``FetchError`` is absorbed into ``error`` with an empty entry list,
-    nothing is recorded seen regardless. ``cmd_new_entries`` calls the two halves
-    separately so it can fetch hosts concurrently while keeping the seen-filter on
-    the main thread; this composed form is retained as the tested single-site
-    contract. The snapshot paths (``cmd_add_site``, ``cmd_heal_site`` and
-    ``cmd_resnapshot_site``) do not use it — they call ``fetch_entries`` directly
-    for the full uncapped index, without the seen-filter or per-site cap
-    ``gather_new`` applies. Capping there would leave the rest of the index unseen,
-    which is the flood each of those snapshots exists to prevent.
-    """
-    return filter_gathered(conn, site, fetch_site(site, client=client))

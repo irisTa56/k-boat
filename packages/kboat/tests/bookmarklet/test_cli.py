@@ -1,7 +1,5 @@
 """Tests for the `kboat-bookmarklet` generator."""
 
-from __future__ import annotations
-
 import pytest
 
 from kboat.bookmarklet.__main__ import build_bookmarklet, main

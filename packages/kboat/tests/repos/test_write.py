@@ -6,8 +6,6 @@ here is that a repo record reaches it intact and that nothing the record carries
 can reach a field the record does not own.
 """
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 from typing import Any

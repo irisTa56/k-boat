@@ -19,8 +19,6 @@ and it is run again for a note the first run could not mark (`kboat-notes`
 "Procedure: backfill repo fields").
 """
 
-from __future__ import annotations
-
 import sys
 
 from . import backfill, gather, refresh, write

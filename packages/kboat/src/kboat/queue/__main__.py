@@ -17,8 +17,6 @@ Defaults the vault to `$OBSIDIAN_VAULT_PATH` and the folder to `Queue`, mirrorin
 other kboat tools.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

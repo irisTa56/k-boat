@@ -5,8 +5,6 @@ adds the one pick-specific write — setting the `picked` flag — as a thin wra
 and re-exports the primitives the pick code imports.
 """
 
-from __future__ import annotations
-
 from kboat.frontmatter import (
     NOTE_READ_ERRORS,
     FrontmatterError,

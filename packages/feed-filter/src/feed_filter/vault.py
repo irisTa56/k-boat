@@ -25,8 +25,6 @@ one policy for every writer, and its own never-lost contract carries the entry w
 the wait does expire.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from kboat.canonical import CanonicalUrl

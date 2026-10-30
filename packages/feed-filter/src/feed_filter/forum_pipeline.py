@@ -1,7 +1,7 @@
 """Forum pipeline — admission union and Rule-B candidate assembly.
 
 This module is the deterministic orchestration layer that turns due forum topics
-into judge-ready candidates, mirroring ``pipeline.gather_new``'s read-only,
+into judge-ready candidates, mirroring ``pipeline``'s read-only,
 error-absorbing shape.
 
 Two public entry points:
@@ -48,8 +48,6 @@ Design constraints honoured here:
 - Forum-table SQL lives in ``forum_store``; this module calls its API.
 - ``now`` and ``client`` are injected seams for unit testing.
 """
-
-from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field

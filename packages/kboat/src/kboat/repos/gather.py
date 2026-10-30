@@ -7,8 +7,6 @@ maps a raw `gh repo view` payload to the note's GitHub-derived frontmatter and i
 shared with `refresh` so ingest and refresh produce identical field shapes.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re

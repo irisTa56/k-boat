@@ -8,8 +8,6 @@ processes do. The one property that needs a real second process is the crash: on
 process that actually dies can show the kernel releasing its lock.
 """
 
-from __future__ import annotations
-
 import fcntl
 import json
 import os

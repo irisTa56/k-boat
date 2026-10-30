@@ -7,8 +7,6 @@ exact healed URLs, forum record-then-poll — are asserted against actual persis
 state.
 """
 
-from __future__ import annotations
-
 import contextlib
 import json
 import sqlite3

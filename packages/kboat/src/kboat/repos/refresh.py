@@ -26,8 +26,6 @@ which is the trade the wide hold is worth, since narrowing it would lose an upda
 rather than defer one.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

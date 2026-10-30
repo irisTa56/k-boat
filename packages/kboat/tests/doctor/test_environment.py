@@ -1,7 +1,5 @@
 """The `environment` check, with uv faked except in the one test that runs it."""
 
-from __future__ import annotations
-
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path

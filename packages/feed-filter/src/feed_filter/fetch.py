@@ -21,8 +21,6 @@ run. httpx's own transport ``retries`` covers only connection failures, not
 status codes, so the status-based retry lives here at the single fetch boundary.
 """
 
-from __future__ import annotations
-
 import ssl
 import time
 from collections.abc import Callable

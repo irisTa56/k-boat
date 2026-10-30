@@ -11,8 +11,6 @@ not check per-field prose (defaults, kinds, enums): those are woven into the
 `Meaning` cells and are not machine-comparable here.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import fields as dataclass_fields
 from pathlib import Path

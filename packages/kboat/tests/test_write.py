@@ -1,7 +1,5 @@
 """Tests for schema-driven note assembly (`build_note` / `render_field`)."""
 
-from __future__ import annotations
-
 import pytest
 import yaml
 

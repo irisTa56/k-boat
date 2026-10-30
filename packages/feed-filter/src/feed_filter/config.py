@@ -5,8 +5,6 @@ can redirect state via ``FEED_FILTER_DB`` / ``FEED_FILTER_SITES`` /
 ``FEED_FILTER_SELECTION`` without reimporting the module.
 """
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 

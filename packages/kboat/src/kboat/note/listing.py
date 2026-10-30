@@ -22,8 +22,6 @@ finds is then shown as the listed entry it is. Anything at the name is read, so
 a directory or a dangling symlink there fails that read and is reported as such.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from pathlib import Path
 

@@ -25,8 +25,6 @@ The caller must supply a ``sqlite3.Connection`` opened via ``seen.open_db``
 success and use parameterized SQL (no f-string value interpolation).
 """
 
-from __future__ import annotations
-
 import sqlite3
 import time
 from typing import TypedDict

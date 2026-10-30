@@ -19,8 +19,6 @@ That is why a target PDF already in place (with no source file left) reads as
 done rather than as a conflict.
 """
 
-from __future__ import annotations
-
 import errno
 import os
 import re

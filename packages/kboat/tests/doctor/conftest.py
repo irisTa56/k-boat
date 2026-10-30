@@ -4,8 +4,6 @@ Fixtures rather than helpers imported across test modules, so the CLI tests and
 the core tests share the setup without depending on each other.
 """
 
-from __future__ import annotations
-
 import subprocess
 from collections.abc import Callable
 from pathlib import Path

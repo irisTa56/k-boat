@@ -15,8 +15,6 @@ fixture, so the cross-process invariants hold against persisted state:
   finds the already-seen posts and produces no duplicates.
 """
 
-from __future__ import annotations
-
 import contextlib
 import json
 import sqlite3

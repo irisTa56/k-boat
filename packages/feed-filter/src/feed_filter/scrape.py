@@ -11,8 +11,6 @@ filtering, and the metadata store — ``sites.toml`` is trusted and the
 seen-store lives elsewhere.
 """
 
-from __future__ import annotations
-
 import re
 from urllib.parse import urlsplit
 

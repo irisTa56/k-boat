@@ -5,8 +5,6 @@ Each fixture note is written by the real writer and then has its `readme` and
 holds.
 """
 
-from __future__ import annotations
-
 import json
 import os
 from pathlib import Path

@@ -22,8 +22,6 @@ The caller must supply a ``sqlite3.Connection`` opened via ``seen.open_db`` (the
 parameterized SQL, no f-string value interpolation.
 """
 
-from __future__ import annotations
-
 import sqlite3
 
 

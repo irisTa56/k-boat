@@ -21,8 +21,6 @@ entry under its own name and exit 1, with the report still printed
 (`kboat-vault-conventions` "Vault preconditions").
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

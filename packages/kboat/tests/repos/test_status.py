@@ -1,7 +1,5 @@
 """Tests for the `status` activity buckets."""
 
-from __future__ import annotations
-
 from datetime import date, timedelta
 
 import pytest

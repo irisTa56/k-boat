@@ -19,8 +19,6 @@ belongs here for the same reason the field order does: one declaration, so two
 tools cannot disagree about the same folder.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
 

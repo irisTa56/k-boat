@@ -5,8 +5,6 @@ read for one purpose: whether a new group owes the note a heading over the claim
 already in it.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from kboat.concept import FLAT, GROUPED, _heading_level, classify

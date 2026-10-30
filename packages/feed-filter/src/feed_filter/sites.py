@@ -11,8 +11,6 @@ fsync), so a crash never leaves a half-written registry, and through tomlkit so
 existing entries keep their formatting.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from pathlib import Path

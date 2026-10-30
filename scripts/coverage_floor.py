@@ -14,8 +14,6 @@ recording modules the tests happened to import -- a file that exists but was
 never imported still gets an entry, at 0%, not omitted.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

@@ -16,8 +16,6 @@ in ``seen.py``) is keyed by the emitted canonical-URL string, so a lookup matche
 exactly what ``new-entries`` put on stdout.
 """
 
-from __future__ import annotations
-
 import sqlite3
 
 

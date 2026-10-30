@@ -6,8 +6,6 @@ the syscalls instead: the content is flushed before the rename and the directory
 entry after it. Everything else is checked against real files.
 """
 
-from __future__ import annotations
-
 import os
 import stat
 from pathlib import Path
