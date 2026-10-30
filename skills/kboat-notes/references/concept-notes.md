@@ -3,6 +3,8 @@
 Distillation writes concept notes into the Basic Memory project `k-boat-knowledge`, rooted at `KBOAT_KNOWLEDGE_PATH`.
 The generic note mechanics and the accretion procedure are defined by the Basic Memory skills — kboat-distill defers to `memory-notes` (note structure), `memory-ingest` (entity matching), and `memory-curate` (merging), the same way kboat-ingest defers to this skill.
 What `## Observations` looks like once more than one reading has fed a note is K-Boat's own, and this skill owns it: [Reading groups](#reading-groups) below.
+One point of `memory-notes`' structure does not apply here: a note's content opens with its prose, under no `# <title>` heading.
+The frontmatter `title` already stands as the note's level-1 heading — Markdown linters such as rumdl [count it as one under MD025](https://rumdl.dev/md025/) — so a body `# <title>` is a second one, and a linter's fix for it demotes every heading below, `## Observations` included.
 
 Relations between concepts use wikilinks (`- relation_type [[Other Concept]]`); both ends live in this same root, so they resolve in Basic Memory, Obsidian, and Foam.
 That holds only while a note's title is also its filename, because Basic Memory resolves `[[...]]` by title while Obsidian and Foam resolve it by filename.
