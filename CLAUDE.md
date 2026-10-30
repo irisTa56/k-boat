@@ -141,7 +141,7 @@ Where a test-driven development skill is available, work that red-green loop thr
   - Entire [reads backgrounding from that argument alone](https://github.com/entireio/cli/blob/v0.10.6/cmd/entire/cli/hooks.go#L65-L78), so a subagent launched without it is dropped from every checkpoint.
   - The rule applies only where the Agent tool has that parameter, which [fork mode](https://code.claude.com/docs/en/sub-agents#turn-fork-mode-on-or-off) removes, so a fork-mode session records none of its subagents ([entireio/cli#2556](https://github.com/entireio/cli/issues/2556)).
 
-- A subagent here cannot use a browser: `scripts/deny_subagent_browser.sh`, a `PreToolUse` hook, blocks both browsers' tools inside one.
+- A subagent here cannot use a browser: `scripts/deny_subagent_browser.py`, a `PreToolUse` hook, blocks both browsers' tools inside one.
   - A feed judge reads pages taken from a feed, and its task never asks for a browser, yet Haiku judges have opened those pages in the built-in browser and in the user's Chrome, which carries their logins.
   - A skill that needs a browser, as `kboat-kindle` and `kboat-rescue` do, drives it from the main conversation.
 
