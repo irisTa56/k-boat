@@ -1,7 +1,7 @@
 """Forum pipeline — admission union and Rule-B candidate assembly.
 
 This module is the deterministic orchestration layer that turns due forum topics
-into judge-ready candidates, mirroring ``pipeline.gather_new``'s read-only,
+into judge-ready candidates, mirroring ``pipeline``'s read-only,
 error-absorbing shape.
 
 Two public entry points:

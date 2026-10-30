@@ -422,7 +422,7 @@ def cmd_new_entries(args: argparse.Namespace) -> int:
 
     Forum sites (``kind == "forum"``) are excluded so the article-path gather
     never reaches ``fetch_entries``'s ``assert index_url is not None`` guard or
-    ``gather_new``'s scrape flag on a forum row.
+    ``filter_gathered``'s scrape flag on a forum row.
 
     **Bounded per-host concurrency.** The gather is two phases. First the
     network-only ``fetch_site`` runs for every httpx site, fetched concurrently
