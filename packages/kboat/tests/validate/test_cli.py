@@ -13,6 +13,7 @@ VALID_SOURCE = """\
 type: source
 title: Clean
 reading_link: https://example.com/a
+gemini_url: https://gemini.google.com/notebook/id
 reading: false
 distill: false
 keep: false
@@ -28,7 +29,7 @@ distilled_date:
 blocked: false
 picked: false
 notebooklm_id: id
-notebooklm_url: https://n
+notebooklm_url: https://notebooklm.google.com/notebook/id
 tags: []
 ---
 """
@@ -155,6 +156,8 @@ def test_an_unparseable_note_is_a_violation_but_not_a_stat(
 BLOCKED_SOURCE = (
     VALID_SOURCE.replace("blocked: false", "blocked: true")
     .replace("notebooklm_id: id", "notebooklm_id:")
+    .replace("gemini_url: https://gemini.google.com/notebook/id\n", "")
+    .replace("notebooklm_url: https://notebooklm.google.com/notebook/id\n", "")
     .replace("added_date: 2026-06-01", "added_date: 2026-05-16")
 )
 RIPE_SOURCE = VALID_SOURCE.replace("distill: false", "distill: true").replace(
