@@ -2,8 +2,8 @@
 
 This is the code-authoritative description of the *mechanical* frontmatter schema
 for each note type — field names, order, kinds, defaults, which fields are
-always-present booleans (the Obsidian Base filters depend on that), and the enum
-domains. The owning skill remains the source of truth for what each field *means*
+always-present booleans (the Obsidian Base filters depend on that), the enum
+domains, and which fields follow from another. The owning skill remains the source of truth for what each field *means*
 (semantics, lifecycle) and points here for the mechanical list: `kboat-notes` for
 the K-Boat types (`SOURCE`/`KINDLE`/`REPO`), `kboat-feed-notes` for the
 feed-filter type (`FEED`). The shared contract around this schema — the sync gate
@@ -33,13 +33,32 @@ class Kind(Enum):
 
 
 @dataclass(frozen=True)
+class Derived:
+    """How a field's value follows from another field of the same note.
+
+    Declared rather than left to each caller, because a value the caller composes
+    is one the note can hold wrong with nothing in the write to say so. The writer
+    sets the field from this and `kboat-validate` compares it against this, so the
+    two share one recipe.
+    """
+
+    source: str  # the field this one follows
+    template: str  # the value, with `{}` standing for the source field's
+
+    def value(self, source_value: str) -> str:
+        return self.template.format(source_value)
+
+
+@dataclass(frozen=True)
 class Field:
     """One frontmatter field.
 
     `empty_ok` allows the key to be present with an empty value (`filed_date:`, an
     empty `summary`, `tags: []`). A BOOL is never `empty_ok` — that is exactly the
     always-present-boolean invariant the Base filters rely on. `default` and
-    `list_style` are for the writers (Slice 2); validation ignores them.
+    `list_style` are for the writers (Slice 2); validation ignores them. `derived`
+    makes the field the writer's alone (`kboat-vault-conventions` "The write
+    contract").
     """
 
     name: str
@@ -52,6 +71,7 @@ class Field:
     stamp: str = (
         ""  # "created" (set to today on create, preserved after) / "refreshed" (every write)
     )
+    derived: Derived | None = None
 
 
 @dataclass(frozen=True)
@@ -112,7 +132,13 @@ SOURCE = NoteSchema(
         Field("type", Kind.ENUM, enum=("source",), default="source"),
         Field("title", Kind.STR),
         Field("reading_link", Kind.STR),
-        Field("gemini_url", Kind.STR, empty_ok=True, present=False),
+        Field(
+            "gemini_url",
+            Kind.STR,
+            empty_ok=True,
+            present=False,
+            derived=Derived("notebooklm_id", "https://gemini.google.com/notebook/{}"),
+        ),
         _bool("reading"),
         _bool("distill"),
         _bool("keep"),
@@ -130,7 +156,13 @@ SOURCE = NoteSchema(
         _bool("blocked"),
         _bool("picked"),
         Field("notebooklm_id", Kind.STR, empty_ok=True, present=False),
-        Field("notebooklm_url", Kind.STR, empty_ok=True, present=False),
+        Field(
+            "notebooklm_url",
+            Kind.STR,
+            empty_ok=True,
+            present=False,
+            derived=Derived("notebooklm_id", "https://notebooklm.google.com/notebook/{}"),
+        ),
         Field("tags", Kind.STR_LIST, empty_ok=True, list_style="inline"),
     ),
     identity="url",

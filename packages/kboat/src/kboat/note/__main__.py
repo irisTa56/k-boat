@@ -3,8 +3,10 @@
 - `write --type {source,kindle,repo,feed}` — create or update a vault note from a
   `{slug, fields, body?}` JSON record on stdin, schema-driven via `kboat.write`
   (`upsert`): frontmatter order, YAML quoting, the always-present fields, body
-  preservation, slug de-dup, and the `added_date`/`refreshed_date` stamps are all
-  guaranteed by the package, so the agent never hand-writes frontmatter. Prints
+  preservation, slug de-dup, the `added_date`/`refreshed_date` stamps, and the
+  fields the schema derives (a source's two notebook URLs, which a record may not
+  supply) are all guaranteed by the package, so the agent never hand-writes
+  frontmatter. Prints
   the result (`{status, slug, path}` — `created` or `updated` — or a
   `collision`/`slug_mismatch`/`repeated_key` refusal) as JSON.
   The write is held under the vault lock, so a refused vault prints a `locked`

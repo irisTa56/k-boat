@@ -129,7 +129,7 @@ The add differs by branch:
 - **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
   - A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.
 
-Then set `blocked: false`, write `notebooklm_id`/`gemini_url`/`notebooklm_url` and the captured `summary`/`topics`, and set `reading_link` = `[[<slug>.pdf]]` for a PDF (leave it as the `url` for a web page).
+Then set `blocked: false`, write `notebooklm_id` (the tool derives `gemini_url` and `notebooklm_url` from it) and the captured `summary`/`topics`, and set `reading_link` = `[[<slug>.pdf]]` for a PDF (leave it as the `url` for a web page).
 
 ### Step 6: Report
 

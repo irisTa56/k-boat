@@ -394,6 +394,30 @@ def _slug_mismatch(schema: NoteSchema, slug: str, provided: Mapping[str, object]
     }
 
 
+def _derive_fields(schema: NoteSchema, provided: dict[str, object]) -> None:
+    """Set each derived field whose source the record sets.
+
+    A record supplying a derived field is refused whatever the value, a correct
+    one and `null` included: it comes from a caller still composing the field,
+    which is the thing this exists to stop, and silently overriding it would leave
+    that caller believing what it wrote.
+    """
+    for f in schema.fields:
+        if f.derived is None:
+            continue
+        source = f.derived.source
+        if f.name in provided:
+            raise BadInputError(f"record field {f.name!r} is derived from {source!r}: set that")
+        if source not in provided:
+            continue
+        source_value = provided[source]
+        if source_value is not None and not isinstance(source_value, str):
+            raise BadInputError(f"record {source!r} must be a string or null: {source_value!r}")
+        # A blank value reads as no value everywhere else, so it derives nothing.
+        blank = source_value is None or not source_value.strip()
+        provided[f.name] = None if blank else f.derived.value(source_value)
+
+
 def upsert(
     schema: NoteSchema, vault: Path, record: Mapping[str, object], *, today: str
 ) -> dict[str, object]:
@@ -416,8 +440,8 @@ def upsert(
     `collision` (never overwritten), and a note naming any key on more than one
     top-level line as `repeated_key`, with those keys under `keys`. Returns
     `{status, slug, path}` or one of the refusals; a record that does not say a
-    note — a slug that is no filename, a field name that is no property key —
-    raises `BadInputError` and writes nothing. A slug held by something that is not a
+    note — a slug that is no filename, a field name that is no property key, a
+    derived field supplied by hand — raises `BadInputError` and writes nothing. A slug held by something that is not a
     file, and a probe the vault refuses, raise an `OSError` and write nothing.
     """
     slug = _filename_slug(record.get("slug"))
@@ -433,6 +457,7 @@ def upsert(
             if not is_plain_key(key):
                 raise BadInputError(f"record field name is not a property key: {key!r}")
             provided[key] = v
+    _derive_fields(schema, provided)
     mismatch = _slug_mismatch(schema, slug, provided)
     if mismatch is not None:
         return mismatch

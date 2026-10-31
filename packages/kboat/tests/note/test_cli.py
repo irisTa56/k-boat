@@ -61,6 +61,117 @@ def test_write_source_creates(
     assert (vault / "Sources" / f"{SLUG}.md").exists()
 
 
+def _write_source(vault: Path, monkeypatch: pytest.MonkeyPatch, **fields: object) -> int:
+    rec = json.dumps({"slug": SLUG, "fields": fields})
+    return _run(["write", "--type", "source", "--vault", str(vault)], rec, monkeypatch)
+
+
+def _frontmatter_lines(vault: Path) -> list[str]:
+    return (vault / "Sources" / f"{SLUG}.md").read_text(encoding="utf-8").splitlines()
+
+
+def test_a_record_setting_the_notebook_id_gets_both_urls_derived(
+    vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _write_source(vault, monkeypatch, type="source", title="T", url=URL) == 0
+    assert _write_source(vault, monkeypatch, notebooklm_id="nb-1") == 0
+
+    lines = _frontmatter_lines(vault)
+    assert "notebooklm_id: nb-1" in lines
+    assert "gemini_url: https://gemini.google.com/notebook/nb-1" in lines
+    assert "notebooklm_url: https://notebooklm.google.com/notebook/nb-1" in lines
+
+
+@pytest.mark.parametrize("cleared", [None, "", "  "], ids=["null", "empty", "blank"])
+def test_a_record_clearing_the_notebook_id_clears_both_urls(
+    vault: Path, monkeypatch: pytest.MonkeyPatch, cleared: str | None
+) -> None:
+    # A blank id reads as no id everywhere else (`kboat-validate`, the lifecycle),
+    # so it clears here too rather than deriving a URL naming nothing.
+    assert _write_source(vault, monkeypatch, type="source", title="T", url=URL) == 0
+    assert _write_source(vault, monkeypatch, notebooklm_id="nb-1") == 0
+    assert _write_source(vault, monkeypatch, notebooklm_id=cleared) == 0
+
+    lines = _frontmatter_lines(vault)
+    assert "gemini_url:" in lines
+    assert "notebooklm_url:" in lines
+
+
+@pytest.mark.parametrize(
+    "supplied",
+    [
+        {"gemini_url": "https://gemini.google.com/notebook/notebooks%2Fnb-1"},
+        {"notebooklm_url": "https://notebooklm.google.com/notebook/nb-1"},
+        {"gemini_url": None},
+        {"notebooklm_id": "nb-1", "gemini_url": "https://gemini.google.com/notebook/nb-1"},
+    ],
+    ids=["wrong", "right", "null", "beside_the_id"],
+)
+def test_a_record_supplying_a_derived_url_is_refused(
+    vault: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    supplied: dict[str, object],
+) -> None:
+    # Refused whatever the value, a correct one and `null` included: a caller that
+    # still writes these is on a procedure that needs fixing, so it hears at once.
+    assert _write_source(vault, monkeypatch, type="source", title="T", url=URL) == 0
+    capsys.readouterr()
+    before = (vault / "Sources" / f"{SLUG}.md").read_bytes()
+
+    assert _write_source(vault, monkeypatch, **supplied) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "is derived from 'notebooklm_id'" in captured.err
+    assert (vault / "Sources" / f"{SLUG}.md").read_bytes() == before
+
+
+@pytest.mark.parametrize("notebook_id", [123, ["nb-1"], True], ids=["int", "list", "bool"])
+def test_a_notebook_id_no_url_can_be_derived_from_is_refused(
+    vault: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    notebook_id: object,
+) -> None:
+    # Formatted into the template, a list would write a URL naming `['nb-1']`.
+    assert _write_source(vault, monkeypatch, type="source", title="T", url=URL) == 0
+    capsys.readouterr()
+    before = (vault / "Sources" / f"{SLUG}.md").read_bytes()
+
+    assert _write_source(vault, monkeypatch, notebooklm_id=notebook_id) == 2
+
+    assert "'notebooklm_id' must be a string or null" in capsys.readouterr().err
+    assert (vault / "Sources" / f"{SLUG}.md").read_bytes() == before
+
+
+def test_a_record_not_naming_the_notebook_id_leaves_the_urls_as_they_are(
+    vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # What a reading-time stamp or a summary backfill writes, and what lets a note
+    # hand-edited to a wrong URL stay as it is for `kboat-validate` to report.
+    assert _write_source(vault, monkeypatch, type="source", title="T", url=URL) == 0
+    assert _write_source(vault, monkeypatch, notebooklm_id="nb-1") == 0
+    path = vault / "Sources" / f"{SLUG}.md"
+    drifted = path.read_text().replace("notebook/nb-1", "notebook/hand-edited")
+    path.write_text(drifted)
+
+    assert _write_source(vault, monkeypatch, summary="s") == 0
+
+    lines = _frontmatter_lines(vault)
+    assert "gemini_url: https://gemini.google.com/notebook/hand-edited" in lines
+    assert "notebooklm_url: https://notebooklm.google.com/notebook/hand-edited" in lines
+
+
+def test_derivation_does_not_reach_a_type_that_declares_none(
+    vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A key the type's schema does not derive is any other hand-added property.
+    rec = json.dumps({"slug": "B0", "fields": {"type": "kindle", "gemini_url": "mine"}})
+    assert _run(["write", "--type", "kindle", "--vault", str(vault)], rec, monkeypatch) == 0
+    assert "gemini_url: mine" in (vault / "Kindles" / "B0.md").read_text()
+
+
 def test_collision_exits_nonzero(
     vault: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -78,7 +78,7 @@ Create a `Sources/*.md` note (see kboat-notes), using the fetched title.
 
 ### Step 3: create the source's 1:1 notebook
 
-Create the source's 1:1 notebook (see kboat-notes [create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note)): `create` → `source add` → **verify the type**, then **verify the fetch** (both per kboat-notes, in that order) → capture `summary`/`topics` from the source guide and write them plus `notebooklm_id` and the derived `gemini_url`/`notebooklm_url` back onto the source note.
+Create the source's 1:1 notebook (see kboat-notes [create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note)): `create` → `source add` → **verify the type**, then **verify the fetch** (both per kboat-notes, in that order) → capture `summary`/`topics` from the source guide and write them plus `notebooklm_id` back onto the source note (the tool derives `gemini_url` and `notebooklm_url` from it).
 
 - Run the verifications in a cheap subagent, like the page fetch in step 1, handing it the article check's rules as kboat-notes says.
 - Three outcomes send the source to the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), which sets `blocked: true` and discards any notebook so `kboat-rescue` can supply the content later:

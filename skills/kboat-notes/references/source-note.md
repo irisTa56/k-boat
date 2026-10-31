@@ -27,11 +27,8 @@ The note **write is owned by `kboat-note write`** (`kboat-note write --type sour
 | `notebooklm_url` | NotebookLM view of the notebook. |
 | `tags` | Empty for now. |
 
-`gemini_url` and `notebooklm_url` share the same id and path and differ only by subdomain.
-Derive both from `notebooklm_id`:
-
-- `notebooklm_url`: `https://notebooklm.google.com/notebook/<id>`
-- `gemini_url`: `https://gemini.google.com/notebook/<id>`
+`gemini_url` and `notebooklm_url` are never written by hand.
+`kboat-note write` derives both from `notebooklm_id`, by the templates `kboat.schema` declares, and a record supplying either is refused ([The write contract](../../kboat-vault-conventions/SKILL.md#the-write-contract)).
 
 ## One notebook per source (1:1)
 

@@ -196,6 +196,9 @@ From a `{slug, fields, body?}` record, `upsert` guarantees:
   - No run clears it; the repair is `repeated_key`'s ("Schema authority and validation" above), and a caller reports the note and carries on with the rest.
 - **Merge on update.** If a file is there, the record's `fields` are merged over the existing note — provided keys win, absent keys are preserved — so a partial write (omitting a field, or `body`) preserves what it omits.
   - Omitting a key therefore never clears it; to clear a field, give it as `null`, which writes the field's empty form: a bare `key:` for a string or a date, `[]` for a list.
+- **A derived field is the writer's.** A field `kboat.schema` declares as derived from another (a source note's `gemini_url` and `notebooklm_url`, from `notebooklm_id`) follows that field: a record setting it to a value derives the field, and one setting it to `null` or a blank string clears the field.
+  - A record that does not name the field it derives from leaves the derived field as it is, as the merge above leaves anything omitted.
+  - A record supplying a derived field itself, even as `null`, is refused and written nowhere, as is one giving the field it derives from a value that is neither a string nor `null`: both are records to fix, with the refusal on stderr and exit 2.
 - **Always-present defaults on create.** A present field absent from the record is filled with its schema default (a boolean → `false`), so the Base-filter booleans are written on every note from creation.
   - On *update* a field the note has lost is left lost, not backfilled — a write re-renders only what it changes (below), and a writer that filled in blanks it was not asked about would be re-rendering the whole note.
   - Drift of that kind is `kboat-validate`'s to report and a human's to repair.
