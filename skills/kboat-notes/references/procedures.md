@@ -92,7 +92,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
          - Take the transient branch above, as a failed `source get` does.
          - Distillation, which has no such branch, aborts the source as it does on a failed check, reporting the guide failure rather than a wall.
      - A source that does not fetch successfully is not ingested — when ingest hits this, record it in the DLQ (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and so does a reactivation, which re-runs this step and takes its endings whole (see [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook)); when distillation re-checks a ripe source and hits it, abort that source (it stays ripe) and report it, discarding nothing — the note already references this notebook, so keeping it leaks nothing, and keeping it is what leaves the source replayable.
-     - This verification runs in a cheap subagent, as `kboat-recall`'s per-candidate body read does.
+     - This verification runs in the cheap subagent its caller names for it, and can run in one where the caller names none.
        - The subagent reads its task rather than this skill, so the task carries this bullet's rules on where to look, on reading the body whole, and on the second look word for word, with the extract's path, the ids the guide call needs, and at distillation the stored `summary` and `topics` as well.
        - A subagent told only to judge the text samples its head, which is where the chrome sits.
    - Capture the summary while the notebook still exists (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
