@@ -43,6 +43,7 @@ For every other URL, follow the source path.
 ### Step 1: de-duplicate, decide the path, then gather signal
 
 De-duplicate before anything fetches the URL, per kboat-notes [create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note) step 1, which owns the rule and why it runs first.
+"Before" here means having read the de-dup's result, so the `kboat-note list` call and the sniff GET are never sent together, as in one parallel batch.
 The key is the slug, which `kboat-note slug "<url>"` gives you — never hash a URL by hand: that slug is the only name the note write accepts, and it is the canonical URL's hash, so two links to one page yield one note.
 A matching note stops the item in the first of these states it is in, with nothing fetched, built, or written, and step 4 deletes its queue file:
 
