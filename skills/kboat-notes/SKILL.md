@@ -81,6 +81,7 @@ What is specific to K-Boat notes:
 ## References
 
 Everything above is what any writer needs; the rest is in `references/`, read one at a time as the work reaches it.
+A writer reads the reference owning a field before writing that field.
 
 | Reference | What it owns |
 | --- | --- |

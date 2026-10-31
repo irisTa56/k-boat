@@ -79,6 +79,8 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
        - A page's template can put a long run of chrome ahead of the post — a cookie-preference block, navigation, related-post lists, a blog's whole tag index — and more of it inside and after the post, so in a large extract the body can start most of the way down.
        - An opening that is all links or page chrome is a reason to look further down, never a verdict.
        - The body is consecutive paragraphs of prose on the subject the title names, usually just after a byline; neither half is enough alone, since listings repeat the title and a cookie notice is written in sentences.
+       - Read the body whole, by paging through the file.
+         - A line filter such as `grep`, a truncating `cut`, or `head` is not reading it, because a judgment made from them reads exactly like one made from the body.
        - The text is a wall only where the whole extract holds no body: chrome with a sign-in, subscribe, JavaScript-required, or bot-check prompt, or the article's opening paragraphs cut off by one.
      - **A `wall` verdict must survive a second look before anything acts on it**: at ingest a false one discards the notebook that held the article and parks a readable source in the DLQ, where both exits are human-initiated.
        - Read the source guide's `.summary` and `.keywords` (`notebooklm --quiet source guide <source_id> --notebook <id> --json 2>/dev/null`).
@@ -90,8 +92,8 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
          - Take the transient branch above, as a failed `source get` does.
          - Distillation, which has no such branch, aborts the source as it does on a failed check, reporting the guide failure rather than a wall.
      - A source that does not fetch successfully is not ingested — when ingest hits this, record it in the DLQ (see [Procedure: record a blocked source](#procedure-record-a-blocked-source-dlq)), and so does a reactivation, which re-runs this step and takes its endings whole (see [Procedure: reactivate a source's notebook](#procedure-reactivate-a-sources-notebook)); when distillation re-checks a ripe source and hits it, abort that source (it stays ripe) and report it, discarding nothing — the note already references this notebook, so keeping it leaks nothing, and keeping it is what leaves the source replayable.
-     - This verification can run in a cheap subagent.
-       - The subagent reads its task rather than this skill, so the task carries this bullet's rules on where to look and on the second look word for word, with the extract's path, the ids the guide call needs, and at distillation the stored `summary` and `topics` as well.
+     - This verification runs in a cheap subagent, as `kboat-recall`'s per-candidate body read does.
+       - The subagent reads its task rather than this skill, so the task carries this bullet's rules on where to look, on reading the body whole, and on the second look word for word, with the extract's path, the ids the guide call needs, and at distillation the stored `summary` and `topics` as well.
        - A subagent told only to judge the text samples its head, which is where the chrome sits.
    - Capture the summary while the notebook still exists (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
    - Update the note with `kboat-note write --type source` once more — a `{slug, fields}` record carrying `summary`, `topics`, `notebooklm_id`, and the derived `gemini_url`/`notebooklm_url` (derive both from `notebooklm_id`).
