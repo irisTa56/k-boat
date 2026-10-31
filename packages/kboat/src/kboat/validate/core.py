@@ -128,9 +128,8 @@ def _distilled_without_distill(fm: dict[str, Value], path: str) -> list[Violatio
 def _notebook_url_mismatches(fm: dict[str, Value], path: str) -> list[Violation]:
     """Each derived URL that is not what the writer would put there.
 
-    The writer cannot produce one, so what this catches is a hand edit or a note
-    older than the derivation. The detail carries the value to put back, since no
-    note holds the recipe.
+    The writer cannot produce one, so what this catches is a hand edit. The detail
+    carries the value to put back, since no note holds the recipe.
     """
     out: list[Violation] = []
     for f in SOURCE.fields:
