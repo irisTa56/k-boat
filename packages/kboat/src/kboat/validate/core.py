@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from kboat.frontmatter import Value, is_iso_date, is_yaml_int, parse_flow_list, repeated_keys
-from kboat.schema import BY_TYPE, Field, Kind, NoteSchema
+from kboat.schema import BY_TYPE, SOURCE, Field, Kind, NoteSchema
 
 
 class CrossFieldCode(StrEnum):
@@ -34,6 +34,7 @@ class CrossFieldCode(StrEnum):
     AMBIGUOUS = "ambiguous"
     DISTILLED_WITHOUT_DISTILL = "distilled_without_distill"
     BLOCKED_HAS_NOTEBOOK = "blocked_has_notebook"
+    NOTEBOOK_URL_MISMATCH = "notebook_url_mismatch"
     PICKED_NON_WEB = "picked_non_web"
     STATUS_ARCHIVED_MISMATCH = "status_archived_mismatch"
 
@@ -124,6 +125,28 @@ def _distilled_without_distill(fm: dict[str, Value], path: str) -> list[Violatio
     ]
 
 
+def _notebook_url_mismatches(fm: dict[str, Value], path: str) -> list[Violation]:
+    """Each derived URL that is not what the writer would put there.
+
+    The writer cannot produce one, so what this catches is a hand edit. The detail
+    carries the value to put back, since no note holds the recipe.
+    """
+    out: list[Violation] = []
+    for f in SOURCE.fields:
+        if f.derived is None:
+            continue
+        source_value, held = fm.get(f.derived.source), fm.get(f.name)
+        if _is_empty(source_value):
+            if not _is_empty(held):
+                detail = f"got {held!r} with no {f.derived.source}"
+                out.append(Violation(path, f.name, CrossFieldCode.NOTEBOOK_URL_MISMATCH, detail))
+        # An id that is not a string derives nothing: the per-field pass reports it.
+        elif isinstance(source_value, str) and held != f.derived.value(source_value):
+            detail = f"expected {f.derived.value(source_value)!r}, got {held!r}"
+            out.append(Violation(path, f.name, CrossFieldCode.NOTEBOOK_URL_MISMATCH, detail))
+    return out
+
+
 def _source_rules(fm: dict[str, Value], path: str) -> list[Violation]:
     out: list[Violation] = []
     dismiss = fm.get("dismiss") is True
@@ -139,6 +162,7 @@ def _source_rules(fm: dict[str, Value], path: str) -> list[Violation]:
     out += _distilled_without_distill(fm, path)
     if fm.get("blocked") is True and not _is_empty(fm.get("notebooklm_id")):
         out.append(Violation(path, "notebooklm_id", CrossFieldCode.BLOCKED_HAS_NOTEBOOK))
+    out += _notebook_url_mismatches(fm, path)
     if fm.get("picked") is True and fm.get("source_type") != "web_page":
         out.append(Violation(path, "picked", CrossFieldCode.PICKED_NON_WEB))
     # No rule here for an empty `url`. It is one invariant and the schema declares

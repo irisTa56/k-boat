@@ -11,7 +11,7 @@ def _source(**over: Value) -> dict[str, Value]:
         "type": "source",
         "title": "T",
         "reading_link": "https://x",
-        "gemini_url": "https://g",
+        "gemini_url": "https://gemini.google.com/notebook/id",
         "reading": False,
         "distill": False,
         "keep": False,
@@ -26,7 +26,7 @@ def _source(**over: Value) -> dict[str, Value]:
         "blocked": False,
         "picked": False,
         "notebooklm_id": "id",
-        "notebooklm_url": "https://n",
+        "notebooklm_url": "https://notebooklm.google.com/notebook/id",
         "tags": [],
     }
     fm.update(over)
@@ -79,7 +79,8 @@ def test_missing_field() -> None:
 
 def test_absent_optional_notebook_field_is_ok() -> None:
     fm = _source()
-    del fm["notebooklm_id"]  # present=False — absence is allowed
+    for name in ("notebooklm_id", "gemini_url", "notebooklm_url"):
+        del fm[name]  # present=False — absence is allowed
     assert check_note("source", fm, "p") == []
 
 
@@ -142,6 +143,45 @@ def test_blocked_must_have_no_notebook() -> None:
     # A discarded notebook leaves `notebooklm_id: ""` (a blank string, not None);
     # that is the empty/tombstone state, so a blocked source carrying it is clean.
     assert "blocked_has_notebook" not in _codes("source", _source(blocked=True, notebooklm_id=""))
+
+
+def test_a_notebook_url_that_does_not_match_the_id_is_reported() -> None:
+    wrong = "https://gemini.google.com/notebook/notebooks%2Fid"
+    violations = check_note("source", _source(gemini_url=wrong), "p")
+    assert [(v.field, v.code) for v in violations] == [("gemini_url", "notebook_url_mismatch")]
+    # The repair is in the detail, since the recipe lives in no note.
+    assert "https://gemini.google.com/notebook/id" in violations[0].detail
+
+
+@pytest.mark.parametrize("name", ["gemini_url", "notebooklm_url"])
+def test_a_notebook_url_missing_beside_an_id_is_reported(name: str) -> None:
+    fm = _source()
+    del fm[name]
+    assert [(v.field, v.code) for v in check_note("source", fm, "p")] == [
+        (name, "notebook_url_mismatch")
+    ]
+    assert [v.field for v in check_note("source", _source(**{name: ""}), "p")] == [name]
+
+
+@pytest.mark.parametrize("no_id", [None, "", "  "], ids=["null", "empty", "blank"])
+def test_a_notebook_url_held_with_no_id_is_reported(no_id: str | None) -> None:
+    violations = check_note("source", _source(notebooklm_id=no_id), "p")
+    assert [(v.field, v.code) for v in violations] == [
+        ("gemini_url", "notebook_url_mismatch"),
+        ("notebooklm_url", "notebook_url_mismatch"),
+    ]
+
+
+def test_a_discarded_notebook_with_its_urls_cleared_is_clean() -> None:
+    # What the writer leaves when a record clears the id.
+    fm = _source(notebooklm_id=None, gemini_url=None, notebooklm_url=None)
+    assert check_note("source", fm, "p") == []
+
+
+def test_an_id_that_is_not_a_string_is_reported_once_as_that() -> None:
+    # Nothing can be derived from it, so its URLs cannot be said to disagree.
+    violations = check_note("source", _source(notebooklm_id=["id"]), "p")
+    assert [(v.field, v.code) for v in violations] == [("notebooklm_id", "not_str")]
 
 
 def test_picked_is_web_only() -> None:

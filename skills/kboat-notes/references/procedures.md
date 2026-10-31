@@ -96,7 +96,7 @@ For a PDF source, follow [Procedure: ingest a PDF source](#procedure-ingest-a-pd
        - The subagent reads its task rather than this skill, so the task carries this bullet's rules on where to look, on reading the body whole, and on the second look word for word, with the extract's path, the ids the guide call needs, and at distillation the stored `summary` and `topics` as well.
        - A subagent told only to judge the text samples its head, which is where the chrome sits.
    - Capture the summary while the notebook still exists (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
-   - Update the note with `kboat-note write --type source` once more — a `{slug, fields}` record carrying `summary`, `topics`, `notebooklm_id`, and the derived `gemini_url`/`notebooklm_url` (derive both from `notebooklm_id`).
+   - Update the note with `kboat-note write --type source` once more — a `{slug, fields}` record carrying `summary`, `topics`, and `notebooklm_id`, from which the tool derives `gemini_url` and `notebooklm_url`.
      - The tool merges these over the existing note, preserving everything else.
      - The returned NotebookLM source id is not stored; it is resolved on demand.
 
@@ -192,7 +192,7 @@ Every web source pays for the `source get` round trip regardless (one call in a 
        - Say in the same breath that `distill` is not the way to ask for that — set on this source it would go ripe and abort every run, distillation re-checking this very extraction and aborting without stamping or discarding.
      - This verification can run in a cheap subagent.
    - Capture the summary (see [Procedure: capture summary and topics](#procedure-capture-summary-and-topics)).
-   - Update the note with `kboat-note write --type source` carrying `summary`, `topics`, `notebooklm_id`, and the derived `gemini_url`/`notebooklm_url` (the tool merges these over the note, preserving the rest).
+   - Update the note with `kboat-note write --type source` carrying `summary`, `topics`, and `notebooklm_id` (the tool derives `gemini_url` and `notebooklm_url` from it, and merges these over the note, preserving the rest).
      - The returned source id is not stored; it is resolved on demand.
 
 ## Procedure: capture summary and topics
@@ -550,7 +550,7 @@ Every ending but `ready` leaves a notebook holding nothing usable, so discard it
 ### Step 4: update the note
 
 The wall is now cleared.
-Update the note with `kboat-note write --type source` — a `{slug, fields}` record carrying `blocked: false`, `notebooklm_id` and the derived `gemini_url`/`notebooklm_url`, the captured `summary`/`topics`, and `reading_link` (`[[<slug>.pdf]]` for a PDF; left as the `url` for a web page) — merged over the DLQ note.
+Update the note with `kboat-note write --type source` — a `{slug, fields}` record carrying `blocked: false`, `notebooklm_id` (from which the tool derives `gemini_url` and `notebooklm_url`), the captured `summary`/`topics`, and `reading_link` (`[[<slug>.pdf]]` for a PDF; left as the `url` for a web page) — merged over the DLQ note.
 `source_type` is unchanged.
 The source leaves the DLQ and joins the inbox like a freshly-ingested source.
 
@@ -639,7 +639,7 @@ Used when a source is `dismiss`ed, or as the final step of distilling a source t
    - With neither, the notebook is already gone — nothing to do.
      - Never conclude "already gone" from an empty `notebooklm_id` alone when the caller has an id in hand: nothing else references that notebook, so skipping the delete leaks it, and nothing names it again but `kboat-notebook-health`'s list of notebooks no note references, which cannot tell it from one the reader made by hand.
 2. Run `notebooklm delete --notebook <id> -y`.
-3. Clear `notebooklm_id`, `gemini_url`, and `notebooklm_url` on the source note (a no-op on an ingest-time discard, where they were never written), each given as `null` (`kboat-vault-conventions`, "The write contract").
+3. Clear `notebooklm_id` on the source note by giving it as `null`, which clears the `gemini_url` and `notebooklm_url` derived from it too (a no-op on an ingest-time discard, where they were never written; `kboat-vault-conventions`, "The write contract").
 
 ## Procedure: create or update a Kindle note
 

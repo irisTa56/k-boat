@@ -37,7 +37,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
 ## Shared modules
 
 - `kboat.frontmatter` — read, scoped rewrite, YAML-safe rendering. Reading is a focused scanner rather than a YAML parser, so `parse_entries` hands back each entry's verbatim source alongside its value, for a caller that has to write the note back whole.
-- `kboat.schema` — the code-authoritative mechanical schema (field names, order, kinds, defaults, the always-present booleans, the enums). `kboat-vault-conventions` describes the schema/validate/write contract around it, and `kboat-notes` keeps the K-Boat field semantics; both point here.
+- `kboat.schema` — the code-authoritative mechanical schema (field names, order, kinds, defaults, the always-present booleans, the enums, the derived fields). `kboat-vault-conventions` describes the schema/validate/write contract around it, and `kboat-notes` keeps the K-Boat field semantics; both point here.
 - `kboat.canonical` — URL canonicalization (`canonical_url`, the `CanonicalUrl` NewType, `resolve_link`). One page reached by two links normalizes to one string, which is what both the note slug below and feed-filter's seen-store key on — so a note and the store that gates it cannot disagree about what one page is.
 - `kboat.naming` — `note_slug`, the single slug oracle: the URL-hash of a note's canonical `url`, shared by every URL-named type and exposed to the skills as `kboat-note slug`.
 - `kboat.write` — schema-driven note assembly and create-or-update (`build_note`/`render_field`/`upsert`), the one writer all note types share.
