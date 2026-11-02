@@ -225,7 +225,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - A fetch failure is absorbed per site, and so is an *unexpected* worker exception: it becomes that site's `error` instead of aborting the drain, so one bad site never discards the entries every other site already fetched.
     - Isolation is per site, not per host group — a group's remaining sites are fetched after one of them raises.
   - The absorbed exception is flagged `sites[].unexpected_error` (carried from `FetchOutcome.unexpected`), a typed classification rather than a prefix on the message — matching `AdmitResult.all_feeds_failed`'s rule below.
-    - It asserts only that the failure did not arrive as a `FetchError`/`BrowserFetchError`, not whose fault it is (a page can feed a parser something it rejects), so the run skill reports the message verbatim rather than narrating an unreachable site.
+    - It asserts only that the failure did not arrive as a `FetchError`/`BrowserFetchError`/`NotAFeedError`, not whose fault it is (a page can feed a parser something it rejects), so the run skill reports the message verbatim rather than narrating an unreachable site.
   - What is *not* absorbed is a failure of the run rather than of a site: `MissingPlaywrightError` (an unusable browser install, which no browser site could survive) re-raises, as does any `BaseException`.
 - **Site-health escalation.** Each run is stateless, so it cannot tell a chronic outage from a one-run blip on its own.
   - `site_health.py` persists a per-site consecutive-failure counter, shared by both gather paths (source-kind-agnostic, keyed by `site_id`).

@@ -304,8 +304,8 @@ def fetch_raw(url: str, *, timeout: float = DEFAULT_BROWSER_TIMEOUT_SEC) -> tupl
             raise BrowserFetchError(f"navigation failed for {url!r}: {exc}") from exc
         if response is None:
             # Same-document navigations (anchor scroll, history.pushState) return
-            # None — not expected for a top-level feed URL; fail rather than emit
-            # empty bytes that would later read as a feed the site no longer serves.
+            # None — not expected for a top-level feed URL; fail with that cause rather
+            # than emit empty bytes, which would be reported as a response that is no feed.
             raise BrowserFetchError(f"no navigation response for {url!r}")
         if response.status >= 400:
             raise BrowserFetchError(f"raw fetch of {url!r} returned HTTP {response.status}")
