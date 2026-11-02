@@ -119,6 +119,7 @@ Then, before the change lands:
 - Read the new minor's `pathlib` and `os.path` changes against the `Path.exists` and `Path.glob` premises `kboat-vault-conventions` states.
 - Revert each `kboat.io_utils` boundary to the bare `pathlib` call it replaces, and confirm its test fails on the premise rather than on something else.
 - Run the NotebookLM CLI against the live service, as a bump of its pin requires.
+- Check that [Dependabot's Python list](https://github.com/dependabot/dependabot-core/blob/main/python/lib/dependabot/python/language.rb) has the new minor, since without it every `uv` job fails and the PR `.github/dependabot.yml` relies on never comes.
 
 The Astral plugin that `.claude/settings.json` enables runs its ty language server as `ty@latest`, while the gate runs the ty the dev group pins, which Dependabot's cooldown holds behind a fresh release.
 A diagnostic only the plugin reports is advisory until a python-deps PR brings the pin up; the gate's result is the one a change answers to.
