@@ -237,8 +237,8 @@ def parse_feed_strict(body: bytes, base_url: str, *, sort: bool = True) -> list[
 
     Entries whose link is unresolvable (missing / fragment-only / non-http) are
     skipped (``resolve_link``). A malformed body that ``feedparser`` cannot
-    recover any entry from raises ``NotAFeedError``, which is how a feed that has
-    stopped existing behind a ``200`` shows up at all.
+    recover any entry from, or one with no feed element, raises ``NotAFeedError``,
+    which is how a feed that has stopped existing behind a ``200`` shows up at all.
 
     Ordering (``sort=True``, default): dated entries by ``published_at``
     descending, undated entries in source order at the tail. The per-site cap
@@ -253,7 +253,7 @@ def parse_feed_strict(body: bytes, base_url: str, *, sort: bool = True) -> list[
     # ``bozo`` with zero recovered entries = unparseable body. ``bozo`` *with*
     # entries (feedparser repaired partial damage) falls through normally. No
     # ``version`` = no feed element, which well-formed XHTML reaches without ``bozo``;
-    # a real feed with no items has one and is merely quiet.
+    # a well-formed feed with no items has one and is merely quiet.
     if not raw_entries and (getattr(parsed, "bozo", False) or not parsed.get("version")):
         raise NotAFeedError(base_url)
 

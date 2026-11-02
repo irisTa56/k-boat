@@ -177,6 +177,18 @@ def test_feed_url_answering_with_a_well_formed_page_is_a_gather_error() -> None:
     assert outcome.error is not None
 
 
+def test_feed_cut_off_before_its_first_item_is_a_gather_error() -> None:
+    """Its feed element parsed, so only the parse error says the body is not a whole feed."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text='<rss version="2.0"><channel><title>F')
+
+    with _client(handler) as client:
+        outcome = fetch_site(_FEED, client=client)
+
+    assert outcome.error is not None
+
+
 def test_real_feed_with_no_items_is_not_an_error() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=_rss(0))

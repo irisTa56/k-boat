@@ -62,7 +62,7 @@ Side effects and orchestration:
 - `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run.
   - Raises `VaultError` on a write the writer refused — its subclass `VaultRepeatedKeyError` where the note names a key on more than one line — and `VaultLockedError` when the lock's bounded wait expires with another run still holding it; whichever it is, a failed write is never recorded seen.
 - `pipeline.py` — the per-site gather, with `fetch_entries` branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
-  - A feed URL answering with a body that holds no feed (a dropped feed redirecting to the home page) is a gather `error` through `parse_feed_strict`, since nothing else about that `200` says the feed is gone; a real feed with no items is not one.
+  - A feed URL answering with a body that holds no feed (a dropped feed redirecting to the home page) is a gather `error` through `parse_feed_strict`, since nothing else about that `200` says the feed is gone; a well-formed feed with no items is not one.
     - Forum admission and discovery's probes keep `parse_feed`, where no feed and no entries are the same answer, the forum path having `zero_links` to surface it.
   - A gather is `fetch_site` (network-only, DB-free, thread-safe) then `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
