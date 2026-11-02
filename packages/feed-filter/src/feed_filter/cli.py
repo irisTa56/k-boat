@@ -69,6 +69,7 @@ from feed_filter.config import (
 )
 from feed_filter.discover import DiscoveryCandidate, discover
 from feed_filter.exa import ExaError, search, usable_cost
+from feed_filter.feeds import NotAFeedError
 from feed_filter.fetch import FetchError, build_client
 from feed_filter.forum_pipeline import (
     FetchTally,
@@ -1399,6 +1400,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     - ``BrowserFetchError`` — a browser-path gather failure that reaches a command
       directly (the add-site / heal-site / resnapshot-site snapshot), the browser
       analog of ``FetchError``;
+    - ``NotAFeedError`` — the add-site snapshot's URL answered with a body holding no
+      feed;
     - ``MissingPlaywrightError`` — a ``requires_browser`` site needs the optional
       extra, or Chromium would not launch (the message carries the install command);
     - a ``sqlite3.Error`` that ``seen.is_environment_failure`` accepts: a lock
@@ -1426,6 +1429,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         FetchError,
         BrowserFetchError,
+        NotAFeedError,
         VaultError,
         BadInputError,
         BadArgvError,

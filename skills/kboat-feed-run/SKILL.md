@@ -150,6 +150,7 @@ For each site in `sites` with a non-null `error`, that site's gather failed; the
         - When it is also an `unexpected_error`, say so and lead with the message: the investigation may end at "this is a bug to fix", but a chronically failing site still needs one.
         1. **Check first for a moved or renamed feed/index URL.**
            - A "persistent" 5xx/4xx is frequently a site migration, not a dead site: e.g. the sibling forum path saw `elixirforum.com` move to the `forum.elixirforum.com` subdomain, its apex serving an unrelated 500 landing page that read as a chronic outage until the URL was updated.
+           - An `error` saying the response `is not a feed` names the URL that answered: the feed was usually dropped or moved while the site lives on, often redirecting to its home page, so a `feed-filter discover` of the site is what finds the replacement.
            - If the site moved, pointing it at the new URL restores it with its id and config intact.
            - Name the move as the likely cause in the summary and leave the registry alone — the edit is a hand-edit of local config and belongs to the user (see "Fix a site that moved" in `kboat-manage-feed-sites`).
         2. **Only if the site is truly gone**, disable it with `feed-filter disable-site --site-id <id>` (see the `kboat-manage-feed-sites` skill).

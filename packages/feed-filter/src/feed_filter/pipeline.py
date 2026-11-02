@@ -17,8 +17,8 @@ A gather has two halves, which ``cmd_new_entries`` drives separately so it can f
 hosts concurrently:
 
 - ``fetch_site`` — the **network-only** half (``fetch_entries`` with the fetch
-  failure absorbed into ``FetchOutcome.error``). It touches no DB, so it is safe
-  to run in a worker thread.
+  failure, or a feed URL answering with no feed, absorbed into
+  ``FetchOutcome.error``). It touches no DB, so it is safe to run in a worker thread.
 - ``filter_gathered`` — the **DB-touching** half (``is_seen`` filter + per-site
   cap + the ``zero_links`` signal). It reads the seen-store, so it stays on the
   main thread.
@@ -32,7 +32,7 @@ import httpx
 from feed_filter import browser
 from feed_filter.browser import BrowserFetchError
 from feed_filter.config import DEFAULT_PER_SITE_CAP
-from feed_filter.feeds import Entry, parse_feed
+from feed_filter.feeds import Entry, NotAFeedError, parse_feed_strict
 from feed_filter.fetch import FetchError, fetch
 from feed_filter.scrape import scrape_index
 from feed_filter.seen import is_seen
@@ -66,7 +66,7 @@ class FetchOutcome:
     ``fetch_entries`` returns them); ``error`` is the fetch failure message, if
     any — when set, ``entries`` is empty. ``unexpected`` marks an error the gather
     could **not** classify — that and no more: it says the failure did not arrive as
-    a ``FetchError``/``BrowserFetchError``, not whose fault it is. ``fetch_site``
+    a ``FetchError``/``BrowserFetchError``/``NotAFeedError``, not whose fault it is. ``fetch_site``
     only ever produces the classified kind, so the flag is set by whoever absorbs
     the unclassified one (``cli._fetch_all``), and it is a typed signal rather than
     a prefix the reader has to parse back out of ``error``. Carries no DB-derived
@@ -90,7 +90,8 @@ def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
     while every other site keeps the ``httpx`` path; both transports feed the same
     parsers, so they yield identical ``Entry`` lists. ``client`` is unused
     on the browser branch (F2). Raises ``FetchError`` (httpx) or ``BrowserFetchError``
-    (browser) on a fetch failure.
+    (browser) on a fetch failure, and ``NotAFeedError`` where a feed URL answers with
+    no feed.
 
     Used both by ``fetch_site`` (then filtered) and by the snapshot paths
     (``cmd_add_site``, ``cmd_heal_site`` and ``cmd_resnapshot_site``), which need the
@@ -106,7 +107,7 @@ def fetch_entries(site: SiteConfig, *, client: httpx.Client) -> list[Entry]:
         else:
             result = fetch(site.feed_url, client=client)
             base_url, body = result.final_url, result.content
-        return parse_feed(body, base_url)
+        return parse_feed_strict(body, base_url)
     # SiteConfig's exactly-one invariant guarantees a scrape site has both fields.
     assert site.index_url is not None and site.article_url_pattern is not None
     if site.requires_browser:
@@ -124,15 +125,16 @@ def fetch_site(site: SiteConfig, *, client: httpx.Client) -> FetchOutcome:
 
     The network-only half of a gather: it touches no DB, so it is safe to
     run in a worker thread (``cmd_new_entries`` fetches independent hosts
-    concurrently). A ``FetchError``/``BrowserFetchError`` becomes an ``error`` with
-    an empty entry list; nothing is recorded seen, so the next run retries naturally.
+    concurrently). A ``FetchError``/``BrowserFetchError``/``NotAFeedError`` becomes an
+    ``error`` with an empty entry list; nothing is recorded seen, so the next run
+    retries naturally.
 
     A ``requires_browser`` site still routes through Playwright, whose sync API is
     not thread-safe — ``cmd_new_entries`` keeps those fetches on the main thread.
     """
     try:
         entries = fetch_entries(site, client=client)
-    except (FetchError, BrowserFetchError) as exc:
+    except (FetchError, BrowserFetchError, NotAFeedError) as exc:
         return FetchOutcome(entries=[], error=str(exc))
     return FetchOutcome(entries=entries, error=None)
 

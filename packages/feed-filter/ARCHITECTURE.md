@@ -62,6 +62,8 @@ Side effects and orchestration:
 - `vault.py` — the vault output sink (`write_feed_note`); writes a kept entry as a hash-named `Feeds/` note via `kboat.write.upsert` (schema `FEED`), under the shared vault lock (`kboat.lock`) so the write cannot interleave with a K-Boat run.
   - Raises `VaultError` on a write the writer refused — its subclass `VaultRepeatedKeyError` where the note names a key on more than one line — and `VaultLockedError` when the lock's bounded wait expires with another run still holding it; whichever it is, a failed write is never recorded seen.
 - `pipeline.py` — the per-site gather, with `fetch_entries` branching to the httpx or browser transport on a site's `requires_browser` flag (seen-filter + per-site cap + the `zero_links` self-heal signal).
+  - A feed URL answering with a body that holds no feed (a dropped feed redirecting to the home page) is a gather `error` through `parse_feed_strict`, since nothing else about that `200` says the feed is gone; a well-formed feed with no items is not one.
+    - Forum admission and discovery's probes keep `parse_feed`, where no feed and no entries are the same answer, the forum path having `zero_links` to surface it.
   - A gather is `fetch_site` (network-only, DB-free, thread-safe) then `filter_gathered` (seen-filter + cap, main-thread only); `cmd_new_entries` drives the two halves separately to fetch hosts concurrently.
 - `cli.py` + `__main__.py` — argparse subcommand dispatch tying it all together.
   - Each browser-using command (`new-entries`, `add-site`, `heal-site`, `resnapshot-site`) gates on the Playwright install and tears the browser down in a `finally`.
@@ -223,7 +225,7 @@ The user-facing narrative of the observable behavior is README's "Failure and se
   - A fetch failure is absorbed per site, and so is an *unexpected* worker exception: it becomes that site's `error` instead of aborting the drain, so one bad site never discards the entries every other site already fetched.
     - Isolation is per site, not per host group — a group's remaining sites are fetched after one of them raises.
   - The absorbed exception is flagged `sites[].unexpected_error` (carried from `FetchOutcome.unexpected`), a typed classification rather than a prefix on the message — matching `AdmitResult.all_feeds_failed`'s rule below.
-    - It asserts only that the failure did not arrive as a `FetchError`/`BrowserFetchError`, not whose fault it is (a page can feed a parser something it rejects), so the run skill reports the message verbatim rather than narrating an unreachable site.
+    - It asserts only that the failure did not arrive as a `FetchError`/`BrowserFetchError`/`NotAFeedError`, not whose fault it is (a page can feed a parser something it rejects), so the run skill reports the message verbatim rather than narrating an unreachable site.
   - What is *not* absorbed is a failure of the run rather than of a site: `MissingPlaywrightError` (an unusable browser install, which no browser site could survive) re-raises, as does any `BaseException`.
 - **Site-health escalation.** Each run is stateless, so it cannot tell a chronic outage from a one-run blip on its own.
   - `site_health.py` persists a per-site consecutive-failure counter, shared by both gather paths (source-kind-agnostic, keyed by `site_id`).
