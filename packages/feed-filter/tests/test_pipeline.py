@@ -147,6 +147,47 @@ def test_fetch_error_sets_error_and_records_nothing(tmp_path: Path) -> None:
     assert result.zero_links is False
 
 
+def test_feed_url_answering_with_a_web_page_is_a_gather_error() -> None:
+    """A dropped feed that redirects to the home page answers 200 with HTML: nothing in
+    that response is a fetch failure, so only the body can say the feed is gone."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<!doctype html><html><body><p>Home<br></body></html>")
+
+    with _client(handler) as client:
+        outcome = fetch_site(_FEED, client=client)
+
+    assert outcome.entries == []
+    assert outcome.error is not None
+    assert "https://example.com/feed.xml" in outcome.error
+    assert outcome.unexpected is False
+
+
+def test_feed_url_answering_with_a_well_formed_page_is_a_gather_error() -> None:
+    """Well-formed XHTML parses cleanly, so a parse error alone would pass it as a feed."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, text='<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Home</p></body></html>'
+        )
+
+    with _client(handler) as client:
+        outcome = fetch_site(_FEED, client=client)
+
+    assert outcome.error is not None
+
+
+def test_real_feed_with_no_items_is_not_an_error() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_rss(0))
+
+    with _client(handler) as client:
+        outcome = fetch_site(_FEED, client=client)
+
+    assert outcome.entries == []
+    assert outcome.error is None
+
+
 # --- fetch/filter split (the concurrency seam) ----------------------------
 
 

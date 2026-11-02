@@ -209,7 +209,25 @@ def _entry_summary(entry: object) -> str | None:
     return text
 
 
+class NotAFeedError(Exception):
+    """A response body that held no feed, though the fetch itself succeeded."""
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+        super().__init__(f"response from {url} is not a feed")
+
+
 def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
+    """``parse_feed_strict``, for a caller to whom no feed and no entries are the
+    same answer: a discovery probe, or a forum admission with its own ``zero_links``
+    signal. A body holding no feed yields ``[]`` rather than raising."""
+    try:
+        return parse_feed_strict(body, base_url, sort=sort)
+    except NotAFeedError:
+        return []
+
+
+def parse_feed_strict(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     """Parse an RSS/Atom body into ``Entry`` objects.
 
     ``body`` is raw bytes, never ``str``: ``feedparser.parse`` treats a
@@ -219,8 +237,8 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
 
     Entries whose link is unresolvable (missing / fragment-only / non-http) are
     skipped (``resolve_link``). A malformed body that ``feedparser`` cannot
-    recover any entry from yields ``[]`` rather than raising — a dead feed is an
-    empty observation, not a crash (handled downstream).
+    recover any entry from raises ``NotAFeedError``, which is how a feed that has
+    stopped existing behind a ``200`` shows up at all.
 
     Ordering (``sort=True``, default): dated entries by ``published_at``
     descending, undated entries in source order at the tail. The per-site cap
@@ -233,9 +251,11 @@ def parse_feed(body: bytes, base_url: str, *, sort: bool = True) -> list[Entry]:
     parsed = feedparser.parse(body)
     raw_entries = getattr(parsed, "entries", []) or []
     # ``bozo`` with zero recovered entries = unparseable body. ``bozo`` *with*
-    # entries (feedparser repaired partial damage) falls through normally.
-    if getattr(parsed, "bozo", False) and not raw_entries:
-        return []
+    # entries (feedparser repaired partial damage) falls through normally. No
+    # ``version`` = no feed element, which well-formed XHTML reaches without ``bozo``;
+    # a real feed with no items has one and is merely quiet.
+    if not raw_entries and (getattr(parsed, "bozo", False) or not parsed.get("version")):
+        raise NotAFeedError(base_url)
 
     out: list[Entry] = []
     for entry in raw_entries:

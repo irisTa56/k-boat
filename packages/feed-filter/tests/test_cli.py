@@ -16,12 +16,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 
 import kboat.lock
 from feed_filter import browser, cli, forum_pipeline, seen
 from feed_filter.browser import BrowserFetchError, MissingPlaywrightError
 from feed_filter.config import (
+    DEFAULT_PERSISTENT_FAILURE_RUNS,
     DEFAULT_QUERY_RESULTS,
     SUMMARY_PREVIEW_CHARS,
     db_path,
@@ -200,6 +202,23 @@ def test_add_site_fetch_error_writes_no_config(
 
     assert rc == 1
     assert not sites_path().exists()  # config never written on a gather failure
+
+
+def test_add_site_on_a_page_that_is_not_a_feed_writes_no_config(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def page(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<!doctype html><html><body><p>Home<br></body></html>")
+
+    client = httpx.Client(transport=httpx.MockTransport(page))
+    monkeypatch.setattr(cli, "build_client", lambda: client)
+    rc = cli.main(
+        ["add-site", "--id", "f1", "--name", "Feed", "--feed-url", "https://e.example.com/f.xml"]
+    )
+
+    assert rc == 1
+    assert "not a feed" in capsys.readouterr().err
+    assert not sites_path().exists()
 
 
 def test_add_site_rejects_an_uncompilable_pattern_before_fetching(
@@ -885,6 +904,30 @@ def test_new_entries_does_not_cache_capped_entries(
 
     assert cli.main(["entry-body", "--url", dropped]) == 0
     assert _out(capsys)["body"] is None
+
+
+def test_new_entries_counts_a_feed_url_serving_a_page_as_a_failure(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Counted as a success, a dropped feed would reset the counter every run and reach
+    nobody; counted as a failure, it escalates like any other chronic outage."""
+
+    def page(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<!doctype html><html><body><p>Home<br></body></html>")
+
+    add_site(sites_path(), SiteConfig(id="f", name="F", feed_url="https://f.example.com/feed"))
+    monkeypatch.setattr(
+        cli, "build_client", lambda: httpx.Client(transport=httpx.MockTransport(page))
+    )
+
+    for _ in range(DEFAULT_PERSISTENT_FAILURE_RUNS):
+        assert cli.main(["new-entries"]) == 0
+        status = _out(capsys)["sites"][0]
+
+    assert status["error"] == "response from https://f.example.com/feed is not a feed"
+    assert status["unexpected_error"] is False
+    assert status["consecutive_failures"] == DEFAULT_PERSISTENT_FAILURE_RUNS
+    assert status["persistent"] is True
 
 
 def test_new_entries_zero_links_does_not_increment_failure_counter(
