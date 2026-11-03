@@ -222,8 +222,8 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
     - See `memory-curate`.
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
     - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups)).
-    - A heading you mint must repeat no `###` the note already carries: `bm_edit` refuses a heading name it finds twice, so a repeated one is reachable only through an occurrence index (`<heading>[1]` for the second), which the anchors below never carry.
-  - **Which shape the note is in.** `bm_read` the hit and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
+    - A heading you mint must repeat no heading the note already carries, contain no `/`, and not end in `[<number>]`: `bm_edit` refuses a name it finds twice and reads `/` as a path separator and a trailing `[<number>]` as an occurrence index, so any of the three leaves a heading the anchors below cannot reach by its name.
+  - **Which shape the note is in.** `bm_read` the hit with `output_format="json"` and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
     - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
     - A read that returns an error has not got the note; report it as an error for this concept, as above.

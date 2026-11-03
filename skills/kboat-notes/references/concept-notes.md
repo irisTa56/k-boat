@@ -46,6 +46,7 @@ A writer with no reading to name therefore adds no claim; the two that name one 
 
 `## Observations` and `## Relations` each appear exactly once, in that order, and the `###` headings within a note are distinct.
 They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.
+A `###` heading also contains no `/` and does not end in `[<number>]`, since Basic Memory reads the first as a path separator and the second as an occurrence index, and either leaves the heading unreachable by its own name.
 
 **The shape record.**
 `kboat-concept shape '<file_path>'` reads the concept note at `<file_path>`, the path relative to the knowledge root that Basic Memory's `bm_read` returns, and prints `{"shape": "flat"|"grouped"}` — the one key kboat-distill branches on.
