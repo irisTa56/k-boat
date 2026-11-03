@@ -18,7 +18,7 @@ A path rather than the text on stdin: a call carrying the note in a here-doc gro
 with the note, and Claude Code prompts for any command over 10,000 characters however
 its allow rules read, which concept notes already reach. A path keeps the call short
 and its root out of it, so the one rule `kboat-concept shape:*` approves it. The path
-is the project-relative `file_path` Basic Memory's `read_note` returns, so there is
+is the project-relative `file_path` Basic Memory's `bm_read` returns, so there is
 no filename transform and no title resolution; the caller single-quotes it.
 """
 
@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     shape_parser.add_argument(
         "file_path",
-        help="The note's path relative to the knowledge root, as read_note returns it.",
+        help="The note's path relative to the knowledge root, as bm_read returns it.",
     )
     args = parser.parse_args(argv)
 

@@ -13,7 +13,7 @@ It runs unattended after kboat-ingest in the daily routine, and can also be run 
 Follow kboat-notes for the source-note schema, the lifecycle state machine, and the discard procedure.
 Follow the Basic Memory skills for the generic mechanics of the concept graph: `memory-notes` (note structure), `memory-ingest` (entity matching), `memory-curate` (merging).
 The shape of a concept note's `## Observations` is kboat-notes' own, under [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups).
-Every Basic Memory call (`search_notes`, `write_note`, `edit_note`) must pass `project="k-boat-knowledge"` (the project rooted at `KBOAT_KNOWLEDGE_PATH`); without it the server writes to its default project, which is the wrong graph.
+Every Basic Memory call (`bm_search`, `bm_read`, `bm_write`, `bm_edit`) must pass `project="k-boat-knowledge"` (the project rooted at `KBOAT_KNOWLEDGE_PATH`); without it the server writes to its default project, which is the wrong graph.
 
 ## Run-level preamble
 
@@ -27,7 +27,7 @@ Run `notebooklm auth refresh`.
 
 ### Step 2: probe Basic Memory
 
-Probe it once with `search_notes(project="k-boat-knowledge", …)`.
+Probe it once with `bm_search(project="k-boat-knowledge", …)`.
 
 - If the `k-boat-knowledge` project does not exist, the knowledge layer is not set up: **STOP the whole run** and report (create the project first; see README).
   - Phase B's notebook discards are destructive, so do not run them before the durable store exists.
@@ -188,7 +188,7 @@ A crash between 6 and 7 leaves a notebook to clean up later, never lost data.
 ## Phase C: distil Kindle books
 
 Kindle books are distilled from the highlights in their note body, not from a notebook.
-Like Phase B, Phase C runs **only when Basic Memory is healthy** (see preamble) — its `write_note`/`edit_note` calls are the only persistent effect, and there is nothing destructive to gate (no notebook, no cooldown).
+Like Phase B, Phase C runs **only when Basic Memory is healthy** (see preamble) — its `bm_write`/`bm_edit` calls are the only persistent effect, and there is nothing destructive to gate (no notebook, no cooldown).
 The work set is `kindles.ripe` from the tool: Kindle notes marked `distill` with `distilled_date` empty (see kboat-notes [Kindle note](../kboat-notes/references/kindle-note.md#kindle-note-kindlesmd)).
 Each entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
 
@@ -216,21 +216,21 @@ The `memory-ingest` skill assumes a human approves each new entity before it is 
 This pass is unattended, so the approval gate becomes an **after-the-fact review gate**: every create, append, and skip decision is logged in the report for the human to reverse later.
 Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this skill).
 
-- **Append first.** Before creating a concept note, `search_notes` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
+- **Append first.** Before creating a concept note, `bm_search` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
   - The project's embedding model is English (`bge-small`), so semantic recall on Japanese titles is weak — lean on these lexical variations.
   - If a hit clears the bar, add to the existing note instead of creating a duplicate.
     - See `memory-curate`.
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
     - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups)).
-    - A heading you mint must repeat no `###` the note already carries: `edit_note` refuses a section header it finds twice, so a repeated one is an anchor nothing can add to that group by again.
-  - **Which shape the note is in.** `read_note` the hit and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
+    - A heading you mint must repeat no `###` the note already carries: `bm_edit` refuses a heading name it finds twice, so a repeated one is reachable only through an occurrence index (`<heading>[1]` for the second), which the anchors below never carry.
+  - **Which shape the note is in.** `bm_read` the hit and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
     - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
-    - Read with `output_format="json"` and treat a null `content` as not having got the note: a miss in text mode composes a document that reads like one.
+    - A read that returns an error has not got the note; report it as an error for this concept, as above.
     - Give the path as it came back, single-quoted, writing a `'` inside it as `'\''`, and pass no `--knowledge`: the root comes from `KBOAT_KNOWLEDGE_PATH`, and the option goes before `shape`, so a call carrying it no longer starts with the `kboat-concept shape` its permission rule matches.
   - **Whether these claims deepen an insight the note already carries or open a new one** is your judgement, not the tool's, and only the second case makes a **flat** note owe its claims a heading.
     - A note already carrying a `###` owes one on its own terms, below, whichever of the two this reading is.
-  - **Where a placement goes.** `edit_note(operation="insert_before_section", …)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.
+  - **Where a placement goes.** `bm_edit(command="insert_before_section", section=…)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.
     - That lands them at the end of the block they belong to, which is what keeps the section oldest-first.
     - New relations go in with `insert_after_section` on `## Relations`, unchanged; never plain `append` for either, which lands past the sections.
     - A new group on a `flat` note owes one more edit: `insert_after_section(section="## Observations")` carrying a blank line and then the `###` heading naming what the older claims established, and nothing else.
@@ -238,12 +238,12 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
         - The two commute, so the order decides only what a failed second edit loses: a lost heading leaves every claim in the note where lost claims leave nothing, while a heading over a placement that did not land separates nothing — the insight it would separate from never arrived — and the note reads `grouped` from then on, so nothing here gives it one again.
     - **A note that already carries a `###`, with claims still bare above the first one**, owes those claims a heading too, whatever else this append does to it.
       - They are an insight nothing has named, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
-  - **`edit_note` does not raise on a failing anchor** — it returns the failure as an ordinary result, so call it with `output_format="json"` and read a non-null `error` key.
+  - **A `bm_edit` that cannot resolve its anchor returns an error** and changes nothing, so read any error the call returns as these claims not having landed.
     - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6).
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
   - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
-  - A create that did not land — the `write_note` call failed or returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
-    - Read the note back before marking it: a `write_note` that timed out can still have created the note, and one that exists carrying this source's claims was created, whatever the call returned.
+  - A create that did not land — the `bm_write` call returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
+    - Read the note back before marking it: a `bm_write` that timed out can still have created the note, and one that exists carrying this source's claims was created, whatever the call returned.
   - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title, and open its content under no `# <title>` heading, as that section also says.
 - **Cap creates per source.** `create_cap` is **5** new concept notes for each ripe source or Kindle book, counting the notes this pass creates for that one source; this skill is the one place the value is set, so adjust it here.
   - Once a source has had `create_cap` notes created for it, stop creating for that source and finish its appends; the next source or book starts with the whole cap again.
@@ -275,7 +275,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this
   - Log merge candidates in the report for `kboat-curate` to handle with a human.
 - **Stay idempotent on replay.** A source a partial pass left ripe (Phase B step 6) or a crash interrupted is distilled again from the start, into notes that already hold part of what it yields, so every write here must be one a second pass can repeat.
   - The replay reads the source again, not the earlier pass's report: what keeps it from writing twice is the note in front of it, never a mark an earlier section left.
-  - The project's `write_note` does not overwrite by default, so never issue a second `write_note` for the same concept — use the reading-group inserts above.
+  - The project's `bm_write` does not overwrite by default, so never issue a second `bm_write` for the same concept — use the reading-group inserts above.
   - Before inserting, read the note's `## Observations` and `## Relations` and write only what it does not already hold:
     - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`, naming what it duplicates.
       - Where that is this source's own claim from an earlier pass, say so: a skip is logged for the human to reverse, and reversing this one would write a second copy.

@@ -25,7 +25,7 @@ A conversation that did not go through `ask-kboat` is not this skill's: the prov
 
 Call `kboat-concept` bare, as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 
-Probe Basic Memory once with `search_notes(project="k-boat-knowledge", …)`.
+Probe Basic Memory once with `bm_search(project="k-boat-knowledge", …)`.
 If the call errors, stop and report it: the material is in the user's hands, so waiting for a healthy day loses nothing.
 
 ## Procedure
@@ -71,6 +71,6 @@ Before any write, show the user the whole of it:
 Write only what they confirm.
 This is `memory-ingest`'s approval gate applied to these writes, and nothing more of that skill: do not create its verbatim source note, since the provenance line is the dialogue's whole record in the base.
 
-Make the writes the way kboat-distill makes them, `edit_note` with `output_format="json"` read for a non-null `error`, then read each note back.
-A `write_note` that timed out may still have created its note, and one that holds these claims was written, whatever the call returned.
+Make the writes the way kboat-distill makes them, reading any error a `bm_edit` returns as its claims not having landed, then read each note back.
+A `bm_write` that timed out may still have created its note, and one that holds these claims was written, whatever the call returned.
 Report what landed and what did not, note by note.

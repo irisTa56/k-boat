@@ -22,7 +22,7 @@ Change the relevant spec first, then this package and its tests — except GitHu
 - `kboat-bookmarklet` — print the queue-capture bookmarklet (Obsidian URI) to paste into a browser bookmark.
 - `kboat-queue` — parse the vault's `Queue/` captures into `{path, url, title}` JSON for `kboat-ingest` to drain (`list`), and delete a drained one under the vault lock (`remove`).
 - `kboat-concept` — `shape`, the reading-group classifier: reads the concept note at a path relative to the knowledge root and answers whether its `## Observations` carries any `###` group at all.
-  - The path is the `file_path` Basic Memory's `read_note` returns, and the root comes from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
+  - The path is the `file_path` Basic Memory's `bm_read` returns, and the root comes from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.
   - That answer is the branch `kboat-distill` takes before adding to one.
   - Text carrying no `## Observations` heading at all, and a path with no file behind it, are refused (exit 2, empty stdout) rather than answered; a read the OS refuses exits 1.
 - `kboat-knowledge` — the knowledge-base audits `kboat-curate` runs over `<knowledge root>/concepts/*.md`, the root taken from `--knowledge` or `$KBOAT_KNOWLEDGE_PATH`.

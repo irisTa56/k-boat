@@ -48,7 +48,7 @@ A writer with no reading to name therefore adds no claim; the two that name one 
 They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.
 
 **The shape record.**
-`kboat-concept shape '<file_path>'` reads the concept note at `<file_path>`, the path relative to the knowledge root that Basic Memory's `read_note` returns, and prints `{"shape": "flat"|"grouped"}` — the one key kboat-distill branches on.
+`kboat-concept shape '<file_path>'` reads the concept note at `<file_path>`, the path relative to the knowledge root that Basic Memory's `bm_read` returns, and prints `{"shape": "flat"|"grouped"}` — the one key kboat-distill branches on.
 It reports whether the section carries **any** `###` group, which is not the same as whether every claim in it is under one: a note in the third state above answers `grouped`, so that state is the writer's to see in the text and not the record's to name.
 It resolves no title, so it answers about exactly the file the path names, as it stands on disk when it runs.
 Text carrying no `## Observations` heading it **refuses** rather than answers: exit 2 — the code for a record the caller has to fix — with an empty stdout and the reason on stderr.
@@ -57,7 +57,7 @@ That is not a third shape but the tool declining to report on something that is 
 A `###` heading or an anchor inside a fenced code block is not one, because it is not one to Basic Memory's own section matcher either.
 
 It answers that and nothing else, and in particular it is not a gate on whether the note can be written to.
-`edit_note` resolves its own anchors and hands back a failure it cannot resolve as part of its own result, which kboat-distill reads and records; a note whose anchors a hand edit broke still takes an insert in most shapes, so refusing one here would only lose claims that would have landed.
+`bm_edit` resolves its own anchors and returns an error for one it cannot resolve, which kboat-distill reads and records; a note whose anchors a hand edit broke still takes an insert in most shapes, so refusing one here would only lose claims that would have landed.
 
 ## Dialogue records
 
