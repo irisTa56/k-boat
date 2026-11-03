@@ -201,11 +201,15 @@ name = "kboat"
 version = "0.1.0"
 source = { editable = "packages/kboat" }
 dependencies = [
+    { name = "markdown-it-py" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyyaml", specifier = ">=6" }]
+requires-dist = [
+    { name = "markdown-it-py", specifier = ">=4" },
+    { name = "pyyaml", specifier = ">=6" },
+]
 
 [[package]]
 name = "markdown-it-py"
