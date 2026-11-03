@@ -27,9 +27,10 @@ dev = [
     # skip or a thematic break to read, a question its `_without_frontmatter` says
     # why that module does not answer itself.
     "pyyaml",
-    # Tooling only, never imported by a package: the CommonMark parser
-    # `scripts/md_shape.py` reads block structure from, rather than classifying
-    # lines itself. Its module docstring says why that is not optional.
+    # Also a runtime dependency of kboat, which declares it for itself; listed here
+    # for `scripts/md_shape.py`, which does not go through kboat: the CommonMark
+    # parser it reads block structure from, rather than classifying lines itself.
+    # Its module docstring says why that is not optional.
     "markdown-it-py",
 ]
 

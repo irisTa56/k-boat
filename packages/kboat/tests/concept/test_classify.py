@@ -7,7 +7,7 @@ already in it.
 
 import pytest
 
-from kboat.concept import FLAT, GROUPED, _heading_level, classify
+from kboat.concept import FLAT, GROUPED, classify
 
 FLAT_NOTE = """---
 title: KV cache
@@ -87,6 +87,7 @@ def test_text_carrying_no_observations_heading_is_refused(text: str) -> None:
 def test_a_note_with_no_relations_section_reads_to_the_end() -> None:
     # The Observations body runs to the end of the document when nothing closes it.
     assert classify("## Observations\n\n### A group\n\n- [x] y\n") == GROUPED
+    assert classify("## Observations\n\n- [x] y\n\n#### A sub-point\n") == FLAT
 
 
 def test_a_deeper_heading_does_not_open_a_group() -> None:
@@ -118,7 +119,7 @@ def test_a_group_heading_after_a_closed_fence_still_counts() -> None:
 
 
 def test_a_backtick_fence_with_a_backtick_in_its_info_string_opens_nothing() -> None:
-    # CommonMark, and what the editor applies: such a line is text, so the
+    # CommonMark, and so what `bm_edit` resolves by: such a line is text, so the
     # heading below it is a heading.
     assert classify(_body("``` `not a fence`\n### A real group\n\n- [x] y")) == GROUPED
 
@@ -142,7 +143,7 @@ def test_a_closing_fence_may_not_carry_trailing_text() -> None:
 
 
 def test_a_closing_fence_may_carry_trailing_whitespace() -> None:
-    # The editor closes on a marker with nothing but whitespace after it.
+    # CommonMark closes on a marker with nothing but whitespace after it.
     assert classify(_body("```\n### Sample\n```   \n\n### A real group\n\n- [x] y")) == GROUPED
 
 
@@ -160,8 +161,8 @@ def test_an_anchor_inside_a_fence_is_not_an_anchor() -> None:
 
 
 def test_an_anchor_is_matched_on_the_stripped_line() -> None:
-    # The editor matches `line.strip()`, so trailing whitespace still anchors --
-    # and a note whose anchors carry it must not read as missing them.
+    # Whitespace around a heading's text is not part of it, so these still anchor
+    # -- and a note whose anchors carry it must not read as missing them.
     note = "## Observations  \n\n### A group\n\n- [x] y\n\n  ## Relations\t\n\n- related_to [[O]]\n"
     assert classify(note) == GROUPED
 
@@ -181,14 +182,6 @@ def test_a_tab_after_the_hashes_still_opens_a_group() -> None:
     assert classify(_body("###\tTab separated\n\n- [x] y")) == GROUPED
 
 
-def test_seven_hashes_are_not_a_heading_at_all() -> None:
-    # Unreachable through `classify`, which only ever asks whether the level is
-    # 3 -- but `_heading_level` mirrors basic-memory's predicate, and upstream
-    # reads the answer as a level to compare, where 7 and "not a heading" differ.
-    assert _heading_level("####### Seven hashes") is None
-    assert _heading_level("###### Six hashes") == 6
-
-
 def test_the_body_starts_at_observations_even_where_relations_comes_first() -> None:
     # On a note whose sections are the other way round, the Observations body is
     # what follows `## Observations` -- a `## Relations` above it does not close
@@ -198,7 +191,7 @@ def test_the_body_starts_at_observations_even_where_relations_comes_first() -> N
 
 
 def test_a_fenced_anchor_does_not_end_the_section_before_the_real_one() -> None:
-    # The section runs to the `## Relations` the editor would resolve, which is
+    # The section runs to the `## Relations` `bm_edit` would resolve, which is
     # the unfenced one. Taking the fenced copy for the boundary would hide the
     # group below it and send the writer to mint a heading the note already has.
     note = (
@@ -210,7 +203,7 @@ def test_a_fenced_anchor_does_not_end_the_section_before_the_real_one() -> None:
 
 def test_a_fenced_anchor_does_not_start_the_section_before_the_real_one() -> None:
     # The same on the other anchor: the body starts at the `## Observations` the
-    # editor resolves, so a `###` between the fenced copy and the real one is not
+    # `bm_edit` resolves, so a `###` between the fenced copy and the real one is not
     # in the section.
     note = (
         "```\n## Observations\n```\n\n### Not in the section\n\n"
@@ -220,41 +213,37 @@ def test_a_fenced_anchor_does_not_start_the_section_before_the_real_one() -> Non
 
 
 def test_a_heading_with_no_text_is_still_a_heading() -> None:
-    # Mirror fidelity, like the seven-hashes case: upstream reads a bare `###`
-    # as level 3, and `classify` calls a note whose only group heading is bare
-    # `flat` if this branch goes -- sending the writer to mint a second heading
-    # over claims that already sit under one.
-    assert _heading_level("###") == 3
+    # CommonMark reads a bare `###` as an empty level-3 heading. Calling a note
+    # whose only group heading is bare `flat` would send the writer to mint a
+    # second heading over claims that already sit under one.
     assert classify(_body("###\n\n- [x] y")) == GROUPED
 
 
 def test_a_tab_indented_heading_is_not_a_heading() -> None:
-    # Upstream strips spaces only, so `\t### x` is not a heading to it and must not
-    # be one here: reading it as a group would answer `grouped` for a note whose one
-    # insight is unheaded, and the writer's wrap branch would never fire for it again.
-    assert _heading_level("\t### Tab indented") is None
+    # A tab indents to the fourth column, so `\t### x` is an indented code block and
+    # no heading to `bm_edit`: reading it as a group would answer `grouped` for a note
+    # whose one insight is unheaded, and the writer's wrap branch would never fire.
     assert classify(_body("\t### Tab indented\n\n- [definition] only insight #grounded")) == FLAT
 
 
 def test_a_tab_indented_fence_does_not_open_a_fence() -> None:
-    # Same rule on the fence marker: the indent is measured in spaces, so a tab
-    # before the backticks leaves it text and the heading below it is a heading.
+    # Same rule on the fence marker: a tab before the backticks makes the line
+    # indented code, which opens no fence, so the heading below it is a heading.
     assert classify(_body("\t```\n### A real group\n\n- [x] y")) == GROUPED
 
 
 def test_a_line_separator_does_not_split_a_line() -> None:
-    # The document is split on "\n", as the editor splits it. `str.splitlines`
+    # Only "\n", "\r\n" and a lone "\r" end a line in CommonMark. `str.splitlines`
     # also breaks on U+2028 and friends, which would find headings and anchors
-    # where the editor resolves none.
+    # where `bm_edit` resolves none.
     assert classify(_body("prose\u2028### Not a heading to the editor\n\n- [x] y")) == FLAT
 
 
 def test_a_heading_indented_three_spaces_is_still_a_heading() -> None:
-    # The other side of the four-space boundary. Upstream reads 0-3 leading spaces
-    # as a heading and 4 as code; reading three as code would call a note whose
+    # The other side of the four-space boundary. CommonMark reads 0-3 leading
+    # spaces as a heading and 4 as code; reading three as code would call a note whose
     # only group heading is indented `flat`, and the writer would mint a second
     # heading over claims that already sit under one.
-    assert _heading_level("   ### Three spaces") == 3
     assert classify(_body("   ### Three spaces\n\n- [x] y")) == GROUPED
 
 
@@ -265,8 +254,75 @@ def test_a_fence_indented_three_spaces_still_opens_a_fence() -> None:
 
 
 def test_an_anchor_is_matched_on_its_leading_whitespace_too() -> None:
-    # The other half of `line.strip()`. `rstrip` alone would read the indented
-    # `## Relations` as no anchor, take the section to the end of the document,
-    # and answer `grouped` for a note whose one insight has no heading.
+    # Up to three spaces of indent still make a heading, so the indented
+    # `## Relations` closes the section. Missing it would take the section to the
+    # end of the document and answer `grouped` for a note whose one insight has
+    # no heading.
     note = "## Observations\n\n- [definition] the only insight\n\n  ## Relations\n\n### Stray heading\n"
+    assert classify(note) == FLAT
+
+
+@pytest.mark.parametrize(
+    "anchor", ["## Observations ##", "Observations\n------------"], ids=["closing-hashes", "setext"]
+)
+def test_any_spelling_of_the_level_two_heading_is_the_anchor(anchor: str) -> None:
+    # `bm_edit` matches a heading by its text, so these resolve `## Observations`
+    # and the note takes the writer's inserts. Refusing them would leave a
+    # concept note with no shape to place a new group by.
+    note = f"{anchor}\n\n### A group\n\n- [x] y\n\n## Relations\n\n- related_to [[O]]\n"
+    assert classify(note) == GROUPED
+
+
+def test_any_level_two_heading_ends_the_section() -> None:
+    # `bm_edit` ends a section at the next heading of its level or higher, so a
+    # `###` below a stray `## Notes` belongs to that one. Calling the note
+    # `grouped` would leave its one insight in Observations unheaded.
+    note = (
+        "## Observations\n\n- [definition] the only insight\n\n"
+        "## Notes\n\n### Not a group\n\n## Relations\n\n- related_to [[O]]\n"
+    )
+    assert classify(note) == FLAT
+
+
+def test_a_setext_heading_ends_the_section() -> None:
+    # A line of text over `---` is a level-2 heading, so the section ends there.
+    body = "A paragraph, not a claim\n---\n\n### Under the setext heading\n\n- [x] y"
+    assert classify(_body(body)) == FLAT
+
+
+@pytest.mark.parametrize("line", ["- ### A group in a list item", "> ### A group in a block quote"])
+def test_a_group_heading_inside_a_container_still_counts(line: str) -> None:
+    # Both are level-3 headings to CommonMark and so anchors to `bm_edit`. Calling
+    # the note `flat` would send the writer to mint a heading over claims that
+    # already sit under one.
+    assert classify(_body(f"{line}\n\n- [x] y")) == GROUPED
+
+
+@pytest.mark.parametrize(
+    "wrapped",
+    ["<!--\n### Commented out\n-->", "<details>\n### Inside raw HTML\n</details>"],
+    ids=["comment", "html-block"],
+)
+def test_a_group_heading_inside_html_does_not_count(wrapped: str) -> None:
+    # An HTML block's lines are raw HTML, not markdown, so no heading in one is
+    # an anchor; counting it would answer `grouped` for a note whose one insight
+    # is unheaded.
+    assert classify(_body(f"{wrapped}\n\n- [definition] the only insight")) == FLAT
+
+
+def test_an_unclosed_fence_in_a_list_item_closes_with_the_item() -> None:
+    # The fence ends where its list item does, so the heading below the list is a
+    # group. Running the fence to the end of the document would answer `flat`,
+    # and the writer would mint a heading over the note's real first group.
+    body = "- [example] see\n  ```\n  code with no closing fence\n\n### A real group\n\n- [x] y"
+    assert classify(_body(body)) == GROUPED
+
+
+def test_the_frontmatter_holds_no_anchor() -> None:
+    # `bm_edit` scans the body below the frontmatter, so a value that reads like
+    # the anchor and a group is neither.
+    note = (
+        "---\ntitle: t\nquoted: |\n  ## Observations\n  ### Not a group\n---\n\n"
+        "## Observations\n\n- [definition] the only insight\n\n## Relations\n\n- related_to [[O]]\n"
+    )
     assert classify(note) == FLAT

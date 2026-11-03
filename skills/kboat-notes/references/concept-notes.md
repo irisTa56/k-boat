@@ -55,7 +55,8 @@ It resolves no title, so it answers about exactly the file the path names, as it
 Text carrying no `## Observations` heading it **refuses** rather than answers: exit 2 — the code for a record the caller has to fix — with an empty stdout and the reason on stderr.
 A path with no file behind it exits 2 as well, and a read the OS refuses exits 1.
 That is not a third shape but the tool declining to report on something that is not a concept note; kboat-distill's rule is that a shape it did not give is never assumed.
-A `###` heading or an anchor inside a fenced code block is not one, because it is not one to Basic Memory's own section matcher either.
+It reads the note as `bm_edit` does when it resolves an anchor, parsing it as CommonMark: the section runs from the level-2 heading `Observations` to the next heading of level 1 or 2, whatever that heading's text, and a group is any level-3 heading inside it.
+So a heading inside a fenced code block, an HTML block or the frontmatter is no heading to either, and a `###` inside a list item or a block quote is a group to both.
 
 It answers that and nothing else, and in particular it is not a gate on whether the note can be written to.
 `bm_edit` resolves its own anchors and returns an error for one it cannot resolve, which kboat-distill reads and records; a note whose anchors a hand edit broke still takes an insert in most shapes, so refusing one here would only lose claims that would have landed.
