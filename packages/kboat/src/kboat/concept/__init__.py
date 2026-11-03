@@ -12,13 +12,13 @@ append leaves behind -- answers `GROUPED`, and the writer reads that state off t
 text rather than out of this record.
 
 It answers that and nothing else. It is not a gate on whether the note can be
-written to: `edit_note` resolves its own anchors and hands back a failure it cannot
-resolve as part of its own result, which the writer reads and records, so a second
+written to: `bm_edit` resolves its own anchors and returns an error for one it cannot
+resolve, which the writer reads and records, so a second
 opinion here would only refuse appends that would have landed.
 
 The scan mirrors basic-memory's own section matcher (`services/note_preparation.py`
 `_markdown_heading_level`, `_fence_marker`, `_fenced_code_line_flags`, as of 0.23.0),
-because the question is not what a markdown parser sees but what `edit_note`'s
+because the question is not what a markdown parser sees but what `bm_edit`'s
 anchors resolve to when the writer inserts. A heading inside a fenced code block is
 an anchor to neither.
 """
@@ -107,8 +107,8 @@ def classify(text: str) -> str | None:
     """`GROUPED` where the note's Observations section already carries `###` groups, else `FLAT`.
 
     `None` where `text` carries no `## Observations` heading at all. That is not a
-    third shape but a refusal to answer: an omitted redirect, an empty file and
-    `read_note`'s not-found document all arrive looking like this, and `FLAT` would
+    third shape but a refusal to answer: an omitted redirect and an empty file both
+    arrive looking like this, and `FLAT` would
     be an answer about a note the tool never saw. It is the one wrong answer that
     writes -- on a note that is really grouped, the writer's flat branch mints a
     heading over the real first group, the anchor is there so the edit succeeds, and

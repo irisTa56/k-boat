@@ -49,9 +49,9 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
 
 **Renaming a concept note** (Basic Memory resolves wikilinks by title, so a rename breaks inbound `[[...]]`):
 
-1. `search_notes` for the old title to find every note that links it.
-2. `edit_note` the title in frontmatter (`find_replace` on the `title:` line) and update each referencing `[[old title]]` → `[[new title]]`.
-3. `move_note` (identifier = the permalink) to rename the file; keep the `permalink` unchanged so it stays stable.
+1. `bm_search` for the old title to find every note that links it.
+2. `bm_edit` the title in frontmatter (`find_replace` on the `title:` line) and update each referencing `[[old title]]` → `[[new title]]`.
+3. `bm_move` (identifier = the permalink) to rename the file; keep the `permalink` unchanged so it stays stable.
 
 ## Part B — tag hygiene
 
@@ -86,7 +86,7 @@ Insert the `tags:` block as the last frontmatter key (after `permalink:`), match
 
 ### Step 4: Apply on confirmation
 
-Edit tag blocks (on disk or via `edit_note`).
+Edit tag blocks (on disk or via `bm_edit`).
 
 - Keep the two in sync: when you **adopt** a new tag, add it to `meta/Tag vocabulary`; when you **fold** a variant, record it in that note's Aliases table so it does not return.
 
