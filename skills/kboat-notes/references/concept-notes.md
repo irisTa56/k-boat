@@ -44,9 +44,9 @@ A reader such as `ask-kboat` takes a claim's origin from the first provenance li
 So no edit changes which line is the first below a claim already in the note, whoever makes it and whatever else it does, a merge or a hand correction included, and a claim an edit adds has its own reading's line as the first below it.
 A writer with no reading to name therefore adds no claim; the two that name one are kboat-distill, for a source that was read, and kboat-record-dialogue, for a kept `ask-kboat` answer ([Dialogue records](#dialogue-records)).
 
-`## Observations` and `## Relations` each appear exactly once, in that order, and the `###` headings within a note are distinct.
-They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory resolves a section across the whole note and refuses an insert against one it finds twice or not at all.
-A `###` heading also contains no `/` and does not end in `[<number>]`, since Basic Memory reads the first as a path separator and the second as an occurrence index, and either leaves the heading unreachable by its own name.
+`## Observations` and `## Relations` each appear exactly once, in that order, and no heading in a note repeats another's text, whatever the two headings' levels.
+They are anchors, not just structure: kboat-distill positions its inserts relative to them, and Basic Memory finds a section by its heading text at any level and refuses an insert against a name it finds twice or not at all.
+A `###` heading also contains no `/` and does not end in `[<number>]`, since Basic Memory reads the first as a path separator and the second as an occurrence index, so in either case the heading's own text no longer names it.
 
 **The shape record.**
 `kboat-concept shape '<file_path>'` reads the concept note at `<file_path>`, the path relative to the knowledge root that Basic Memory's `bm_read` returns, and prints `{"shape": "flat"|"grouped"}` — the one key kboat-distill branches on.
