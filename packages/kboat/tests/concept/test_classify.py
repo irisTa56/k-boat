@@ -273,13 +273,14 @@ def test_any_spelling_of_the_level_two_heading_is_the_anchor(anchor: str) -> Non
     assert classify(note) == GROUPED
 
 
-def test_any_level_two_heading_ends_the_section() -> None:
+@pytest.mark.parametrize("closer", ["## Notes", "# Appendix"])
+def test_any_heading_of_level_two_or_higher_ends_the_section(closer: str) -> None:
     # `bm_edit` ends a section at the next heading of its level or higher, so a
-    # `###` below a stray `## Notes` belongs to that one. Calling the note
-    # `grouped` would leave its one insight in Observations unheaded.
+    # `###` below a stray `## Notes` or `# Appendix` belongs to that one. Calling
+    # the note `grouped` would leave its one insight in Observations unheaded.
     note = (
         "## Observations\n\n- [definition] the only insight\n\n"
-        "## Notes\n\n### Not a group\n\n## Relations\n\n- related_to [[O]]\n"
+        f"{closer}\n\n### Not a group\n\n## Relations\n\n- related_to [[O]]\n"
     )
     assert classify(note) == FLAT
 
