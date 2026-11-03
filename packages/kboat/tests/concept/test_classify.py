@@ -74,6 +74,9 @@ def test_an_empty_observations_section_is_flat() -> None:
         "   \n\n",
         "## Relations\n\n- related_to [[Other]]\n",
         "# Error\n\nNote not found: no note matched that identifier.\n",
+        "# Observations\n\n### A group\n",
+        "### Observations\n\n### A group\n",
+        "## Observations and more\n\n### A group\n",
     ],
 )
 def test_text_carrying_no_observations_heading_is_refused(text: str) -> None:
