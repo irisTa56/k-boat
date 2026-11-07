@@ -49,13 +49,19 @@ env:
   # rather than being installed as it stands (which `UV_FROZEN` would do) or
   # re-resolved. The NotebookLM CLI's lock is checked by `qa:py:notebooklm`.
   UV_LOCKED: "1"
-  # mise.toml's `[hooks]` postinstall sets up a local checkout, which no job
-  # uses; the jobs that need the workspace get it from `uv run`.
+  # mise.toml's `[hooks]` postinstall sets up a local checkout, which only
+  # `python-qa` needs; `qa:md` runs `uv run` from the root, which syncs the
+  # workspace with its dev group.
   MISE_NO_HOOKS: "1"
 
 jobs:
   python-qa:
     runs-on: ubuntu-latest
+    env:
+      # Each `qa:py:<member>` runs `uv run` from that member's directory, which
+      # installs the member alone and leaves out the root's dev group (ruff, ty,
+      # pytest); the postinstall's `uv sync` at the root installs those.
+      MISE_NO_HOOKS: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
