@@ -64,7 +64,7 @@ Run `feed-filter forum-new`.
 **Judge each candidate**.
 
 - Use a **Sonnet** subagent for Rule A and a **haiku** subagent for Rule B (see the model split above).
-  - Launch either as the `kboat-feed-judge` agent type (`subagent_type: "kboat-feed-judge"`, with `model: "sonnet"` or `model: "haiku"`), never as a general-purpose one: `.claude/agents/kboat-feed-judge.md` is what keeps the session's task-chip tools from a judge, and says why.
+  - Launch either as the `kboat-feed-judge` agent type (`subagent_type: "kboat-feed-judge"`, passing that `model`), not a general-purpose one; [its definition](../../.claude/agents/kboat-feed-judge.md) says why.
 - Judging candidates in parallel is fine, but step 3 needs every result, so go on only once each judge has reported, whether its result came back from the launch or in a completion notification; act on the batch once it is complete, not on each notification.
   - At most 20 judges run at once, the harness's concurrent-subagent limit, and a launch past it fails with "Concurrent subagent limit reached".
   - When there are more candidates than that, launch the first 20 and the rest as judges finish, since step 3 still needs every result before acting.
