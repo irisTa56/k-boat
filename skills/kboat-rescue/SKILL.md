@@ -20,7 +20,7 @@ Do not run it from the unattended routine.
 
 ## Scope
 
-Both `source_type`s are handled — whatever sent the source to the DLQ, the note's `source_type` selects the branch — and they differ only in how the content is obtained and where the reading copy lives.
+Both `source_type`s are handled, the note's `source_type` selecting the branch whatever sent the source to the DLQ; they differ only in how the content is obtained and where the reading copy lives.
 
 - **PDF** (`source_type: pdf`): a blocked PDF has a `url` and, where ingest recorded it, no local file yet.
   - Rescue saves the real file to `PDFs/<slug>.pdf` (the durable reading copy) and uploads it.
@@ -50,22 +50,22 @@ Do not set `blocked` to bring the source into this skill's usual path — that r
 
 **Read `notebooklm_id` before going further on either of the first two openings** — not on the third, whose source carries one by definition and whose whole errand is to put content back into the notebook that id names, never calling `create` at all.
 On those two, an entry that still carries one is not missing its content and is not this skill's to rescue — kboat-notes [Procedure: rescue a blocked source](../kboat-notes/references/procedures.md#procedure-rescue-a-blocked-source) step 1 owns that gate and where such a source goes instead.
-It has to be read here rather than at step 5, where this skill points at that procedure: by then the browser fetch has run and step 5's `create` has built the notebook whose id would overwrite the stored one.
-That is why the no-argument listing shows the field — an entry carrying one is visible before the user picks it.
+It has to be read here, not at step 5 where this skill points at that procedure: by then the browser fetch has run and step 5's `create` has built the notebook whose id would overwrite the stored one.
+That is why the no-argument listing shows the field: an entry carrying one is visible before the user picks it.
 Call the `notebooklm` and `kboat-*` commands bare, each as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 
 **Invoked to give one up** ("that URL is dead", "drop the blocked one"): kboat-notes' triggers are of two kinds, and what the source needs first depends on which the user is naming.
 A dead `url` or a page that is gone is the first; deciding not to pursue it is the second.
 
-- **A claim about the page** ("the URL is dead") is a finding to check, not an instruction to take on trust — a walled page reads like a dead link, which is the mistake the look is for.
-  - Say you are looking, then run steps 2 and 3 for the look alone: no capture, no notebook.
+- **A claim about the page** ("the URL is dead") is a finding to check, not one to take on trust — a walled page reads like a dead link, which is the mistake the look is for.
+  - Say you are looking, then run steps 2 and 3 only to look: no capture, no notebook.
   - Three ways it can land:
     - **The look confirms it** → go to step 6.
     - **The look disconfirms it** (the page loads, or a wall stands where the user expected nothing) → say what you actually found and offer to finish the rescue from step 3 instead, the browser being already there and a wall being what this skill exists to clear.
       - Abandon it only if they still want that.
     - **No browser to look with** (step 2 found none) → say so, and let the user's own account of the page stand in for the look.
 - **A decision about effort** ("I'm not chasing it") needs no look at all.
-  - It is not a claim the page is gone, so there is nothing to verify, and requiring a browser the machine may not have would leave the entry ageing in the DLQ — which is the state this ending exists to end.
+  - It is not a claim the page is gone, so there is nothing to verify, and requiring a browser the machine may not have would leave the entry ageing in the DLQ, the state this ending exists to end.
   - Confirm the decision and go to step 6.
 
 ### Step 2: Choose the browser
@@ -90,7 +90,7 @@ Navigate the browser step 2 chose to the note's `url`, or for a PDF to the same-
 
 If a CAPTCHA / "Human Verification" / sign-in page appears and does not clear by itself, what to do depends on the browser:
 
-- **Built-in browser**: that is the wall step 2 says stands there, so move on to Chrome rather than asking the user to clear it in the pane.
+- **Built-in browser**: that is the wall step 2 says stands there, so move on to Chrome; do not ask the user to clear it in the pane.
 - **Chrome**: ask the user to clear it in their browser, then continue once the real content loads.
 
 If the page is **gone** instead of walled — a 404, a removed or retracted article — there is nothing to pull through and no re-run will change that: report what you saw, and take the abandoned ending in step 6 if the user agrees to give it up.
@@ -126,7 +126,7 @@ The add differs by branch:
 
 - **PDF**: `notebooklm --quiet source add "<vault>/PDFs/<slug>.pdf" --type file --mime-type application/pdf --notebook <id> --json 2>/dev/null`.
   - No `--title`: NotebookLM resets a file source's title to the filename, and a PDF resolves by `type: pdf`.
-- **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (the `-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
+- **Web page**: `notebooklm --quiet source add - --type text --title "<title>" --notebook <id> --json 2>/dev/null < <tmpfile>` (`-` reads the captured text from stdin as a text source, so a long article needs no shell-quoting).
   - A text upload's `--title` **does** stick; that title is what the source-id resolution finds it by, the upload having no `url`.
 
 Then set `blocked: false`, write `notebooklm_id` (the tool derives `gemini_url` and `notebooklm_url` from it) and the captured `summary`/`topics`, and set `reading_link` = `[[<slug>.pdf]]` for a PDF (leave it as the `url` for a web page).
@@ -161,7 +161,7 @@ State that the source left the DLQ and is now a normal source (in the inbox).
 
 ## Notes
 
-- Identity is the `url` throughout; the slug (url-hash) never changes, so the rescued source reuses its existing note — no duplicate, provenance intact.
+- Identity is the `url` throughout; the slug (url-hash) never changes, so the rescued source reuses its note: no duplicate, provenance intact.
 - `source_type` is unchanged by the rescue.
 - A rescued web page has no durable local copy (unlike a PDF's `PDFs/<slug>.pdf`), so once its notebook is later discarded only the still-walled `url` remains, and its text can come only from another rescue capture.
   - Reactivating it is still the route to one, not a detour around it: this skill takes only a `blocked` source, and the plain re-fetch is what fetches the wall, records the source blocked again, and so puts it back within reach.
