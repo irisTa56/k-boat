@@ -50,7 +50,7 @@ env:
   # re-resolved. The NotebookLM CLI's lock is checked by `qa:py:notebooklm`.
   UV_LOCKED: "1"
   # mise.toml's `[hooks]` postinstall sets up a local checkout, which no job
-  # uses; a job that needs the workspace syncs it itself.
+  # uses; the tasks that need the workspace sync it through `uv run`.
   MISE_NO_HOOKS: "1"
 
 jobs:
@@ -65,9 +65,6 @@ jobs:
           # restored cache would hold every tool at the release it was first
           # saved with until mise.toml changed.
           cache: false
-      # `qa:py:<member>` runs `uv run` from the member's directory, which installs
-      # that member alone, without the root's dev group (ruff, ty, pytest).
-      - run: uv sync
       - run: mise run qa:py
 
   markdown-lint:

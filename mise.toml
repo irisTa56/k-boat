@@ -134,29 +134,31 @@ run = "shfmt -i 2 -w scripts/*.sh"
 
 # Python QA is per-member: each `qa:py:<member>` runs in its own dir so that
 # package's pyproject config applies (ruff selects, ty root, pytest coverage),
-# resolving against the single workspace venv. `qa:py`/`fmt:py` aggregate them by
-# glob, so adding a package means adding its two leaf tasks — no central list.
+# resolving against the single workspace venv. From a member's dir `uv run` syncs
+# that member, whose default groups leave out the root's `dev` group (ruff, ty,
+# pytest), so each of its calls names the group. `qa:py`/`fmt:py` aggregate them
+# by glob, so adding a package means adding its two leaf tasks — no central list.
 
 [tasks."qa:py:kboat"]
 description = "Lint, type-check, and test the kboat package"
 dir = "packages/kboat"
 run = """
-uv run ruff check
-uv run ruff format --check
-uv run ty check
-uv run pytest
-uv run python ../../scripts/coverage_floor.py coverage.json
+uv run --group dev ruff check
+uv run --group dev ruff format --check
+uv run --group dev ty check
+uv run --group dev pytest
+uv run --group dev python ../../scripts/coverage_floor.py coverage.json
 """
 
 [tasks."qa:py:feed-filter"]
 description = "Lint, type-check, and test the feed-filter package"
 dir = "packages/feed-filter"
 run = """
-uv run ruff check
-uv run ruff format --check
-uv run ty check
-uv run pytest
-uv run python ../../scripts/coverage_floor.py coverage.json
+uv run --group dev ruff check
+uv run --group dev ruff format --check
+uv run --group dev ty check
+uv run --group dev pytest
+uv run --group dev python ../../scripts/coverage_floor.py coverage.json
 """
 
 # `scripts/` is flat tooling, not a workspace member (no `pyproject.toml` of its
@@ -187,16 +189,16 @@ depends = ["qa:py:*"]
 description = "Autofix kboat lint and formatting"
 dir = "packages/kboat"
 run = """
-uv run ruff check --fix
-uv run ruff format
+uv run --group dev ruff check --fix
+uv run --group dev ruff format
 """
 
 [tasks."fmt:py:feed-filter"]
 description = "Autofix feed-filter lint and formatting"
 dir = "packages/feed-filter"
 run = """
-uv run ruff check --fix
-uv run ruff format
+uv run --group dev ruff check --fix
+uv run --group dev ruff format
 """
 
 [tasks."fmt:py:scripts"]
