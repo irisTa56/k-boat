@@ -33,6 +33,7 @@ from kboat.write import WriteStatus
 SKILLS = Path(__file__).resolve().parents[3] / "skills"
 
 _REPOS_SKILL = "kboat-repos/SKILL.md"
+_REPOS_REFRESH_REPORT = "kboat-repos/references/refresh-report.md"
 _NOTES_PROCEDURES = "kboat-notes/references/procedures.md"
 _REPO_NOTE = "kboat-notes/references/repo-note.md"
 
@@ -109,8 +110,8 @@ _NOT_OK_VERDICTS = tuple(verdict.value for verdict in Verdict if verdict is not 
 _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
     "refresh-reason-bullets": (
         get_args(Reason),
-        _REPOS_SKILL,
-        _bullets(_REPOS_SKILL, r"^Each `failed` entry carries a `reason`"),
+        _REPOS_REFRESH_REPORT,
+        _bullets(_REPOS_REFRESH_REPORT, r"^Each `failed` entry carries a `reason`"),
     ),
     "refresh-reason-inline": (
         get_args(Reason),
@@ -119,8 +120,8 @@ _PINS: dict[str, tuple[tuple[str, ...], str, Callable[[], list[str]]]] = {
     ),
     "collision-reason-bullets": (
         get_args(CollisionReason),
-        _REPOS_SKILL,
-        _bullets(_REPOS_SKILL, r"^Each `rename_collisions` entry carries a `reason`"),
+        _REPOS_REFRESH_REPORT,
+        _bullets(_REPOS_REFRESH_REPORT, r"^Each `rename_collisions` entry carries a `reason`"),
     ),
     "collision-reason-inline": (
         get_args(CollisionReason),
