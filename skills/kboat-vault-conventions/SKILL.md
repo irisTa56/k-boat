@@ -34,62 +34,11 @@ So a command that reads an input in the set holds it to the same rule rather tha
 - Creating a missing folder belongs to declaring the note type rather than to the run.
 
 The set is what a run cannot proceed without, not everything the vault holds.
-An input a phase degrades over by design is deliberately out — the daily pick's `Daily/` notes are its ambient signal and it ranks without them, so their absence is not a precondition failure, whereas `Questions.md` below is the deliberate signal the pick is steered by.
+An input a phase degrades over by design is deliberately out — the daily pick's `Daily/` notes are its ambient signal and it ranks without them, so their absence is not a precondition failure, whereas `Questions.md`, one of [the checks](references/preconditions.md#the-checks), is the deliberate signal the pick is steered by.
 So `kboat-pick candidates` says nothing about an absent `Daily/` and reports a refused one, or a note in the look-back window it could not read, as an anomaly without failing.
 
-- **The environments the routine runs match the checkout's locks**, as `environment`, whose `paths` name each one that does not: `kboat` for kboat's runtime closure in the workspace venv, `tools/notebooklm` for the NotebookLM CLI's own venv.
-  - The case it is for is a checkout whose code has moved past its venvs — the post-merge hook did not run, or its sync failed — so a phase would fail with `command not found` mid-run, or run on a version the checkout no longer locks.
-    - The remedy is `mise install` in that checkout, whose `postinstall` runs both syncs.
-  - It asks uv itself (`uv sync --check`), so a console script the venv lacks is found as well as a stale version, and nothing here re-reads `pyproject.toml`.
-    - `--inexact --no-dev` keeps out what the routine does not import — the dev tooling, and the other members' dependencies — so a stale one of those does not stop it.
-    - `--offline`, so the check every run waits on does not wait on the network.
-  - The checkout is the one the running `kboat` sits in, not wherever the caller stands: a bare `kboat-doctor` is found on `PATH`, and its venv is the one the run's other bare calls land on.
-  - uv that cannot be run fails the check with the reason in `detail`, like an environment that is out of date, since the answer is then unknown.
-  - It comes first and runs whatever the vault's state, since nothing about the vault bears on it.
-- **The root exists** and is a directory.
-  - Absent, or a name held by something that is not one, short-circuits the vault checks after it: every one of them would only restate the same fact.
-  - A root the vault **refuses to read** does not short-circuit, and this is the third answer rather than a shade of the first.
-    - Writability and readability each have their own finding about such a root, and a run that stopped would report none of them — telling a human that a vault which is there and merely unreadable is a vault that is gone.
-- **The root is writable** — the root itself, not each folder the run writes into.
-  - Proven by creating a uniquely-named probe file with `O_EXCL` and unlinking it: permission bits are not the whole story on a synced volume, so the check writes rather than inspects.
-  - A probe that cannot be removed again fails too, since a file left in the vault is itself drift.
-  - A single folder made read-only under a writable root therefore passes here and fails mid-run; the check is aimed at a vault that is absent or not mounted, which is the failure that takes the root with it.
-- **The required folders exist**, and separately that **no required name is taken by a non-directory** (a file, or a dangling symlink).
-  - Two checks, because the first wants `mkdir` and the second wants the name freed first — `mkdir` on a taken name fails.
-  - The set is every note type's directory (from `kboat.schema`'s `DIR_BY_TYPE`, so declaring a new type requires its folder) plus `Queue/`, `Reviews/`, and `PDFs/` (named beside `DIR_BY_TYPE` in `kboat.schema`, so the layout has one home).
-  - The writer would create a missing one on first write, but the check does not defer to that: an absent folder is indistinguishable from a vault that has not synced, and auto-creating it is how a run comes to write into a half-synced vault.
-- **The questions file exists** — `Questions.md` at the vault root, the daily pick's backlog.
-- **Every scanned directory can be read**, as `readable_notes` and `readable_assets`.
-  - No scan can stand in for this.
-    - A directory the OS refuses to list is what a scan reads as an empty one unless it was written not to: `Path.glob` swallows the refusal, and `is_dir()` still answers `True` because that `stat` goes through the parent.
-  - Within the scanned set, it is what stops the run before each phase's own scan reports the folder separately.
-  - Outside that set only the phase's own scan reports one.
-    - `Daily/` is the case — read by the daily pick and deliberately no precondition of it — so `kboat-pick candidates` reports an unreadable `Daily/` itself, since this check never will.
-  - The pair splits by what a refusal actually costs rather than by which directory it is in, because a doctor failure stops the whole routine.
-    - A note directory **fails** however it is unreadable: its listing is a phase's input.
-    - An asset directory that is unlistable but still **traversable** only warns.
-      - No phase lists `PDFs/` — ingest writes one path and the slug migration probes one by name — so nothing is affected, and a failure would stop the routine over it.
-    - The **asset directory itself** failing to be traversable is the exception, because there every access by name fails: ingest cannot write a source's PDF, and the slug migration cannot tell where one is, so it moves no source at all.
-    - A directory *below* it warns whatever its mode: the probes name `PDFs/<slug>.pdf` at the top level, so nothing there is affected, and failing would stop the whole routine over a folder no phase reads.
-  - The scan is recursive and the failure deliberately wider than a phase's input: a subfolder under a note directory is one nothing lists, and it fails all the same, because what the check establishes is that the vault can be read rather than that today's phases happened to reach everything in it.
-  - A directory that goes away mid-scan is not a refusal and only **warns**: the walk listed a parent and the child was gone by the time it descended, which clears itself before anyone can act.
-    - The refusals name their `strerror` in `detail`, so the two are told apart without parsing a name out of `paths`.
-- **No file has been evicted** in the scanned set — the note directories and `PDFs/`, each recursively — reported as `evicted_files`, a **warning** that never fails.
-  - iCloud evicts a file in place: the name stays and only the content leaves, marked by the `SF_DATALESS` flag, and the first read downloads it again.
-    - So an evicted file is listed, probed, and read like any other, and a run that meets one pays a download rather than missing an input; failing over it would stop a run that would have succeeded.
-    - What a read does when it cannot download — fail, or wait — has not been measured; the routine needs the network for NotebookLM in any case.
-    - Before macOS Sonoma iCloud left a `.<name>.icloud` placeholder instead and the name itself went away; no host K-Boat runs on does that, so nothing here looks for one.
-  - It warns at all because the vault folder is meant to be kept downloaded.
-    - A file another device has just added is dataless too until this Mac downloads it, even in a folder kept downloaded, so one report can be a sync still in progress; only the same file reported again on a later run says that setting has lapsed.
-  - Recursively, but not into a symlinked subdirectory, since one symlink loop would hang the check every run waits on.
-  - The sweep is only as complete as `readable_notes` and `readable_assets`: a directory that could not be listed holds no findings for this check either, so an `evicted_files` of `ok` beside a failing readability check says nothing was found rather than that nothing is there.
-
-The report on stdout is a JSON object with `vault`, `ok` (true when nothing failed), `checks`, and `counts`.
-Each entry in `checks` carries `name`, `status` (`ok`, `warning`, or `failed`), `detail`, `paths`, and `path_count` — every key on every entry, and `counts` likewise carries `total` plus one count per status even at zero, so a reader never has to decide whether an absent key means empty or means nothing.
-A check's names live in its `paths` alone, never restated in `detail`, so a reader acting on one list is not left wondering whether the other holds more.
-`paths` names at most five, with `path_count` giving the true total: the failure these checks exist for can evict thousands of files at once, and the caller is an unattended agent whose context both streams land in, so the report is bounded rather than answering a question about the vault with the vault itself.
-A **short-circuiting** root failure — absent, or the name held by a non-directory — is reported without the vault checks after it, so that run has fewer entries but never fewer keys.
-Every non-`ok` check is also written to stderr, one line per finding, so an unattended log shows the reason without parsing the JSON back.
+The checks one by one, each with why it is drawn where it is, and the JSON report `kboat-doctor` prints are in [references/preconditions.md](references/preconditions.md).
+Read it when working out what a check found or why a precondition failed.
 
 ## Naming
 
@@ -116,23 +65,7 @@ One page triaged into `Feeds/` and later ingested into `Sources/` therefore hold
 
 One consequence every writer handles: 48 bits is collision-resistant but not collision-free, so de-dup by reading the existing note's identity field, never by filename alone — which is exactly what the write contract's collision check does.
 
-A note already in the vault under an older name is repaired by `kboat-note migrate-slugs --dry-run|--apply`, which reports every URL-named note whose filename is not the slug its `url` names and, on `--apply`, renames it.
-A PDF source is a pair: `PDFs/<slug>.pdf` and the note's `reading_link` link to it are both derived from the slug, so the file and the link move with the note or nothing does.
-Only the filename inside that link is rewritten — a PDF++ page or highlight subpath is where the reader had got to, and it is carried across.
-Several things make a row a conflict, all reported and skipped and never overwritten, and the row's `detail` names which.
-They group by who clears them, which is what a reader triaging a dry run needs, and the groups are the contract rather than their number.
-
-- **A human merges the two**: an existing note or PDF at a target name, or a slug two notes both want.
-- **A human repairs the note**: a `reading_link` that names the note's PDF in a shape the tool cannot rewrite, which would dangle if the pair moved.
-- **The vault is what needs looking at**: a target name it refuses to let the pass read at all, a source's PDF it cannot look for because `PDFs/` is absent, not a directory, or refused, or a name held by something that is not a note — a dangling symlink being the one that occurs, which nothing frees on its own.
-
-A note the pass could not read at all is not a row but a `skipped` entry, and a note directory it could not read — absent, not a directory, or refused, the entry saying which — is one too, reported under the directory's own name, because "nothing to migrate" and "nothing I could see" are the same JSON otherwise, and this report is what an `--apply` is approved from.
-The counts keep the two apart: `unreadable_dirs` counts the directories and `skipped` counts only the notes, so `counts.skipped` is deliberately smaller than the `skipped` array when a directory is in it.
-One directory entry stands for however many notes went unseen, which is why folding it into a note count would put a fixed number where the true one is unknown.
-A non-zero exit says a pass left work behind or could not read a directory it had to ("Vault preconditions"), not that a human must move a file: where the pass renamed the note that was in the way, a re-run clears the conflict on its own.
-What no pass can clear is two notes each holding the name the other wants — that one is a human's to break.
-A missing vault root is refused in both modes rather than reported as a vault with nothing to migrate, since the dry run is what an `--apply` is approved from.
-The tool takes the vault lock for `--apply` and none for `--dry-run`, and it is a repair a human runs, not a routine phase.
+A note already in the vault under an older name is repaired by `kboat-note migrate-slugs`, a repair a human runs; [references/naming.md](references/naming.md) has what it moves, the conflicts it reports, and how it treats the vault lock.
 
 Not every note is hash-named.
 A Kindle note is named by its Amazon ASIN and a review report by its date (`YYYY-MM-DD.md`); both are stable ids like the hash, so those files are never renamed either and their readable label needs no title formula (the filename is already legible).
@@ -177,181 +110,44 @@ The write is owned by `kboat.write.upsert(schema, vault, record, *, today)` in t
 K-Boat's prose skills give a record to the CLI on stdin, in the form the root [CLAUDE.md](../../CLAUDE.md#environment) sets; a Python member such as feed-filter calls `upsert` directly.
 `kboat-repos write` is a second CLI over the same `upsert`, differing in the record shape it accepts (a `gather` record plus the judged fields, rather than `{slug, fields, body?}`), in that its `fields` block writes only the keys it owns — dropping one the schema does not declare, one belonging to the human or the schema (`reading`, the date stamps), and one the writer sets itself from the record's top level, and reporting all three as `dropped_fields` — and in that it authors no body of its own; everything else below holds for it too.
 
-From a `{slug, fields, body?}` record, `upsert` guarantees:
+The rest of the contract is in [references/write-contract.md](references/write-contract.md); read it before writing a note or changing a writer.
 
-- The note is written at `<type-dir>/<slug>.md` (the directory is `DIR_BY_TYPE[type]`) in the schema's canonical field order, YAML quoting and empty-value rendering handled.
-  - The slug names one file inside that directory and nothing else, so a record whose slug is not a filename — blank, opening with a dot, or carrying edge whitespace, a control character, or one of the `/ \ : * ? " < > |` the naming section forbids — is refused and written nowhere.
-    - Every slug a member writes is a URL hash, an ASIN, or a name it chose itself, so the rule costs a real one nothing and keeps an assembled record from reaching outside its type's folder.
-  - A field name outside the property-key grammar — ASCII letters, digits and `_`, never opening with a digit, which `snake_case` already satisfies — is refused the same way, and the whole record with it.
-    - A wrong *value* is kept as a quoted scalar and reported by `kboat-validate`; a name has no such fallback, since quoting it puts the property outside what the reader can decode and so beyond both the next write and the validator.
-    - A property a human hand-added under a name of their own is a different matter — the write carries it back untouched (below).
-- **What holds the slug decides create versus merge**, asked the way "A name is asked about through `kboat.io_utils`" below says and in its order, never by a bare `exists()`.
-  - A file there is merged into (the next bullet), and a slug nothing holds is created.
-  - A slug held by something that is not a file — a directory, or a symlink that leads nowhere — raises an `OSError` and writes nothing, which `kboat-note write` and `kboat-repos write` report as `write failed: …` and feed-filter as `error: …`, each with exit 1.
-    - No run frees that name, so it is a human's.
-  - A probe the vault refuses raises the same way, so a refusal is never reported as a free name.
-- **A note naming a key twice is refused.** An existing note that names any key on more than one top-level line — counted as `kboat-validate`'s `repeated_key` counts it — is refused as `{status: "repeated_key", slug, path, keys}`, written nowhere, `keys` listing every such key.
-  - The write re-assembles the note with one line per key, so it would delete a line a human wrote, whether or not the record touches that key, and which line they meant is not in the note.
-  - A key held only on one line the reader cannot decode is not refused: a write setting it replaces that line, and one that does not carries it back as it is.
-  - No run clears it; the repair is `repeated_key`'s ("Schema authority and validation" above), and a caller reports the note and carries on with the rest.
-- **Merge on update.** If a file is there, the record's `fields` are merged over the existing note — provided keys win, absent keys are preserved — so a partial write (omitting a field, or `body`) preserves what it omits.
-  - Omitting a key therefore never clears it; to clear a field, give it as `null`, which writes the field's empty form: a bare `key:` for a string or a date, `[]` for a list.
-- **A derived field is the writer's.** A field `kboat.schema` declares as derived from another (a source note's `gemini_url` and `notebooklm_url`, from `notebooklm_id`) follows that field: a record setting it to a value derives the field, and one setting it to `null` or a blank string clears the field.
-  - A record that does not name the field it derives from leaves the derived field as it is, as the merge above leaves anything omitted.
-  - A record supplying a derived field itself, even as `null`, is refused and written nowhere, as is one giving the field it derives from a value that is neither a string nor `null`: both are records to fix, with the refusal on stderr and exit 2.
-- **Always-present defaults on create.** A present field absent from the record is filled with its schema default (a boolean → `false`), so the Base-filter booleans are written on every note from creation.
-  - On *update* a field the note has lost is left lost, not backfilled — a write re-renders only what it changes (below), and a writer that filled in blanks it was not asked about would be re-rendering the whole note.
-  - Drift of that kind is `kboat-validate`'s to report and a human's to repair.
-- **Date stamps.** A `created`-stamp field (e.g. `added_date`) is set to `today` on create and preserved after; a `refreshed`-stamp field is set on every write.
-- **A value is never erased to fit its field.**
-  - A list field given something with no items to lay out keeps it as the scalar it is rather than writing `[]`, so a wrong type reaches `kboat-validate` as a `not_list` for a human to see instead of vanishing under a successful write.
-  - That works for an inline list too, whose valid form is itself a string: what the check accepts is a string the writer would read back as a sequence, not any string at all.
-    - A string that holds an inline sequence (`"[a, b]"` — what the reader hands back for one) is read into its items and written in the field's own style.
-  - What the writer will not do is put a value into the note bare when doing so could break the frontmatter block: a value it cannot render as its field's type is quoted, so a wrong one costs its own field and never the whole note.
-  - A null item inside a list is written as an explicit empty item, in either style.
-    - It is the one value with no shape of its own to keep — nothing is lost by writing the empty string it reads back as, and a bare `-` (or the word `None` inline) would be a value the record never carried.
-- **What the writer emits, it reads back as itself — and so does every other reader.**
-  - Re-writing a note the writer already wrote changes nothing but a refresh stamp, down to a value the field could not hold: kept as a quoted scalar, that scalar is what the next write is handed and what it emits again.
-  - A rendering that read back as something else would move the note once per unattended run with no edit behind it, and the drift would look like the vault's own.
-  - The other readers are the point of the second half.
-    - A value stays inside its own property for Obsidian and for any YAML reader too, which is why a character that one of them would treat as the end of a line is escaped rather than written raw.
-    - Source titles, summaries, and repo descriptions are page text and model output; without that rule the tail of one arrives as a property of the note — including `url`, the identity the collision check is there to defend.
-- **Slug verification.** For a URL-named schema, the record's slug is recomputed from the record's own `url` and a mismatch is refused as `{status: "slug_mismatch", identity, url, expected, got}`, written nowhere.
-  - The name and the identity are one fact, so the writer settles it rather than trusting what it was handed; a note filed anywhere else would be a second identity for the same page, and nothing later could tell that from a genuinely different page.
-  - It is checked before the file is even located, since a wrong slug names the wrong file and the collision check below would then run against a note the record was never about.
-  - A record that carries no `url` — a later write filling in a summary — makes no claim to check and passes.
-- **Collision check.** When the schema declares an `identity` field (e.g. `url`), an existing note at the same slug that cannot be shown to be the same note is a collision — returned as `{status: "collision", reason, …}` and written nowhere.
-  - This is the de-dup-by-identity rule the naming section relies on.
-  - Two identity URLs are compared the way the slug is made, by their canonical forms: a page reached by a second link lands on the note it already has, so a verbatim comparison would report that as a hash clash and refuse an update that is the same page.
-  - A stored URL no parser can take is compared exactly instead, which fails closed.
-  - Two reasons, because the check exists to refuse and so has to fail closed either way:
-    - `identity_differs` — the note's identity value is plainly a different one.
-    - `unreadable_identity` — the record names an identity but the note holds its own in a shape the reader cannot decode, so nothing can be compared.
-      - Repairing the note by hand is the only way forward; the writer will not guess.
-  - The identity a note was created with is the one it keeps: where the record names the same page by another link, the stored value is preserved rather than overwritten.
-    - It is the note's provenance, and for a normally-fetched web source the string the NotebookLM source id is resolved by matching, so a second link's spelling must not replace it.
-- **Body.** The body *mode* is a fixed schema attribute (`NoteSchema.body`), not a record field: for a `verbatim` schema the record's `body` content is appended after the frontmatter, `notes` wraps it in a `## Notes` section, and `none` means the writer never authors one.
-  - An `upsert` always preserves the body already in the note, under every mode — `none` says K-Boat writes no body of its own, not that it may delete one a human added below the fence, and `notes` owns its `## Notes` section rather than the whole body.
-- **Only what changes is re-rendered.**
-  - Every frontmatter entry the record does not write is put back exactly as the note held it, including one the reader can represent only approximately (an inline list, a quoted string) and one it cannot represent at all (a hyphenated or quoted key, a nested mapping, a block scalar).
-  - A note is rewritten *around* what the write is not about, so a property outside the schema — Obsidian's own, or a plugin's — survives a routine that rewrites the note daily.
-  - Every schema field keeps its canonical position, written or carried; anything else follows in the order the note already had.
-  - The exception is a line that owns no key of its own and would attach to the line above it — that goes first, where there is nothing for it to attach to, since anywhere else would hand it to a key that never had it.
-  - An unrepresentable property is invisible to `kboat-validate`, which reads what the scanner models.
-    - If it collides with a schema field, expect a `missing_field` for that field: the note holds it in a shape the checks cannot read, which is drift worth seeing.
-  - "Does not write" is per line, so a comment sharing a line with a field the record writes goes with it.
-    - Put a note to self on its own line, where it is an entry of its own and survives.
-
-The merge rule gives a member a clean **resurrection** idiom: to re-surface a note it force-writes the fields it owns (e.g. a status boolean back to `false`) while omitting the fields a human owns, so the human's values survive the update.
-
-**A name is asked about through `kboat.io_utils`, never answered by `pathlib`.**
-Whatever decides anything from a file's absence — whether a rename's target is free, whether a note is new rather than one to merge into, whether a source's PDF is there — asks there, or it can write over a name something still holds and report success.
-`pathlib` answers wrongly in two ways: from CPython 3.14 `Path.exists` swallows every `OSError`, and `Path.glob` swallows the one `os.scandir` raises on an unlistable directory in every version, so a permission-denied probe comes back as an invitation to write there and an unreadable folder as an empty, clean one.
-And `exists()` follows symlinks, so a dangling one reads as a free name, and a writer told so replaces the link rather than the file it points at.
-`kboat.io_utils` owns the recipe, and it is three questions rather than one — copy them rather than a call site, which may be older than the rule.
-
-- `name_occupied(path)` — is anything at that name, a dangling symlink included; the question to ask before claiming it.
-- `file_present(path)` — is a **file** there, which is what says *by what* a taken name is held.
-  - `exists()` answers "no file" for a link into an unreadable tree, so a caller asking it reports a name nothing will free and sends a human after a broken symlink that is not there.
-- `list_note_dir(directory)` — one folder's notes.
-
-A caller classifying a taken name asks `file_present` first: a file is a note to merge with or a pair to report, and anything else at the name is one no run frees.
-All three **raise** where the vault refuses the read, so every caller owes a boundary — per item for the first two, per directory for `list_note_dir` — and decides the *cause* inside it: a refusal named as anything but a refusal is the defect they exist to prevent.
-An evicted file needs none of this: it keeps its name ("Vault preconditions"), so every probe answers for it as for a file that is here.
-`upsert` holds itself to this rule for its create-versus-merge decision, so a `created` status says nothing held the slug.
-
-**A skill step that reads frontmatter from a note folder, or from one note by slug, does it through `kboat-note list`, never a glob, `ls`, or a direct read.**
-A glob reads a folder the OS refused to list as empty, and a direct read leaves each step to tell a refusal from an absence by itself; the command reports each of those instead of answering around it.
-`kboat-note list --type <type>` prints `{notes, anomalies, counts}`, each note a `{slug, path, frontmatter}` from the folder `DIR_BY_TYPE` names, read through `list_note_dir`.
-Its `anomalies` are `{path, error}` entries: one per note that could not be read or parsed, one per field a listed note holds in a shape the frontmatter reader does not model (the note is listed without it) or names on more than one line (the note is listed with the last), which are the fields `kboat-validate` reports as `missing_field` and `repeated_key`, and one under the folder's own name where the folder is absent, not a directory, or refused, which also exits 1 ("Vault preconditions").
-
-- `--slug <slug>` answers that one name as the writer resolves it, as "A name is asked about through `kboat.io_utils`" gives: a note, an anomaly for whatever else holds the name, or neither where the name is free.
-  - Where no listed name is exactly `<slug>.md`, it asks the volume through `name_occupied`, so on one that folds case, as APFS does by default, the note it names is the one the write would merge into.
-- `--field <name>` (repeatable) cuts each note's `frontmatter`, and its unreadable-field entries, to those fields.
-- `--flagged <name>` (repeatable) keeps only the notes whose boolean field is `true`, and a note it drops reports an unreadable field only where that is the flag.
-- Neither drops a note that could not be read, since nothing shows it to fail them.
-
-The step names every anomaly beside its answer.
-Where the folder could not be read, it says so in place of the answer, because the set is then empty and an empty set is what a folder with nothing in it looks like.
+- [What `upsert` guarantees](references/write-contract.md#what-upsert-guarantees) from a `{slug, fields, body?}` record:
+  - where the note is written, and the slugs and field names refused outright
+  - what holds the slug deciding create versus merge
+  - a note naming a key twice being refused
+  - merge on update, and clearing a field with `null`
+  - derived fields, always-present defaults on create, and date stamps
+  - a value never being erased to fit its field, and what the writer emits reading back as itself
+  - slug verification and the collision check
+  - the body mode, and only what changes being re-rendered
+  - the resurrection idiom the merge rule gives a member
+- [A name is asked about through `kboat.io_utils`](references/write-contract.md#a-name-is-asked-about-through-kboatio_utils), never answered by `pathlib`.
+- [A skill step that reads frontmatter from a note folder, or from one note by slug, does it through `kboat-note list`](references/write-contract.md#reading-notes-kboat-note-list), never a glob, `ls`, or a direct read.
 
 ## Durability and the vault lock
 
 More than one writer runs against the vault, all on one Mac: the daily K-Boat routine, a feed-filter or forum run, and a human running a `kboat-*` command or editing in Obsidian.
-Two mechanics keep the writers that go through the tools from losing each other's work; both live in the `kboat` library, so both cover exactly those writes and "What is outside" below names the rest.
+Two mechanics keep the writers that go through the tools from losing each other's work; both live in the `kboat` library, so both cover exactly those writes and [What is outside](references/durability.md#what-is-outside) names the rest.
 Both also take the **vault root as a precondition**: a tool creates the folders inside it, never the vault itself, so a mis-typed `--vault` or a misresolved `$OBSIDIAN_VAULT_PATH` is reported rather than grown into a second, empty vault that Obsidian never reads.
 
-**Every write the tools make is durable and atomic.**
-Content goes to a sibling temp file in the same directory, is flushed and `fsync`ed, is renamed into place with `os.replace`, and the parent directory is `fsync`ed after the rename.
-The rename is one atomic syscall, so a crash mid-write never leaves a truncated note behind and the iCloud daemon never picks up a half-written one; the two `fsync`s carry that past a process crash to a power loss, which would otherwise find the rename recorded with the content still in the page cache.
-Every write the library makes goes through `kboat.io_utils.atomic_write_text` — the schema-driven note writer, the in-place frontmatter rewrites, and feed-filter's own config write alike.
-A raise from it always means nothing was written, which is what lets every caller report a failure or leave an entry for the next run; the directory `fsync` runs after the rename has landed, so its own failure is swallowed rather than allowed to contradict that.
-An existing file's permissions survive a rewrite; a file the writer *creates* gets the temp file's own mode (`0o600`), since choosing one would mean overriding the caller's umask.
+Each rule below is stated with its reasons and its edge cases in [references/durability.md](references/durability.md).
 
-**Every mutating run of the tools holds the vault lock.**
-Durability alone does not stop two runs from interleaving: each write lands whole, but a run that read a note before another run rewrote it silently overwrites that rewrite when it writes its own version back.
-So a process about to mutate the vault takes `kboat.lock.vault_lock(vault)` — an advisory `flock` on a lock file whose contents are a JSON `{pid, started}` record each holder rewrites so a refusal can name who has the vault — and releases it on the way out, including on an exception.
-The record is a diagnostic and nothing else; no decision is made from it.
-
-**The lock file lives outside the vault**, in `~/.k-boat/locks/` on every platform, or in `$KBOAT_LOCK_DIR` where that is set.
-All contention is same-host, so nothing is gained by syncing it, and inside the iCloud tree the file provider could evict it and bring it back as a different inode, which is the one thing exclusion cannot survive (below).
-The file is named by a fixed-length hash of the vault's resolved real path, as the filesystem stores it, so every spelling of one vault — through a symlink, with a trailing slash, in another letter case or Unicode form where the volume ignores those — reaches one lock, and two vaults never share one.
-The first acquisition creates the directory, owner-only.
-A directory standing in for it through `KBOAT_LOCK_DIR` has to be as local and as permanent: not a synced folder, and not a cache the OS may clear.
-A refusal's `holder.path` names the file, which is how a person whose write was refused finds it.
-The lock is vault-wide rather than per-note so no writer has to know which folders another touches; one scoped to the folders each writer uses today would have to be re-derived every time a note type moved.
-Each tool holds it across its own read as well as its own writes, because a plan computed before another run's writes would act on notes that no longer call for it.
-
-**There is no stale lock to recover, because the kernel releases it.**
-An `flock` belongs to the open file description, so it goes when the file descriptor closes — including on a `SIGKILL`, an OOM kill or a panic.
-An interrupted run therefore leaves no lock behind at all: nothing here needs a stale window, an age heuristic, a liveness check on a recorded pid, or a takeover.
-**Do not delete the lock file.**
-It persists between holds — carrying the last holder's record, which is why it looks like leftover state and is not — because exclusion is an agreement about one inode: remove it mid-run and the next writer creates a different inode and locks that instead, leaving two runs writing at once.
-Nothing ever needs it cleared, which is the difference from a design with a stale window a human has to break.
-What buys that is a premise worth stating, because it is the one thing that would invalidate the design: **all contention is same-host, on a local lock directory.**
-There `flock` is ordinary local advisory locking, including that a holder killed without releasing leaves the lock free.
-A lock directory on a network filesystem would need that re-checked, since `flock` over NFS or SMB is where the semantics stop holding, and writers on two hosts would not share a lock at all.
-
-- **A read-only command takes no lock**, so a query neither blocks nor is blocked — `kboat-lifecycle --dry-run`, `kboat-repos refresh --dry-run`, `kboat-repos backfill --dry-run`, `kboat-note migrate-slugs --dry-run`, `kboat-note list`, `kboat-notebooks`, `kboat-pick candidates`, `kboat-queue list`, and `kboat-validate` all read a vault another run is writing.
-  - **`kboat-doctor` takes none either**, though its writability probe does write.
-    - It creates and removes one uniquely-named file of its own and touches no note, and it runs to find out whether the vault can be written at all.
-    - Holding the lock first would be circular, and a pre-flight check that refused whenever a run was in progress would be useless exactly when it is wanted.
-- **One policy: wait a little, then refuse.** Every writer takes the lock on the same terms — a few seconds' wait, then a refusal.
-  - There is no attended/unattended split, because the `kboat-*` CLIs are run both ways: by a person at a keyboard and by the scheduled routine.
-  - A person does not perceive the wait, and an expired one hands back the same holder record an immediate refusal would have.
-  - What rules out refusing immediately is that holds are not all short.
-    - `kboat-repos refresh` keeps the lock across the `gh` fetch of every note in the catalogue, because its read, fetch and rewrite are one read-modify-write — so "just retry" is not advice a refused caller can act on, and a few seconds of patience covers the ordinary case of overlapping a single note write.
-- **A refused caller reports and ends that step.**
-  - It prints `{"status": "locked", "holder": {pid, started, path}}` on stdout **in place of** its usual output, names the holding process on stderr, and exits non-zero without writing anything.
-  - Every `holder` key is always present and any may be null: the record is written just after the lock is taken, so a refusal landing in that window reads the previous holder's, and a crash mid-write leaves one that does not parse at all.
-  - A caller reads that record instead of the keys it came for, so it reports the refusal and ends that step rather than parsing on — that step, not a routine around it, whose later phases make their own attempts.
-  - A refusal belongs in the run summary rather than a notification, since the next run recovers on its own.
-  - For feed-filter the entry is simply not written, and its never-lost contract carries it: nothing is recorded seen, so the next gather rediscovers it.
-    - That is why the wait matters more to it than to a K-Boat phase, whose work survives being deferred — the dispositions, the cooldown clock and the queue are all still on disk and every phase is idempotent.
-- **A lock that cannot be taken at all is not a refusal.**
-  - A vault root that is missing or cannot be looked up, a lock directory that cannot be created or used, or a filesystem that will not take an `flock` is reported on stderr with **no** `locked` record and an **empty stdout**, because there is no holder and nothing to come back for.
-  - The report-shaped CLIs (`kboat-lifecycle`, `kboat-pick set`, `kboat-queue remove`, `kboat-repos refresh`, `kboat-repos backfill --apply`, `kboat-note migrate-slugs --apply`) name it `vault lock unavailable: …`; the note writers fold it into their `write failed: …`, and feed-filter into its `error: …`.
-    - What is common to all of them is the shape, not the wording.
-  - Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
-  - `kboat-doctor` diagnoses one of its causes and not the rest: its `vault_root` check covers a missing root, but nothing there inspects the lock directory, so one that cannot be created, a lock file that is a directory or *any* symlink (the open is `O_NOFOLLOW`, so a live one fails as surely as a dangling one), or one on a filesystem refusing `flock` leaves doctor reporting `ok` while every write fails.
-    - Read the stderr line rather than assuming a green doctor means the lock is fine.
-  - How an unattended run raises it belongs to the scheduled-task prompt, not here.
-
-**What is outside.**
-The unit these mechanics protect is one tool invocation writing one file's contents, and five things sit outside it.
-
-- **A file an agent writes itself**, rather than through a `kboat` tool: the distillation review report in `Reviews/` and a rescued source's PDF in `PDFs/`.
-  - No tool holds the lock on their behalf, and in the routine each belongs to one phase of one run.
-- **A change that spans two files.** Each write is atomic on its own; a pair of them is not.
-  - `kboat-repos refresh` adopting a rename writes the new note and then unlinks the old one, so a crash in between leaves both — reported by the next run's `kboat-validate` as two notes for one repo, for a human to merge.
-  - `kboat-note migrate-slugs --apply` moves a source's PDF and then the note, ordered so that a crash between them leaves the note where the next scan looks for it, which is what lets a re-run finish the pair rather than lose track of the half that moved.
-- **Anything attached to a note's inode rather than its contents.** The atomic write renames a new file over the old one, so a rewrite preserves the note's permissions and nothing else: extended attributes, ACLs, a per-file `com.apple.macl` grant and the creation date all belong to the replaced inode, and a Finder tag on a note the routine rewrites daily will not last.
-  - A stray `<name>.md.<random>.tmp` is the same story from the other side — the cleanup runs on an exception, not on a `SIGKILL`, and no scanner globs it because they all read `*.md`.
-- **A note saved in Obsidian while a run is writing.** Obsidian holds no lock and writes its own way, and `kboat-lifecycle` and `kboat-pick set` rewrite a whole note, so a hand-edit saved in the same moment loses one side or the other.
-  - The remedy is not a mechanism: do not hand-edit notes during a run, and the daily routine runs while nobody is at the keyboard.
-- **The judgement an agent forms between its own read and the write it then asks for.** An agent reads a source note, decides a `summary` or a disposition from it, and calls `kboat-note write` some time later; the writer re-reads the note under the lock, so the body, the human's `reading` checkbox, and every field the record omits survive — but a field the record *does* carry overwrites whatever changed in that gap.
-  - It is the one lost update the lock does not close, narrowed to the fields one write names.
-
-Closing the agent-level ones would mean exposing acquire and release as a tool of their own, for an agent to hold around a whole phase.
+- [**Every write the tools make is durable and atomic.**](references/durability.md#atomic-writes)
+- [**Every mutating run of the tools holds the vault lock.**](references/durability.md#the-vault-lock)
+  - **The lock file lives outside the vault**, in `~/.k-boat/locks/` on every platform, or in `$KBOAT_LOCK_DIR` where that is set.
+- [**There is no stale lock to recover, because the kernel releases it.**](references/durability.md#no-stale-lock) **Do not delete the lock file.**
+- [How a writer takes it](references/durability.md#how-a-writer-takes-it):
+  - **A read-only command takes no lock**, and **`kboat-doctor` takes none either**.
+  - **One policy: wait a little, then refuse.**
+  - **A refused caller reports and ends that step.**
+  - **A lock that cannot be taken at all is not a refusal.** Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
+- [What is outside](references/durability.md#what-is-outside) the unit these mechanics protect, one tool invocation writing one file's contents:
+  - **A file an agent writes itself**, rather than through a `kboat` tool.
+  - **A change that spans two files.**
+  - **Anything attached to a note's inode rather than its contents.**
+  - **A note saved in Obsidian while a run is writing.**
+  - **The judgement an agent forms between its own read and the write it then asks for.**
 
 ## Base-authoring discipline
 
