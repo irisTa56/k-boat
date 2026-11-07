@@ -1,6 +1,6 @@
 # Ingest errors
 
-This is the per-failure list of kboat-ingest [Errors](../SKILL.md#errors): what to collect for each item that fails or stops short, and whether its queue file is kept.
+This is the per-failure list of kboat-ingest [Errors](../SKILL.md#errors): what to collect where a step of an item or a backfill candidate fails or falls back, and whether its queue file is kept.
 Step 4 of the per-item procedure there owns when a queue file is deleted, and its Run summary says how the collected errors are reported.
 
 Collect, per item, at least:
@@ -50,5 +50,3 @@ Collect, per item, at least:
   - Stop that item without overwriting, keep its queue file, and report which of the two it was; this is deterministic, so it needs a human to resolve rather than a retry.
 - A note write returning `status: repeated_key`, on the source path or the repo route alike: the note at that slug names each key under `keys` on more than one line, so nothing was written (kboat-vault-conventions "The write contract").
   - Stop that item and keep its queue file, as for a collision: report the note's `path` and `keys`, since no run clears it until a human deletes the line not meant.
-- A failed `notebooklm auth refresh` at the start.
-  - If auth is unusable, stop and report rather than processing the queue.

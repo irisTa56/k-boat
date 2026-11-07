@@ -15,6 +15,7 @@ The queue is filled by the capture bookmarklet (run `kboat-bookmarklet` to print
 
 - Call `notebooklm` and the `kboat-*` CLIs bare, each as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
 - Run `notebooklm auth refresh` before the batch, since NotebookLM cookies expire.
+  - If it fails and auth is unusable, stop and report rather than processing the queue.
 - Read the queue with `kboat-queue list` → JSON `{files: [{path, url, title, error?}], counts, anomalies}`.
   - Each entry is one `Queue/*.md` capture written by the capture bookmarklet: `url` is the extracted `http(s)` URL (the ingest payload) and `title` the fallback link text.
   - `kboat-queue` owns the extraction — the injection-safe "URL between the last `](` and the final `)`" rule, unit-tested for parenthesised URLs and crafted-title cases — so do not re-parse the body here.
@@ -146,7 +147,8 @@ This is the same capture as the per-item procedure's step 3 applied to existing 
 ## Errors
 
 Do not work around errors for now; detect them and include them in the run summary (no retries, no bot-protection bypass).
-Collect, per item, at least the cases [Ingest errors](references/errors.md) lists, and read it whenever an item or a backfill candidate does not end as a clean note with its notebook and `summary`/`topics`: it says how each case is handled and what to report.
+Collect, per item, at least the cases [Ingest errors](references/errors.md) lists, which says how each is handled and what to report.
+Read it whenever any step of an item or a backfill candidate fails or falls back, even where the note, its notebook and `summary`/`topics` all end up written, and before writing the Run summary.
 
 ## Run summary
 
