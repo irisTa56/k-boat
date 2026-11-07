@@ -49,6 +49,9 @@ env:
   # rather than being installed as it stands (which `UV_FROZEN` would do) or
   # re-resolved. The NotebookLM CLI's lock is checked by `qa:py:notebooklm`.
   UV_LOCKED: "1"
+  # mise.toml's postinstall registers git hooks no job runs and syncs both uv
+  # projects; the jobs that need the workspace get it from `uv run`.
+  MISE_NO_HOOKS: "1"
 
 jobs:
   python-qa:
