@@ -141,8 +141,13 @@ Each rule below is stated with its reasons and its edge cases in [references/dur
   - **A read-only command takes no lock**, and **`kboat-doctor` takes none either**.
   - **One policy: wait a little, then refuse.**
   - **A refused caller reports and ends that step.**
-  - **A lock that cannot be taken at all is not a refusal.**
-- [What is outside](references/durability.md#what-is-outside) the unit these mechanics protect, one tool invocation writing one file's contents.
+  - **A lock that cannot be taken at all is not a refusal.** Do not parse stdout, and do not retry: unlike a refusal this does not clear itself, so report it as needing a human and stop.
+- [What is outside](references/durability.md#what-is-outside) the unit these mechanics protect, one tool invocation writing one file's contents:
+  - **A file an agent writes itself**, rather than through a `kboat` tool.
+  - **A change that spans two files.**
+  - **Anything attached to a note's inode rather than its contents.**
+  - **A note saved in Obsidian while a run is writing.**
+  - **The judgement an agent forms between its own read and the write it then asks for.**
 
 ## Base-authoring discipline
 
