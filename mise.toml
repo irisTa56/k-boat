@@ -66,7 +66,8 @@ uv sync --project tools/notebooklm --no-active
 """
 
 # `secrets:commit-scan` (per commit, gitleaks), `secrets:push-scan` (per push,
-# trufflehog), `link-check:staged` (per commit, lychee over the network) and
+# trufflehog), `link-check:staged` (per commit, lychee over the network),
+# `skills:size-check` (per commit and in CI, through `qa:md`) and
 # `shared-tasks:check` come from dotfiles' shared task library,
 # whose `tasks/README.md` is what to read before touching this: why `ref` is a
 # full sha on its `main`, and what an include that fails to load takes with it.
@@ -106,15 +107,20 @@ run = "notebooklm auth check --test --json"
 description = "Run all pre-commit checks"
 depends = ["qa:**", "secrets:commit-scan", "link-check:staged"]
 
-# Two commands, because `rumdl` cannot make the second check -- the house rule
-# and why a linter cannot see it are `scripts/md_shape.py`'s module docstring.
-# That script parses with `markdown-it-py`, so it runs under `uv run` to reach
-# the workspace venv rather than whatever `python` the PATH lands on.
+# Three commands, because `rumdl` cannot make the other two checks -- the house
+# rule and why a linter cannot see it are `scripts/md_shape.py`'s module
+# docstring. That script parses with `markdown-it-py`, so it runs under `uv run`
+# to reach the workspace venv rather than whatever `python` the PATH lands on.
+# The size check keeps each skill's body within what Claude Code re-attaches
+# after a compaction (its script's header has the limit); the pathspec names
+# `skills/`, since `.claude/skills/` holds only links to it. It sits here so
+# the `markdown-lint` job runs it without a job or a required check of its own.
 [tasks."qa:md"]
 description = "Lint markdown files"
 run = """
 rumdl check
 uv run python scripts/md_shape.py
+mise run skills:size-check -- ':(glob)skills/*/SKILL.md'
 """
 
 [tasks."fmt:md"]
