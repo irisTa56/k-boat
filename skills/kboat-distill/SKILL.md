@@ -137,20 +137,6 @@ The phase is in [references/phase-c.md](references/phase-c.md); its work set is 
 ## Accretion policy (unattended)
 
 The policy is in [references/accretion-policy.md](references/accretion-policy.md); read it before a run's first concept write (Phase B step 4, Phase C step 2).
-Its rules, which other skills name:
-
-- Append first
-- Create only specific concepts
-- Cap creates per source
-- Ground every claim
-- Correct dialogue-derived claims; don't just reject them
-- Capture the reader's interest, not only the dialogue's facts
-- Note the knowledge-base context, lightly
-- Always record provenance
-- Reuse facet tags from the vocabulary
-- Mark up formula notation
-- Never auto-merge
-- Stay idempotent on replay
 
 ## Review report (`Reviews/YYYY-MM-DD.md`)
 
