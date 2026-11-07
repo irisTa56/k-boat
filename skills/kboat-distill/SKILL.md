@@ -15,6 +15,8 @@ Follow the Basic Memory skills for the generic mechanics of the concept graph: `
 The shape of a concept note's `## Observations` is kboat-notes' own, under [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups).
 Every Basic Memory call (`bm_search`, `bm_read`, `bm_write`, `bm_edit`) must pass `project="k-boat-knowledge"` (the project rooted at `KBOAT_KNOWLEDGE_PATH`); without it the server writes to its default project, which is the wrong graph.
 
+What a run needs only when it has that work sits under `references/` beside this file, and each section below that moved there keeps its heading and links to its file.
+
 ## Run-level preamble
 
 Call `notebooklm`, `kboat-lifecycle`, and `kboat-concept` bare, each as a single command (see kboat-notes [Environment](../kboat-notes/SKILL.md#environment)).
@@ -98,274 +100,61 @@ Take the ripe sources oldest `filed_date` first, keeping the tool's order among 
 Take each source through the steps below in their exact order.
 That order is what makes a crash safe: nothing the notebook holds is destroyed before it is durably recorded, and the `distilled_date` stamp is the commit point.
 
+The steps are in [references/phase-b-steps.md](references/phase-b-steps.md), with the crash-safety argument at its end; a run whose `phase_b.ripe` is empty need not open it.
+
 ### Step 1: resolve the notebook
 
-Take `notebooklm_id` from the ripe entry (the tool read it from the source note).
-
-- Ask whether the id is in the account's listing, with the `kboat-notebooks resolve` call kboat-notes [restore](../kboat-notes/references/procedures.md#procedure-restore-a-sources-original-into-its-notebook) step 1 gives, one listing and one call covering every ripe source's id; if the id is absent (`listed: false`), record it as an anomaly in the run summary and skip this source without stamping or discarding.
-  - **Read that listing against the vault's other stored `notebooklm_id`s before calling the notebook deleted**, as that step says to and from the `counts` the same call prints: a listing fetched under the wrong signed-in account makes every id read as absent, and this report names a procedure that discards notebooks by their stored id, so getting it wrong across a run's ripe sources spends live notebooks and the dialogue in them.
-  - Do not stamp `distilled_date` — nothing was distilled, and stamping it would falsely read as distilled.
-  - The source stays ripe and is re-surfaced each run until a human resolves it — kboat-notes [Procedure: reactivate a source's notebook](../kboat-notes/references/procedures.md#procedure-reactivate-a-sources-notebook) takes exactly this source and rebuilds the notebook; clearing the source note ends it the other way.
-  - This is the same contract as an original-source extraction error in step 3.
+See [Step 1](references/phase-b-steps.md#step-1-resolve-the-notebook).
 
 ### Step 2: resolve the sources
 
-Run `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the redirect kboat-notes [Environment](../kboat-notes/SKILL.md#environment) requires).
-
-- If the **call itself fails** — a rate limit, a network error, an auth blip — that is not an empty listing and not a loss: skip the source, report the resolution as failed, and do not name it for the notebook-health step, which would turn a transient failure into a reported loss and a notification.
-- The notebook holds the **original** source plus any reading-time dialogue saved back as a NotebookLM note — each saved note is an additional source (usually `url: null`, type `gemini_chat`, with a non-original `title`), which is expected, not a 1:1 violation (see kboat-notes [Saved dialogue as extra sources](../kboat-notes/references/source-note.md#saved-dialogue-as-extra-sources)).
-- Identify the original (see kboat-notes [One notebook per source](../kboat-notes/references/source-note.md#one-notebook-per-source-11)): for a `pdf`, the source with `type: pdf`; for a `web_page`, the source whose `url` matches the note's `url`, or — where that source has `url: null`, a rescued page added as text — whose `title` matches the note's `title`.
-  - Take its id as the grounded authority, and treat **every other source as saved dialogue** to extract in step 3.
-  - If nothing matches, report that the original could not be identified and list what the notebook does hold, then skip this source without stamping or discarding.
-    - Report it **for the notebook-health step**, which runs later in the routine and takes exactly this source (`kboat-notebook-health`, "Scope"): the original went missing out of a notebook that is still there, so it is added back in place rather than rebuilt, and the source stays ripe and distils on a later run with its `distill` disposition and its elapsed cooldown intact.
-    - Do not carry step 1's pointer across — that one is for a notebook that is gone, and this notebook is not.
-- `fulltext` is keyed by source id.
+See [Step 2](references/phase-b-steps.md#step-2-resolve-the-sources).
 
 ### Step 3: extract (read-only, safe to repeat)
 
-Only an extraction error on the **original** source aborts this source — do not stamp, do not discard; record the error in the run summary and continue to the next source.
-Errors on the other extractions below — saved dialogue notes, `history`, `summary` — are non-fatal: record them in the run summary and continue, do not abort.
-
-- **Original content (grounded)**: write the full text of the **original** source (the id resolved in step 2) to a temp file with `notebooklm --quiet source fulltext <source_id> --notebook <notebooklm_id> -o <tmpfile> --force`, then read it.
-  - Use `-o`, not stdout (which truncates at 2000 chars), and keep `--force` (kboat-notes' article check says why); avoid `-f markdown` (it needs the `markdownify` package, which is not installed, so it errors out).
-  - Confirm the file is a successful fetch (see kboat-notes: the real content — for a web page not empty or a wall, for a PDF not empty or garbled extraction); if not, abort this source as a fetch failure and report it in the run summary.
-    - For a web page that is the article check in step 3 of kboat-notes [Procedure: create or update a source note](../kboat-notes/references/procedures.md#procedure-create-or-update-a-source-note), whose rules on where to look and on a `wall` verdict's second look apply here — the second look reading the note's stored `summary` and `topics` as the guide, as that step says.
-  - This is the `#grounded` authority.
-- **Saved dialogue notes (dialogue)**: for each *other* source from step 2 (reading-time dialogue you saved into the notebook), `fulltext` it the same way and read it.
-  - Its content is dialogue, not the source — treat its claims as dialogue-origin: vet each per the accretion policy's dialogue handling (keep as-is, correct, or drop) before accreting, and key its provenance to the **original** source's `url`.
-  - Skip any note that won't extract and report it in the run summary (non-fatal, per the opener).
-  - There may be zero such notes.
-- `notebooklm --quiet history --notebook <notebooklm_id> --json 2>/dev/null` — reading-time dialogue left in the chat (may be empty when you saved it as notes instead).
-  - The dialogue happens through the Gemini UI, which grounds answers in the notebook source but **also draws on web and world knowledge**, citing the sources it used.
-  - Keep those citations: a cited claim is source-grounded, an uncited one is external, and the accretion policy treats them differently.
-- `notebooklm --quiet summary --notebook <notebooklm_id>` — NotebookLM's own summary (text only; no `--json`).
+See [Step 3](references/phase-b-steps.md#step-3-extract-read-only-safe-to-repeat).
 
 ### Step 4: distill into Basic Memory
 
-Follow the accretion policy below.
+See [Step 4](references/phase-b-steps.md#step-4-distill-into-basic-memory).
 
 ### Step 5: write the review report
 
-Write the section for this source into `Reviews/YYYY-MM-DD.md` in the vault.
-
-- Written before the discard, so the extracted material survives even if the discard fails.
-- Always appended, never in place of another — a day's report already holding this source's section is an anomaly to report, not a reason to write none (see "Review report").
-- A section that did not land at all — an I/O error at the day's file — leaves this pass unfinished, so step 6 writes no stamp and the notebook stays.
+See [Step 5](references/phase-b-steps.md#step-5-write-the-review-report).
 
 ### Step 6: stamp `distilled_date`
 
-`distilled_date` is the commit point, and the record that this reading is safe to lose the notebook for.
-So step 7's discard acts on the stamp and on nothing else: where the stamp is not on the note, the notebook stays, whatever else the pass managed.
-Stamp it with today's date on the source note, and read what the write returned rather than taking it for made.
-
-- **Write no stamp where this pass did not finish with the source** — where something it set out to write is not written, the stamp included:
-  - a concept the create cap deferred, or one whose create or append did not land (both in the accretion policy below);
-  - a section step 5 could not write;
-  - the stamp itself, where `kboat-note write` came back a `status: locked` record (the vault held by another writer) or `status: repeated_key` (the note naming a key on more than one line) in place of the written note (kboat-vault-conventions [The write contract](../kboat-vault-conventions/SKILL.md#the-write-contract)).
-- **What the pass settled, and what another pass repairs, are not that** — both are logged and neither bars the stamp:
-  - a concept the accretion policy left uncreated on purpose, too vague or broad to name, or a `#dialogue` claim it could neither confirm nor correct;
-  - the `###` heading a placement owed a flat note, where that second edit did not land — the next append to that note heads those claims whoever makes it (the accretion policy's wrap rule), so holding this source ripe would wait on a repair its own replay never reaches.
-- A source left unstamped stays ripe: name it in the run summary under its line, discard nothing, and let a later run distil it again, the accretion policy's replay rules keeping what already landed from being written twice.
-  - Nothing binds that run's judgement to the same concepts, which is why the run summary puts them in front of a human.
-  - Step 7's other branch runs as ever: a `keep` source's notebook is retained whatever this pass did, and the run summary reports that retention as on any other run.
-- A stamp write that came back neither the note nor one of those three refusals — an empty stdout with a `write failed: …` on stderr — leaves the source ripe like the rest, and **needs a human**: no later run clears it.
-  - Do not name a cause for it. `kboat-note write` reports that way for an unusable vault lock, a name held by something it cannot write over, a note it cannot parse or decode, and an ordinary I/O error alike (`kboat.cli`'s `NOTE_READ_ERRORS`), so relay what it reported and let the reader tell them apart.
-  - Go on to the next source rather than ending the phase: nothing is lost where no stamp lands, and all but one of those causes is that one note's.
-- Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
-  - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `kboat-curate` to make;
-  - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
+See [Step 6](references/phase-b-steps.md#step-6-stamp-distilled_date).
 
 ### Step 7: discard the notebook
 
-Discard it (see kboat-notes) — **unless `keep` is also set**, in which case retain it and note the retention in the run summary instead.
-
-- Discard only where step 6's stamp is on the note; a source it left ripe keeps its notebook, and the retention branch above is all this step does for one.
-- When discarding, always last: if it fails, the source is already distilled and the report is written — record "notebook discard failed" in the run summary as a cleanup item for a later pass to reconcile.
-
-A crash anywhere in 1–5 leaves the source ripe and replayable, as a partial pass does.
-A crash between 6 and 7 leaves a notebook to clean up later, never lost data.
+See [Step 7](references/phase-b-steps.md#step-7-discard-the-notebook).
 
 ## Phase C: distil Kindle books
 
-Kindle books are distilled from the highlights in their note body, not from a notebook.
-Like Phase B, Phase C runs **only when Basic Memory is healthy** (see preamble) — its `bm_write`/`bm_edit` calls are the only persistent effect, and there is nothing destructive to gate (no notebook, no cooldown).
-The work set is `kindles.ripe` from the tool: Kindle notes marked `distill` with `distilled_date` empty (see kboat-notes [Kindle note](../kboat-notes/references/kindle-note.md#kindle-note-kindlesmd)).
-Each entry carries `slug` (the bare ASIN — the note's filename), `path`, `title`, and `distilled_date`.
-
-Take the books in the order the tool lists them, which is by ASIN, since a Kindle note carries no `filed_date`; Phase C follows Phase B, and each book has the whole create cap of its own.
-
-Process each `kindles.ripe` entry in this order — the same crash-safety logic as Phase B, minus the notebook steps (the `distilled_date` stamp is the commit point, and there is no discard):
-
-1. **Read the body.** Read the note at `path` and take everything after the frontmatter — the reading highlights and notes.
-   - If the body has **no extractable text** — empty, or only image embeds (`![[…]]`) / whitespace, with no prose to distil — this book cannot be distilled: record it in the run summary as "skipped (no extractable highlights)" and **do not stamp `distilled_date`**, so it re-surfaces on a later run once the body is filled.
-     - (An image-only body is non-empty but carries no text, so it must be skipped too, not distilled to nothing.)
-     - Continue to the next book.
-2. **Distill into Basic Memory** following the accretion policy below (`project="k-boat-knowledge"`).
-   - Grounding for a Kindle book: passages quoted from the book are `#grounded`; the reader's own commentary or interpretation in the body is external, so give it the same `#dialogue` treatment as a source's dialogue claims (vet it per the accretion policy's dialogue handling — keep as-is, correct, or drop — before accreting; a Kindle book has no notebook, but the reader's marginalia is the same kind of reader signal as saved dialogue).
-   - Provenance is the ASIN, not a URL: `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` (the bare ASIN — the note's filename).
-3. **Write the review report** section for this book into `Reviews/YYYY-MM-DD.md` (the same day's file as Phase B), before the stamp, under the "Review report" section's rules — always appended, with a section already there for this book reported as an anomaly.
-4. **Stamp `distilled_date`** with today's date on the Kindle note, under Phase B step 6 whole: write no stamp where this pass did not finish with the book, the stamp write's own `locked` and `repeated_key` refusals included, since a Kindle note takes them the same way.
-   - The stamp is the commit point; after it the book leaves the ripe set, and a book left ripe is named in the run summary under its line there.
-   - There is no notebook, so nothing turns on the stamp beyond that.
-
-A crash anywhere in 1–3 leaves the book ripe and replayable, as a partial pass does; the accretion policy's replay rules keep the replay from double-writing.
+The phase is in [references/phase-c.md](references/phase-c.md); its work set is `kindles.ripe`, so a run where that is empty need not open it.
 
 ## Accretion policy (unattended)
 
-The `memory-ingest` skill assumes a human approves each new entity before it is created.
-This pass is unattended, so the approval gate becomes an **after-the-fact review gate**: every create, append, and skip decision is logged in the report for the human to reverse later.
-Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of this skill).
+The policy is in [references/accretion-policy.md](references/accretion-policy.md); read it before a run's first concept write (Phase B step 4, Phase C step 2).
+Its rules, which other skills name:
 
-- **Append first.** Before creating a concept note, `bm_search` with at least three query variations: the exact title, a paraphrase, and the key English term if the concept has one.
-  - The project's embedding model is English (`bge-small`), so semantic recall on Japanese titles is weak — lean on these lexical variations.
-  - If a hit clears the bar, add to the existing note instead of creating a duplicate.
-    - See `memory-curate`.
-  - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
-    - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups)).
-    - A heading you mint keeps kboat-notes' heading rules under [Reading groups](../kboat-notes/references/concept-notes.md#reading-groups): it repeats no heading the note carries at any level, contains no `/`, and does not end in `[<number>]`, since the anchors below name a heading by its text and `bm_edit` resolves none of those by it.
-  - **Which shape the note is in.** `bm_read` the hit with `output_format="json"` and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
-    - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
-    - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
-    - A read that returns an error has not got the note; report it as an error for this concept, as above.
-    - Give the path as it came back, single-quoted, writing a `'` inside it as `'\''`, and pass no `--knowledge`: the root comes from `KBOAT_KNOWLEDGE_PATH`, and the option goes before `shape`, so a call carrying it no longer starts with the `kboat-concept shape` its permission rule matches.
-  - **Whether these claims deepen an insight the note already carries or open a new one** is your judgement, not the tool's, and only the second case makes a **flat** note owe its claims a heading.
-    - A note already carrying a `###` owes one on its own terms, below, whichever of the two this reading is.
-  - **Where a placement goes.** `bm_edit(command="insert_before_section", section=…)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.
-    - That lands them at the end of the block they belong to, which is what keeps the section oldest-first.
-    - New relations go in with `insert_after_section` on `## Relations`, unchanged; never plain `append` for either, which lands past the sections.
-    - A new group on a `flat` note owes one more edit: `insert_after_section(section="## Observations")` carrying a blank line and then the `###` heading naming what the older claims established, and nothing else.
-      - Make it **after** the placement, and only where the placement landed.
-        - The two commute, so the order decides only what a failed second edit loses: a lost heading leaves every claim in the note where lost claims leave nothing, while a heading over a placement that did not land separates nothing — the insight it would separate from never arrived — and the note reads `grouped` from then on, so nothing here gives it one again.
-    - **A note that already carries a `###`, with claims still bare above the first one**, owes those claims a heading too, whatever else this append does to it.
-      - They are an insight nothing has named, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
-  - **A `bm_edit` that cannot resolve its anchor returns an error** and changes nothing, so read any error the call returns as these claims not having landed.
-    - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6).
-- **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
-  - For vague or broad concepts, do not create a note; log it as an "uncreated candidate" for the human to promote.
-  - A create that did not land — the `bm_write` call returned an error — goes under `uncreated candidates:` marked `create not made` and keeps its source ripe (Phase B step 6), as an append not made does.
-    - Read the note back before marking it: a `bm_write` that timed out can still have created the note, and one that exists carrying this source's claims was created, whatever the call returned.
-  - Title it with none of the characters kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids in a title, and open its content under no `# <title>` heading, as that section also says.
-- **Cap creates per source.** `create_cap` is **5** new concept notes for each ripe source or Kindle book, counting the notes this pass creates for that one source; this skill is the one place the value is set, so adjust it here.
-  - Once a source has had `create_cap` notes created for it, stop creating for that source and finish its appends; the next source or book starts with the whole cap again.
-  - Log each concept left to create under `uncreated candidates:` marked `deferred (create cap reached)`.
-  - A deferred concept keeps its source ripe (Phase B step 6), and the run summary names it for a human: which concept the ceiling left is a judgement it made blindly, and no later pass is bound to arrive at that same concept again.
-- **Ground every claim.** Treat the **original** source's `fulltext` (and the source-grounded NotebookLM `summary`) as the authority.
-  - Tag each distilled observation by grounding: `#grounded` when the original source supports it, `#dialogue` when it is external knowledge the conversation brought in — a saved dialogue note (an extra notebook source, see Extract) or an uncited Gemini answer in `history`.
-  - Never let a `#dialogue` claim read as if it came from the source.
-- **Correct dialogue-derived claims; don't just reject them.**
-  - A `#dialogue` claim is not source-grounded, and it came from the reading-time dialogue's speed-first model (Gemini Flash), whereas you distil with a more capable model — so your job is to *upgrade* the claim, not merely gate it: repair what the fast model got wrong instead of discarding it, while still refusing the genuinely unverifiable.
-  - Verify each claim against the source and your own knowledge, then take one of three actions:
-
-    - **Holds as stated** — accret it, tagged by grounding: `#grounded` if the source supports it, else `#dialogue`.
-    - **Wrong but fixable** — when the fast model erred on a point you can confidently fix, from the source or from knowledge you are sure of, accret the *corrected* claim: preserve the reader's original point, change only what was wrong, tag it by grounding just as above (`#grounded` if the source now supports it, else `#dialogue`), and log it under `corrected from dialogue:` so the human can audit the intervention.
-      - Never invent a correction you cannot ground — that is the "state your limits" line, not a licence to rewrite freely.
-    - **Neither confirmable nor confidently fixable** — drop it and log it as an uncreated candidate.
-- **Capture the reader's interest, not only the dialogue's facts.** The reading-time dialogue exists because the reader stopped to ask, so the questions they raised, the claims they doubted, and what they found surprising or unclear mark what mattered to *them* — a signal the source text alone does not carry, and the reason they chatted rather than read passively.
-  - Read the saved dialogue notes and `history` for this signal as much as for external claims, and surface it in the report's Summary (below) so the distillation reflects the reader's line of inquiry instead of flattening it into source facts.
-- **Note the knowledge-base context, lightly.** The Append-first search already puts the related existing concepts in front of you, so as you distil, notice the material ones — a concept this source plainly connects to, or one that now draws on several sources (a recurring interest) — and record them in the report under `related in KB:`.
-  - Ground each on a note the search actually surfaced, never a guessed link; keep it to what a reader would find noteworthy, and leave the systematic tidy-up (orphans, merges, missing links) to `kboat-curate`, not here.
-- **Always record provenance.** Every run of claims a source places in a concept note is followed by that source's provenance observation `- [source] <title> — <url>` — again on a later pass that places more, even where the note already carries the line — carrying the source note's `url` exactly as the note holds it — not a re-derived form of it, so every line naming one source reads the same (for a Kindle book, `- [source] <title> — ASIN:<asin>`, where `<asin>` is the entry's `slug` — the bare ASIN, i.e. the note's filename) — it records that this source fed the concept, regardless of grounding; the per-claim `#grounded`/`#dialogue` tag records whether the claim came from the source or from external dialogue knowledge (a claim from a saved dialogue note shares the original source's URL — it gets no separate provenance, since the dialogue happened over that source).
-  - The source/Kindle note lives in the vault, a separate root, so a wikilink could not reach it; the URL or ASIN is root-independent and keeps each autonomous decision traceable.
-  - (Relations *between concepts* stay wikilinks; both ends are in this root.)
-- **Reuse facet tags from the vocabulary.** A concept note's frontmatter facet tags come from the canonical set in the `meta/Tag vocabulary` note (`memory://k-boat-knowledge/meta/tag-vocabulary`); read it first, reuse an existing tag where one fits, and mint a new tag only when none does — adding it to that note under the right family in the same change.
-  - This keeps the tag set from drifting into near-duplicate variants (for example `inference` vs `llm-inference`).
-- **Mark up formula notation.** When an observation states a formula, equation, or named quantity (not a symbol mentioned in prose), wrap it per kboat-notes [Math and formula notation](../kboat-notes/references/concept-notes.md#math-and-formula-notation): code for an ASCII-faithful expression, `$`/`$$` for notation needing math typography, defaulting to code.
-  - This keeps the boundary of what is a formula explicit rather than leaving a bare expression to read as running text.
-- **Never auto-merge.** Merging concept notes is destructive and hard to reverse unattended.
-  - Log merge candidates in the report for `kboat-curate` to handle with a human.
-- **Stay idempotent on replay.** A source a partial pass left ripe (Phase B step 6) or a crash interrupted is distilled again from the start, into notes that already hold part of what it yields, so every write here must be one a second pass can repeat.
-  - The replay reads the source again, not the earlier pass's report: what keeps it from writing twice is the note in front of it, never a mark an earlier section left.
-  - The project's `bm_write` does not overwrite by default, so never issue a second `bm_write` for the same concept — use the reading-group inserts above.
-  - Before inserting, read the note's `## Observations` and `## Relations` and write only what it does not already hold:
-    - Skip a claim the section already states — the same assertion, in whatever words and under whichever `###` group — and log it under the report's `skipped (dup of):`, naming what it duplicates.
-      - Where that is this source's own claim from an earlier pass, say so: a skip is logged for the human to reverse, and reversing this one would write a second copy.
-      - A claim another reading's provenance holds only as `#dialogue` is not a copy of one this source grounds: write it, tagged `#grounded`, as this reading's claim.
-        - This source's own `#dialogue` copy is a duplicate like any other, whatever this pass now judges its grounding.
-      - The check only keeps a second copy out; where a claim that is not there yet goes is still the placement judgement above.
-    - Follow what a replay does place with this source's provenance line, as "Always record provenance" says, even where the note already carries one from the earlier pass: placed after that line with none of its own, a claim would read as the next reading's.
-      - A replay whose claims are all present places nothing, provenance included, its line being there already.
-    - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
-      - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
-      - Where that one insert does not land, the source is not held ripe for it (Phase B step 6), since the source note still carries the title and URL the line would have said: report it in the run summary, as a relation that did not land is, and leave `appended-to:` to the notes that grew.
-    - Skip a relation `## Relations` already carries, the same relation to the same target.
-      - This keeps a replay from doubling a relation; it is not a retry path for one that did not land, since that on its own does not keep the source ripe (below), so usually no replay comes back for it.
-  - A crash between the placement and the wrap leaves claims bare above the note's first `###`, which the wrap rule above heads on the next append to that note whether or not this source is replayed.
+- Append first
+- Create only specific concepts
+- Cap creates per source
+- Ground every claim
+- Correct dialogue-derived claims; don't just reject them
+- Capture the reader's interest, not only the dialogue's facts
+- Note the knowledge-base context, lightly
+- Always record provenance
+- Reuse facet tags from the vocabulary
+- Mark up formula notation
+- Never auto-merge
+- Stay idempotent on replay
 
 ## Review report (`Reviews/YYYY-MM-DD.md`)
 
-The review report is the durable, **user-facing** record of what each distillation taught — read for memory consolidation, not a run log.
-So it carries **only the distillation knowledge** below, and is **written only on a run that distilled at least one source or Kindle book** (Phase B/C) — a partial pass that stamped nothing included, since its creates and appends are logged there for the human to reverse.
-A run that distilled nothing writes no report: there is nothing to consolidate, and its operational outcome (the Phase A lifecycle counts, dismissed discards and notebook retentions, anomalies, the "nothing ripe" status) lives in the run summary, not the vault.
-
-No `kboat` tool writes the report, so there is no CLI to look for: it is a file an agent writes itself (`kboat-vault-conventions`, "A file an agent writes itself").
-Whether the day's file is there comes from reading it at its absolute path, the same read the look for this source's section below needs, and never from `ls | tail`: the rtk hook rewrites `ls`'s output, and the listing can leave out the newest files.
-
-The first write to the day's file **creates it with its frontmatter block** (see kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd)), then appends the first `###` section; every later write appends another.
-
-```yaml
----
-type: review
-date: <YYYY-MM-DD>
-read: false
----
-```
-
-The block is **mandatory** and its fields are defined in kboat-notes [Review note](../kboat-notes/references/review-note.md#review-note-reviewsmd) (`type: review` keeps the report in `Reviews.base`, `read: false` is the human's read-tracking flag); set `date` to the run date (the same as the filename).
-Where the file already exists — a later write of the run, a crash that left it after a section was written, a second run the same day — never rewrite the frontmatter block, so a `read: true` the reader has since toggled is never clobbered.
-
-**Every pass writes its own section, carrying what that pass did**, and the report is only ever appended to — nothing here rewrites a section or a file.
-A replay on a later day appends its section to that day's file and leaves the earlier day's report as it was; a second pass the same day appends below the first, which stands untouched as the record a human may already have read.
-
-Before writing, look for this source's section in the day's own file, by its `Source:` line (`ASIN:<asin>` for a book) — and only there, since no earlier day's report bears on what this pass writes.
-Finding one is an **anomaly** to report, never a reason to write no section: the reader gets both accounts, and the run summary tells them the day's report holds two for one source.
-
-- Name the source in the run summary as an anomaly.
-- Write this pass's section as any other, and say nothing in it about the earlier one; comparing the two is the reader's, and the pass knows nothing about why the day has both.
-
-Each distilled source (and Kindle book) gets its own `###` section under the report, laid out for scanning — a one-line reference to the original, then a bulleted **Summary**, then the **Basic Memory Report** (the decision log):
-
-```markdown
-### {title}
-
-Source: <url> (for a Kindle book: ASIN:<asin>)
-
-#### Summary
-
-- a bulleted consolidation, in the same language as the source `summary` (Japanese)
-- synthesise the original's key points **and the dialogue takeaways** (the `kept from dialogue` and `corrected from dialogue` claims), since the reader's new or noteworthy findings live in the dialogue, not in the source `summary` (which already sits on the source note, so do not copy it verbatim)
-- record **what the reader was after** — the questions they raised and the points they doubted in the dialogue — so the Summary carries the reader's line of inquiry, not only the facts it settled
-- one point per bullet, and mark a bullet that carries a `#dialogue` claim (a trailing `#dialogue`) so it never reads as if the source stated it (a dialogue claim you corrected to `#grounded` no longer needs the mark — the source now supports it)
-- keep each point legible on its own terms: technical keywords may stay, but do not carry over the source's context-dependent wording for ordinary (non-keyword) points — stripped of the surrounding context that gave it meaning, such borrowed phrasing reads as vague even to a reader who knows the source, so restate the point plainly
-
-#### Basic Memory Report
-
-- `created:` new concept notes.
-- `appended-to:` existing concept notes that grew.
-- `related in KB:` existing concepts this distillation connects to, or that now draw on several sources — the noteworthy links the Append-first search surfaced, grounded in the notes it returned; light, not a graph audit (that is `kboat-curate`). A concept may also sit under `appended-to:`: that logs that a note grew, while `related in KB:` names why the link or recurrence is worth noticing — surface it only when that signal is itself noteworthy, not for every note that grew.
-- `kept from dialogue:` external (`#dialogue`) claims accreted as the dialogue stated them (a dialogue claim you kept as-is that the source grounds needs no dialogue-audit line — it is source knowledge that folds into `created:`/`appended-to:`; a *corrected* claim keeps its `corrected from dialogue:` line either way).
-- `corrected from dialogue:` claims accreted after you fixed an error the fast reading model made — whether the fix lands them `#grounded` (the source now supports it) or `#dialogue` (external) — each with what you changed, so the human can audit the correction.
-- `skipped (dup of):` observations dropped as duplicates.
-- `uncreated candidates:` concepts this pass did not write. Three marks keep the source ripe, their claims being grounded in the notebook and nowhere else: a concept the create cap deferred, marked `deferred (create cap reached)`, and one whose create or append did not land, marked `create not made` or `append not made`. The run summary names those three for a human. Everything else here — a vague or broad concept, a `#dialogue` claim you could neither confirm nor confidently correct — is the human's to promote from this report.
-- `merge candidates:` pairs flagged for `kboat-curate`.
-```
-
-Write the Basic Memory Report values in the **same language as the Summary** (Japanese prose), keeping concept-note names and established English terms (`recompute`, FLOP, OCS, …) in English (the backtick keys are fixed literals, never translated).
-Each key holds **one line**, its top-level items separated by `; `, so a `、` inside a clause is never read as an item boundary:
-
-- `created:` — the new concept-note names as plain text, never `[[wikilinks]]` (they can't resolve from `Reviews/` in the vault root to the concept notes in the separate `KBOAT_KNOWLEDGE_PATH` root, the same reason provenance uses a URL).
-- `appended-to:` — the concept-note names that grew (same plain-text rule), each optionally followed by a `（…）` note of what was added.
-- `related in KB:` — the related concept-note names as plain text (same rule as `appended-to:`), each with a short `（…）` note of the connection or why it recurs.
-- `kept from dialogue:`, `corrected from dialogue:`, `uncreated candidates:`, `skipped (dup of):`, `merge candidates:` — short, self-contained Japanese phrases.
-
-Write `none` for any of these keys when there is nothing to report.
-Annotate a create-cap hit in the section of the source that reached it: suffix that section's `created:` **once** with `(create cap reached)` — the count is the cap itself, since that is where the pass stopped — and mark each concept it deferred under `uncreated candidates:` with a uniform `deferred (create cap reached)` rather than restating the count.
-
-When composing the report's prose — the Summary, and any prose-valued keys in the Basic Memory Report — follow the writing conventions of the language it is written in: invoke a matching writing skill for that language up front if the environment offers one, and follow its conventions rather than drafting from memory of the rules.
-Then, before finalizing the prose you just drafted, re-read it once against that skill's own self-check as a distinct pass, rather than trusting that you kept the rules in mind while drafting.
-
-A **Kindle book** (Phase C) uses the same two-subsection layout, with `ASIN:<asin>` as the reference and its Summary drawn from the book and the reader's own `#dialogue` commentary in the body.
-
-Everything operational stays out of the report and goes to the run summary only — the Run summary section below is the authoritative list of what to report there.
+The report's rules and layout are in [references/review-report.md](references/review-report.md); a run that distilled nothing writes no report and need not open it.
 
 ## Run summary
 
