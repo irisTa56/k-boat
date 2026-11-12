@@ -14,7 +14,7 @@ requires-python = ">=3.15,<3.16"
 dependencies = [
     "httpx>=0.28",
     # OS trust store TLS verification; see fetch.build_client for the why.
-    "truststore>=0.10",
+    "truststore>=0.10.5",
     "feedparser>=6.0.14",
     "selectolax>=1.0.0",
     "tomlkit>=0.15",
