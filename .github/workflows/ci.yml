@@ -140,11 +140,11 @@ jobs:
   # agent session; dotfiles `tasks/README.md` (`shared-tasks:check`) has the rest.
   # Only there: a Dependabot PR and the bump PR itself are not a person's change,
   # a fork's token cannot push, and a push to `main` has no PR to answer.
-  # That push is why this job grants `contents: write` rather than `read`, and
-  # why the checkout keeps its credentials (its default). A token is granted per
-  # job, so the runs without `--bump` hold it too. The task stops short of
-  # opening the PR, which would need the repository setting that also lets
-  # a workflow approve one.
+  # That push, through `origin`, is why this job grants `contents: write` rather
+  # than `read`. A token is granted per job, so the checkout keeps its credentials
+  # only where `--bump` runs, leaving the write token out of reach of what the
+  # other runs execute. The task stops short of opening the PR, which would need
+  # the repository setting that also lets a workflow approve one.
   shared-tasks-check:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
@@ -158,6 +158,8 @@ jobs:
         && github.head_ref != 'shared-tasks-bump' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: ${{ env.BUMP == 'true' }}
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           cache: false # as in `python-qa`
