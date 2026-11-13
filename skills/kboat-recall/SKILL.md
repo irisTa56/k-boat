@@ -105,7 +105,7 @@ For each shortlisted candidate (a cheap subagent per candidate, in parallel), re
     - `wc -c` counts bytes, as `wc -m` does under the C locale, and over filtered lines either counts what the filter kept rather than the body.
 - Record each body a subagent read with `kboat-pick assess --slug <slug> --body-chars <n> --act-early yes|no`, the subagent reporting both: whether the body holds something worth acting on now is the Tier 0 test, asked of every body read whatever tier brought it to the shortlist.
   - Run it from this mode rather than from the subagents, once per body and one at a time, since each call takes the vault lock and parallel calls would refuse each other.
-  - Its JSON is `{vault, slug, assessed, anomalies}`; an exit 1 with `assessed: false` means the record was not written, which costs only a body read on a later run, so report its `anomalies` entry in step 7 and carry on, and treat a `locked` record the same way.
+  - Its JSON is `{vault, slug, assessed, anomalies}`; `assessed: false`, which still exits 0, means the record was not written, which costs only a body read on a later run, so report its `anomalies` entry in step 7 and carry on, and treat a `locked` record, which exits 1, the same way.
 - Then choose at most two from the body-refined ranking, applying the two diversification tie-breakers of kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick) — one older + one newer by `added_date`, and not two long reads (by the body length) — as tie-breakers only, never overriding relevance; read it for how they qualify and bound the pick to two.
 - **Fallback:** if NotebookLM cannot be reached at all (auth unusable, the CLI failing), skip the body read and pick from the Stage 1 `summary`/`topics` ranking instead (Tier 0 included, so an act-early pick still fires), so the step still produces a pick.
 - If only some candidates' fulltext fails — or a candidate's `notebooklm_id` is empty — judge those on `summary`/`topics` and the rest on their bodies.
@@ -129,7 +129,7 @@ For each shortlisted candidate (a cheap subagent per candidate, in parallel), re
 
 Report the picks — each with what it matched (the open question, the dated note, or the act-early reason: a security advisory, a release, a best-practice worth adopting now), so the inference is visible and checkable — and that they are read in the Today view of the Sources Base (kboat-notes [Sources Base](../kboat-notes/references/bases.md#sources-base)).
 
-- Report every `anomalies` entry steps 1 and 6 returned, by path, each Daily note among them as a day that could not be read rather than a day with no note.
+- Report every `anomalies` entry steps 1, 5 and 6 returned, by path, each Daily note among them as a day that could not be read rather than a day with no note.
 - Report separately every candidate step 5 found with a notebook that no longer holds its original, and every one whose `notebooklm_id` named no notebook, by slug and by which it was, whether or not it was picked: that report is the whole of this mode's part in the loss, `kboat-notebook-health` has nothing to act on without the first, and nothing but this reaches the second.
 
 This mode never writes the Daily note.

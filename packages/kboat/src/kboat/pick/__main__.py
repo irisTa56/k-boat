@@ -227,7 +227,9 @@ def main(argv: list[str] | None = None) -> int:
             return emit_locked(exc)
         except VaultLockUnavailableError as exc:
             return emit_lock_unavailable(exc)
-        unread = not output["assessed"]
+        # A note it could not write is reported, not failed, as `set` reports one:
+        # exit 1 is the required-input family's, which a single note is not.
+        unread = False
     else:
         slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
         try:

@@ -13,6 +13,8 @@ from kboat.frontmatter import (
     parse_frontmatter,
     set_field,
 )
+from kboat.schema import SOURCE
+from kboat.write import render_field
 
 __all__ = [
     "NOTE_READ_ERRORS",
@@ -39,14 +41,24 @@ def set_picked(text: str, value: bool) -> str:
 def set_assessment(text: str, body_chars: int, act_early: bool) -> str:
     """Record a body read: `body_chars` and `act_early`, each rewritten in place,
     or inserted after `picked` (and `act_early` after `body_chars`) on a note no
-    read has reached yet."""
+    read has reached yet. Rendered by the note writer's own rule, so a value reads
+    the same here as through `kboat-note write`, `act_early` quoted where YAML
+    would otherwise read `yes`/`no` as a boolean."""
+
+    def rendered(name: str, value: object) -> str:
+        return render_field(SOURCE.get(name), value)
+
     text = set_field(
-        text, "body_chars", str(body_chars), insert_if_absent=True, insert_after="picked"
+        text,
+        "body_chars",
+        rendered("body_chars", body_chars),
+        insert_if_absent=True,
+        insert_after="picked",
     )
     return set_field(
         text,
         "act_early",
-        "yes" if act_early else "no",
+        rendered("act_early", "yes" if act_early else "no"),
         insert_if_absent=True,
         insert_after="body_chars",
     )
