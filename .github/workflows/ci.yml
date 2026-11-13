@@ -133,15 +133,65 @@ jobs:
   # Stays red while dotfiles `main` carries other shared tasks than the pin in
   # mise.toml does, and for the reason below is a reminder rather than a required
   # check, and skipped on the schedule. Exit 2 (it could not tell) fails it too.
+  #
+  # On a pull request a person opened here, `--bump` also moves the pin to dotfiles
+  # `main` when the check fails, and the last step carries that one-line change
+  # into a pull request of its own on the `shared-tasks-bump` branch, opened or
+  # updated, so the bump costs no agent session. Only there: a Dependabot PR and
+  # the bump PR itself are not a person's change, a fork's token cannot write, and
+  # a push to `main` has no PR to answer. The job stays red either way.
+  # That step is why this job grants more than `contents: read`: pushing the
+  # branch needs `contents: write`, and opening the PR `pull-requests: write`.
+  # A token can only be granted per job, so the runs that skip it hold them too.
+  # GitHub runs no workflow for a PR this token opens until someone approves the
+  # run on it, and opening one at all needs the repository's "Allow GitHub
+  # Actions to create and approve pull requests" setting.
   shared-tasks-check:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BUMP: >-
+        ${{ github.event_name == 'pull_request'
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.event.pull_request.user.login != 'dependabot[bot]'
+        && github.head_ref != 'shared-tasks-bump' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           cache: false # as in `python-qa`
-      - run: mise run shared-tasks:check
+      - if: env.BUMP != 'true'
+        run: mise run shared-tasks:check
+      # `shell: bash` adds `pipefail`, without which `tee` would hide the exit code.
+      - id: check-bump
+        if: env.BUMP == 'true'
+        shell: bash
+        run: mise run shared-tasks:check -- --bump 2>&1 | tee "$RUNNER_TEMP/shared-tasks-check.log"
+      # Exit 2 rewrites nothing, so the action finds no change and opens no PR.
+      - id: compare
+        if: failure() && steps.check-bump.outcome == 'failure'
+        run: |
+          url=$(grep -oE 'https://github\.com/irisTa56/dotfiles/compare/[0-9a-f]{40}\.\.\.[0-9a-f]{40}' "$RUNNER_TEMP/shared-tasks-check.log" || true)
+          echo "url=$url" >>"$GITHUB_OUTPUT"
+      # The checkout is the PR's merge commit, so `base` is required: the action
+      # cherry-picks only its own commit onto `main`, leaving the PR's changes out.
+      - if: failure() && steps.compare.outputs.url != ''
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
+        with:
+          base: main
+          branch: shared-tasks-bump
+          add-paths: mise.toml
+          commit-message: "chore(mise): move the shared-tasks pin to dotfiles main"
+          title: "chore(mise): move the shared-tasks pin to dotfiles main"
+          body: |
+            `shared-tasks:check --bump` moved the pin in `mise.toml` to the tip of dotfiles `main`, on the CI run of #${{ github.event.pull_request.number }}.
+
+            What it brings: ${{ steps.compare.outputs.url }}
+
+            Running the tasks the move changes, and deciding whether a new one joins this repository's hooks or CI, are this PR's review (dotfiles `tasks/README.md`, `shared-tasks:check`).
 
   # Stays red while a newer CPython minor is out, so it is a reminder and must
   # never become a required check. Skipped on the schedule, whose run exists to
