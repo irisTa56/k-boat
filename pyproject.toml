@@ -43,7 +43,7 @@ dev = [
 # without saying so. Ruff refuses to run outside this range, so such a bump fails the
 # gate instead of arriving as a green dependabot PR — widen it only together with the
 # check in the root CLAUDE.md.
-required-version = ">=0.16,<0.17"
+required-version = ">=0.17,<0.18"
 line-length = 100
 # The minor the interpreter range admits (packages/kboat/pyproject.toml). Stated here
 # because ruff does not infer it: this root has no `requires-python` of its own.
