@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         "--act-early",
         choices=("yes", "no"),
         required=True,
-        help="Whether the body holds something worth acting on now.",
+        help="Whether the body's value is perishable (the Tier 0 test).",
     )
 
     args = parser.parse_args(argv)

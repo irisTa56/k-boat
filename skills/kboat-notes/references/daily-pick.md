@@ -47,7 +47,7 @@ The body also gives each candidate's length, used by the long-read tie-breaker b
 Then pick at most two from the body-refined ranking, applying the two diversification preferences.
 
 **What a body read leaves behind.**
-Each body read is recorded on its source with `kboat-pick assess`: the length as `body_chars`, and whether the body holds something worth acting on now (the Tier 0 test) as `act_early`.
+Each body read is recorded on its source with `kboat-pick assess`: the length as `body_chars`, and whether the body's value is perishable (the Tier 0 test) as `act_early`.
 Both describe the body, which does not change while the source waits, so `kboat-pick candidates` returns them and later runs reuse them.
 A recorded `act_early: no` keeps a candidate out of Tier 0 in Stage 1, which stops a summary that reads like an advisory or a release from sending the same body to Stage 2 every day; the candidate still enters Tier 1 or Tier 2 when it matches that day's interests.
 The relevance verdict is not recorded: it is a judgment against the day's interest signals and the other candidates, which change from run to run, so a candidate on the shortlist again is read again.
