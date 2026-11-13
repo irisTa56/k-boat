@@ -74,7 +74,7 @@ uv sync --project tools/notebooklm --no-active
 # `shared-tasks:check` in CI says when the tasks on `main` differ from the pin's.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=c2a751aa7a97200b65948c7a37c9c9f75fb64004",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=3e686e17481efeb1fa1fe96d349a60dd4a858c6d",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit;
