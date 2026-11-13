@@ -76,7 +76,7 @@ It exposes eleven tools over a shared frontmatter core, a code-authoritative sch
 
 - `kboat-lifecycle` — the distill pass's cooldown clock and work-set predicates.
 - `kboat-repos` — the repo catalogue's `gh` metadata gather, note writing, and full-catalogue refresh, which adopts repo renames automatically.
-- `kboat-pick` — the daily pick's Daily-note/candidate gather and `picked` flag.
+- `kboat-pick` — the daily pick's Daily-note/candidate gather, `picked` flag, and record of each body read.
 - `kboat-validate` — checks every vault note against the schema; `--stats` adds the backlog-health counts.
 - `kboat-doctor` — checks the vault's environment preconditions (synced environments, root, writability, folders, the questions file, directory readability) before a run, and warns about files not stored locally.
 - `kboat-note` — schema-driven create-or-update of a note from a JSON record.

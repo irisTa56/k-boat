@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import yaml
 
 from kboat.frontmatter import repeated_keys
 from kboat.lock import lock_file, vault_lock
@@ -474,3 +475,120 @@ def test_a_vault_whose_lock_cannot_be_opened_is_reported_not_dumped(
     captured = capsys.readouterr()
     assert "vault lock unavailable" in captured.err
     assert captured.out == ""
+
+
+def _assess(vault: Path, *args: str) -> int:
+    return main(["--vault", str(vault), "assess", *args])
+
+
+def test_assess_records_the_body_read_on_its_source(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _assess(vault, "--slug", "web1", "--body-chars", "4321", "--act-early", "no") == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["slug"] == "web1"
+    assert out["assessed"] is True
+    assert out["anomalies"] == []
+    fm = parse_frontmatter((vault / "Sources" / "web1.md").read_text(encoding="utf-8"))
+    assert fm["body_chars"] == "4321"
+    assert fm["act_early"] == "no"
+
+
+def test_a_later_assess_rewrites_the_record_rather_than_adding_lines(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _assess(vault, "--slug", "web1", "--body-chars", "4321", "--act-early", "no")
+    assert _assess(vault, "--slug", "web1", "--body-chars", "5000", "--act-early", "yes") == 0
+    text = (vault / "Sources" / "web1.md").read_text(encoding="utf-8")
+    assert not repeated_keys(text)
+    fm = parse_frontmatter(text)
+    assert (fm["body_chars"], fm["act_early"]) == ("5000", "yes")
+
+
+def test_assess_of_a_slug_with_no_note_reports_it_not_assessed(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A note-level failure, as `set` reports one: exit 0 with the report. Exit 1
+    # stays the required-input family's (kboat-vault-conventions "Vault preconditions").
+    assert _assess(vault, "--slug", "ghost", "--body-chars", "10", "--act-early", "no") == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["assessed"] is False
+    assert [a["path"] for a in out["anomalies"]] == ["Sources/ghost.md"]
+    assert not (vault / "Sources" / "ghost.md").exists()
+
+
+@pytest.mark.parametrize("slug", ["../Daily/2026-06-04", "sub/web1", "", ".", ".."])
+def test_assess_refuses_a_slug_that_is_not_a_note_name(
+    vault: Path, capsys: pytest.CaptureFixture[str], slug: str
+) -> None:
+    # A slug is joined under `Sources/`, so one naming a path would write elsewhere.
+    daily = vault / "Daily" / "2026-06-04.md"
+    before = daily.read_text(encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        _assess(vault, "--slug", slug, "--body-chars", "10", "--act-early", "no")
+    assert exc.value.code == 2
+    assert daily.read_text(encoding="utf-8") == before
+
+
+def test_assess_refuses_a_negative_length(vault: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        _assess(vault, "--slug", "web1", "--body-chars", "-1", "--act-early", "no")
+    assert exc.value.code == 2
+    assert "body_chars" not in parse_frontmatter(
+        (vault / "Sources" / "web1.md").read_text(encoding="utf-8")
+    )
+
+
+def test_assess_refuses_a_locked_vault_without_writing(
+    vault: Path, capsys: pytest.CaptureFixture[str], brief_lock_wait: None
+) -> None:
+    before = (vault / "Sources" / "web1.md").read_text(encoding="utf-8")
+    with vault_lock(vault):
+        rc = _assess(vault, "--slug", "web1", "--body-chars", "10", "--act-early", "no")
+    assert rc == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "locked"
+    assert (vault / "Sources" / "web1.md").read_text(encoding="utf-8") == before
+
+
+def test_candidates_carry_what_a_past_body_read_recorded(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _assess(vault, "--slug", "web1", "--body-chars", "4321", "--act-early", "no")
+    capsys.readouterr()
+    by_slug = {c["slug"]: c for c in _candidates(vault, capsys, 0)["candidates"]}
+    assert (by_slug["web1"]["body_chars"], by_slug["web1"]["act_early"]) == (4321, "no")
+    # Never read: nothing recorded, rather than a value a reader would act on.
+    assert (by_slug["web2"]["body_chars"], by_slug["web2"]["act_early"]) == (None, None)
+
+
+@pytest.mark.parametrize("act_early", ["yes", "no"])
+def test_assess_writes_values_every_yaml_reader_decodes_alike(vault: Path, act_early: str) -> None:
+    assert _assess(vault, "--slug", "web1", "--body-chars", "4321", "--act-early", act_early) == 0
+    text = (vault / "Sources" / "web1.md").read_text(encoding="utf-8")
+    block = text.split("---\n")[1]
+    loaded = yaml.safe_load(block)
+    assert loaded["act_early"] == act_early
+    assert loaded["body_chars"] == 4321
+    assert parse_frontmatter(text)["act_early"] == act_early
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        (
+            "repeated",
+            b"---\ntype: source\npicked: false\nact_early: no\nact_early: yes\n---\n",
+        ),
+        ("notutf8", b"---\ntype: source\ntitle: \xff\npicked: false\n---\n"),
+    ],
+)
+def test_assess_reports_a_note_it_cannot_write_and_leaves_it_alone(
+    vault: Path, capsys: pytest.CaptureFixture[str], name: str, content: bytes
+) -> None:
+    path = vault / "Sources" / f"{name}.md"
+    path.write_bytes(content)
+    assert _assess(vault, "--slug", name, "--body-chars", "10", "--act-early", "no") == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["assessed"] is False
+    assert [a["path"] for a in out["anomalies"]] == [f"Sources/{name}.md"]
+    assert path.read_bytes() == content

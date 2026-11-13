@@ -1,6 +1,6 @@
 """CLI entry point: `kboat-pick`.
 
-Two deterministic subcommands behind the daily pick (the relevance ranking is the
+Three deterministic subcommands behind the daily pick (the relevance ranking is the
 LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
 
 - `candidates` — read the two interest signals (the recent Daily-note bodies,
@@ -11,14 +11,19 @@ LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
   the chosen slugs (at most two). An empty `--slugs` just clears the spotlight.
   It is the writing half, so it holds the vault lock and reports a `locked`
   record rather than racing another run; `candidates` reads only and takes none.
+- `assess --slug s --body-chars n --act-early yes|no` — record what the body read
+  of one candidate found on its source note (kboat-notes "Daily pick"), under the
+  vault lock like `set`.
 
-Both default the vault to `$OBSIDIAN_VAULT_PATH` and accept `--today` for
-reproducibility, mirroring `kboat-lifecycle`.
+Each defaults the vault to `$OBSIDIAN_VAULT_PATH`, and `candidates` accepts
+`--today` for reproducibility, mirroring `kboat-lifecycle`.
 
-A required input either one could not read — `Sources/` absent, not a directory, or
+A required input `candidates` or `set` could not read — `Sources/` absent, not a directory, or
 refused, or for `candidates` a `Questions.md` it could not read — is an `anomalies`
 entry under its own name and exit 1, with the report still printed
-(`kboat-vault-conventions` "Vault preconditions").
+(`kboat-vault-conventions` "Vault preconditions"). `assess` reads one note
+rather than a required input, so a note it could not write is an `anomalies`
+entry with exit 0, as a note `set` could not write is.
 """
 
 import argparse
@@ -38,10 +43,11 @@ from kboat.cli import (
 from kboat.io_utils import atomic_write_text
 from kboat.lock import VaultLockedError, VaultLockUnavailableError, vault_lock
 from kboat.schema import DAILY_DIR, DIR_BY_TYPE, QUESTIONS_FILE
+from kboat.write import BadInputError, filename_slug
 
 from .candidates import candidate_from, is_active_web
 from .dailynotes import DEFAULT_LOOKBACK_DAYS, extract_daily_notes
-from .notes import NOTE_READ_ERRORS, Value, parse_frontmatter, set_picked
+from .notes import NOTE_READ_ERRORS, Value, parse_frontmatter, set_assessment, set_picked
 from .questions import QuestionsUnreadableError, extract_questions
 
 
@@ -134,10 +140,24 @@ def _cmd_set(vault: Path, slugs: list[str]) -> tuple[dict[str, object], bool]:
     }, unread
 
 
+def _cmd_assess(vault: Path, slug: str, body_chars: int, act_early: bool) -> dict[str, object]:
+    rel = f"{DIR_BY_TYPE['source']}/{slug}.md"
+    path = vault / rel
+    anomalies: list[dict[str, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+        new_text = set_assessment(text, body_chars, act_early)
+        if new_text != text:
+            atomic_write_text(path, new_text)
+    except NOTE_READ_ERRORS as exc:
+        anomalies.append({"path": rel, "error": f"assessment write failed: {exc}"})
+    return {"vault": str(vault), "slug": slug, "assessed": not anomalies, "anomalies": anomalies}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kboat-pick",
-        description="Daily-pick mechanics: gather the interest signals (recent Daily notes + open-questions backlog) and web candidates, and set the picked flag.",
+        description="Daily-pick mechanics: gather the interest signals (recent Daily notes + open-questions backlog) and web candidates, set the picked flag, and record a body read.",
     )
     add_vault_argument(parser)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -166,6 +186,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Comma-separated slugs to mark picked (at most two). Empty clears all picks.",
     )
 
+    p_assess = sub.add_parser(
+        "assess", help="Record one candidate's body read (length and act-early) on its source."
+    )
+    p_assess.add_argument("--slug", required=True, help="The source read.")
+    p_assess.add_argument(
+        "--body-chars", type=int, required=True, help="The body's character count."
+    )
+    p_assess.add_argument(
+        "--act-early",
+        choices=("yes", "no"),
+        required=True,
+        help="Whether the body's value is perishable (the Tier 0 test).",
+    )
+
     args = parser.parse_args(argv)
 
     vault = vault_path(parser, args)
@@ -179,6 +213,25 @@ def main(argv: list[str] | None = None) -> int:
         if args.lookback_days < 0:
             parser.error(f"--lookback-days must be >= 0, got {args.lookback_days}")
         output, unread = _cmd_candidates(vault, today, args.lookback_days)
+    elif args.command == "assess":
+        # The slug is joined under `Sources/`, so the writer's own check of a
+        # filename keeps one naming a path from writing anywhere else.
+        try:
+            filename_slug(args.slug)
+        except BadInputError as exc:
+            parser.error(str(exc))
+        if args.body_chars < 0:
+            parser.error(f"--body-chars must be >= 0, got {args.body_chars}")
+        try:
+            with vault_lock(vault):
+                output = _cmd_assess(vault, args.slug, args.body_chars, args.act_early == "yes")
+        except VaultLockedError as exc:
+            return emit_locked(exc)
+        except VaultLockUnavailableError as exc:
+            return emit_lock_unavailable(exc)
+        # A note it could not write is reported, not failed, as `set` reports one:
+        # exit 1 is the required-input family's, which a single note is not.
+        unread = False
     else:
         slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
         try:

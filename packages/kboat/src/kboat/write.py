@@ -312,7 +312,7 @@ def _empty_for(field: Field) -> object:
 _FORBIDDEN_IN_A_NAME = frozenset('/\\:*?"<>|')
 
 
-def _filename_slug(slug: object) -> str:
+def filename_slug(slug: object) -> str:
     """`slug` as the one path component it names, or `BadInputError`.
 
     The slug is interpolated into the note's path, and every caller assembles it
@@ -444,7 +444,7 @@ def upsert(
     derived field supplied by hand — raises `BadInputError` and writes nothing. A slug held by something that is not a
     file, and a probe the vault refuses, raise an `OSError` and write nothing.
     """
-    slug = _filename_slug(record.get("slug"))
+    slug = filename_slug(record.get("slug"))
     fields_in = record.get("fields", {})
     provided: dict[str, object] = {}
     if isinstance(fields_in, Mapping):

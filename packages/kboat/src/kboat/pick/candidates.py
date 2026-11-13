@@ -10,9 +10,11 @@ pre-filter, plus `added_date` for the diversification preference (one older + on
 newer) and `notebooklm_id` so the ranker can fetch the shortlist's NotebookLM
 fulltext for the body-read final judgment (see kboat-notes "Daily pick"). The id
 may be empty (a candidate whose notebook is gone), which the ranker treats as
-un-fetchable.
+un-fetchable. `body_chars` and `act_early` are what a past body read recorded,
+`None` where none has, or where the note holds a value that is not one.
 """
 
+import re
 from dataclasses import dataclass
 
 from .notes import Value
@@ -30,6 +32,14 @@ def _as_list(value: Value) -> list[str]:
     return value if isinstance(value, list) else []
 
 
+def _as_count(value: Value) -> int | None:
+    return int(value) if isinstance(value, str) and re.fullmatch(r"[0-9]+", value) else None
+
+
+def _as_verdict(value: Value) -> str | None:
+    return value if isinstance(value, str) and value in ("yes", "no") else None
+
+
 @dataclass(frozen=True)
 class Candidate:
     slug: str
@@ -41,6 +51,8 @@ class Candidate:
     topics: list[str]
     added_date: str
     notebooklm_id: str
+    body_chars: int | None
+    act_early: str | None
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -53,6 +65,8 @@ class Candidate:
             "topics": self.topics,
             "added_date": self.added_date,
             "notebooklm_id": self.notebooklm_id,
+            "body_chars": self.body_chars,
+            "act_early": self.act_early,
         }
 
 
@@ -81,4 +95,6 @@ def candidate_from(slug: str, rel_path: str, fm: dict[str, Value]) -> Candidate:
         topics=_as_list(fm.get("topics")),
         added_date=_as_str(fm.get("added_date")),
         notebooklm_id=_as_str(fm.get("notebooklm_id")),
+        body_chars=_as_count(fm.get("body_chars")),
+        act_early=_as_verdict(fm.get("act_early")),
     )
