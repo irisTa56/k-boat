@@ -67,7 +67,7 @@ import hashlib
 import json
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -250,7 +250,7 @@ def _unavailable(path: Path, exc: OSError) -> VaultLockUnavailableError:
 
 
 @contextmanager
-def vault_lock(vault: Path, *, wait_s: float | None = None) -> Iterator[Path]:
+def vault_lock(vault: Path, *, wait_s: float | None = None) -> Generator[Path]:
     """Hold the vault lock for the duration of the block, and release it on the way out.
 
     Raises `VaultLockedError` when another process holds it and `wait_s` (default:

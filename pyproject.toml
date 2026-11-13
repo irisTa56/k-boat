@@ -13,10 +13,10 @@ members = ["packages/*"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9",
+    "pytest>=9.2.0",
     "pytest-cov",
-    "ruff>=0.16.9",
-    "ty>=0.0.84",
+    "ruff>=0.17.4",
+    "ty>=0.0.99",
     "playwright",
     # Also a runtime dependency of kboat, which declares it for itself; listed here
     # for two uses that do not go through kboat. In the tests: an independent
@@ -43,7 +43,7 @@ dev = [
 # without saying so. Ruff refuses to run outside this range, so such a bump fails the
 # gate instead of arriving as a green dependabot PR — widen it only together with the
 # check in the root CLAUDE.md.
-required-version = ">=0.16,<0.17"
+required-version = ">=0.17,<0.18"
 line-length = 100
 # The minor the interpreter range admits (packages/kboat/pyproject.toml). Stated here
 # because ruff does not infer it: this root has no `requires-python` of its own.
