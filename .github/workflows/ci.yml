@@ -52,6 +52,12 @@ env:
   # mise.toml's `[hooks]` postinstall sets up a local checkout, which no job
   # uses; the tasks that need the workspace sync it through `uv run`.
   MISE_NO_HOOKS: "1"
+  # `mise run` would otherwise install what is missing before it runs a task,
+  # so a job that installs fewer tools than mise.toml lists (`install: false`
+  # below) would get the rest anyway. With this off, a task whose tool the job
+  # left out fails on the missing command, in that job's log, unless the runner
+  # image has the command itself.
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
   python-qa:
@@ -145,6 +151,7 @@ jobs:
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           cache: false # as in `python-qa`
+          install: false # the task calls git and mise alone
       - run: mise run shared-tasks:check -- --bump
 
   # Stays red while a newer CPython minor is out, so it is a reminder and must
