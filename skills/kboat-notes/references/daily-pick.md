@@ -1,7 +1,7 @@
 # Daily pick
 
 The daily-pick step turns "what do I read first?" from scanning a flat inbox into a pull: the routine reads two signals of what you want to read now — your recent Daily notes (the ambient signal) and your standing open-questions backlog (the deliberate one) — infers your current interests from both, and surfaces the sources that fit.
-Two pieces implement it: the `kboat-pick` tool does the deterministic, purely-local vault I/O — `kboat-pick candidates` reads both interest signals (the recent Daily-note bodies and the open-questions backlog) and the web inbox, `kboat-pick set` writes `picked` — and `kboat-recall` infers the interests from those signals, ranks the candidates between them, and reads the shortlisted candidates' NotebookLM fulltext for the final judgment.
+Two pieces implement it: the `kboat-pick` tool does the deterministic, purely-local vault I/O — `kboat-pick candidates` reads both interest signals (the recent Daily-note bodies and the open-questions backlog) and the web inbox, `kboat-pick set` writes `picked`, `kboat-pick assess` records what each body read found — and `kboat-recall` infers the interests from those signals, ranks the candidates between them, and reads the shortlisted candidates' NotebookLM fulltext for the final judgment.
 The routine runs the whole step after distillation; this section is the spec all three follow.
 
 **Input — your recent Daily notes, no prescribed format.**
@@ -33,7 +33,7 @@ This stage is local and bounds the cost: the act-early recognition reads only `s
 If nothing clears any tier — no act-early candidate and nothing on-interest — the pick is empty and no body is fetched.
 
 - **Tier 0 — act-early (time-sensitive, theme-independent).** Candidates whose value is perishable or front-loaded — acting on them sooner brings the benefit sooner — regardless of your current interests: security advisories and vulnerabilities, releases and new features of tools or products, best-practice or tooling write-ups worth adopting now.
-  - Recognised from `summary`/`topics` alone, so detection stays local.
+  - Recognised from `summary`/`topics` alone, so detection stays local, except that a candidate whose body a past run read and recorded `act_early: no` is not Tier 0 (see what a body read leaves behind, under Stage 2 below).
   - Unlike the relevance tiers this needs no interest match: an act-early candidate leads the shortlist and may take a pick slot ahead of a better interest match — the one booster that beats relevance, and the one case the pick surfaces an off-interest read.
   - Order act-early candidates newest-`added_date` first (a fresher advisory or release is likelier still current); they fill the day's slots ahead of interest picks — up to both, if two qualify — and the interest tiers fill whatever remains.
 - **Tier 1 — direct interest.** Candidates that directly match a current interest — one that answers an open question, or that matches a clear topic in the recent notes — lead the shortlist.
@@ -45,6 +45,12 @@ If nothing clears any tier — no act-early candidate and nothing on-interest �
 For the shortlist only, read the actual content: resolve each candidate's source id by matching its `url` (then `title`) in `notebooklm --quiet source list --notebook <notebooklm_id> --json 2>/dev/null` (the original source — see [One notebook per source](source-note.md#one-notebook-per-source-11); `--quiet --json` so the status output does not corrupt the JSON), fetch the extract with `source fulltext` and search it for the body as the ingest fetch check does ([Procedure: create or update a source note](procedures.md#procedure-create-or-update-a-source-note), step 3), and re-judge genuine relevance from the body rather than the summary — a candidate the summary suggested answers a question but the body does not is demoted or dropped; one that truly delivers is confirmed.
 The body also gives each candidate's length, used by the long-read tie-breaker below: the body's character count, not the extract's, which page chrome can make several times as long.
 Then pick at most two from the body-refined ranking, applying the two diversification preferences.
+
+**What a body read leaves behind.**
+Each body read is recorded on its source with `kboat-pick assess`: the length as `body_chars`, and whether the body holds something worth acting on now (the Tier 0 test) as `act_early`.
+Both describe the body, which does not change while the source waits, so `kboat-pick candidates` returns them and later runs reuse them.
+A recorded `act_early: no` keeps a candidate out of Tier 0 in Stage 1, which stops a summary that reads like an advisory or a release from sending the same body to Stage 2 every day; the candidate still enters Tier 1 or Tier 2 when it matches that day's interests.
+The relevance verdict is not recorded: it is a judgment against the day's interest signals and the other candidates, which change from run to run, so a candidate on the shortlist again is read again.
 
 **Fallback — degrade to Stage 1 when NotebookLM is unavailable.**
 The body read is an enrichment, not a hard dependency: if NotebookLM cannot be reached at all (auth unusable, the CLI failing), skip Stage 2 and pick from the Stage 1 `summary`/`topics` ranking — the pre-enrichment behaviour, Tier 0 included so an act-early pick still fires — so the step still produces a pick.
@@ -64,7 +70,7 @@ They matter only when more than one candidate qualifies for a slot.
   - If only one half holds a qualified candidate (on-interest or act-early), take it rather than force the split.
 - **Not two long reads.** Estimate each candidate's reading time from the body length captured in Stage 2, language-aware — roughly 600 Japanese characters or 250 English words (~1500 characters) per minute, "long" being about 15 minutes or more.
   - If the first pick is long, prefer a short second; do not make both long while a short qualified candidate exists.
-  - A candidate whose body could not be fetched has unknown length — neither preferred nor avoided.
+  - A candidate whose body could not be fetched this run takes the length a past read recorded as `body_chars`; with none recorded its length is unknown — neither preferred nor avoided.
 
 Two is a cap, not a quota: stop at two, and if neither an act-early candidate nor anything in the field of the questions or the notes remains, take fewer rather than pad with an unrelated read — an honest short list beats a forced one.
 A candidate is picked at most once (Tier 0 over Tier 1 over Tier 2 for the same source).

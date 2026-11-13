@@ -10,7 +10,7 @@ A K-Boat source marked `keep` is the **read-later shelf** — kept as a searchab
 Its `summary` and `topics`, captured at ingest, are the durable signal this skill searches.
 
 Follow the kboat-notes skill for the source-note schema and the lifecycle.
-The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag, through `kboat-pick`.
+The search use is read-only; the "Daily pick mode" below is the one exception — it writes only the `picked` flag and the record of each body read, through `kboat-pick`.
 The search touches no NotebookLM; the pick reaches it only to read the shortlisted candidates' bodies.
 
 ## Scope
@@ -54,7 +54,7 @@ The search touches no NotebookLM; the pick reaches it only to read the shortlist
 
 A second, write-capable mode, run by the `kboat-routine` after distillation — not by a human asking a question.
 It surfaces at most two web sources for today by inferring what the reader is currently interested in from two signals — their open-questions backlog and their recent Daily notes — plus any act-early read (time-sensitive and worth surfacing regardless of theme), and choosing in two stages: a cheap local pre-filter that shortlists candidates, then a body-read final judgment that fetches the shortlist's NotebookLM fulltext.
-It is the only part of this skill that edits notes, and only the `picked` flag, via the `kboat-pick` tool.
+It is the only part of this skill that edits notes, and only the `picked` flag and the record of each body read, via the `kboat-pick` tool.
 The spec is kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick).
 
 ### Step 1: gather the signals and the candidate pool
@@ -66,7 +66,7 @@ Run `kboat-pick candidates` once — one JSON with both interest signals and the
   - Each entry is `{rank, question, note}`: `rank` is 1-based and a smaller one (higher in the list) is the stronger interest, and `note` is the question's nested sub-bullets as free context (`""` when none).
   - A file with no questions in it comes back as `[]`, meaning no backlog signal this run — the pick then proceeds on the Daily notes alone, or yields zero picks per step 2 if there are none either.
     - An `[]` beside an `anomalies` entry for `Questions.md` is not that: the backlog could not be read (below).
-- `candidates` — the active web inbox (undispositioned web pages you have not started, the Web view minus its in-progress (`reading`) reads), each with `summary`/`topics` for the pre-filter, `added_date` for diversification, and `notebooklm_id` for the Stage 2 fulltext fetch.
+- `candidates` — the active web inbox (undispositioned web pages you have not started, the Web view minus its in-progress (`reading`) reads), each with `summary`/`topics` for the pre-filter, `added_date` for diversification, `notebooklm_id` for the Stage 2 fulltext fetch, and `body_chars`/`act_early` from a past body read (`null` where none was recorded).
 - `anomalies` — what the tool could not read, each `{path, error}`; name every one in this mode's report (step 7), however early the mode stops, since an input that could not be read otherwise reads exactly like an empty one.
   - A `Daily/` path — a Daily note inside the look-back window that could not be read, or the `Daily/` folder itself refused — leaves the exit at 0.
     - The Daily notes are the ambient signal the pick degrades over by design, so carry on with those that were read.
@@ -90,7 +90,7 @@ Read the `questions` (by `rank`) and the `daily_notes` bodies (newest first) and
 
 ### Step 4: Stage 1 — local pre-filter (no NotebookLM)
 
-Rank the candidates from their `summary`/`topics` alone into the three tiers of kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick) — Tier 0 act-early above Tier 1 direct-interest above Tier 2 same-field learning; read it for what each tier admits and how it orders within — and keep a **shortlist** of the top handful (about three to five — wider than the cap so Stage 2 has room to choose two).
+Rank the candidates from their `summary`/`topics` alone into the three tiers of kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick) — Tier 0 act-early above Tier 1 direct-interest above Tier 2 same-field learning; read it for what each tier admits and how it orders within; a candidate whose `act_early` is `"no"` is not Tier 0, since a past run already read its body and found nothing to act on now — and keep a **shortlist** of the top handful (about three to five — wider than the cap so Stage 2 has room to choose two).
 
 - Delegate to a cheap subagent when the inbox, the notes, or the question list are large, lexically pre-filtering first to keep it cheap; a Japanese note leans on the Japanese `summary`, since `topics` is English.
 - If nothing clears any tier (no act-early candidate and nothing on-interest), the shortlist is empty: skip Stage 2 and go to step 6 with no picks.
@@ -103,6 +103,9 @@ For each shortlisted candidate (a cheap subagent per candidate, in parallel), re
 - In that subagent, read the body, re-judge genuine relevance from it (demote or drop a candidate the summary oversold; confirm one that truly delivers), and record its length (the body's character count, not the extract's).
   - Count it over the lines the read found the body on: `sed -n '<first>,<last>p' <tmpfile> | LC_ALL=en_US.UTF-8 wc -m`.
     - `wc -c` counts bytes, as `wc -m` does under the C locale, and over filtered lines either counts what the filter kept rather than the body.
+- Record each body a subagent read with `kboat-pick assess --slug <slug> --body-chars <n> --act-early yes|no`, the subagent reporting both: whether the body holds something worth acting on now is the Tier 0 test, asked of every body read whatever tier brought it to the shortlist.
+  - Run it from this mode rather than from the subagents, once per body and one at a time, since each call takes the vault lock and parallel calls would refuse each other.
+  - Its JSON is `{vault, slug, assessed, anomalies}`; an exit 1 with `assessed: false` means the record was not written, which costs only a body read on a later run, so report its `anomalies` entry in step 7 and carry on, and treat a `locked` record the same way.
 - Then choose at most two from the body-refined ranking, applying the two diversification tie-breakers of kboat-notes [Daily pick](../kboat-notes/references/daily-pick.md#daily-pick) — one older + one newer by `added_date`, and not two long reads (by the body length) — as tie-breakers only, never overriding relevance; read it for how they qualify and bound the pick to two.
 - **Fallback:** if NotebookLM cannot be reached at all (auth unusable, the CLI failing), skip the body read and pick from the Stage 1 `summary`/`topics` ranking instead (Tier 0 included, so an act-early pick still fires), so the step still produces a pick.
 - If only some candidates' fulltext fails — or a candidate's `notebooklm_id` is empty — judge those on `summary`/`topics` and the rest on their bodies.

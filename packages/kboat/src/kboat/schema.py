@@ -155,6 +155,10 @@ SOURCE = NoteSchema(
         Field("distilled_date", Kind.DATE, empty_ok=True),
         _bool("blocked"),
         _bool("picked"),
+        # What the daily pick's body read found, absent until the first read, so
+        # neither is a Base boolean: `act_early` is a two-valued enum for that.
+        Field("body_chars", Kind.INT, present=False),
+        Field("act_early", Kind.ENUM, enum=("yes", "no"), present=False),
         Field("notebooklm_id", Kind.STR, empty_ok=True, present=False),
         Field(
             "notebooklm_url",

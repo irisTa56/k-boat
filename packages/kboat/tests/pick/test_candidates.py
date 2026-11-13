@@ -59,9 +59,19 @@ def test_candidate_extraction_defaults_missing_fields() -> None:
         "topics": ["a", "b"],
         "added_date": "2026-06-01",  # the diversification key (one older + one newer)
         "notebooklm_id": "nb-1",  # Stage 2 resolves the fulltext through this notebook
+        "body_chars": None,  # no body read recorded yet
+        "act_early": None,
     }
     # Missing optional fields coerce to empty, never None, so the JSON is stable. An
     # empty notebooklm_id (notebook gone) is the ranker's "un-fetchable" signal.
     bare = candidate_from("s", "Sources/s.md", _fm())
     assert bare.summary == "" and bare.topics == [] and bare.added_date == ""
     assert bare.notebooklm_id == ""
+    # A recorded body read is the exception: absent is `None`, since an empty or a
+    # zero length, or a verdict either way, would read as a read that happened.
+    assert bare.body_chars is None and bare.act_early is None
+
+
+def test_a_recorded_body_read_the_note_holds_wrongly_reads_as_none() -> None:
+    c = candidate_from("s", "Sources/s.md", _fm(body_chars="12k", act_early="maybe"))
+    assert c.body_chars is None and c.act_early is None
