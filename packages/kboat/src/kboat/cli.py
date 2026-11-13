@@ -145,7 +145,7 @@ def emit_lock_unavailable(exc: VaultLockUnavailableError) -> int:
     branched on one would read this as a run it may retry, when what it needs is a
     human. Stdout stays empty rather than carrying a report the run never produced.
 
-    For the CLIs whose output *is* a report — `kboat-lifecycle`, `kboat-pick set`,
+    For the CLIs whose output *is* a report — `kboat-lifecycle`, `kboat-pick set`/`assess`,
     `kboat-queue remove`, `kboat-repos refresh`, `kboat-repos backfill --apply`,
     `kboat-note migrate-slugs --apply`. Their contract is JSON on stdout and a
     diagnostic on stderr, and an uncaught `OSError` from acquisition would break

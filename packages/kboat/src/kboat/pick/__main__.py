@@ -1,6 +1,6 @@
 """CLI entry point: `kboat-pick`.
 
-Two deterministic subcommands behind the daily pick (the relevance ranking is the
+Three deterministic subcommands behind the daily pick (the relevance ranking is the
 LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
 
 - `candidates` — read the two interest signals (the recent Daily-note bodies,
@@ -15,13 +15,15 @@ LLM step in `kboat-recall`; this tool does the mechanical I/O around it):
   of one candidate found on its source note (kboat-notes "Daily pick"), under the
   vault lock like `set`.
 
-Both default the vault to `$OBSIDIAN_VAULT_PATH` and accept `--today` for
-reproducibility, mirroring `kboat-lifecycle`.
+Each defaults the vault to `$OBSIDIAN_VAULT_PATH`, and `candidates` accepts
+`--today` for reproducibility, mirroring `kboat-lifecycle`.
 
-A required input either one could not read — `Sources/` absent, not a directory, or
+A required input `candidates` or `set` could not read — `Sources/` absent, not a directory, or
 refused, or for `candidates` a `Questions.md` it could not read — is an `anomalies`
 entry under its own name and exit 1, with the report still printed
-(`kboat-vault-conventions` "Vault preconditions").
+(`kboat-vault-conventions` "Vault preconditions"). `assess` reads one note
+rather than a required input, so a note it could not write is an `anomalies`
+entry with exit 0, as a note `set` could not write is.
 """
 
 import argparse
@@ -155,7 +157,7 @@ def _cmd_assess(vault: Path, slug: str, body_chars: int, act_early: bool) -> dic
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kboat-pick",
-        description="Daily-pick mechanics: gather the interest signals (recent Daily notes + open-questions backlog) and web candidates, and set the picked flag.",
+        description="Daily-pick mechanics: gather the interest signals (recent Daily notes + open-questions backlog) and web candidates, set the picked flag, and record a body read.",
     )
     add_vault_argument(parser)
     sub = parser.add_subparsers(dest="command", required=True)
