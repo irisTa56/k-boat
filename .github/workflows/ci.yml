@@ -132,38 +132,29 @@ jobs:
 
   # Stays red while dotfiles `main` carries other shared tasks than the pin in
   # mise.toml does, and for the reason below is a reminder rather than a required
-  # check, and skipped on the schedule. Exit 2 (it could not tell) fails it too.
+  # check. Exit 2 (it could not tell) fails it too.
   #
-  # On a pull request a person opened here, `--bump` also pushes a commit moving
-  # the pin to dotfiles `main` to the `shared-tasks-bump` branch when the check
-  # fails, and prints the link that opens its pull request, so the bump costs no
-  # agent session; dotfiles `tasks/README.md` (`shared-tasks:check`) has the rest.
-  # Only there: a Dependabot PR and the bump PR itself are not a person's change,
-  # a fork's token cannot push, and a push to `main` has no PR to answer.
-  # That push, through `origin`, is why this job grants `contents: write` rather
-  # than `read`. A token is granted per job, so the checkout keeps its credentials
-  # only where `--bump` runs, leaving the write token out of reach of what the
-  # other runs execute. The task stops short of opening the PR, which would need
-  # the repository setting that also lets a workflow approve one.
+  # With `--bump`, a failing check also pushes a commit moving the pin to the
+  # `shared-tasks-bump` branch and prints the link that opens its pull request
+  # (dotfiles `tasks/README.md`, `shared-tasks:check`). That push is why this job
+  # grants `contents: write`, and why it runs on pull requests only: the main
+  # ruleset sends a push to `main` through one, so that run would only repeat
+  # the PR's answer while holding the write token. A fork's or Dependabot's PR gets a read-only token
+  # whatever this grants, so `--bump` is left off there.
   shared-tasks-check:
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    if: github.event_name == 'pull_request'
     permissions:
       contents: write
-    env:
-      BUMP: >-
-        ${{ github.event_name == 'pull_request'
-        && github.event.pull_request.head.repo.full_name == github.repository
-        && github.event.pull_request.user.login != 'dependabot[bot]'
-        && github.head_ref != 'shared-tasks-bump' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: ${{ env.BUMP == 'true' }}
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           cache: false # as in `python-qa`
-      - run: mise run shared-tasks:check ${{ env.BUMP == 'true' && '-- --bump' || '' }}
+      - run: >-
+          mise run shared-tasks:check
+          ${{ github.event.pull_request.head.repo.full_name == github.repository
+          && github.actor != 'dependabot[bot]' && '-- --bump' || '' }}
 
   # Stays red while a newer CPython minor is out, so it is a reminder and must
   # never become a required check. Skipped on the schedule, whose run exists to
