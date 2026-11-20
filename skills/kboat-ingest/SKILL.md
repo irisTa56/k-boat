@@ -84,7 +84,6 @@ Create the source's 1:1 notebook (see kboat-notes [create or update a source not
 
 - Run the verifications in a cheap subagent, like the page fetch in step 1, handing it the article check's rules as kboat-notes says.
 - Three outcomes send the source to the DLQ (kboat-notes [Procedure: record a blocked source](../kboat-notes/references/procedures.md#procedure-record-a-blocked-source-dlq)), which sets `blocked: true` and discards any notebook so `kboat-rescue` can supply the content later:
-
   - `source wait --json` says `.status` is `error` → the DLQ, keeping the sniffed type.
     - Its `not_found` and `timeout` are **not** this case: they are transient (notebook discarded, queue file kept, add redone next run), and the exit code cannot tell them apart from `error` — read `.status`.
   - `.source.type` is `pdf` → the DLQ as a `pdf` (step 1's sniff was fooled by a wall, and this is not a web page at all).

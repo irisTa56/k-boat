@@ -43,7 +43,6 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
 - **Correct dialogue-derived claims; don't just reject them.**
   - A `#dialogue` claim is not source-grounded, and it came from the reading-time dialogue's speed-first model (Gemini Flash), whereas you distil with a more capable model — so your job is to *upgrade* the claim, not merely gate it: repair what the fast model got wrong instead of discarding it, while still refusing the genuinely unverifiable.
   - Verify each claim against the source and your own knowledge, then take one of three actions:
-
     - **Holds as stated** — accret it, tagged by grounding: `#grounded` if the source supports it, else `#dialogue`.
     - **Wrong but fixable** — when the fast model erred on a point you can confidently fix, from the source or from knowledge you are sure of, accret the *corrected* claim: preserve the reader's original point, change only what was wrong, tag it by grounding just as above (`#grounded` if the source now supports it, else `#dialogue`), and log it under `corrected from dialogue:` so the human can audit the intervention.
       - Never invent a correction you cannot ground — that is the "state your limits" line, not a licence to rewrite freely.
