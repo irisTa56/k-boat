@@ -31,7 +31,6 @@ Run `kboat-repos gather "<url>"`.
   - So on `skip-not-a-repo`, `skip-no-such-repo` or `source-file` for a pasted URL, write nothing and build no notebook: tell them the link is not a repository's own URL (on `skip-no-such-repo`, that GitHub shows this account no repository there), that a repository is catalogued from its own URL, and that a page is read by capturing it with the bookmarklet; then stop.
   - What each verdict below says about the source path is for a queued capture, which `kboat-ingest` handed here.
 - The non-`ok` verdicts:
-
   - `skip-not-a-repo` — the URL itself settled it: any link deeper than a repository's entry URL (an issue, a release, a file, `/tree/<ref>`, a GitHub content path such as `github.com/resources/articles/…`), a profile, a gist, or one of GitHub's own routes on `kboat.repos.identity`'s reserved list (`github.com/topics/python`, `github.com/features/copilot`).
     - A queued capture falls through to the source/web path (`kboat-ingest`) with the record's `url`, not the repo path.
     - `gh` is never asked about these, so the verdict arrives whatever GitHub is doing.

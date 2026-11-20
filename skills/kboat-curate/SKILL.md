@@ -36,7 +36,9 @@ While any concept note's frontmatter does not parse, `kboat-knowledge` refuses b
 Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-knowledge` — do not hand-roll an equivalent graph audit inline:
 
 - **Orphans** — concept notes with no inbound or outbound relations; propose relations or a hub note.
+
 - **Duplicates / overlaps** — clusters covering the same ground; propose an index note or relations, not a merge (log merge candidates for a human).
+
 - **Naming** — flag vague titles, especially a generic phrase narrowed by a parenthetical qualifier (the pattern `Generic phrase (what it is really about)`, clearer rewritten as `Specific phrase`); propose a clearer title.
   - Also flag every note `kboat-knowledge titles` lists under `flagged`, whose title is not its own filename or carries a character kboat-notes [Concept notes](../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path) forbids, and propose a title free of those characters; a null `title` means the note has no string `title`.
 
@@ -45,6 +47,7 @@ Invoke the **memory-curate** skill for the generic mechanics, scoped to `k-boat-
     ```
 
 - **Relations** — high-confidence missing edges, and contradictions (the same pair related one way from one side and another from the other); reconcile to one direction.
+
 - **Sparse notes** — thin bodies missing Observations or Relations; propose relations, and for missing claims a source to read or a question to put to `ask-kboat`, whose answer kboat-record-dialogue can then record.
 
 **Renaming a concept note** (Basic Memory resolves wikilinks by title, so a rename breaks inbound `[[...]]`):

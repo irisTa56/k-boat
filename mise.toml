@@ -68,13 +68,13 @@ uv sync --project tools/notebooklm --no-active
 # `secrets:commit-scan` (per commit, gitleaks), `secrets:push-scan` (per push,
 # trufflehog), `link-check:staged` (per commit, lychee over the network),
 # `skills:size-check` (per commit and in CI, through `qa:md`) and
-# `shared-tasks:check` come from dotfiles' shared task library,
+# `upstream:pin-check` come from dotfiles' shared task library,
 # whose `tasks/README.md` is what to read before touching this: why `ref` is a
 # full sha on its `main`, and what an include that fails to load takes with it.
-# `shared-tasks:check` in CI says when the tasks on `main` differ from the pin's.
+# `upstream:pin-check` in CI says when the tasks on `main` differ from the pin's.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=3e686e17481efeb1fa1fe96d349a60dd4a858c6d",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=1bb32f0dcd23691f0aee638320cbef57aa9ac448",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit;
