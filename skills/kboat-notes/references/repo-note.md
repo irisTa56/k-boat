@@ -69,6 +69,7 @@ Hash naming (rather than `owner-repo.md`) shares the source de-dup machinery and
 The subagent judges three fields; prefer existing values and keep the vocabulary small.
 
 - `role` — the closed 6-value enum above. Pick exactly one.
+
 - `domain` — a controlled **14-word** vocabulary (kebab-case), typically 1–3 per repo.
   - Add a new value only when none fits; the point of a coarse vocabulary is a clean browse axis, so resist one-off domains (the fine detail belongs in `topics`/`summary`).
 
@@ -81,6 +82,7 @@ The subagent judges three fields; prefer existing values and keep the vocabulary
   - `general` is the fallback when nothing else fits.
   - `embedded-iot` and `media` are umbrellas (embedded/iot/home-automation; graphics/audio/game-dev).
   - Fold the obvious neighbours rather than inventing: storage/search → `data`; messaging/networking/blockchain → `distributed-systems`; cloud/observability → `infrastructure`; api/api-gateway/microservices → `web-development`; code-intelligence → `devtools`; osint → `security`; transportation → `geospatial`.
+
 - `summary` — one or two plain Japanese sentences saying what the project is and who it is for.
   - No marketing language; established acronyms (LLM, SDK, MCP) and proper nouns may stay as-is.
 
