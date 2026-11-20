@@ -70,6 +70,7 @@ When there are more entries than that, launch the first 20 and the rest as judge
     - It falls back to a `WebFetch` of the page for the full text when `entry-body` returns `body: null` (a cache miss), or a body too thin to judge depth from — a teaser that stops at a "read more" link.
 - **`kind == "scrape"`** — there is no feed metadata (and no cached body), so the subagent goes straight to a full `WebFetch` of the `url`.
   - The `title` it returns is authoritative — it is the **only** title source for the note.
+- **Either kind's `WebFetch`** — one whose result ends with a note that it read only part of the page has not shown the page yet: the subagent calls it again at the offset the note names, and only then decides whether the article is there.
 - Feeds **must not** be re-fetched with `WebFetch` for their item list — but `entry-body` (the cached body) and a `WebFetch` of an individual article page are exactly what the later stages are for.
 - **`wall == true`** — when a `WebFetch` returns a login wall / paywall / subscribe gate instead of the article, the subagent sets `wall = true` rather than guessing a keep/drop (prompts/selection.md "Walls and unreadable pages").
   - Wall detection is tied to the `WebFetch`: an entry decided from its `title`+preview or from the cached `entry-body` body is never `WebFetch`ed, so it has no wall to flag — only scrape entries (always `WebFetch`ed) and a feed entry that needs its full body and gets none or a teaser from `entry-body` can surface a wall.
