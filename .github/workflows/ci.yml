@@ -142,7 +142,10 @@ jobs:
   # dotfiles change reaches no pull request here by itself. The permissions and
   # the token are for `--bump`, which pushes the moved pin to the
   # `upstream-pin-bump` branch and opens its pull request when the check fails
-  # (dotfiles `tasks/README.md`, `upstream:pin-check`).
+  # (dotfiles `tasks/README.md`, `upstream:pin-check`). Opening it also needs the
+  # repository setting "Allow GitHub Actions to create and approve pull
+  # requests", which grants approval as well; without it the run deletes the
+  # branch it pushed and exits 2.
   upstream-pin-check:
     runs-on: ubuntu-latest
     permissions:
