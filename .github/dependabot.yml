@@ -11,7 +11,7 @@
 # The mise-managed tools are out of Dependabot's scope, and can be: lychee,
 # rumdl, shellcheck, shfmt and uv all track `latest`, so `mise upgrade` covers
 # them. So is the dotfiles shared-task pin in mise.toml, which the CI job
-# `shared-tasks-check` watches instead; the tools its tasks declare track
+# `upstream-pin-check` watches instead; the tools its tasks declare track
 # `latest` too.
 #
 # notebooklm-py needs an exact pin instead: no CI job exercises the browser-driven
