@@ -19,7 +19,7 @@ requires-python = ">=3.15,<3.16"
 # with, so `kboat.concept` asks it where a heading is instead of keeping a line
 # classifier of its own that drifts from what `bm_edit` resolves.
 dependencies = [
-    "markdown-it-py>=4",
+    "markdown-it-py>=4.3.0",
     "pyyaml>=6",
 ]
 
