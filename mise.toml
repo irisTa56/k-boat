@@ -66,7 +66,7 @@ uv sync --project tools/notebooklm --no-active
 """
 
 # `secrets:commit-scan` (per commit, gitleaks), `secrets:push-scan` (per push,
-# trufflehog), `link-check:staged` (per commit, lychee over the network),
+# trufflehog), `links:commit-check` (per commit, lychee over the network),
 # `skills:size-check` (per commit and in CI, through `qa:md`) and
 # `upstream:pin-check` come from dotfiles' shared task library,
 # whose `tasks/README.md` is what to read before touching this: why `ref` is a
@@ -74,19 +74,19 @@ uv sync --project tools/notebooklm --no-active
 # `upstream:pin-check` in CI says when the tasks on `main` differ from the pin's.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=9eeb1ebaf663133bad48280e9a37913e5def87bb",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=e51e67c07c95fa66a23fcd4e3a1dc5a9a4728efa",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit;
-# `link-check:staged` requests only the links of the files a commit stages.
+# `links:commit-check` requests only the links of the files a commit stages.
 # Shared settings come from `lychee.toml`.
-[tasks."check:links"]
+[tasks."links:check"]
 description = "Check links in the repo"
 run = "lychee -v --config lychee.toml ."
 
-# In `qa:**` (unlike `check:links` above): offline-only, so it stays fast and
+# In `qa:**` (unlike `links:check` above): offline-only, so it stays fast and
 # network-independent enough to gate every commit. Same shared settings as
-# `check:links`, from the same `lychee.toml`.
+# `links:check`, from the same `lychee.toml`.
 [tasks."qa:links:offline"]
 description = "Check markdown links offline (no network)"
 run = "lychee --offline --no-progress --config lychee.toml ."
@@ -100,12 +100,12 @@ description = "Check the authentication status"
 run = "notebooklm auth check --test --json"
 
 # `**`, not `*`: mise's `*` matches a single task segment, so `qa:*` left
-# `qa:links:offline` ungated. `secrets:commit-scan` and `link-check:staged` are
+# `qa:links:offline` ungated. `secrets:commit-scan` and `links:commit-check` are
 # named on their own because they are shared tasks (see `[task_config]`) and so
 # sit outside `qa:`.
 [tasks.pre-commit]
 description = "Run all pre-commit checks"
-depends = ["qa:**", "secrets:commit-scan", "link-check:staged"]
+depends = ["qa:**", "secrets:commit-scan", "links:commit-check"]
 
 # Three commands, because `rumdl` cannot make the other two checks -- the house
 # rule and why a linter cannot see it are `scripts/md_shape.py`'s module
