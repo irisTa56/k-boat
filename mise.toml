@@ -74,7 +74,7 @@ uv sync --project tools/notebooklm --no-active
 # `upstream:pin-check` in CI says when the tasks on `main` differ from the pin's.
 [task_config]
 includes = [
-  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=5a54522466cc0c6c2cf39e3f1a458273fadd7b47",
+  "git::https://github.com/irisTa56/dotfiles.git//tasks?ref=9eeb1ebaf663133bad48280e9a37913e5def87bb",
 ]
 
 # Not in `qa:**`: full-repo external link check is too slow / network-bound for pre-commit;
