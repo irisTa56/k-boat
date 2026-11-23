@@ -18,6 +18,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
     - Give the path as it came back, single-quoted, writing a `'` inside it as `'\''`, and pass no `--knowledge`: the root comes from `KBOAT_KNOWLEDGE_PATH`, and the option goes before `shape`, so a call carrying it no longer starts with the `kboat-concept shape` its permission rule matches.
   - **Whether this reading is new to the note** is read off the text: it is new unless the note already carries this source's provenance line.
     - A new reading's claims go in a new group at the end of the section; a reading the note already names puts the claims it adds at the end of its own group.
+    - A reading whose line the note carries only as provenance alone (below) has no group of its own yet, so the first claim it adds opens one as a new reading's would.
     - Only the heading's wording is your judgement; whether a group opens is not.
   - **Where a placement goes.** `bm_edit(command="insert_before_section", section=…)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.
     - That lands them at the end of the block they belong to, which is what keeps the section oldest-first.
@@ -28,8 +29,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
         - The two commute, so the order decides only what a failed second edit loses: a lost heading leaves every claim in the note where lost claims leave nothing, while a heading over a placement that did not land separates nothing — the reading it would separate from never arrived — and the note reads `grouped` from then on, so nothing here gives it one again.
     - **A note that already carries a `###`, with claims still bare above the first one**, owes those claims a heading too, whatever else this append does to it.
       - They are a reading nothing has headed, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
-  - **The opening prose may follow the claims.** Where this reading's claims change what the concept is or where it stands — not where they only add a detail — revise the prose above `## Observations` to take them in (kboat-notes [Concept notes](../../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)).
+  - **The opening prose may follow the claims.** Where this reading's `#grounded` claims change what the concept is or where it stands — not where they only add a detail — revise the prose above `## Observations` to take them in (kboat-notes [Concept notes](../../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)).
     - Use `bm_edit(command="find_replace")` with the paragraph as `bm_read` returned it, after the placement and only where the placement landed, so the prose never states a point no provenance line names.
+    - Take in no `#dialogue` claim, since the prose carries no tag to say a point was never read from a source; a dialogue record therefore never revises it.
     - Keep the revised prose to what the section now holds, and note the revision in this note's `（…）` under `appended-to:`.
     - A replay that finds the prose already taking these claims in leaves it as it is.
   - **A `bm_edit` that cannot resolve its anchor returns an error** and changes nothing, so read any error the call returns as these claims not having landed.
