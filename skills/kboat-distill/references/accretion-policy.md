@@ -9,7 +9,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
   - If a hit clears the bar, add to the existing note instead of creating a duplicate.
     - See `memory-curate`.
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
-    - `###` **reading groups**, one per reading, are the shape that section takes once a second reading feeds the note, so a reading new to the note opens a group of its own, headed by what it taught about the concept, even where its claims only deepen a point an earlier group made (kboat-notes [Reading groups](../../kboat-notes/references/concept-notes.md#reading-groups)).
+    - `###` **reading groups**, one per reading, are the shape that section takes once a second reading adds claims to the note, so a reading new to the note opens a group of its own, headed by what it taught about the concept, even where its claims only deepen a point an earlier group made (kboat-notes [Reading groups](../../kboat-notes/references/concept-notes.md#reading-groups)).
     - A heading you mint keeps kboat-notes' heading rules under [Reading groups](../../kboat-notes/references/concept-notes.md#reading-groups): it repeats no heading the note carries at any level, contains no `/`, and does not end in `[<number>]`, since the anchors below name a heading by its text and `bm_edit` resolves none of those by it.
   - **Which shape the note is in.** `bm_read` the hit with `output_format="json"` and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
@@ -30,9 +30,9 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
     - **A note that already carries a `###`, with claims still bare above the first one**, owes those claims a heading too, whatever else this append does to it.
       - They are a reading nothing has headed, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
   - **The opening prose may follow the claims.** Where this reading's `#grounded` claims change what the concept is or where it stands — not where they only add a detail — revise the prose above `## Observations` to take them in (kboat-notes [Concept notes](../../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)).
-    - Use `bm_edit(command="find_replace")` with the paragraph as `bm_read` returned it, after the placement and only where the placement landed, so the prose never states a point no provenance line names.
-    - Take in no `#dialogue` claim, since the prose carries no tag to say a point was never read from a source; a dialogue record therefore never revises it.
-    - Keep the revised prose to what the section now holds, and note the revision in this note's `（…）` under `appended-to:`.
+    - Use `bm_edit(command="find_replace")` with the paragraph as `bm_read` returned it, after the placement and only where the placement landed.
+    - Take in no `#dialogue` claim, so a dialogue record never revises it; kboat-notes says what else the prose may state, and why.
+    - Note the revision in this note's `（…）` under `appended-to:`.
     - A replay that finds the prose already taking these claims in leaves it as it is.
     - A revision that does not land is reported in the run summary and nothing more: the claims it would have described did land, so it neither goes under `uncreated candidates:` nor keeps the source ripe (Phase B step 6).
   - **A `bm_edit` that cannot resolve its anchor returns an error** and changes nothing, so read any error the call returns as these claims not having landed.
