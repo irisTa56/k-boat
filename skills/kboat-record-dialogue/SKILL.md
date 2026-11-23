@@ -48,7 +48,7 @@ If they still want it recorded, it goes in beside the claim it contradicts and n
 
 Work out each concept's writes under kboat-distill's "Accretion policy", reading it for these rules:
 
-- **Append first** — the search variations, `kboat-concept shape`, where a placement goes, and the heading a flat note owes when these claims open a new insight;
+- **Append first** — the search variations, `kboat-concept shape`, where a placement goes, and the headings a new reading owes — its own group's, and on a flat note the older claims' too;
 - **Create only specific concepts**;
 - **Reuse facet tags from the vocabulary** — for a note this creates;
 - **Mark up formula notation**;
