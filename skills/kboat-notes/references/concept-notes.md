@@ -29,9 +29,10 @@ A concept note accretes across readings, and its `## Observations` section is wh
 The section takes one of two shapes, and a write that half-landed leaves a third:
 
 - **flat** — the claims sit directly under `## Observations` with no `###` heading.
-  - A note is written this way from its first reading and stays this way while that reading is the only one it names.
+  - A note is written this way from its first reading and stays this way while that reading is the only one with claims in it.
 - **grouped** — the claims are divided into `###` groups, one per reading.
   - A group opens with a heading naming what that reading taught about the concept — the angle, not the concept's name repeated — and closes with that reading's own `- [source]` provenance observation.
+  - Lines of readings that reached the same claims without adding one may follow that line, as below; they open no group and do not make a flat note grouped.
 
 A group is a unit of **reading**: every reading a note does not yet name opens a group of its own, including one whose claims only deepen a point an earlier group made.
 A reading is named by its provenance line — the same URL, ASIN, or dated dialogue line — so whether a reading is new to a note is read off the text rather than judged.

@@ -73,9 +73,10 @@ Stamp it with today's date on the source note, and read what the write returned 
 - A stamp write that came back neither the note nor one of those three refusals — an empty stdout with a `write failed: …` on stderr — leaves the source ripe like the rest, and **needs a human**: no later run clears it.
   - Do not name a cause for it. `kboat-note write` reports that way for an unusable vault lock, a name held by something it cannot write over, a note it cannot parse or decode, and an ordinary I/O error alike (`kboat.cli`'s `NOTE_READ_ERRORS`), so relay what it reported and let the reader tell them apart.
   - Go on to the next source rather than ending the phase: nothing is lost where no stamp lands, and all but one of those causes is that one note's.
-- Two writes that did not land weigh nothing here, neither being grounded in the notebook — report each in the run summary, and let neither hold a stamp back nor bring one on:
+- Three writes that did not land weigh nothing here, none being grounded in the notebook — report each in the run summary, and let none hold a stamp back nor bring one on:
   - a **relation**, whose two concepts are both in the knowledge base already: report it as a link for `kboat-curate` to make;
-  - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said.
+  - the **provenance line** a reading owes a note that already held every claim it brought (the accretion policy's replay rules): report the note and the reading, the source note still carrying the title and URL that line would have said;
+  - a revision of the **opening prose** (the accretion policy's "The opening prose may follow the claims"), which restates claims that did land.
 
 ## Step 7: discard the notebook
 

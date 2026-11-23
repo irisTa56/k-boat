@@ -34,6 +34,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
     - Take in no `#dialogue` claim, since the prose carries no tag to say a point was never read from a source; a dialogue record therefore never revises it.
     - Keep the revised prose to what the section now holds, and note the revision in this note's `（…）` under `appended-to:`.
     - A replay that finds the prose already taking these claims in leaves it as it is.
+    - A revision that does not land is reported in the run summary and nothing more: the claims it would have described did land, so it neither goes under `uncreated candidates:` nor keeps the source ripe (Phase B step 6).
   - **A `bm_edit` that cannot resolve its anchor returns an error** and changes nothing, so read any error the call returns as these claims not having landed.
     - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6).
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
