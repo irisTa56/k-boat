@@ -1,7 +1,7 @@
 """Classify a concept note's `## Observations` section into the shape its writer branches on.
 
 A concept note accretes across readings, and kboat-distill divides its claims into
-`###` groups once it carries more than one insight. A new group owes the note one
+`###` groups, one per reading, once a second reading adds claims to it. A new group owes the note one
 extra edit where the claims already there carry no heading, and this module answers
 the question that turns on -- does the section carry any `###` group at all? The
 format it classifies is specified by the `kboat-notes` skill, "Reading groups".

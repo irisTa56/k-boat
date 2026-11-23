@@ -87,7 +87,7 @@ Each is named here and specified by `kboat-notes`, or by `kboat-vault-convention
 - A ripe source's notebook is discarded last, and only where `distilled_date` is on the note, so nothing that leaves the stamp off — a crash, a partial pass, a write the vault refused — loses an undistilled reading.
 - `summary` and `topics`, captured at ingest, are what stays searchable once the notebook is gone.
 - The daily pick is a routine step rather than a disposition, and reads its signals read-only.
-- A concept note's `## Observations` divides into per-reading groups; which group a claim joins is the writer's judgement, never the tool's.
+- A concept note's `## Observations` divides into one group per reading that adds claims, even where a later reading only deepens an earlier one; what a group's heading says is the writer's judgement, never the tool's.
 - Concept-to-source provenance is an observation carrying the URL, concept-to-concept a wikilink.
 - The first provenance line below a claim is its own reading's, so only distillation and a dialogue record add claims.
 - Concept facet tags come from a controlled vocabulary, enforced at write time and swept on demand.

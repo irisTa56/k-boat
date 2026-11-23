@@ -9,23 +9,32 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
   - If a hit clears the bar, add to the existing note instead of creating a duplicate.
     - See `memory-curate`.
   - **Where the claims go.** This source's claims go into `## Observations`, and its provenance line directly after them.
-    - `###` **reading groups** are the shape that section takes once the note carries more than one insight, so a note that stays on one insight takes these claims with no heading at all (kboat-notes [Reading groups](../../kboat-notes/references/concept-notes.md#reading-groups)).
+    - `###` **reading groups**, one per reading, are the shape that section takes once a second reading adds claims to the note, so a reading new to the note opens a group of its own, headed by what it taught about the concept, even where its claims only deepen a point an earlier group made (kboat-notes [Reading groups](../../kboat-notes/references/concept-notes.md#reading-groups)).
     - A heading you mint keeps kboat-notes' heading rules under [Reading groups](../../kboat-notes/references/concept-notes.md#reading-groups): it repeats no heading the note carries at any level, contains no `/`, and does not end in `[<number>]`, since the anchors below name a heading by its text and `bm_edit` resolves none of those by it.
   - **Which shape the note is in.** `bm_read` the hit with `output_format="json"` and run `kboat-concept shape '<file_path>'` on the `file_path` that read returns.
     - The record's one key says whether the section carries any `###` group at all, which is not the same as whether every claim in it is under one — a note with claims bare above its first heading answers `grouped`, so read that from the text; it says nothing about whether the note can be written to.
     - **Never assume a shape it did not give**: where it answers with anything but that record, report it as an error for this concept and add no heading — the placement below needs no shape, and a guessed `flat` on a grouped note mints a heading over that note's real first group, which the write accepts and no later run reports.
     - A read that returns an error has not got the note; report it as an error for this concept, as above.
     - Give the path as it came back, single-quoted, writing a `'` inside it as `'\''`, and pass no `--knowledge`: the root comes from `KBOAT_KNOWLEDGE_PATH`, and the option goes before `shape`, so a call carrying it no longer starts with the `kboat-concept shape` its permission rule matches.
-  - **Whether these claims deepen an insight the note already carries or open a new one** is your judgement, not the tool's, and only the second case makes a **flat** note owe its claims a heading.
-    - A note already carrying a `###` owes one on its own terms, below, whichever of the two this reading is.
+  - **Whether this reading is new to the note** is read off the text: it is new unless the note already carries this source's provenance line.
+    - A new reading's claims go in a new group at the end of the section; a reading the note already names puts the claims it adds at the end of its own group.
+    - A reading whose line the note carries only as provenance alone (below) has no group of its own yet, so the first claim it adds opens one as a new reading's would.
+    - Only the heading's wording is your judgement; whether a group opens is not.
   - **Where a placement goes.** `bm_edit(command="insert_before_section", section=…)` anchored on **the heading that follows where the claims belong** — the next `###` group's heading, or `## Relations` where nothing follows.
     - That lands them at the end of the block they belong to, which is what keeps the section oldest-first.
     - New relations go in with `insert_after_section` on `## Relations`, unchanged; never plain `append` for either, which lands past the sections.
-    - A new group on a `flat` note owes one more edit: `insert_after_section(section="## Observations")` carrying a blank line and then the `###` heading naming what the older claims established, and nothing else.
+    - A new group's own heading goes in with its claims, in the same placement.
+    - A new group on a `flat` note owes one more edit: `insert_after_section(section="## Observations")` carrying a blank line and then the `###` heading naming what the older reading taught, and nothing else.
       - Make it **after** the placement, and only where the placement landed.
-        - The two commute, so the order decides only what a failed second edit loses: a lost heading leaves every claim in the note where lost claims leave nothing, while a heading over a placement that did not land separates nothing — the insight it would separate from never arrived — and the note reads `grouped` from then on, so nothing here gives it one again.
+        - The two commute, so the order decides only what a failed second edit loses: a lost heading leaves every claim in the note where lost claims leave nothing, while a heading over a placement that did not land separates nothing — the reading it would separate from never arrived — and the note reads `grouped` from then on, so nothing here gives it one again.
     - **A note that already carries a `###`, with claims still bare above the first one**, owes those claims a heading too, whatever else this append does to it.
-      - They are an insight nothing has named, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
+      - They are a reading nothing has headed, and no later run comes back for them: this is where a wrap that did not land, or a run that stopped between the two edits, is repaired.
+  - **The opening prose may follow the claims.** Where this reading's `#grounded` claims change what the concept is or where it stands — not where they only add a detail — revise the prose above `## Observations` to take them in (kboat-notes [Concept notes](../../kboat-notes/references/concept-notes.md#concept-notes-kboat_knowledge_path)).
+    - Use `bm_edit(command="find_replace")` with the paragraph as `bm_read` returned it, after the placement and only where the placement landed.
+    - Take in no `#dialogue` claim, so a dialogue record never revises it; kboat-notes says what else the prose may state, and why.
+    - Note the revision in this note's `（…）` under `appended-to:`.
+    - A replay that finds the prose already taking these claims in leaves it as it is.
+    - A revision that does not land is reported in the run summary and nothing more: the claims it would have described did land, so it neither goes under `uncreated candidates:` nor keeps the source ripe (Phase B step 6).
   - **A `bm_edit` that cannot resolve its anchor returns an error** and changes nothing, so read any error the call returns as these claims not having landed.
     - Report an error the way this phase reports any other; a concept whose claims never landed also goes under the report's `uncreated candidates:` marked `append not made`, and keeps its source ripe (Phase B step 6).
 - **Create only specific concepts.** Auto-create a standalone note only for a clearly named concept (an algorithm, system, protocol, paper).
@@ -72,7 +81,7 @@ Every Basic Memory call passes `project="k-boat-knowledge"` (see the top of [SKI
     - Follow what a replay does place with this source's provenance line, as "Always record provenance" says, even where the note already carries one from the earlier pass: placed after that line with none of its own, a claim would read as the next reading's.
       - A replay whose claims are all present places nothing, provenance included, its line being there already.
     - A **reading the note does not yet name** owes its provenance line even where every claim it brought was already there: two readings landing on the same point is what `related in KB:` is watching for, and this line is the only record that the second one fed the concept.
-      - Place it where this reading's claims would have gone, and report the note under `appended-to:` saying that its provenance alone was added.
+      - Place it at the end of the group holding the claims it repeated (the last such group where they sit in several, and directly above `## Relations` on a flat note), opening no group and so owing no heading, and report the note under `appended-to:` saying that its provenance alone was added.
       - Where that one insert does not land, the source is not held ripe for it (Phase B step 6), since the source note still carries the title and URL the line would have said: report it in the run summary, as a relation that did not land is, and leave `appended-to:` to the notes that grew.
     - Skip a relation `## Relations` already carries, the same relation to the same target.
       - This keeps a replay from doubling a relation; it is not a retry path for one that did not land, since that on its own does not keep the source ripe ([Run summary](../SKILL.md#run-summary)), so usually no replay comes back for it.

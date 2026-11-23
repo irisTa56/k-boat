@@ -5,6 +5,7 @@ The generic note mechanics and the accretion procedure are defined by the Basic 
 What `## Observations` looks like once more than one reading has fed a note is K-Boat's own, and this skill owns it: [Reading groups](#reading-groups) below.
 One point of `memory-notes`' structure does not apply here: a note's content opens with its prose, under no `# <title>` heading.
 The frontmatter `title` already stands as the note's level-1 heading — Markdown linters such as rumdl [count it as one under MD025](https://rumdl.dev/md025/) — so a body `# <title>` is a second one, and a linter's fix for it demotes every heading below, `## Observations` included.
+That prose is the note's current account of the concept rather than any one reading's claim, and carries no provenance, so a later reading may revise it to take in what its `#grounded` claims added, provided it then states nothing `## Observations` does not hold — that section is where each point's reading and grounding are named, and the prose carries no tag to say a point was never read from a source.
 
 Relations between concepts use wikilinks (`- relation_type [[Other Concept]]`); both ends live in this same root, so they resolve in Basic Memory, Obsidian, and Foam.
 That holds only while a note's title is also its filename, because Basic Memory resolves `[[...]]` by title while Obsidian and Foam resolve it by filename.
@@ -28,15 +29,18 @@ A concept note accretes across readings, and its `## Observations` section is wh
 The section takes one of two shapes, and a write that half-landed leaves a third:
 
 - **flat** — the claims sit directly under `## Observations` with no `###` heading.
-  - A note is written this way from its first reading and stays this way while everything in it is one insight.
-- **grouped** — the claims are divided into `###` groups.
-  - A group opens with a heading naming what was learned — the angle, not the concept's name repeated — and inside it each reading's claims are followed by that reading's own `- [source]` provenance observation, so a group holding two readings still says which of them each claim came from.
+  - A note is written this way from its first reading and stays this way while that reading is the only one with claims in it.
+- **grouped** — the claims are divided into `###` groups, one per reading.
+  - A group opens with a heading naming what that reading taught about the concept — the angle, not the concept's name repeated — and closes with that reading's own `- [source]` provenance observation.
+  - Lines of readings that reached the same claims without adding one may follow that line, as below; they open no group and do not make a flat note grouped.
 
-A group is a unit of **insight, not of reading**.
-So a group carries two readings' provenance wherever both landed on the same point, and a note whose second reading only deepened the first's insight stays flat rather than being split.
-One reading can carry more than one provenance line: a later pass over the same source that places claims the note lacked follows them with that source's line again, so no claim ever sits under another reading's provenance.
-Groups run oldest insight first, so a new one is appended at the end of the section, immediately above `## Relations`.
-A reading that opens a new group on a flat note is what makes that note grouped, and it owes the claims already there a heading of their own in the same append: leaving them bare would make the earliest insight the one thing in the note that nothing names.
+A group is a unit of **reading**: every reading a note does not yet name opens a group of its own, including one whose claims only deepen a point an earlier group made.
+A reading is named by its provenance line — the same URL, ASIN, or dated dialogue line — so whether a reading is new to a note is read off the text rather than judged.
+The heading is what lets a reader see where one reading's claims end; with only a `[source]` line between two runs of claims, the boundary is easy to miss, and deciding case by case whether a second reading deserved a group of its own left that boundary out in exactly the cases where it was judged not to.
+One reading can carry more than one provenance line: a later pass over the same source that places claims the note lacked puts them at the end of that reading's own group and follows them with that source's line again, so no claim ever sits under another reading's provenance.
+A reading that adds no claim — every point it made was already in the note — opens no group until a later pass over it adds one: its provenance line goes at the end of the group holding the claims it repeated, where it records that a second reading reached them without becoming the first line below any claim.
+Groups run oldest reading first, so a new one is appended at the end of the section, immediately above `## Relations`.
+The second reading to feed a flat note is what makes that note grouped, and it owes the claims already there a heading of their own in the same append: leaving them bare would make the first reading the one thing in the note that nothing names.
 That append is two edits, so a failure or a crash between them can leave the note in the third state — a `###` group with claims still bare above the first heading.
 It is not a shape the format admits, and nothing self-heals it on its own: the next append to that note is what heads those claims, which is why kboat-distill owes the heading on any append to a note in it and not only on the one that opens a group.
 
@@ -69,7 +73,7 @@ Such a claim was never read from anything, so nothing about it can be source-gro
 - **Its provenance line** is the one form that names no source: `- [source] ask-kboat dialogue in Claude Code, from general knowledge, not a read source — YYYY-MM-DD`, dated the day of the conversation.
   - It carries no URL because there is none, and says "not a read source" so that no reader of the note, `ask-kboat` included, takes the claims above it for something a source stated.
 - **Every claim it covers is `#dialogue`**, whatever the recorder's confidence in it: `#grounded` says a source supports the claim, and here no source was read.
-- **It is a reading** for [Reading groups](#reading-groups): its claims are followed by its own provenance line, and whether they deepen an insight the note carries or open a new one is the same judgement a source's claims get.
+- **It is a reading** for [Reading groups](#reading-groups): its claims open a group of their own, followed by its own provenance line, exactly as a source's claims do.
 
 A claim a dialogue record holds can later be grounded by a source that is actually read.
 That source's distillation writes the claim again, `#grounded`, as its own, under its own provenance — kboat-distill's replay rule for a claim another reading holds only as `#dialogue` — and the dialogue record's claim stays exactly as it is.
