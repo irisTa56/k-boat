@@ -1,7 +1,13 @@
 # Step 4: Self-heal flagged scrape sites
 
-For each site in `sites` with `zero_links == true`, its stored `article_url_pattern` no longer matches the live index page — not merely a quiet day.
+For each site in `sites` with `zero_links == true`, the gather read the index page without error and its stored `article_url_pattern` matched no link on it — not merely a quiet day.
+Usually the pattern no longer fits the live page, but one odd response can produce the same flag, and healing on it overwrites a pattern that still works.
 
+- First re-run the gather for that site alone, `feed-filter new-entries --site-id <id>`, and read the site's `zero_links` in its output.
+  - Where it is now `false`, the flag was transient: run neither discovery nor `heal-site`, and report the site as transient rather than unhealed.
+    - Leave whatever `entries` it lists unjudged: nothing was recorded for them, so the next run gathers them again.
+    - The re-run replaces the body cache, which is harmless only because judging is over by this step.
+  - Where it is still `true`, or the re-run reports an `error` for the site, go on below.
 - Heal it where the condition below holds, and report it where it does not:
   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
   - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned and which of the two conditions failed.

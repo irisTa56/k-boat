@@ -44,7 +44,7 @@ Run `feed-filter new-entries`.
     - `consecutive_failures` is a durable per-site count of consecutive runs whose gather errored, reset to 0 the moment a run succeeds; `persistent` is the CLI's verdict that this count crossed the escalation threshold.
     - `unexpected_error` means the CLI absorbed an exception it could not classify — the failure did not arrive as a fetch error — and nothing more about whose fault it is (step 5).
     - `persistent` is decided by the CLI, not re-judged here — a stateless run has no memory of prior runs, so the durable counter is what tells you a failure is chronic rather than a one-run blip.
-    - A `zero_links` scrape does not count as a failure — it is a broken pattern, not an outage, and step 4 says what to do when the run cannot heal it.
+    - A `zero_links` scrape does not count as a failure — it is a pattern that matched nothing, not an outage, and step 4 says how to tell a broken pattern from a one-off and what to do when the run cannot heal it.
   - Keep `sites` aside for steps 3–5.
 
 ### Step 2: Judge each entry
@@ -155,6 +155,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
+- Transient: each flagged site whose re-gather in step 4 matched again, informational only, since the stored pattern still works.
 - Unhealed: each flagged site the run did not heal, with what discovery returned and which of step 4's two conditions failed.
   - Where the transport was the one that failed, say the pattern is not one to apply — nothing else marks it, and it is the only thing between the reader and a `heal-site` that overwrites the stored pattern with it.
   - A `zero_links` site with no gather error takes the counter's success branch, so nothing escalates it and it keeps yielding nothing under a clean status.
