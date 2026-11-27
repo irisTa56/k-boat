@@ -7,7 +7,8 @@ Usually the pattern no longer fits the live page, but one odd response can produ
   - Where it is now `false`, the flag was transient: run neither discovery nor `heal-site`, and report the site as transient rather than unhealed.
     - Leave whatever `entries` it lists unjudged: nothing was recorded for them, so the next run gathers them again.
     - The re-run replaces the body cache, which is harmless only because judging is over by this step.
-  - Where it is still `true`, or the re-run reports an `error` for the site, go on below.
+  - Where the re-run reports an `error` for the site, it settled nothing: run neither discovery nor `heal-site`, and report the site as unhealed with that `error`, leaving the next run to try again.
+  - Only where it is still `true`, go on below.
 - Heal it where the condition below holds, and report it where it does not:
   - Re-run discovery on the site's `index_url` (`feed-filter discover <index_url>` — get it, and the site's `requires_browser`, from `feed-filter list-sites`) and pick the article cluster's new `article_url_pattern`, exactly as the `kboat-add-feed-site` skill does (a subagent to eyeball `sample_urls` is fine).
   - **Heal only where both hold: discovery read the page the gather reads, and you can name the article cluster in what came back.** Otherwise this step is done for that site — leave `sites.toml` alone and report it with what discovery returned and which of the two conditions failed.

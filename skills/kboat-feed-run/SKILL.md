@@ -156,7 +156,7 @@ Whether to escalate this summary to a desktop notification is the unattended rou
 - Counts: sites gathered, entries judged, kept (written), dropped, walled (written for manual review), error-fallback writes.
 - Self-heal: each site healed, with old → new pattern and how many URLs were re-snapshotted.
 - Transient: each flagged site whose re-gather in step 4 matched again, informational only, since the stored pattern still works.
-- Unhealed: each flagged site the run did not heal, with what discovery returned and which of step 4's two conditions failed.
+- Unhealed: each flagged site the run did not heal, with what discovery returned and which of step 4's two conditions failed, or the `error` its re-gather in step 4 reported.
   - Where the transport was the one that failed, say the pattern is not one to apply — nothing else marks it, and it is the only thing between the reader and a `heal-site` that overwrites the stored pattern with it.
   - A `zero_links` site with no gather error takes the counter's success branch, so nothing escalates it and it keeps yielding nothing under a clean status.
 - Errors: each site with a gather `error` (noting whether it is an `unexpected_error`, its `consecutive_failures`, and whether it is `persistent`), any `remind` non-zero exit, and any `heal-site` re-scrape failure, with its cause.
