@@ -65,7 +65,10 @@ updates:
       prefix: "dependabot-automerge"
 
   # Ungrouped and unprefixed, both deliberately: one dependency, and a branch name
-  # the auto-merge workflow will not match.
+  # the auto-merge workflow will not match. No `allow: dependency-type: "all"`
+  # either, unlike the root entry: each PR here waits on a check against the live
+  # service, so this entry announces the exact pin alone. The CLI's transitive
+  # packages move when a new notebooklm-py requires it, or for a security advisory.
   - package-ecosystem: "uv"
     directory: "/tools/notebooklm"
     schedule:
