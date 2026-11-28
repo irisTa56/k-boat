@@ -1,0 +1,59 @@
+name: Dependabot CI failure
+
+# Fail when an open Dependabot PR has a failed check, so that the failure
+# reaches the repository owner. GitHub notifies a user of the workflow runs
+# they triggered and of no other, and Dependabot triggers the CI runs of its
+# own PRs, so a failing update otherwise sits open, its auto-merge waiting, and
+# nobody is told. A scheduled run is notified to the user who last changed its
+# `cron` line, as link-check-weekly.yml relies on, so the failure of this one
+# reaches the owner.
+#
+# It also fails on an open Dependabot PR that shows no check at all. ci.yml
+# runs on every pull request, so such a PR is one whose checks this job's token
+# cannot see, and without this the job would pass every day having read none.
+#
+# It looks only at open PRs. A Dependabot PR that dependabot-auto-merge.yml
+# picks up and whose failed check is not one the main ruleset requires merges
+# anyway, so it is gone by the time this runs; one that stays open is one whose
+# merge is held up. The NotebookLM CLI's PR is the exception: it waits for a
+# person whatever its checks say, so a failed check on it fails this job, a
+# reminder such as python-minor-check included, until that person merges or
+# closes it.
+#
+# A check still running is not counted, so a check that never ends is caught
+# only once the job's timeout ends it. GitHub disables a `schedule` trigger in
+# a public repository after 60 days with no repository activity, and this check
+# goes quiet with it.
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+# Enough to list PRs and read their checks, and nothing to write.
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  statuses: read
+
+jobs:
+  failed-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on an open Dependabot PR with a failed check or none
+        run: |
+          failed=$(gh pr list --repo "$REPO" --author app/dependabot --state open \
+            --json url,statusCheckRollup \
+            --jq '.[] | select((.statusCheckRollup | length) == 0 or any(.statusCheckRollup[];
+              (.__typename == "CheckRun" and .status == "COMPLETED"
+                and (.conclusion | IN("SUCCESS", "NEUTRAL", "SKIPPED") | not))
+              or (.__typename == "StatusContext" and (.state | IN("FAILURE", "ERROR"))))) | .url')
+          if [ -n "$failed" ]; then
+            echo "::error::An open Dependabot PR has a failed check, or shows no check:"
+            echo "$failed"
+            exit 1
+          fi
+        env:
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
